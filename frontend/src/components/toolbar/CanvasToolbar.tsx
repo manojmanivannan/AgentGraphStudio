@@ -22,7 +22,7 @@ export function CanvasToolbar() {
       id: newId,
       type: "agent" as const,
       position: { x: 250 + Math.random() * 300, y: 150 + Math.random() * 300 },
-      data: { id: newId, name: `Agent ${nodes.filter((n) => n.type === "agent").length + 1}`, role: "", instructions: "", modelName: "ollama:llama3.1" },
+      data: { id: newId, name: `Agent ${nodes.filter((n) => n.type === "agent").length + 1}`, role: "", instructions: "", modelName: "ollama:llama3.1", agentType: "worker" },
     };
     setNodes([...nodes, newNode]);
   };

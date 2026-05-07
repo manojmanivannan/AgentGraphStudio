@@ -43,6 +43,9 @@ class AgentNode(Base):
     role: Mapped[str] = mapped_column(Text, default="")
     instructions: Mapped[str] = mapped_column(Text, default="")
     model_name: Mapped[str] = mapped_column(String(255), default="ollama:llama3.1")
+    agent_type: Mapped[str] = mapped_column(
+        Enum("worker", "router", name="agent_type_enum"), default="worker"
+    )
     position_x: Mapped[float] = mapped_column(Double, default=0)
     position_y: Mapped[float] = mapped_column(Double, default=0)
 

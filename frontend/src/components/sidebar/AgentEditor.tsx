@@ -42,6 +42,18 @@ export function AgentEditor() {
       <h3 className="text-sm font-semibold text-gray-700 border-b pb-2">Agent Properties</h3>
 
       <div>
+        <label className="block text-xs font-medium text-gray-500 mb-1">Type</label>
+        <select
+          value={(data as any).agentType ?? "worker"}
+          onChange={(e) => updateField("agentType", e.target.value)}
+          className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-indigo-400 focus:border-indigo-400 bg-white"
+        >
+          <option value="worker">Worker</option>
+          <option value="router">Router</option>
+        </select>
+      </div>
+
+      <div>
         <label className="block text-xs font-medium text-gray-500 mb-1">Name</label>
         <input
           type="text"

@@ -4,6 +4,7 @@ export interface AgentNodeData {
   role: string;
   instructions: string;
   modelName: string;
+  agentType: "worker" | "router";
 }
 
 export interface ToolNodeData {
@@ -14,7 +15,7 @@ export interface ToolNodeData {
 
 export type ExecutionEvent =
   | { type: "run_start"; canvas_id: string }
-  | { type: "agent_start"; agent: string }
+  | { type: "agent_start"; agent: string; agentType?: string }
   | { type: "thought"; agent: string; content: string }
   | { type: "tool_call"; agent: string; tool: string; input: Record<string, unknown> }
   | { type: "tool_result"; agent: string; tool: string; output: string }
@@ -34,6 +35,7 @@ export interface CanvasSavePayload {
       role: string;
       instructions: string;
       model_name: string;
+      agent_type: string;
       position_x: number;
       position_y: number;
     }[];
@@ -66,6 +68,7 @@ export interface CanvasResponse {
       role: string;
       instructions: string;
       model_name: string;
+      agent_type: string;
       position_x: number;
       position_y: number;
     }>;

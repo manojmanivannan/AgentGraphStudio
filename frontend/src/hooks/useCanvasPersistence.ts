@@ -25,6 +25,7 @@ export function useCanvasPersistence() {
             role: n.data?.role || "",
             instructions: n.data?.instructions || "",
             model_name: n.data?.modelName || "ollama:llama3.1",
+            agent_type: n.data?.agentType || "worker",
             position_x: n.position.x,
             position_y: n.position.y,
           })),

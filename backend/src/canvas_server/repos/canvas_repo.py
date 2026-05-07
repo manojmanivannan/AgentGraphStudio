@@ -92,6 +92,7 @@ class CanvasRepo:
                 role=a.role,
                 instructions=a.instructions,
                 model_name=a.model_name,
+                agent_type=a.agent_type,
                 position_x=a.position_x,
                 position_y=a.position_y,
             )

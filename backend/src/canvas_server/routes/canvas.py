@@ -40,6 +40,7 @@ def _canvas_to_response(canvas) -> CanvasResponse:
                     role=n.role,
                     instructions=n.instructions,
                     model_name=n.model_name,
+                    agent_type=n.agent_type,
                     position_x=n.position_x,
                     position_y=n.position_y,
                 )

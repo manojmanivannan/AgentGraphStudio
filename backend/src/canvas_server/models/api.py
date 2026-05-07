@@ -10,6 +10,7 @@ class AgentNodeInput(BaseModel):
     role: str = ""
     instructions: str = ""
     model_name: str = "ollama:llama3.1"
+    agent_type: str = "worker"
     position_x: float = 0
     position_y: float = 0
 
