@@ -1,0 +1,95 @@
+# ----------------------
+# Python
+# ----------------------
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+venv/
+.venv/
+env/
+ENV/
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+.eggs/
+pip-wheel-metadata/
+
+# Testing / coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+
+# Type checkers / linters
+.mypy_cache/
+.pyre/
+.ruff_cache/
+.dmypy.json
+dmypy.json
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Logs
+*.log
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# ----------------------
+# Node / React
+# ----------------------
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Build output
+.next/
+out/
+build/
+dist/
+coverage/
+
+# Vite
+vite.svg
+
+# Parcel
+.cache/
+.parcel-cache/
+
+# React Native / Expo
+.expo/
+.expo-shared/
+
+# ----------------------
+# IDE / Editor
+# ----------------------
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ----------------------
+# OS files
+# ----------------------
+.DS_Store
+Thumbs.db
+
+# ----------------------
+# Misc
+# ----------------------
+tmp/
+temp/
+.cache-loader/
+.sass-cache/
+.eslintcache

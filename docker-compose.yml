@@ -1,0 +1,73 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_USER: canvas
+      POSTGRES_PASSWORD: canvas
+      POSTGRES_DB: canvas_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U canvas -d canvas_db" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://canvas:canvas@postgres:5432/canvas_db
+      DEFAULT_LLM: ollama:granite4.1:3b
+      OLLAMA_HOST: http://ollama:11434
+    depends_on:
+      postgres:
+        condition: service_healthy
+    develop:
+      watch:
+        - action: sync
+          path: ./backend/src
+          target: /app/src
+        - action: rebuild
+          path: ./backend/requirements.txt
+
+  frontend:
+    build:
+      context: ./frontend
+    ports:
+      - "5173:5173"
+    environment:
+      VITE_API_HOST: localhost:8000
+    depends_on:
+      - backend
+    develop:
+      watch:
+        - action: sync
+          path: ./frontend/src
+          target: /app/src
+        - action: sync
+          path: ./frontend/index.html
+          target: /app/index.html
+        - action: rebuild
+          path: ./frontend/package.json
+
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [ gpu ]
+volumes:
+  pgdata:
+  ollama_data:

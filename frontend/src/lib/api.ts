@@ -1,0 +1,40 @@
+import type { CanvasListItem, CanvasResponse, CanvasSavePayload } from "@/types";
+
+const API_BASE = `http://${import.meta.env.VITE_API_HOST || "localhost:8000"}/api`;
+
+export async function createCanvas(name = "Untitled Canvas"): Promise<CanvasResponse> {
+  const res = await fetch(`${API_BASE}/canvases`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+  });
+  if (!res.ok) throw new Error("Failed to create canvas");
+  return res.json();
+}
+
+export async function listCanvases(): Promise<CanvasListItem[]> {
+  const res = await fetch(`${API_BASE}/canvases`);
+  if (!res.ok) throw new Error("Failed to list canvases");
+  return res.json();
+}
+
+export async function getCanvas(id: string): Promise<CanvasResponse> {
+  const res = await fetch(`${API_BASE}/canvases/${id}`);
+  if (!res.ok) throw new Error("Failed to get canvas");
+  return res.json();
+}
+
+export async function saveCanvas(id: string, payload: CanvasSavePayload): Promise<CanvasResponse> {
+  const res = await fetch(`${API_BASE}/canvases/${id}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error("Failed to save canvas");
+  return res.json();
+}
+
+export async function deleteCanvas(id: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/canvases/${id}`, { method: "DELETE" });
+  if (!res.ok) throw new Error("Failed to delete canvas");
+}
