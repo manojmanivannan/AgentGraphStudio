@@ -4,6 +4,7 @@ import re
 
 from beeai_framework.agents.react import ReActAgent
 from beeai_framework.backend.chat import ChatModel
+from beeai_framework.backend.message import UserMessage
 from beeai_framework.memory.unconstrained_memory import UnconstrainedMemory
 
 from canvas_server.config import settings
@@ -30,6 +31,7 @@ class CanvasRunner:
         self.canvas = canvas
         self.tools: dict[uuid.UUID, object] = {}
         self.agents: dict[uuid.UUID, ReActAgent] = {}
+        self.llms: dict[uuid.UUID, object] = {}
         self.node_map: dict[uuid.UUID, object] = {}
 
     async def setup(self):
@@ -67,6 +69,12 @@ class CanvasRunner:
                 targets.append(edge.target_node_id)
         return targets
 
+    def _model_kwargs(self, agent_node) -> dict:
+        kwargs = {}
+        if agent_node.model_name.startswith("ollama:"):
+            kwargs["base_url"] = settings.ollama_host
+        return kwargs
+
     async def _build_agents(self):
         logger.debug("Building agents from %d agent nodes", len(self.canvas.agent_nodes))
         for agent_node in self.canvas.agent_nodes:
@@ -77,10 +85,10 @@ class CanvasRunner:
                 agent_node.model_name, len(tools),
             )
             try:
-                model_kwargs = {}
-                if agent_node.model_name.startswith("ollama:"):
-                    model_kwargs["base_url"] = settings.ollama_host
+                model_kwargs = self._model_kwargs(agent_node)
                 llm = ChatModel.from_name(agent_node.model_name, **model_kwargs)
+                self.llms[agent_node.id] = llm
+
                 agent = ReActAgent(
                     llm=llm,
                     tools=tools,
@@ -101,43 +109,43 @@ class CanvasRunner:
                 return node.id
         return None
 
-    def _agent_prompt(self, agent_node, user_prompt: str) -> str:
+    def _build_router_prompt(self, agent_node, user_prompt: str, observations: str = "") -> str:
         parts = []
 
         if agent_node.role:
             parts.append(f"You are: {agent_node.role}")
 
-        if agent_node.agent_type == "router":
-            handoff_targets = self._get_handoff_targets(agent_node.id)
-            if handoff_targets:
-                sub_agents = []
-                for tid in handoff_targets:
-                    target = self.node_map.get(tid)
-                    if target:
-                        desc = target.role or f"Agent: {target.name}"
-                        sub_agents.append(f"- **{target.name}**: {desc}")
-                if sub_agents:
-                    parts.append(
-                        "You are a Router agent. Your job is to analyze the user's request "
-                        "and delegate it to the most appropriate sub-agent below. "
-                        "Do NOT answer the question yourself — always route it.\n\n"
-                        "Available sub-agents:\n" + "\n".join(sub_agents)
-                    )
+        handoff_targets = self._get_handoff_targets(agent_node.id)
+        sub_agents = []
+        for tid in handoff_targets:
+            target = self.node_map.get(tid)
+            if target:
+                desc = target.role or f"Agent: {target.name}"
+                sub_agents.append(f"- **{target.name}**: {desc}")
+        if sub_agents:
+            parts.append(
+                "You are a Router agent. Your job is to analyze the user's request "
+                "and delegate it to the most appropriate sub-agent below. "
+                "Do NOT answer the question yourself — always route it.\n\n"
+                "Available sub-agents:\n" + "\n".join(sub_agents)
+            )
 
-            action_names = []
-            for t in self._get_agent_tools(agent_node.id):
-                action_names.append(t.name)
-            for tid in self._get_handoff_targets(agent_node.id):
-                target = self.node_map.get(tid)
-                if target:
-                    action_names.append(f"transfer_to_{target.name}")
+        action_names = []
+        for tid in handoff_targets:
+            target = self.node_map.get(tid)
+            if target:
+                action_names.append(f"transfer_to_{target.name}")
+        for t in self._get_agent_tools(agent_node.id):
+            action_names.append(t.name)
 
-            react = REACT_PATTERN.format(actions=", ".join(action_names) if action_names else "none")
-            parts.append(react)
+        react = REACT_PATTERN.format(actions=", ".join(action_names) if action_names else "none")
+        parts.append(react)
 
         if agent_node.instructions:
             parts.append(agent_node.instructions)
-        parts.append(user_prompt)
+        parts.append(f"Question: {user_prompt}")
+        if observations:
+            parts.append(observations)
         return "\n\n".join(parts)
 
     def _extract_text(self, result) -> str:
@@ -153,35 +161,39 @@ class CanvasRunner:
                 return str(msg.content)
         return str(result)
 
-    async def _run_router_loop(self, agent_node, user_prompt, send_event):
-        agent = self.agents[agent_node.id]
-        base_prompt = self._agent_prompt(agent_node, user_prompt)
-        accumulated_context = ""
+    async def _call_llm(self, llm, prompt: str) -> str:
+        result = await llm.run(prompt)
+        if hasattr(result, "output"):
+            for msg in result.output:
+                if hasattr(msg, "text"):
+                    return msg.text
+        if hasattr(result, "text"):
+            return result.text
+        return str(result)
+
+    async def _run_router_loop(self, agent_node, user_prompt: str, send_event):
+        llm = self.llms[agent_node.id]
+        observations = ""
         max_rounds = 10
 
         for round_num in range(max_rounds):
-            agent.memory = UnconstrainedMemory()
-
-            prompt = base_prompt
-            if accumulated_context:
-                prompt += f"\n\n---\nPrevious results:\n{accumulated_context}\n---\n\nBased on the above results, continue following the ReAct pattern."
-
+            prompt = self._build_router_prompt(agent_node, user_prompt, observations)
             logger.info("Router %s round %d", agent_node.name, round_num + 1)
+            logger.debug("Router prompt: %s", prompt[:500])
 
-            result = await agent.run(prompt)
-            text = self._extract_text(result)
+            text = await self._call_llm(llm, prompt)
+            logger.info("Router %s round %d response: %s", agent_node.name, round_num + 1, text[:300])
 
-            logger.info("Router %s round %d output: %s", agent_node.name, round_num + 1, text[:300])
-
-            await send_event({"type": "thought", "agent": agent_node.name, "content": text})
-
-            transfer_match = re.search(r'transfer_to_(\S+)', text)
+            transfer_match = re.search(r'Action:\s*transfer_to_(\S+)', text)
 
             if transfer_match:
-                target_name = transfer_match.group(1).rstrip(",:;")
+                target_name = transfer_match.group(1).rstrip(",:;\n\r")
 
-                sub_task_match = re.search(r'transfer_to_\S+[:\s,]*\n?(.*)', text, re.DOTALL)
-                sub_task = sub_task_match.group(1).strip() if sub_task_match and sub_task_match.group(1).strip() else user_prompt
+                ai_match = re.search(
+                    r'Action Input:\s*(.*?)(?:$|\n(?:Thought|Action|Observation|Final))',
+                    text, re.DOTALL
+                )
+                sub_task = ai_match.group(1).strip() if ai_match and ai_match.group(1).strip() else user_prompt
 
                 target_id = self._find_agent_id_by_name(target_name)
 
@@ -193,16 +205,16 @@ class CanvasRunner:
                     await send_event({"type": "agent_start", "agent": target_name, "agentType": target_node.agent_type})
 
                     sub_agent.memory = UnconstrainedMemory()
-                    sub_prompt = self._agent_prompt(target_node, sub_task)
+                    sub_prompt = self._build_worker_prompt(target_node, sub_task)
 
                     try:
-                        sub_result = await sub_agent.run(sub_prompt)
-                        obs = self._extract_text(sub_result)
+                        result = await sub_agent.run(sub_prompt)
+                        obs = self._extract_text(result)
                     except Exception as e:
                         obs = f"Error: {e}"
                         logger.error("Sub-agent %s failed: %s", target_name, e, exc_info=True)
 
-                    accumulated_context += f"\nObservation from {target_name}: {obs}"
+                    observations += f"\nObservation from {target_name}: {obs}\n"
 
                     await send_event({"type": "final_answer", "agent": target_name, "content": obs})
                     await send_event({
@@ -212,11 +224,26 @@ class CanvasRunner:
                         "output": obs,
                     })
                 else:
-                    accumulated_context += f"\nObservation: Error - agent '{target_name}' is not available."
+                    observations += f"\nObservation: Error - agent '{target_name}' is not available.\n"
             else:
-                return text
+                fa_match = re.search(r'Final Answer:\s*(.*)', text, re.DOTALL)
+                if fa_match:
+                    answer = fa_match.group(1).strip()
+                    await send_event({"type": "thought", "agent": agent_node.name, "content": text})
+                    return answer
+
+                observations += f"\nObservation: Your response didn't follow the ReAct pattern. Please use the exact format specified.\n"
 
         return "Router reached maximum rounds without producing a final answer."
+
+    def _build_worker_prompt(self, agent_node, user_prompt: str) -> str:
+        parts = []
+        if agent_node.role:
+            parts.append(f"You are: {agent_node.role}")
+        if agent_node.instructions:
+            parts.append(agent_node.instructions)
+        parts.append(user_prompt)
+        return "\n\n".join(parts)
 
     async def run(self, user_prompt: str, send_event):
         logger.info("Starting canvas execution: canvas_id=%s prompt=%s", self.canvas.id, user_prompt[:100])
@@ -230,22 +257,17 @@ class CanvasRunner:
         await send_event({"type": "run_start", "canvas_id": str(self.canvas.id)})
 
         agent_ids = [n.id for n in self.canvas.agent_nodes]
-        first_agent_id = agent_ids[0]
-        first_node = self.node_map[first_agent_id]
+        first_node = self.node_map[agent_ids[0]]
 
         if first_node.agent_type == "router":
             final_text = await self._run_router_loop(first_node, user_prompt, send_event)
-            await send_event({
-                "type": "final_answer",
-                "agent": first_node.name,
-                "content": final_text,
-            })
+            await send_event({"type": "final_answer", "agent": first_node.name, "content": final_text})
         else:
             handoff_map = {}
             for agent_node in self.canvas.agent_nodes:
                 handoff_map[agent_node.id] = self._get_handoff_targets(agent_node.id)
 
-            current_agent_id = first_agent_id
+            current_agent_id = agent_ids[0]
             visited = set()
 
             while current_agent_id is not None and current_agent_id not in visited:
@@ -259,7 +281,7 @@ class CanvasRunner:
                 logger.info("Running agent: %s (type=%s model=%s)", agent_node.name, agent_node.agent_type, agent_node.model_name)
                 await send_event({"type": "agent_start", "agent": agent_node.name, "agentType": agent_node.agent_type})
 
-                prompt = self._agent_prompt(agent_node, user_prompt)
+                prompt = self._build_worker_prompt(agent_node, user_prompt)
 
                 try:
                     result = await agent.run(prompt)
@@ -294,3 +316,4 @@ class CanvasRunner:
 
         logger.info("Canvas execution completed: canvas_id=%s", self.canvas.id)
         await send_event({"type": "run_complete", "result": "Workflow execution completed."})
+
