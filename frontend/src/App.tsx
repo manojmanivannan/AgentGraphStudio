@@ -57,7 +57,8 @@ export default function App() {
           role: a.role,
           instructions: a.instructions,
           modelName: a.model_name,
-        } as AgentNodeData,
+          agentType: a.agent_type,
+        } as any,
       }));
 
       const toolNodes: Node[] = canvas.nodes.tools.map((t) => ({
@@ -68,7 +69,7 @@ export default function App() {
           id: t.id,
           name: t.name,
           code: t.code,
-        } as ToolNodeData,
+        } as any,
       }));
 
       setNodes([...agentNodes, ...toolNodes]);

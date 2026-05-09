@@ -14,15 +14,15 @@ export interface ToolNodeData {
 }
 
 export type ExecutionEvent =
-  | { type: "run_start"; canvas_id: string }
-  | { type: "agent_start"; agent: string; agentType?: string }
-  | { type: "thought"; agent: string; content: string }
-  | { type: "tool_call"; agent: string; tool: string; input: Record<string, unknown> }
-  | { type: "tool_result"; agent: string; tool: string; output: string }
-  | { type: "handoff"; from: string; to: string }
-  | { type: "final_answer"; agent?: string; content: string }
+  | { type: "run_start"; canvas_id: string; node_id?: string }
+  | { type: "agent_start"; agent: string; agentType?: string; node_id?: string }
+  | { type: "thought"; agent: string; content: string; node_id?: string }
+  | { type: "tool_call"; agent: string; tool: string; input: Record<string, unknown>; node_id?: string }
+  | { type: "tool_result"; agent: string; tool: string; output: string; node_id?: string }
+  | { type: "handoff"; from: string; to: string; node_id?: string }
+  | { type: "final_answer"; agent?: string; content: string; node_id?: string }
   | { type: "run_complete"; result: string }
-  | { type: "error"; message: string; agent?: string };
+  | { type: "error"; message: string; agent?: string; node_id?: string };
 
 export type ExecutionStatus = "idle" | "running" | "done" | "error";
 
@@ -95,4 +95,34 @@ export interface CanvasListItem {
   name: string;
   created_at: string;
   updated_at: string;
+}
+
+export interface ConversationSummary {
+  id: string;
+  canvas_id: string;
+  name: string;
+  status: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Message {
+  id: string;
+  conversation_id: string;
+  role: string;
+  content: string;
+  agent_name?: string | null;
+  node_id?: string | null;
+  event_type?: string | null;
+  created_at: string;
+}
+
+export interface Conversation {
+  id: string;
+  canvas_id: string;
+  name: string;
+  status: string;
+  created_at: string;
+  updated_at: string;
+  messages: Message[];
 }

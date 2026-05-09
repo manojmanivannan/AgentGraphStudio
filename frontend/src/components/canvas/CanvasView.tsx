@@ -54,7 +54,6 @@ export function CanvasView() {
   const setNodes = useCanvasStore((s) => s.setNodes);
   const setEdges = useCanvasStore((s) => s.setEdges);
   const selectNode = useCanvasStore((s) => s.selectNode);
-  const executionStatus = useCanvasStore((s) => s.executionStatus);
 
   useCanvasPersistence();
 
@@ -76,17 +75,19 @@ export function CanvasView() {
     (params: Connection) => {
       const sourceNode = nodes.find((n) => n.id === params.source);
       const targetNode = nodes.find((n) => n.id === params.target);
-      const edgeType = sourceNode?.type === "agent" && targetNode?.type === "agent"
-        ? "handoff"
-        : "tool_access";
+      const edgeType =
+        sourceNode?.type === "agent" && targetNode?.type === "agent"
+          ? "handoff"
+          : "tool_access";
 
       const newEdge: Edge = {
         ...params,
         id: uuidv4(),
         data: { edgeType },
-        style: edgeType === "handoff"
-          ? { strokeDasharray: "6 4", strokeWidth: 2 }
-          : { strokeWidth: 2 },
+        style:
+          edgeType === "handoff"
+            ? { strokeDasharray: "6 4", strokeWidth: 2 }
+            : { strokeWidth: 2 },
         markerEnd: { type: MarkerType.ArrowClosed },
       };
 
@@ -106,31 +107,33 @@ export function CanvasView() {
     selectNode(null);
   }, [selectNode]);
 
-  const canInteract = executionStatus !== "running";
-
   return (
     <div ref={containerRef} className="w-full h-full">
       <ReactFlow
         nodes={nodes}
         edges={edges}
-        onNodesChange={canInteract ? onNodesChange : undefined}
-        onEdgesChange={canInteract ? onEdgesChange : undefined}
-        onConnect={canInteract ? onConnect : undefined}
+        onNodesChange={onNodesChange}
+        onEdgesChange={onEdgesChange}
+        onConnect={onConnect}
         onNodeClick={onNodeClick}
         onPaneClick={onPaneClick}
         nodeTypes={nodeTypes}
-        isValidConnection={isValidConnection}
+        isValidConnection={isValidConnection as any}
         defaultEdgeOptions={defaultEdgeOptions}
         fitView
         attributionPosition="bottom-right"
-        nodesDraggable={canInteract}
-        nodesConnectable={canInteract}
-        elementsSelectable={canInteract}
       >
-        <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="#e5e7eb" />
+        <Background
+          variant={BackgroundVariant.Dots}
+          gap={20}
+          size={1}
+          color="#e5e7eb"
+        />
         <Controls />
         <MiniMap
-          nodeColor={(node) => (node.type === "agent" ? "#818cf8" : "#fbbf24")}
+          nodeColor={(node) =>
+            node.type === "agent" ? "#818cf8" : "#fbbf24"
+          }
           maskColor="rgba(0,0,0,0.08)"
         />
       </ReactFlow>
