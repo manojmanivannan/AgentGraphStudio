@@ -1,5 +1,5 @@
-import { useState, useRef, useEffect } from "react";
-import { Send, Plus, Trash2, MessageSquare, ChevronDown } from "lucide-react";
+import { useState, useRef, useEffect, useCallback } from "react";
+import { Send, Plus, Trash2, MessageSquare, ChevronDown, ChevronRight } from "lucide-react";
 import { useCanvasStore } from "@/store/canvasStore";
 import {
   createConversation,
@@ -21,6 +21,7 @@ export function ChatPanel() {
   const [input, setInput] = useState("");
   const [running, setRunning] = useState(false);
   const [selectorOpen, setSelectorOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
@@ -84,8 +85,35 @@ export function ChatPanel() {
     }
   };
 
+  const toggleCollapse = useCallback((msgId: string) => {
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(msgId)) {
+        next.delete(msgId);
+      } else {
+        next.add(msgId);
+      }
+      return next;
+    });
+  }, []);
+
+  useEffect(() => {
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      for (const msg of messages) {
+        if (msg.event_type === "thought") {
+          next.add(msg.id);
+        }
+      }
+      return next;
+    });
+  }, [messages]);
+
   const addMessageLocal = (msg: Message) => {
     setMessages((prev) => [...prev, msg]);
+    if (msg.event_type === "thought") {
+      setCollapsed((prev) => new Set(prev).add(msg.id));
+    }
   };
 
   const handleSend = () => {
@@ -284,7 +312,11 @@ export function ChatPanel() {
           </div>
         )}
 
-        {messages.map((msg) => (
+        {messages.map((msg) => {
+          const isThought = msg.event_type === "thought";
+          const isCollapsed = collapsed.has(msg.id);
+
+          return (
           <div
             key={msg.id}
             className={`flex flex-col ${
@@ -303,15 +335,37 @@ export function ChatPanel() {
                   ? "bg-indigo-600 text-white"
                   : msg.role === "system"
                   ? "bg-red-50 text-red-600 border border-red-200"
-                  : msg.event_type === "thought"
+                  : isThought
                   ? "bg-purple-50 text-purple-700 border border-purple-200 text-xs"
                   : "bg-gray-100 text-gray-800"
               }`}
             >
-              {msg.content}
+              {isThought && isCollapsed ? (
+                <button
+                  onClick={() => toggleCollapse(msg.id)}
+                  className="flex items-center gap-1 text-purple-500 hover:text-purple-700 cursor-pointer w-full text-left"
+                >
+                  <ChevronRight className="w-3 h-3 flex-shrink-0" />
+                  <span>Thinking...</span>
+                </button>
+              ) : isThought ? (
+                <div>
+                  <button
+                    onClick={() => toggleCollapse(msg.id)}
+                    className="flex items-center gap-1 text-purple-500 hover:text-purple-700 cursor-pointer mb-1"
+                  >
+                    <ChevronDown className="w-3 h-3 flex-shrink-0" />
+                    <span className="text-[10px]">Hide thought</span>
+                  </button>
+                  {msg.content}
+                </div>
+              ) : (
+                msg.content
+              )}
             </div>
           </div>
-        ))}
+          );
+        })}
 
         {running && (
           <div className="flex items-start">

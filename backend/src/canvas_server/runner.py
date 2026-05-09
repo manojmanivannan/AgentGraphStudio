@@ -458,14 +458,6 @@ class CanvasRunner:
                     observations += f"Action Input: {decision.action_input or ''}\n"
                     observations += f"Observation: {obs}\n"
 
-                    final_evt = self._event(
-                        "final_answer",
-                        agent=target_name,
-                        content=obs,
-                        node_id=str(target_id),
-                    )
-                    await send_event(final_evt)
-
                     tool_evt = self._event(
                         "tool_result",
                         agent=agent_node.name,
