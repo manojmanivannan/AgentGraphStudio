@@ -1,6 +1,6 @@
 import json
-import uuid
 import logging
+import uuid
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
@@ -110,8 +110,9 @@ async def get_canvas(canvas_id: uuid.UUID, session: AsyncSession = Depends(get_s
         canvas = await repo.get_or_404(canvas_id)
     except CanvasNotFoundError:
         logger.warning(f"Canvas not found: id={canvas_id}")
-        raise HTTPException(status_code=404, detail="Canvas not found")
-    logger.debug(f"Canvas fetched: id={canvas_id}, agents={len(canvas.agent_nodes)}, tools={len(canvas.tool_nodes)}, edges={len(canvas.edges)}")
+        raise HTTPException(status_code=404, detail="Canvas not found") from None
+    logger.debug(f"Canvas fetched: id={canvas_id}, agents={len(canvas.agent_nodes)}, "
+                 f"tools={len(canvas.tool_nodes)}, edges={len(canvas.edges)}")
     return _canvas_to_response(canvas)
 
 
@@ -121,7 +122,11 @@ async def save_canvas(
     body: CanvasSaveRequest,
     session: AsyncSession = Depends(get_session),
 ):
-    logger.info(f"Saving canvas: id={canvas_id}, name={body.name}, agents={len(body.nodes.agents)}, tools={len(body.nodes.tools)}, edges={len(body.edges)}")
+    logger.info(
+        f"Saving canvas: id={canvas_id}, name={body.name}, "
+        f"agents={len(body.nodes.agents)}, "
+        f"tools={len(body.nodes.tools)}, edges={len(body.edges)}"
+    )
     for a in body.nodes.agents:
         logger.debug(f"  agent: id={a.id}, name={a.name}, model={a.model_name}")
     for t in body.nodes.tools:
@@ -139,7 +144,7 @@ async def save_canvas(
         )
     except CanvasNotFoundError:
         logger.warning(f"Canvas not found for save: id={canvas_id}")
-        raise HTTPException(status_code=404, detail="Canvas not found")
+        raise HTTPException(status_code=404, detail="Canvas not found") from None
     logger.info(f"Canvas saved: id={canvas_id}")
     return _canvas_to_response(canvas)
 
@@ -151,7 +156,7 @@ async def delete_canvas(canvas_id: uuid.UUID, session: AsyncSession = Depends(ge
     deleted = await repo.delete(canvas_id)
     if not deleted:
         logger.warning(f"Canvas not found for delete: id={canvas_id}")
-        raise HTTPException(status_code=404, detail="Canvas not found")
+        raise HTTPException(status_code=404, detail="Canvas not found") from None
     logger.info(f"Canvas deleted: id={canvas_id}")
 
 
@@ -165,7 +170,7 @@ async def export_canvas(
         canvas = await repo.get_or_404(canvas_id)
     except CanvasNotFoundError:
         logger.warning(f"Canvas not found for export: id={canvas_id}")
-        raise HTTPException(status_code=404, detail="Canvas not found")
+        raise HTTPException(status_code=404, detail="Canvas not found") from None
 
     data = _canvas_to_response(canvas).model_dump(mode="json")
     content = json.dumps(data, indent=2, default=str)
@@ -184,7 +189,9 @@ async def import_canvas(
     body: CanvasSaveRequest, session: AsyncSession = Depends(get_session)
 ):
     logger.info(
-        f"Importing canvas: name={body.name}, agents={len(body.nodes.agents)}, tools={len(body.nodes.tools)}, edges={len(body.edges)}"
+        f"Importing canvas: name={body.name}, "
+        f"agents={len(body.nodes.agents)}, "
+        f"tools={len(body.nodes.tools)}, edges={len(body.edges)}"
     )
     repo = CanvasRepo(session)
     canvas = await repo.create_full(

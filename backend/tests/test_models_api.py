@@ -1,20 +1,17 @@
 import uuid
+from datetime import UTC, datetime
+
 import pytest
 from pydantic import ValidationError
-from datetime import datetime, timezone
 
 from canvas_server.models.api import (
     AgentNodeInput,
-    AgentNodeResponse,
-    ToolNodeInput,
-    ToolNodeResponse,
-    EdgeInput,
-    EdgeResponse,
     CanvasNodesInput,
-    CanvasSaveRequest,
     CanvasResponse,
-    CanvasListResponse,
+    CanvasSaveRequest,
     CreateCanvasRequest,
+    EdgeInput,
+    ToolNodeInput,
 )
 
 
@@ -134,7 +131,7 @@ class TestCanvasSaveRequest:
 
 class TestCanvasResponse:
     def test_creation(self):
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         cid = uuid.uuid4()
         resp = CanvasResponse(
             id=cid,

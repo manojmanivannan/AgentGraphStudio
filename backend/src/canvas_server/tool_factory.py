@@ -16,7 +16,7 @@ async def compile_tool_from_code(name: str, code: str):
         exec(code, namespace)
     except Exception as e:
         logger.error("Failed to exec tool '%s': %s", name, e)
-        raise ToolCompilationError(f"Failed to compile tool '{name}': {e}")
+        raise ToolCompilationError(f"Failed to compile tool '{name}': {e}") from e
 
     user_func = None
     for val in namespace.values():
@@ -30,8 +30,6 @@ async def compile_tool_from_code(name: str, code: str):
 
     desc = (user_func.__doc__ or "").strip() or f"Tool: {name}"
     tool_kwargs = {"name": name, "description": desc}
-    if hasattr(tool, "__call__"):
-        pass
 
     @tool(**tool_kwargs)
     def dynamic_tool(**kwargs) -> StringToolOutput:

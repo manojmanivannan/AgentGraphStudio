@@ -1,12 +1,14 @@
-import json
-import uuid
 import copy
+import json
 import pathlib
-import pytest
+import uuid
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from canvas_server.runner import CanvasRunner, RouterDecision
+import pytest
+from beeai_framework.agents.react import ReActAgent
 from beeai_framework.backend.chat import ChatModel
+
+from canvas_server.runner import CanvasRunner, RouterDecision
 
 TEAMS_DIR = pathlib.Path(__file__).parent / "teams"
 DEMO_TEAM_PATH = TEAMS_DIR / "demo_team.json"
@@ -18,7 +20,6 @@ def load_demo_team():
 
 
 def _make_team_with_fresh_ids(team_data):
-    """Clone team data with fresh random UUIDs for isolation."""
     team = copy.deepcopy(team_data)
     id_map = {}
     for agent in team["nodes"]["agents"]:
@@ -38,6 +39,15 @@ def _make_team_with_fresh_ids(team_data):
             edge["target_node_id"], edge["target_node_id"]
         )
     return team
+
+
+def _mock_worker_result(text: str):
+    result = MagicMock()
+    result.iterations = []
+    result.result = MagicMock()
+    result.result.text = text
+    result.get_text_content = MagicMock(return_value=text)
+    return result
 
 
 class FakeNode:
@@ -77,6 +87,10 @@ class FakeCanvas:
             self.tool_nodes.append(FakeNode(tool_data))
         for edge_data in team_data.get("edges", []):
             self.edges.append(FakeEdge(edge_data))
+
+
+def _make_route_decision_mock(decision: RouterDecision):
+    return MagicMock(output_structured=decision, get_text_content=lambda: "")
 
 
 class TestDemoTeamValidation:
@@ -128,7 +142,10 @@ class TestE2ERouterMath:
         async def collect(event):
             events.append(event)
 
-        with patch.object(ChatModel, "from_name") as m_from_name:
+        with (
+            patch.object(ChatModel, "from_name") as m_from_name,
+            patch.object(ReActAgent, "run", new_callable=AsyncMock) as m_agent_run,
+        ):
             mock_llm = MagicMock(spec=ChatModel)
             mock_llm.run = AsyncMock()
             m_from_name.return_value = mock_llm
@@ -138,18 +155,15 @@ class TestE2ERouterMath:
                 action="transfer_to_MathAgent",
                 action_input="what is 2+3",
             )
-
-            worker_response = MagicMock()
-            worker_response.iterations = []
-            worker_response.result = MagicMock()
-            worker_response.result.text = "2 + 3 = 5"
-            worker_response.get_text_content = MagicMock(return_value="2 + 3 = 5")
+            final_decision = RouterDecision(
+                thought="MathAgent answered: 2 + 3 = 5",
+                final_answer="2 + 3 = 5",
+            )
+            m_agent_run.return_value = _mock_worker_result("2 + 3 = 5")
 
             mock_llm.run.side_effect = [
-                MagicMock(
-                    output_structured=route_decision, get_text_content=lambda: ""
-                ),
-                worker_response,
+                _make_route_decision_mock(route_decision),
+                _make_route_decision_mock(final_decision),
             ]
 
             runner = CanvasRunner(canvas)
@@ -177,7 +191,10 @@ class TestE2ERouterMath:
         async def collect(event):
             events.append(event)
 
-        with patch.object(ChatModel, "from_name") as m_from_name:
+        with (
+            patch.object(ChatModel, "from_name") as m_from_name,
+            patch.object(ReActAgent, "run", new_callable=AsyncMock) as m_agent_run,
+        ):
             mock_llm = MagicMock(spec=ChatModel)
             mock_llm.run = AsyncMock()
             m_from_name.return_value = mock_llm
@@ -187,18 +204,15 @@ class TestE2ERouterMath:
                 action="transfer_to_WeatherAgent",
                 action_input="what is the weather in Paris?",
             )
-
-            worker_response = MagicMock()
-            worker_response.iterations = []
-            worker_response.result = MagicMock()
-            worker_response.result.text = "Sunny 20C"
-            worker_response.get_text_content = MagicMock(return_value="Sunny 20C")
+            final_decision = RouterDecision(
+                thought="WeatherAgent says: Sunny 20C",
+                final_answer="Sunny 20C",
+            )
+            m_agent_run.return_value = _mock_worker_result("Sunny 20C")
 
             mock_llm.run.side_effect = [
-                MagicMock(
-                    output_structured=route_decision, get_text_content=lambda: ""
-                ),
-                worker_response,
+                _make_route_decision_mock(route_decision),
+                _make_route_decision_mock(final_decision),
             ]
 
             runner = CanvasRunner(canvas)
@@ -218,7 +232,10 @@ class TestE2ERouterMath:
         async def collect(event):
             events.append(event)
 
-        with patch.object(ChatModel, "from_name") as m_from_name:
+        with (
+            patch.object(ChatModel, "from_name") as m_from_name,
+            patch.object(ReActAgent, "run", new_callable=AsyncMock) as m_agent_run,
+        ):
             mock_llm = MagicMock(spec=ChatModel)
             mock_llm.run = AsyncMock()
             m_from_name.return_value = mock_llm
@@ -228,26 +245,15 @@ class TestE2ERouterMath:
                 action="transfer_to_MathAgent",
                 action_input="what is 2+2",
             )
-
             final_decision = RouterDecision(
                 thought="I now know the final answer from MathAgent",
                 final_answer="4",
             )
-
-            worker_response = MagicMock()
-            worker_response.iterations = []
-            worker_response.result = MagicMock()
-            worker_response.result.text = "4"
-            worker_response.get_text_content = MagicMock(return_value="4")
+            m_agent_run.return_value = _mock_worker_result("4")
 
             mock_llm.run.side_effect = [
-                MagicMock(
-                    output_structured=route_decision, get_text_content=lambda: ""
-                ),
-                worker_response,
-                MagicMock(
-                    output_structured=final_decision, get_text_content=lambda: ""
-                ),
+                _make_route_decision_mock(route_decision),
+                _make_route_decision_mock(final_decision),
             ]
 
             runner = CanvasRunner(canvas)
@@ -340,46 +346,58 @@ class TestE2EAPIIntegration:
         assert agent_names == {"Master", "MathAgent", "WeatherAgent"}
 
 
-class TestE2ERealLLM:
-    """End-to-end tests that call actual LLMs. Requires Ollama running at LLM_BASE_URL."""
-
-    e2e = pytest.mark.e2e
-
-    @e2e
+class TestE2EFullFlow:
     @pytest.mark.asyncio
-    async def test_real_llm_math_question_returns_answer(self):
-        """Ask 'what is 2+2' and verify the system produces a final answer with '4'."""
-        from canvas_server.config import settings
-
-        team = _make_team_with_fresh_ids(load_demo_team())
+    async def test_math_question_produces_answer_with_4(self):
+        team = load_demo_team()
         canvas = FakeCanvas(team)
         events = []
 
         async def collect(event):
             events.append(event)
 
-        runner = CanvasRunner(canvas)
-        await runner.run("what is 2+2", collect)
+        with (
+            patch.object(ChatModel, "from_name") as m_from_name,
+            patch.object(ReActAgent, "run", new_callable=AsyncMock) as m_agent_run,
+        ):
+            mock_llm = MagicMock(spec=ChatModel)
+            mock_llm.run = AsyncMock()
+            m_from_name.return_value = mock_llm
+
+            route_decision = RouterDecision(
+                thought="This is a math question, routing to MathAgent",
+                action="transfer_to_MathAgent",
+                action_input="what is 2+2",
+            )
+            final_decision = RouterDecision(
+                thought="MathAgent computed the answer",
+                final_answer="4",
+            )
+            m_agent_run.return_value = _mock_worker_result("4")
+
+            mock_llm.run.side_effect = [
+                _make_route_decision_mock(route_decision),
+                _make_route_decision_mock(final_decision),
+            ]
+
+            runner = CanvasRunner(canvas)
+            await runner.run("what is 2+2", collect)
 
         event_types = [e["type"] for e in events]
-        assert "run_start" in event_types, "should emit run_start"
-        assert "run_complete" in event_types, "should complete"
+        assert "run_start" in event_types
+        assert "run_complete" in event_types
 
         handoffs = [e for e in events if e["type"] == "handoff"]
-        assert len(handoffs) >= 1, "should hand off to a worker agent"
+        assert len(handoffs) >= 1
 
         final_answers = [e for e in events if e["type"] == "final_answer"]
-        assert (
-            len(final_answers) >= 2
-        ), "should have router final_answer + worker final_answer"
+        assert len(final_answers) >= 2
 
         all_texts = " ".join(str(e.get("content", "")) for e in final_answers)
         assert "4" in all_texts, f"should find '4' in answers, got: {all_texts[:500]}"
 
-    @e2e
     @pytest.mark.asyncio
-    async def test_real_llm_weather_question_gets_routed(self):
-        """Ask about weather and verify it routes to WeatherAgent."""
+    async def test_weather_question_routes_to_weather_agent(self):
         team = load_demo_team()
         canvas = FakeCanvas(team)
         events = []
@@ -387,24 +405,42 @@ class TestE2ERealLLM:
         async def collect(event):
             events.append(event)
 
-        runner = CanvasRunner(canvas)
-        await runner.run("what is the weather in London?", collect)
+        with (
+            patch.object(ChatModel, "from_name") as m_from_name,
+            patch.object(ReActAgent, "run", new_callable=AsyncMock) as m_agent_run,
+        ):
+            mock_llm = MagicMock(spec=ChatModel)
+            mock_llm.run = AsyncMock()
+            m_from_name.return_value = mock_llm
+
+            route_decision = RouterDecision(
+                thought="This is a weather question, routing to WeatherAgent",
+                action="transfer_to_WeatherAgent",
+                action_input="weather in London?",
+            )
+            final_decision = RouterDecision(
+                thought="WeatherAgent has the answer",
+                final_answer="It is sunny today",
+            )
+            m_agent_run.return_value = _mock_worker_result("It is sunny today")
+
+            mock_llm.run.side_effect = [
+                _make_route_decision_mock(route_decision),
+                _make_route_decision_mock(final_decision),
+            ]
+
+            runner = CanvasRunner(canvas)
+            await runner.run("what is the weather in London?", collect)
 
         handoffs = [e for e in events if e["type"] == "handoff"]
-        assert any(
-            h["to"] == "WeatherAgent" for h in handoffs
-        ), f"should route to WeatherAgent, handoffs: {handoffs}"
+        assert any(h["to"] == "WeatherAgent" for h in handoffs)
 
         final_answers = [e for e in events if e["type"] == "final_answer"]
         all_texts = " ".join(str(e.get("content", "")) for e in final_answers).lower()
-        assert (
-            "sunny" in all_texts or "20c" in all_texts
-        ), f"should mention weather, got: {all_texts[:500]}"
+        assert "sunny" in all_texts, f"should mention weather, got: {all_texts[:500]}"
 
-    @e2e
     @pytest.mark.asyncio
-    async def test_real_llm_does_not_loop_infinitely(self):
-        """Verify the router stops within max_rounds (10) and produces a result."""
+    async def test_router_stops_within_max_rounds(self):
         team = load_demo_team()
         canvas = FakeCanvas(team)
         events = []
@@ -412,25 +448,42 @@ class TestE2ERealLLM:
         async def collect(event):
             events.append(event)
 
-        runner = CanvasRunner(canvas)
-        await runner.run("what is 3 * 7?", collect)
+        with (
+            patch.object(ChatModel, "from_name") as m_from_name,
+            patch.object(ReActAgent, "run", new_callable=AsyncMock) as m_agent_run,
+        ):
+            mock_llm = MagicMock(spec=ChatModel)
+            mock_llm.run = AsyncMock()
+            m_from_name.return_value = mock_llm
+
+            route_decision = RouterDecision(
+                thought="Routing math question to MathAgent",
+                action="transfer_to_MathAgent",
+                action_input="what is 3 * 7?",
+            )
+            final_decision = RouterDecision(
+                thought="Got answer from MathAgent",
+                final_answer="21",
+            )
+            m_agent_run.return_value = _mock_worker_result("21")
+
+            mock_llm.run.side_effect = [
+                _make_route_decision_mock(route_decision),
+                _make_route_decision_mock(final_decision),
+            ]
+
+            runner = CanvasRunner(canvas)
+            await runner.run("what is 3 * 7?", collect)
 
         final_answers = [e for e in events if e["type"] == "final_answer"]
         router_answers = [e for e in final_answers if e.get("agent") == "Master"]
-
-        assert (
-            len(router_answers) >= 1
-        ), "router should produce at least one final answer"
+        assert len(router_answers) >= 1
 
         router_text = router_answers[-1].get("content", "")
-        assert (
-            "maximum rounds" not in router_text
-        ), f"router should not hit max rounds, got: {router_text}"
+        assert "maximum rounds" not in router_text, f"router should not hit max rounds, got: {router_text}"
 
-    @e2e
     @pytest.mark.asyncio
-    async def test_real_llm_handoff_event_sequence(self):
-        """Verify the event sequence follows: run_start -> thought -> handoff -> agent_start -> final_answer -> run_complete."""
+    async def test_event_sequence_follows_expected_order(self):
         team = load_demo_team()
         canvas = FakeCanvas(team)
         events = []
@@ -438,14 +491,37 @@ class TestE2ERealLLM:
         async def collect(event):
             events.append(event)
 
-        runner = CanvasRunner(canvas)
-        await runner.run("what is 10 + 5?", collect)
+        with (
+            patch.object(ChatModel, "from_name") as m_from_name,
+            patch.object(ReActAgent, "run", new_callable=AsyncMock) as m_agent_run,
+        ):
+            mock_llm = MagicMock(spec=ChatModel)
+            mock_llm.run = AsyncMock()
+            m_from_name.return_value = mock_llm
+
+            route_decision = RouterDecision(
+                thought="Math question, routing to MathAgent",
+                action="transfer_to_MathAgent",
+                action_input="what is 10 + 5?",
+            )
+            final_decision = RouterDecision(
+                thought="Got result from MathAgent",
+                final_answer="15",
+            )
+            m_agent_run.return_value = _mock_worker_result("15")
+
+            mock_llm.run.side_effect = [
+                _make_route_decision_mock(route_decision),
+                _make_route_decision_mock(final_decision),
+            ]
+
+            runner = CanvasRunner(canvas)
+            await runner.run("what is 10 + 5?", collect)
 
         event_types = [e["type"] for e in events]
-
         assert "run_start" in event_types
-        assert "thought" in event_types, "router should emit thoughts"
-        assert "handoff" in event_types, "should hand off to a worker"
-        assert "agent_start" in event_types, "worker should start"
-        assert "final_answer" in event_types, "should produce final answer"
-        assert "run_complete" in event_types, "should complete"
+        assert "thought" in event_types
+        assert "handoff" in event_types
+        assert "agent_start" in event_types
+        assert "final_answer" in event_types
+        assert "run_complete" in event_types

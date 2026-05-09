@@ -1,6 +1,6 @@
-import uuid
 import asyncio
 import json
+import uuid
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
@@ -46,7 +46,7 @@ async def run_canvas(websocket: WebSocket, canvas_id: uuid.UUID):
             except asyncio.CancelledError:
                 pass
 
-    except asyncio.TimeoutError:
+    except TimeoutError:
         try:
             await websocket.send_text(json.dumps({"type": "error", "message": "No prompt received within 30s"}))
         except Exception:

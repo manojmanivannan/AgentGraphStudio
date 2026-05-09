@@ -1,17 +1,15 @@
-import uuid
 import logging
 import re
-
-from pydantic import BaseModel, Field
+import uuid
 
 from beeai_framework.agents.react import ReActAgent
 from beeai_framework.backend.chat import ChatModel, _ChatModelKwargsAdapter
 from beeai_framework.backend.message import UserMessage
-from beeai_framework.context import RunContext
+from beeai_framework.context import RunContext  # noqa: F401 — required for _ChatModelKwargsAdapter.rebuild()
 from beeai_framework.memory.unconstrained_memory import UnconstrainedMemory
+from pydantic import BaseModel, Field
 
 from canvas_server.config import settings
-from canvas_server.exceptions import ExecutionError
 from canvas_server.tool_factory import compile_tool_from_code
 
 _ChatModelKwargsAdapter.rebuild()
@@ -201,7 +199,11 @@ class CanvasRunner:
 
         result = await llm.run([UserMessage(prompt)], **kwargs)
 
-        if response_format is not None and hasattr(result, "output_structured") and result.output_structured is not None:
+        if (
+            response_format is not None
+            and hasattr(result, "output_structured")
+            and result.output_structured is not None
+        ):
             return result.output_structured
 
         if hasattr(result, "get_text_content"):
@@ -309,7 +311,11 @@ class CanvasRunner:
                     target_name = decision.action[len("transfer_to_"):]
 
                 if not target_name:
-                    observations += f"\nObservation: Unknown action '{decision.action}'. Use one of the valid transfer_to_X actions.\n"
+                    err_msg = (
+                        f"\nObservation: Unknown action '{decision.action}'. "
+                        "Use one of the valid transfer_to_X actions.\n"
+                    )
+                    observations += err_msg
                     continue
 
                 sub_task = decision.action_input or user_prompt

@@ -1,7 +1,8 @@
 import pytest
 from beeai_framework.tools.tool import StringToolOutput
-from canvas_server.tool_factory import compile_tool_from_code
+
 from canvas_server.exceptions import ToolCompilationError
+from canvas_server.tool_factory import compile_tool_from_code
 
 
 class TestCompileToolFromCode:

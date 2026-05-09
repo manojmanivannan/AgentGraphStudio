@@ -1,9 +1,10 @@
+import asyncio
 import os
 import uuid
-import asyncio
+
 import pytest
 import pytest_asyncio
-from httpx import AsyncClient, ASGITransport
+from httpx import ASGITransport, AsyncClient
 
 TEST_DB_URL = os.environ.get(
     "TEST_DATABASE_URL",
@@ -31,8 +32,7 @@ def _test_db_url():
 
 @pytest_asyncio.fixture
 async def fresh_db():
-    from canvas_server.database import Base, get_engine, async_reset_session_factory
-    from canvas_server.models.canvas import Canvas, AgentNode, ToolNode, Edge
+    from canvas_server.database import Base, async_reset_session_factory, get_engine
 
     _reset_engine_and_factory()
     engine = get_engine(TEST_DB_URL)
@@ -57,8 +57,8 @@ async def test_session(fresh_db):
 
 @pytest_asyncio.fixture
 async def test_client(fresh_db):
-    from canvas_server.main import app
     from canvas_server.database import get_session, get_session_factory
+    from canvas_server.main import app
 
     factory = get_session_factory(TEST_DB_URL)
 
@@ -85,8 +85,8 @@ async def blank_canvas(test_session):
 
 @pytest_asyncio.fixture
 async def canvas_with_nodes(test_session):
+    from canvas_server.models.api import AgentNodeInput, EdgeInput, ToolNodeInput
     from canvas_server.repos.canvas_repo import CanvasRepo
-    from canvas_server.models.api import AgentNodeInput, ToolNodeInput, EdgeInput
 
     master_id = uuid.uuid4()
     math_id = uuid.uuid4()

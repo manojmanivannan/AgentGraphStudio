@@ -1,6 +1,6 @@
-import uuid
 import logging
-from datetime import datetime, timezone
+import uuid
+from datetime import UTC, datetime
 
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -126,7 +126,7 @@ class CanvasRepo:
     ) -> Canvas:
         canvas = await self.get_or_404(canvas_id)
         canvas.name = name
-        canvas.updated_at = datetime.now(timezone.utc)
+        canvas.updated_at = datetime.now(UTC)
 
         await self.session.execute(
             delete(Edge).where(Edge.canvas_id == canvas_id)

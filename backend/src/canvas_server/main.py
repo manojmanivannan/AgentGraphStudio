@@ -1,4 +1,3 @@
-import asyncio
 import logging
 import time
 from contextlib import asynccontextmanager
@@ -21,7 +20,8 @@ logger = logging.getLogger("canvas_server")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Canvas server starting up")
-    logger.debug(f"Config: database_url={settings.database_url.split('@')[1] if '@' in settings.database_url else '...'}")
+    url_part = settings.database_url.split("@")[1] if "@" in settings.database_url else "..."
+    logger.debug("Config: database_url=%s", url_part)
     logger.debug(f"Config: default_llm={settings.default_llm}")
     logger.debug(f"Config: cors_origins={settings.cors_origins}")
     yield

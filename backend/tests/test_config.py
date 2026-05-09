@@ -1,10 +1,8 @@
-import os
 from canvas_server.config import Settings
 
 
 class TestSettings:
     def test_default_database_url(self):
-        db = "canvas_db"
         settings = Settings()
         assert "sqlite+aiosqlite" in settings.database_url
 

@@ -1,12 +1,11 @@
 import uuid
-import json
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from pydantic import BaseModel, ValidationError
+import pytest
+from beeai_framework.backend.chat import ChatModel
+from pydantic import ValidationError
 
 from canvas_server.runner import CanvasRunner, RouterDecision
-from beeai_framework.backend.chat import ChatModel
 
 
 class FakeCanvas:

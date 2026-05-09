@@ -1,9 +1,10 @@
 import uuid
+
 import pytest
 
-from canvas_server.repos.canvas_repo import CanvasRepo
 from canvas_server.exceptions import CanvasNotFoundError
-from canvas_server.models.api import AgentNodeInput, ToolNodeInput, EdgeInput
+from canvas_server.models.api import AgentNodeInput, EdgeInput, ToolNodeInput
+from canvas_server.repos.canvas_repo import CanvasRepo
 
 
 class TestCanvasRepoCreate:
@@ -61,7 +62,7 @@ class TestCanvasRepoList:
     async def test_list_ordered_by_updated(self, test_session):
         repo = CanvasRepo(test_session)
         c1 = await repo.create("First")
-        c2 = await repo.create("Second")
+        await repo.create("Second")
         await repo.save_nodes_and_edges(c1.id, "First Updated", [], [], [])
         canvases = await repo.list_all()
         assert canvases[0].id == c1.id

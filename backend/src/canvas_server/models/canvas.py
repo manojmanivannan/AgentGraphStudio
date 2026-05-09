@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import DateTime, Double, ForeignKey, Index, String, Text, Uuid
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -8,7 +8,7 @@ from canvas_server.database import Base
 
 
 def _utcnow():
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 class Canvas(Base):
@@ -25,13 +25,13 @@ class Canvas(Base):
         DateTime(timezone=True), default=_utcnow, onupdate=_utcnow,
     )
 
-    agent_nodes: Mapped[list["AgentNode"]] = relationship(
+    agent_nodes: Mapped[list[AgentNode]] = relationship(
         "AgentNode", back_populates="canvas", cascade="all, delete-orphan",
     )
-    tool_nodes: Mapped[list["ToolNode"]] = relationship(
+    tool_nodes: Mapped[list[ToolNode]] = relationship(
         "ToolNode", back_populates="canvas", cascade="all, delete-orphan",
     )
-    edges: Mapped[list["Edge"]] = relationship(
+    edges: Mapped[list[Edge]] = relationship(
         "Edge", back_populates="canvas", cascade="all, delete-orphan",
     )
 
@@ -54,7 +54,7 @@ class AgentNode(Base):
     position_x: Mapped[float] = mapped_column(Double, default=0)
     position_y: Mapped[float] = mapped_column(Double, default=0)
 
-    canvas: Mapped["Canvas"] = relationship("Canvas", back_populates="agent_nodes")
+    canvas: Mapped[Canvas] = relationship("Canvas", back_populates="agent_nodes")
 
 
 class ToolNode(Base):
@@ -72,7 +72,7 @@ class ToolNode(Base):
     position_x: Mapped[float] = mapped_column(Double, default=0)
     position_y: Mapped[float] = mapped_column(Double, default=0)
 
-    canvas: Mapped["Canvas"] = relationship("Canvas", back_populates="tool_nodes")
+    canvas: Mapped[Canvas] = relationship("Canvas", back_populates="tool_nodes")
 
 
 class Edge(Base):
@@ -89,4 +89,4 @@ class Edge(Base):
     target_node_id: Mapped[uuid.UUID] = mapped_column(Uuid)
     edge_type: Mapped[str] = mapped_column(String(20))
 
-    canvas: Mapped["Canvas"] = relationship("Canvas", back_populates="edges")
+    canvas: Mapped[Canvas] = relationship("Canvas", back_populates="edges")
