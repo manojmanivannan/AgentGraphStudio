@@ -62,6 +62,10 @@ services:
       - "11434:11434"
     volumes:
       - ollama_data:/root/.ollama
+      - ./ollama_entrypoint.sh:/entrypoint.sh
+    tty: true
+    restart: always
+    entrypoint: ["/usr/bin/bash", "/entrypoint.sh"]
     deploy:
       resources:
         reservations:

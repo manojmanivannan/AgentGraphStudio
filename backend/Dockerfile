@@ -1,9 +1,14 @@
-FROM python:3.12-slim
+FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim
 
 WORKDIR /app
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+ENV UV_COMPILE_BYTECODE=1
+ENV UV_LINK_MODE=copy
+
+RUN --mount=type=cache,target=/root/.cache/uv \
+    --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
+    --mount=type=bind,source=uv.lock,target=uv.lock \
+    uv sync --frozen --no-install-project --no-dev
 
 COPY alembic.ini .
 COPY alembic/ alembic/
@@ -13,4 +18,4 @@ ENV PYTHONPATH=/app/src
 
 EXPOSE 8000
 
-CMD ["sh", "-c", "alembic upgrade head && uvicorn canvas_server.main:app --host 0.0.0.0 --port 8000 --reload"]
+CMD ["sh", "-c", "uv run alembic upgrade head && uv run uvicorn canvas_server.main:app --host 0.0.0.0 --port 8000 --reload"]
