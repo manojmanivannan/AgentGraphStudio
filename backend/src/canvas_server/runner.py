@@ -211,11 +211,7 @@ class CanvasRunner:
         for tid in handoff_targets:
             target = self.node_map.get(tid)
             if target:
-                desc = (
-                    target.instructions
-                    or target.role
-                    or f"Handles tasks related to {target.name}"
-                )
+                desc = target.role or f"Handles tasks related to {target.name}"
                 tool_descriptions.append(f"{target.name}: {desc}")
 
         if agent_node.instructions:
@@ -406,7 +402,7 @@ class CanvasRunner:
             if decision.action:
                 target_name = None
                 if decision.action.startswith("transfer_to_"):
-                    target_name = decision.action[len("transfer_to_"):]
+                    target_name = decision.action[len("transfer_to_") :]
 
                 if not target_name:
                     err_msg = (
@@ -529,9 +525,7 @@ class CanvasRunner:
         try:
             result = await agent.run(prompt)
             text = self._extract_text(result)
-            logger.info(
-                "Agent %s completed: result=%s", agent_node.name, text[:200]
-            )
+            logger.info("Agent %s completed: result=%s", agent_node.name, text[:200])
             await send_event(
                 self._event(
                     "final_answer",
@@ -549,9 +543,7 @@ class CanvasRunner:
             )
             return text
         except Exception as e:
-            logger.error(
-                "Agent %s failed: %s", agent_node.name, e, exc_info=True
-            )
+            logger.error("Agent %s failed: %s", agent_node.name, e, exc_info=True)
             await send_event(
                 self._event(
                     "error",
@@ -590,9 +582,7 @@ class CanvasRunner:
             )
             return
 
-        await send_event(
-            self._event("run_start", canvas_id=str(self.canvas.id))
-        )
+        await send_event(self._event("run_start", canvas_id=str(self.canvas.id)))
 
         await self._persist_message(
             role="user",
@@ -679,9 +669,7 @@ class CanvasRunner:
 
         if self.conversation_repo and self.conversation_id:
             with contextlib.suppress(Exception):
-                await self.conversation_repo.complete_conversation(
-                    self.conversation_id
-                )
+                await self.conversation_repo.complete_conversation(self.conversation_id)
 
         logger.info("Canvas execution completed: canvas_id=%s", self.canvas.id)
         await send_event(

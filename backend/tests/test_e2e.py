@@ -142,10 +142,7 @@ class TestE2ERouterMath:
         async def collect(event):
             events.append(event)
 
-        with (
-            patch.object(ChatModel, "from_name") as m_from_name,
-            patch.object(ReActAgent, "run", new_callable=AsyncMock) as m_agent_run,
-        ):
+        with patch.object(ChatModel, "from_name") as m_from_name:
             mock_llm = MagicMock(spec=ChatModel)
             mock_llm.run = AsyncMock()
             m_from_name.return_value = mock_llm
@@ -159,15 +156,17 @@ class TestE2ERouterMath:
                 thought="MathAgent answered: 2 + 3 = 5",
                 final_answer="2 + 3 = 5",
             )
-            m_agent_run.return_value = _mock_worker_result("2 + 3 = 5")
 
             mock_llm.run.side_effect = [
                 _make_route_decision_mock(route_decision),
                 _make_route_decision_mock(final_decision),
             ]
 
-            runner = CanvasRunner(canvas)
-            await runner.run("what is 2+3", collect)
+            m_agent_run = AsyncMock(return_value=_mock_worker_result("2 + 3 = 5"))
+
+            with patch.object(ReActAgent, "run", m_agent_run):
+                runner = CanvasRunner(canvas)
+                await runner.run("what is 2+3", collect)
 
         event_types = [e["type"] for e in events]
         assert "run_start" in event_types
@@ -191,10 +190,7 @@ class TestE2ERouterMath:
         async def collect(event):
             events.append(event)
 
-        with (
-            patch.object(ChatModel, "from_name") as m_from_name,
-            patch.object(ReActAgent, "run", new_callable=AsyncMock) as m_agent_run,
-        ):
+        with patch.object(ChatModel, "from_name") as m_from_name:
             mock_llm = MagicMock(spec=ChatModel)
             mock_llm.run = AsyncMock()
             m_from_name.return_value = mock_llm
@@ -208,15 +204,17 @@ class TestE2ERouterMath:
                 thought="WeatherAgent says: Sunny 20C",
                 final_answer="Sunny 20C",
             )
-            m_agent_run.return_value = _mock_worker_result("Sunny 20C")
 
             mock_llm.run.side_effect = [
                 _make_route_decision_mock(route_decision),
                 _make_route_decision_mock(final_decision),
             ]
 
-            runner = CanvasRunner(canvas)
-            await runner.run("what is the weather in Paris?", collect)
+            m_agent_run = AsyncMock(return_value=_mock_worker_result("Sunny 20C"))
+
+            with patch.object(ReActAgent, "run", m_agent_run):
+                runner = CanvasRunner(canvas)
+                await runner.run("what is the weather in Paris?", collect)
 
         handoffs = [e for e in events if e["type"] == "handoff"]
         assert len(handoffs) >= 1
@@ -232,10 +230,7 @@ class TestE2ERouterMath:
         async def collect(event):
             events.append(event)
 
-        with (
-            patch.object(ChatModel, "from_name") as m_from_name,
-            patch.object(ReActAgent, "run", new_callable=AsyncMock) as m_agent_run,
-        ):
+        with patch.object(ChatModel, "from_name") as m_from_name:
             mock_llm = MagicMock(spec=ChatModel)
             mock_llm.run = AsyncMock()
             m_from_name.return_value = mock_llm
@@ -249,15 +244,17 @@ class TestE2ERouterMath:
                 thought="I now know the final answer from MathAgent",
                 final_answer="4",
             )
-            m_agent_run.return_value = _mock_worker_result("4")
 
             mock_llm.run.side_effect = [
                 _make_route_decision_mock(route_decision),
                 _make_route_decision_mock(final_decision),
             ]
 
-            runner = CanvasRunner(canvas)
-            await runner.run("what is 2+2", collect)
+            m_agent_run = AsyncMock(return_value=_mock_worker_result("4"))
+
+            with patch.object(ReActAgent, "run", m_agent_run):
+                runner = CanvasRunner(canvas)
+                await runner.run("what is 2+2", collect)
 
         final_answers = [e for e in events if e["type"] == "final_answer"]
         assert len(final_answers) >= 1
@@ -359,10 +356,7 @@ class TestE2EFullFlow:
         async def collect(event):
             events.append(event)
 
-        with (
-            patch.object(ChatModel, "from_name") as m_from_name,
-            patch.object(ReActAgent, "run", new_callable=AsyncMock) as m_agent_run,
-        ):
+        with patch.object(ChatModel, "from_name") as m_from_name:
             mock_llm = MagicMock(spec=ChatModel)
             mock_llm.run = AsyncMock()
             m_from_name.return_value = mock_llm
@@ -376,15 +370,17 @@ class TestE2EFullFlow:
                 thought="MathAgent computed the answer",
                 final_answer="4",
             )
-            m_agent_run.return_value = _mock_worker_result("4")
 
             mock_llm.run.side_effect = [
                 _make_route_decision_mock(route_decision),
                 _make_route_decision_mock(final_decision),
             ]
 
-            runner = CanvasRunner(canvas)
-            await runner.run("what is 2+2", collect)
+            m_agent_run = AsyncMock(return_value=_mock_worker_result("4"))
+
+            with patch.object(ReActAgent, "run", m_agent_run):
+                runner = CanvasRunner(canvas)
+                await runner.run("what is 2+2", collect)
 
         event_types = [e["type"] for e in events]
         assert "run_start" in event_types
@@ -408,10 +404,7 @@ class TestE2EFullFlow:
         async def collect(event):
             events.append(event)
 
-        with (
-            patch.object(ChatModel, "from_name") as m_from_name,
-            patch.object(ReActAgent, "run", new_callable=AsyncMock) as m_agent_run,
-        ):
+        with patch.object(ChatModel, "from_name") as m_from_name:
             mock_llm = MagicMock(spec=ChatModel)
             mock_llm.run = AsyncMock()
             m_from_name.return_value = mock_llm
@@ -425,15 +418,17 @@ class TestE2EFullFlow:
                 thought="WeatherAgent has the answer",
                 final_answer="It is sunny today",
             )
-            m_agent_run.return_value = _mock_worker_result("It is sunny today")
 
             mock_llm.run.side_effect = [
                 _make_route_decision_mock(route_decision),
                 _make_route_decision_mock(final_decision),
             ]
 
-            runner = CanvasRunner(canvas)
-            await runner.run("what is the weather in London?", collect)
+            m_agent_run = AsyncMock(return_value=_mock_worker_result("It is sunny today"))
+
+            with patch.object(ReActAgent, "run", m_agent_run):
+                runner = CanvasRunner(canvas)
+                await runner.run("what is the weather in London?", collect)
 
         handoffs = [e for e in events if e["type"] == "handoff"]
         assert any(h["to"] == "WeatherAgent" for h in handoffs)
@@ -451,10 +446,7 @@ class TestE2EFullFlow:
         async def collect(event):
             events.append(event)
 
-        with (
-            patch.object(ChatModel, "from_name") as m_from_name,
-            patch.object(ReActAgent, "run", new_callable=AsyncMock) as m_agent_run,
-        ):
+        with patch.object(ChatModel, "from_name") as m_from_name:
             mock_llm = MagicMock(spec=ChatModel)
             mock_llm.run = AsyncMock()
             m_from_name.return_value = mock_llm
@@ -468,15 +460,17 @@ class TestE2EFullFlow:
                 thought="Got answer from MathAgent",
                 final_answer="21",
             )
-            m_agent_run.return_value = _mock_worker_result("21")
 
             mock_llm.run.side_effect = [
                 _make_route_decision_mock(route_decision),
                 _make_route_decision_mock(final_decision),
             ]
 
-            runner = CanvasRunner(canvas)
-            await runner.run("what is 3 * 7?", collect)
+            m_agent_run = AsyncMock(return_value=_mock_worker_result("21"))
+
+            with patch.object(ReActAgent, "run", m_agent_run):
+                runner = CanvasRunner(canvas)
+                await runner.run("what is 3 * 7?", collect)
 
         final_answers = [e for e in events if e["type"] == "final_answer"]
         router_answers = [e for e in final_answers if e.get("agent") == "Master"]
@@ -494,10 +488,7 @@ class TestE2EFullFlow:
         async def collect(event):
             events.append(event)
 
-        with (
-            patch.object(ChatModel, "from_name") as m_from_name,
-            patch.object(ReActAgent, "run", new_callable=AsyncMock) as m_agent_run,
-        ):
+        with patch.object(ChatModel, "from_name") as m_from_name:
             mock_llm = MagicMock(spec=ChatModel)
             mock_llm.run = AsyncMock()
             m_from_name.return_value = mock_llm
@@ -511,15 +502,17 @@ class TestE2EFullFlow:
                 thought="Got result from MathAgent",
                 final_answer="15",
             )
-            m_agent_run.return_value = _mock_worker_result("15")
 
             mock_llm.run.side_effect = [
                 _make_route_decision_mock(route_decision),
                 _make_route_decision_mock(final_decision),
             ]
 
-            runner = CanvasRunner(canvas)
-            await runner.run("what is 10 + 5?", collect)
+            m_agent_run = AsyncMock(return_value=_mock_worker_result("15"))
+
+            with patch.object(ReActAgent, "run", m_agent_run):
+                runner = CanvasRunner(canvas)
+                await runner.run("what is 10 + 5?", collect)
 
         event_types = [e["type"] for e in events]
         assert "run_start" in event_types
