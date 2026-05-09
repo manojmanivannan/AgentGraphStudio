@@ -57,7 +57,8 @@ export default function App() {
           role: a.role,
           instructions: a.instructions,
           modelName: a.model_name,
-        } as AgentNodeData,
+          agentType: a.agent_type,
+        } as any,
       }));
 
       const toolNodes: Node[] = canvas.nodes.tools.map((t) => ({
@@ -68,7 +69,7 @@ export default function App() {
           id: t.id,
           name: t.name,
           code: t.code,
-        } as ToolNodeData,
+        } as any,
       }));
 
       setNodes([...agentNodes, ...toolNodes]);
@@ -95,7 +96,7 @@ export default function App() {
     <div className="min-h-screen bg-gray-50 flex items-center justify-center">
       <div className="w-full max-w-md p-8">
         <div className="text-center mb-8">
-          <h1 className="text-2xl font-bold text-gray-800 mb-2">Canvas App</h1>
+          <h1 className="text-2xl font-bold text-gray-800 mb-2">Agent Builder</h1>
           <p className="text-sm text-gray-500">Build AI agent workflows visually</p>
         </div>
 
