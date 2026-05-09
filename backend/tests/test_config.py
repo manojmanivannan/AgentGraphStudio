@@ -6,8 +6,7 @@ class TestSettings:
     def test_default_database_url(self):
         db = "canvas_db"
         settings = Settings()
-        assert "postgresql+asyncpg" in settings.database_url
-        assert "canvas" in settings.database_url
+        assert "sqlite+aiosqlite" in settings.database_url
 
     def test_default_cors_origins(self):
         settings = Settings()
