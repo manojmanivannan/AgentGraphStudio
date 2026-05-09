@@ -5,9 +5,7 @@ import uuid
 from beeai_framework.agents.react import ReActAgent
 from beeai_framework.backend.chat import ChatModel, _ChatModelKwargsAdapter
 from beeai_framework.backend.message import UserMessage
-from beeai_framework.context import (
-    RunContext,
-)  # noqa: F401 — required for _ChatModelKwargsAdapter.rebuild()
+from beeai_framework.context import RunContext  # noqa: F401
 from beeai_framework.memory.unconstrained_memory import UnconstrainedMemory
 from pydantic import BaseModel, Field
 
