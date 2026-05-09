@@ -1,6 +1,7 @@
 import { CanvasToolbar } from "@/components/toolbar/CanvasToolbar";
 import { CanvasView } from "@/components/canvas/CanvasView";
-import { Sidebar } from "@/components/sidebar/Sidebar";
+import { PropertiesSidebar } from "@/components/PropertiesSidebar";
+import { ChatPanel } from "@/components/chat/ChatPanel";
 
 export function AppShell() {
   return (
@@ -10,7 +11,8 @@ export function AppShell() {
         <div className="flex-1">
           <CanvasView />
         </div>
-        <Sidebar />
+        <PropertiesSidebar />
+        <ChatPanel />
       </div>
     </div>
   );

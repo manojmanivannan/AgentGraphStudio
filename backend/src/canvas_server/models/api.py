@@ -73,3 +73,48 @@ class CanvasListResponse(BaseModel):
 
 class CreateCanvasRequest(BaseModel):
     name: str = "Untitled Canvas"
+
+
+class CreateConversationRequest(BaseModel):
+    name: str = "New Conversation"
+
+
+class MessageResponse(BaseModel):
+    id: uuid.UUID
+    conversation_id: uuid.UUID
+    role: str
+    content: str
+    agent_name: str | None = None
+    node_id: uuid.UUID | None = None
+    event_type: str | None = None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class ConversationResponse(BaseModel):
+    id: uuid.UUID
+    canvas_id: uuid.UUID
+    name: str
+    status: str
+    created_at: datetime
+    updated_at: datetime
+    messages: list[MessageResponse] = []
+
+    model_config = {"from_attributes": True}
+
+
+class ConversationListResponse(BaseModel):
+    id: uuid.UUID
+    canvas_id: uuid.UUID
+    name: str
+    status: str
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class SendMessageRequest(BaseModel):
+    prompt: str
+    target_agent_id: uuid.UUID | None = None

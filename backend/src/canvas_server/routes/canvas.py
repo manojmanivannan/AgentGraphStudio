@@ -7,14 +7,18 @@ from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from canvas_server.database import get_session
-from canvas_server.exceptions import CanvasNotFoundError
+from canvas_server.exceptions import CanvasNotFoundError, ConversationNotFoundError
 from canvas_server.models.api import (
     CanvasListResponse,
     CanvasResponse,
     CanvasSaveRequest,
+    ConversationListResponse,
+    ConversationResponse,
     CreateCanvasRequest,
+    CreateConversationRequest,
 )
 from canvas_server.repos.canvas_repo import CanvasRepo
+from canvas_server.repos.conversation_repo import ConversationRepo
 
 logger = logging.getLogger("canvas_server.routes.canvas")
 canvas_router = APIRouter(prefix="/api/canvases", tags=["canvases"])
@@ -202,3 +206,84 @@ async def import_canvas(
     )
     logger.info(f"Canvas imported: id={canvas.id}")
     return _canvas_to_response(canvas)
+
+
+@canvas_router.post(
+    "/{canvas_id}/conversations", response_model=ConversationResponse
+)
+async def create_conversation(
+    canvas_id: uuid.UUID,
+    body: CreateConversationRequest = CreateConversationRequest(),
+    session: AsyncSession = Depends(get_session),
+):
+    logger.info(
+        "Creating conversation for canvas=%s name=%s", canvas_id, body.name
+    )
+    canvas_repo = CanvasRepo(session)
+    try:
+        await canvas_repo.get_or_404(canvas_id)
+    except CanvasNotFoundError:
+        raise HTTPException(status_code=404, detail="Canvas not found") from None
+
+    repo = ConversationRepo(session)
+    conv = await repo.create(canvas_id=canvas_id, name=body.name)
+    logger.info("Conversation created: id=%s", conv.id)
+    return conv
+
+
+@canvas_router.get(
+    "/{canvas_id}/conversations", response_model=list[ConversationListResponse]
+)
+async def list_conversations(
+    canvas_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+):
+    logger.debug("Listing conversations for canvas=%s", canvas_id)
+    repo = ConversationRepo(session)
+    conversations = await repo.list_for_canvas(canvas_id)
+    return conversations
+
+
+@canvas_router.get(
+    "/{canvas_id}/conversations/{conversation_id}",
+    response_model=ConversationResponse,
+)
+async def get_conversation(
+    canvas_id: uuid.UUID,
+    conversation_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+):
+    logger.debug(
+        "Getting conversation: canvas=%s conv=%s", canvas_id, conversation_id
+    )
+    repo = ConversationRepo(session)
+    try:
+        conv = await repo.get_or_404(conversation_id)
+    except ConversationNotFoundError:
+        raise HTTPException(
+            status_code=404, detail="Conversation not found"
+        ) from None
+    if conv.canvas_id != canvas_id:
+        raise HTTPException(
+            status_code=404, detail="Conversation not found"
+        ) from None
+    return conv
+
+
+@canvas_router.delete("/{canvas_id}/conversations/{conversation_id}", status_code=204)
+async def delete_conversation(
+    canvas_id: uuid.UUID,
+    conversation_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+):
+    logger.info(
+        "Deleting conversation: canvas=%s conv=%s", canvas_id, conversation_id
+    )
+    repo = ConversationRepo(session)
+    conv = await repo.get(conversation_id)
+    if not conv or conv.canvas_id != canvas_id:
+        raise HTTPException(
+            status_code=404, detail="Conversation not found"
+        ) from None
+    await repo.delete(conversation_id)
+    logger.info("Conversation deleted: id=%s", conversation_id)

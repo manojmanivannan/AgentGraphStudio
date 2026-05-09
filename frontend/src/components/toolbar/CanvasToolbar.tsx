@@ -1,13 +1,11 @@
-import { useRef, useState } from "react";
+import { useRef } from "react";
 import { v4 as uuidv4 } from "uuid";
-import { Plus, Play, Square, Trash2, Download, Upload } from "lucide-react";
+import { Plus, Trash2, Download, Upload } from "lucide-react";
 import { useCanvasStore } from "@/store/canvasStore";
-import { useCanvasExecution } from "@/hooks/useCanvasExecution";
 import { importCanvas } from "@/lib/api";
 import type { CanvasSavePayload } from "@/types";
 
 export function CanvasToolbar() {
-  const [prompt, setPrompt] = useState("");
   const canvasId = useCanvasStore((s) => s.canvasId);
   const canvasName = useCanvasStore((s) => s.canvasName);
   const setName = useCanvasStore((s) => s.setName);
@@ -15,8 +13,6 @@ export function CanvasToolbar() {
   const setNodes = useCanvasStore((s) => s.setNodes);
   const edges = useCanvasStore((s) => s.edges);
   const setEdges = useCanvasStore((s) => s.setEdges);
-  const executionStatus = useCanvasStore((s) => s.executionStatus);
-  const { run, abort } = useCanvasExecution();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const addAgent = () => {
@@ -24,8 +20,18 @@ export function CanvasToolbar() {
     const newNode = {
       id: newId,
       type: "agent" as const,
-      position: { x: 250 + Math.random() * 300, y: 150 + Math.random() * 300 },
-      data: { id: newId, name: `Agent ${nodes.filter((n) => n.type === "agent").length + 1}`, role: "", instructions: "", modelName: "ollama:llama3.1", agentType: "worker" },
+      position: {
+        x: 250 + Math.random() * 300,
+        y: 150 + Math.random() * 300,
+      },
+      data: {
+        id: newId,
+        name: `Agent ${nodes.filter((n) => n.type === "agent").length + 1}`,
+        role: "",
+        instructions: "",
+        modelName: "ollama:llama3.1",
+        agentType: "worker",
+      },
     };
     setNodes([...nodes, newNode]);
   };
@@ -35,8 +41,15 @@ export function CanvasToolbar() {
     const newNode = {
       id: newId,
       type: "tool" as const,
-      position: { x: 250 + Math.random() * 300, y: 150 + Math.random() * 300 },
-      data: { id: newId, name: `Tool ${nodes.filter((n) => n.type === "tool").length + 1}`, code: "" },
+      position: {
+        x: 250 + Math.random() * 300,
+        y: 150 + Math.random() * 300,
+      },
+      data: {
+        id: newId,
+        name: `Tool ${nodes.filter((n) => n.type === "tool").length + 1}`,
+        code: "",
+      },
     };
     setNodes([...nodes, newNode]);
   };
@@ -44,15 +57,6 @@ export function CanvasToolbar() {
   const clearCanvas = () => {
     setNodes([]);
     setEdges([]);
-  };
-
-  const handleRun = () => {
-    if (!canvasId || !prompt.trim()) return;
-    run(canvasId, prompt.trim());
-  };
-
-  const handleStop = () => {
-    abort();
   };
 
   const handleExport = () => {
@@ -89,7 +93,9 @@ export function CanvasToolbar() {
       })),
     };
 
-    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const blob = new Blob([JSON.stringify(payload, null, 2)], {
+      type: "application/json",
+    });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -165,8 +171,7 @@ export function CanvasToolbar() {
 
       <button
         onClick={addAgent}
-        disabled={executionStatus === "running"}
-        className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-md transition-colors"
       >
         <Plus className="w-3.5 h-3.5" />
         Agent
@@ -174,8 +179,7 @@ export function CanvasToolbar() {
 
       <button
         onClick={addTool}
-        disabled={executionStatus === "running"}
-        className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-white bg-amber-600 hover:bg-amber-700 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-white bg-amber-600 hover:bg-amber-700 rounded-md transition-colors"
       >
         <Plus className="w-3.5 h-3.5" />
         Tool
@@ -183,8 +187,7 @@ export function CanvasToolbar() {
 
       <button
         onClick={clearCanvas}
-        disabled={executionStatus === "running"}
-        className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-gray-600 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-gray-600 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
       >
         <Trash2 className="w-3.5 h-3.5" />
         Clear
@@ -194,8 +197,7 @@ export function CanvasToolbar() {
 
       <button
         onClick={handleExport}
-        disabled={executionStatus === "running"}
-        className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-gray-600 hover:text-indigo-600 hover:bg-indigo-50 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-gray-600 hover:text-indigo-600 hover:bg-indigo-50 rounded-md transition-colors"
       >
         <Download className="w-3.5 h-3.5" />
         Export
@@ -203,8 +205,7 @@ export function CanvasToolbar() {
 
       <button
         onClick={handleImport}
-        disabled={executionStatus === "running"}
-        className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-gray-600 hover:text-amber-600 hover:bg-amber-50 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-gray-600 hover:text-amber-600 hover:bg-amber-50 rounded-md transition-colors"
       >
         <Upload className="w-3.5 h-3.5" />
         Import
@@ -217,39 +218,6 @@ export function CanvasToolbar() {
         onChange={handleFileChange}
         className="hidden"
       />
-
-      <div className="flex-1" />
-
-      <div className="flex items-center gap-2">
-        <input
-          type="text"
-          value={prompt}
-          onChange={(e) => setPrompt(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter") handleRun(); }}
-          placeholder="Enter your prompt..."
-          className="flex-1 px-2.5 py-1 text-xs border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-indigo-400 focus:border-indigo-400 w-64"
-          disabled={executionStatus === "running"}
-        />
-
-        {executionStatus === "running" ? (
-          <button
-            onClick={handleStop}
-            className="flex items-center gap-1.5 px-3 py-1 text-xs font-medium text-white bg-red-600 hover:bg-red-700 rounded-md transition-colors"
-          >
-            <Square className="w-3 h-3" />
-            Stop
-          </button>
-        ) : (
-          <button
-            onClick={handleRun}
-            disabled={!prompt.trim() || !canvasId}
-            className="flex items-center gap-1.5 px-3 py-1 text-xs font-medium text-white bg-green-600 hover:bg-green-700 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <Play className="w-3 h-3" />
-            Run
-          </button>
-        )}
-      </div>
     </div>
   );
 }
