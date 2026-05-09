@@ -300,6 +300,9 @@ class CanvasRunner:
                 "content": decision.thought,
             })
 
+            if decision.final_answer:
+                return decision.final_answer
+
             if decision.action:
                 target_name = None
                 if decision.action.startswith("transfer_to_"):
@@ -337,7 +340,10 @@ class CanvasRunner:
                         obs = f"Error: {e}"
                         logger.error("Sub-agent %s failed: %s", target_name, e, exc_info=True)
 
-                    observations += f"\nObservation from {target_name}: {obs}\n"
+                    observations += f"\nThought: {decision.thought}\n"
+                    observations += f"Action: {decision.action}\n"
+                    observations += f"Action Input: {decision.action_input or ''}\n"
+                    observations += f"Observation: {obs}\n"
 
                     await send_event({
                         "type": "final_answer",
@@ -352,9 +358,6 @@ class CanvasRunner:
                     })
                 else:
                     observations += f"\nObservation: Agent '{target_name}' is not available.\n"
-
-            elif decision.final_answer:
-                return decision.final_answer
 
             else:
                 observations += "\nObservation: You must provide either an action or a final_answer. Neither was set.\n"
