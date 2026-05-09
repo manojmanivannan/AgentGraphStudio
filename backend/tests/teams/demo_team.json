@@ -1,0 +1,52 @@
+{
+  "name": "Demo Team",
+  "nodes": {
+    "agents": [
+      {
+        "id": "b0000000-0000-0000-0000-000000000001",
+        "name": "Master",
+        "role": "Router",
+        "instructions": "You route the user question to the correct agent.",
+        "model_name": "ollama:glm-5.1:cloud",
+        "agent_type": "router",
+        "position_x": 200,
+        "position_y": 250
+      },
+      {
+        "id": "b0000000-0000-0000-0000-000000000002",
+        "name": "MathAgent",
+        "role": "Math Expert",
+        "instructions": "You answer math questions. Always show your work step by step.",
+        "model_name": "ollama:glm-5.1:cloud",
+        "agent_type": "worker",
+        "position_x": 150,
+        "position_y": 420
+      },
+      {
+        "id": "b0000000-0000-0000-0000-000000000003",
+        "name": "WeatherAgent",
+        "role": "Weather Expert",
+        "instructions": "You always answer the weather is 'Sunny 20C' at any location.",
+        "model_name": "ollama:glm-5.1:cloud",
+        "agent_type": "worker",
+        "position_x": 400,
+        "position_y": 420
+      }
+    ],
+    "tools": []
+  },
+  "edges": [
+    {
+      "id": "e0000000-0000-0000-0000-000000000001",
+      "source_node_id": "b0000000-0000-0000-0000-000000000001",
+      "target_node_id": "b0000000-0000-0000-0000-000000000002",
+      "edge_type": "handoff"
+    },
+    {
+      "id": "e0000000-0000-0000-0000-000000000002",
+      "source_node_id": "b0000000-0000-0000-0000-000000000001",
+      "target_node_id": "b0000000-0000-0000-0000-000000000003",
+      "edge_type": "handoff"
+    }
+  ]
+}

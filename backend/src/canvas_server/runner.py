@@ -4,13 +4,16 @@ import logging
 from pydantic import BaseModel, Field
 
 from beeai_framework.agents.react import ReActAgent
-from beeai_framework.backend.chat import ChatModel
+from beeai_framework.backend.chat import ChatModel, _ChatModelKwargsAdapter
 from beeai_framework.backend.message import UserMessage
+from beeai_framework.context import RunContext
 from beeai_framework.memory.unconstrained_memory import UnconstrainedMemory
 
 from canvas_server.config import settings
 from canvas_server.exceptions import ExecutionError
 from canvas_server.tool_factory import compile_tool_from_code
+
+_ChatModelKwargsAdapter.rebuild()
 
 logger = logging.getLogger("canvas_server.runner")
 
@@ -84,9 +87,17 @@ class CanvasRunner:
 
     def _model_kwargs(self, agent_node) -> dict:
         kwargs = {}
-        if agent_node.model_name.startswith("ollama:"):
-            kwargs["base_url"] = settings.ollama_host
+        model = agent_node.model_name
+        if model.startswith("ollama:"):
+            kwargs["base_url"] = settings.llm_base_url
         return kwargs
+
+    def _resolve_model_name(self, agent_node) -> str:
+        if agent_node.agent_type == "router" and settings.llm_model_router:
+            return settings.llm_model_router
+        if agent_node.agent_type == "worker" and settings.llm_model_agent:
+            return settings.llm_model_agent
+        return agent_node.model_name
 
     async def _build_agents(self):
         logger.debug(
@@ -94,17 +105,18 @@ class CanvasRunner:
         )
         for agent_node in self.canvas.agent_nodes:
             tools = self._get_agent_tools(agent_node.id)
+            model_name = self._resolve_model_name(agent_node)
             logger.debug(
                 "  agent: id=%s name=%s type=%s model=%s tools=%d",
                 agent_node.id,
                 agent_node.name,
                 agent_node.agent_type,
-                agent_node.model_name,
+                model_name,
                 len(tools),
             )
             try:
                 model_kwargs = self._model_kwargs(agent_node)
-                llm = ChatModel.from_name(agent_node.model_name, **model_kwargs)
+                llm = ChatModel.from_name(model_name, **model_kwargs)
                 self.llms[agent_node.id] = llm
 
                 agent = ReActAgent(
@@ -131,45 +143,42 @@ class CanvasRunner:
 
     def _build_router_prompt(self, agent_node, user_prompt: str, observations: str = "") -> str:
         parts = []
-
-        if agent_node.role:
-            parts.append(f"You are: {agent_node.role}")
-
         handoff_targets = self._get_handoff_targets(agent_node.id)
-        sub_agents = []
+        action_names = [f"transfer_to_{self.node_map[tid].name}" for tid in handoff_targets if tid in self.node_map]
+
+        tool_descriptions = []
         for tid in handoff_targets:
             target = self.node_map.get(tid)
             if target:
-                desc = target.role or f"Agent: {target.name}"
-                sub_agents.append(f"- **{target.name}** ({desc})")
-
-        action_options = [f"transfer_to_{self.node_map[tid].name}" for tid in handoff_targets if tid in self.node_map]
-
-        if sub_agents:
-            parts.append(
-                "You are a Router agent. Your job is to analyze the user's request "
-                "and delegate it to the most appropriate sub-agent below. "
-                "Do NOT answer the question yourself — always route to a sub-agent first.\n\n"
-                "Available sub-agents:\n" + "\n".join(sub_agents)
-            )
+                desc = target.instructions or target.role or f"Handles tasks related to {target.name}"
+                tool_descriptions.append(f"{target.name}: {desc}")
 
         parts.append(
-            "You MUST respond with a JSON object matching this schema:\n"
-            '{"thought": "<your reasoning>", "action": "<transfer_to_AgentName>", "action_input": "<task for sub-agent>", "final_answer": null}\n'
-            "Rules:\n"
-            "- FIRST round: you MUST route (set action/action_input, final_answer=null).\n"
-            "- AFTER receiving an observation: if it adequately answers the question, produce a final_answer "
-            "(set final_answer with the answer, action=null, action_input=null). "
-            "ONLY route again if the observation is incomplete or an error.\n"
-            "Valid action values: " + (", ".join(action_options) if action_options else "none available")
+            "Answer the following questions as best you can. "
+            "You have access to the following sub-agents:\n\n"
+            + "\n".join(tool_descriptions)
+        )
+
+        parts.append(
+            "\nUse the following format:\n\n"
+            "Question: the input question you must answer\n"
+            "Thought: you should always think about what to do\n"
+            "Action: the action to take, should be one of [" + ", ".join(action_names) + "]\n"
+            "Action Input: the input to the action (the question to delegate)\n"
+            "Observation: the result of the action\n"
+            "... (this Thought/Action/Action Input/Observation can repeat N times)\n"
+            "Thought: I now know the final answer\n"
+            "Final Answer: the final answer to the original input question\n"
         )
 
         if agent_node.instructions:
             parts.append(agent_node.instructions)
+
         parts.append(f"Question: {user_prompt}")
         if observations:
             parts.append(observations)
-        return "\n\n".join(parts)
+
+        return "\n".join(parts)
 
     def _extract_text(self, result) -> str:
         if hasattr(result, "iterations"):

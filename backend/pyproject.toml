@@ -14,6 +14,8 @@ dependencies = [
     "pydantic-settings>=2.7",
     "python-multipart>=0.0.18",
     "websockets>=14.1",
+    "pytest>=9.0.3",
+    "pytest-asyncio>=1.3.0",
 ]
 
 [dependency-groups]
@@ -27,6 +29,9 @@ test = [
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+markers = [
+    "e2e: slow end-to-end tests that require a running Ollama instance",
+]
 
 [build-system]
 requires = ["hatchling"]
