@@ -1,7 +1,9 @@
+import json
 import uuid
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from canvas_server.database import get_session
@@ -151,3 +153,45 @@ async def delete_canvas(canvas_id: uuid.UUID, session: AsyncSession = Depends(ge
         logger.warning(f"Canvas not found for delete: id={canvas_id}")
         raise HTTPException(status_code=404, detail="Canvas not found")
     logger.info(f"Canvas deleted: id={canvas_id}")
+
+
+@canvas_router.get("/{canvas_id}/export")
+async def export_canvas(
+    canvas_id: uuid.UUID, session: AsyncSession = Depends(get_session)
+):
+    logger.info(f"Exporting canvas: id={canvas_id}")
+    repo = CanvasRepo(session)
+    try:
+        canvas = await repo.get_or_404(canvas_id)
+    except CanvasNotFoundError:
+        logger.warning(f"Canvas not found for export: id={canvas_id}")
+        raise HTTPException(status_code=404, detail="Canvas not found")
+
+    data = _canvas_to_response(canvas).model_dump(mode="json")
+    content = json.dumps(data, indent=2, default=str)
+    safe_name = canvas.name.replace(" ", "_").replace("/", "_")
+    return Response(
+        content=content,
+        media_type="application/json",
+        headers={
+            "Content-Disposition": f'attachment; filename="canvas-{safe_name}.json"'
+        },
+    )
+
+
+@canvas_router.post("/import", response_model=CanvasResponse)
+async def import_canvas(
+    body: CanvasSaveRequest, session: AsyncSession = Depends(get_session)
+):
+    logger.info(
+        f"Importing canvas: name={body.name}, agents={len(body.nodes.agents)}, tools={len(body.nodes.tools)}, edges={len(body.edges)}"
+    )
+    repo = CanvasRepo(session)
+    canvas = await repo.create_full(
+        name=body.name,
+        agents=body.nodes.agents,
+        tools=body.nodes.tools,
+        edges=body.edges,
+    )
+    logger.info(f"Canvas imported: id={canvas.id}")
+    return _canvas_to_response(canvas)

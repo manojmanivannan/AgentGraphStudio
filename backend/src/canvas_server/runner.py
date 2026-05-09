@@ -1,6 +1,7 @@
 import uuid
 import logging
-import re
+
+from pydantic import BaseModel, Field
 
 from beeai_framework.agents.react import ReActAgent
 from beeai_framework.backend.chat import ChatModel
@@ -13,17 +14,21 @@ from canvas_server.tool_factory import compile_tool_from_code
 
 logger = logging.getLogger("canvas_server.runner")
 
-REACT_PATTERN = """**ReAct Pattern**
-Use the following format:
 
-Question: the input question you must answer
-Thought: you should always think about what to do
-Action: the action to take, should be one of [{actions}]
-Action Input: the input to the action
-Observation: the result of the action
-... (this Thought/Action/Action Input/Observation can repeat N times)
-Thought: I now know the final answer
-Final Answer: the final answer to the original input question"""
+class RouterDecision(BaseModel):
+    thought: str = Field(description="Your reasoning about what to do next")
+    action: str | None = Field(
+        default=None,
+        description="The transfer action to take, e.g. transfer_to_MathAgent. Null if giving a final answer.",
+    )
+    action_input: str | None = Field(
+        default=None,
+        description="The task/question to pass to the sub-agent. Null if giving a final answer.",
+    )
+    final_answer: str | None = Field(
+        default=None,
+        description="The final answer if no further routing is needed. Null if routing to a sub-agent.",
+    )
 
 
 class CanvasRunner:
@@ -124,9 +129,7 @@ class CanvasRunner:
                 return node.id
         return None
 
-    def _build_router_prompt(
-        self, agent_node, user_prompt: str, observations: str = ""
-    ) -> str:
+    def _build_router_prompt(self, agent_node, user_prompt: str, observations: str = "") -> str:
         parts = []
 
         if agent_node.role:
@@ -138,27 +141,28 @@ class CanvasRunner:
             target = self.node_map.get(tid)
             if target:
                 desc = target.role or f"Agent: {target.name}"
-                sub_agents.append(f"- **{target.name}**: {desc}")
+                sub_agents.append(f"- **{target.name}** ({desc})")
+
+        action_options = [f"transfer_to_{self.node_map[tid].name}" for tid in handoff_targets if tid in self.node_map]
+
         if sub_agents:
             parts.append(
                 "You are a Router agent. Your job is to analyze the user's request "
                 "and delegate it to the most appropriate sub-agent below. "
-                "Do NOT answer the question yourself — always route it.\n\n"
+                "Do NOT answer the question yourself — always route to a sub-agent first.\n\n"
                 "Available sub-agents:\n" + "\n".join(sub_agents)
             )
 
-        action_names = []
-        for tid in handoff_targets:
-            target = self.node_map.get(tid)
-            if target:
-                action_names.append(f"transfer_to_{target.name}")
-        for t in self._get_agent_tools(agent_node.id):
-            action_names.append(t.name)
-
-        react = REACT_PATTERN.format(
-            actions=", ".join(action_names) if action_names else "none"
+        parts.append(
+            "You MUST respond with a JSON object matching this schema:\n"
+            '{"thought": "<your reasoning>", "action": "<transfer_to_AgentName>", "action_input": "<task for sub-agent>", "final_answer": null}\n'
+            "Rules:\n"
+            "- FIRST round: you MUST route (set action/action_input, final_answer=null).\n"
+            "- AFTER receiving an observation: if it adequately answers the question, produce a final_answer "
+            "(set final_answer with the answer, action=null, action_input=null). "
+            "ONLY route again if the observation is incomplete or an error.\n"
+            "Valid action values: " + (", ".join(action_options) if action_options else "none available")
         )
-        parts.append(react)
 
         if agent_node.instructions:
             parts.append(agent_node.instructions)
@@ -180,8 +184,16 @@ class CanvasRunner:
                 return str(msg.content)
         return str(result)
 
-    async def _call_llm(self, llm, prompt: str) -> str:
-        result = await llm.run([UserMessage(prompt)])
+    async def _call_llm(self, llm, prompt: str, response_format=None) -> str:
+        kwargs = {}
+        if response_format is not None:
+            kwargs["response_format"] = response_format
+
+        result = await llm.run([UserMessage(prompt)], **kwargs)
+
+        if response_format is not None and hasattr(result, "output_structured") and result.output_structured is not None:
+            return result.output_structured
+
         if hasattr(result, "get_text_content"):
             text = result.get_text_content()
             if text:
@@ -202,46 +214,58 @@ class CanvasRunner:
             logger.info("Router %s round %d", agent_node.name, round_num + 1)
             logger.debug("Router prompt: %s", prompt)
 
-            text = await self._call_llm(llm, prompt)
+            try:
+                decision = await self._call_llm(llm, prompt, response_format=RouterDecision)
+            except Exception as e:
+                logger.error("Router call failed: %s", e, exc_info=True)
+                await send_event({"type": "error", "message": f"Router error: {e}"})
+                return f"Router failed: {e}"
+
+            if not isinstance(decision, RouterDecision):
+                logger.warning("Router returned non-structured response: %s", str(decision)[:300])
+                observations += f"\nObservation: Invalid response format. Please respond with valid JSON.\n"
+                continue
+
             logger.info(
-                "Router %s round %d response: %s",
+                "Router %s round %d decision: thought=%s action=%s",
                 agent_node.name,
                 round_num + 1,
-                text[:300],
+                decision.thought[:100],
+                decision.action,
             )
 
-            transfer_match = re.search(r"Action:\s*transfer_to_(\S+)", text)
+            await send_event({
+                "type": "thought",
+                "agent": agent_node.name,
+                "content": decision.thought,
+            })
 
-            if transfer_match:
-                target_name = transfer_match.group(1).rstrip(",:;\n\r")
+            if decision.action:
+                target_name = None
+                if decision.action.startswith("transfer_to_"):
+                    target_name = decision.action[len("transfer_to_"):]
 
-                ai_match = re.search(
-                    r"Action Input:\s*(.*?)(?:$|\n(?:Thought|Action|Observation|Final))",
-                    text,
-                    re.DOTALL,
-                )
-                sub_task = (
-                    ai_match.group(1).strip()
-                    if ai_match and ai_match.group(1).strip()
-                    else user_prompt
-                )
+                if not target_name:
+                    observations += f"\nObservation: Unknown action '{decision.action}'. Use one of the valid transfer_to_X actions.\n"
+                    continue
 
+                sub_task = decision.action_input or user_prompt
                 target_id = self._find_agent_id_by_name(target_name)
 
                 if target_id and target_id in self.agents:
                     target_node = self.node_map[target_id]
                     sub_agent = self.agents[target_id]
 
-                    await send_event(
-                        {"type": "handoff", "from": agent_node.name, "to": target_name}
-                    )
-                    await send_event(
-                        {
-                            "type": "agent_start",
-                            "agent": target_name,
-                            "agentType": target_node.agent_type,
-                        }
-                    )
+                    await send_event({
+                        "type": "handoff",
+                        "from": agent_node.name,
+                        "to": target_name,
+                    })
+                    await send_event({
+                        "type": "agent_start",
+                        "agent": target_name,
+                        "agentType": target_node.agent_type,
+                    })
 
                     sub_agent.memory = UnconstrainedMemory()
                     sub_prompt = self._build_worker_prompt(target_node, sub_task)
@@ -251,35 +275,29 @@ class CanvasRunner:
                         obs = self._extract_text(result)
                     except Exception as e:
                         obs = f"Error: {e}"
-                        logger.error(
-                            "Sub-agent %s failed: %s", target_name, e, exc_info=True
-                        )
+                        logger.error("Sub-agent %s failed: %s", target_name, e, exc_info=True)
 
                     observations += f"\nObservation from {target_name}: {obs}\n"
 
-                    await send_event(
-                        {"type": "final_answer", "agent": target_name, "content": obs}
-                    )
-                    await send_event(
-                        {
-                            "type": "tool_result",
-                            "agent": agent_node.name,
-                            "tool": f"transfer_to_{target_name}",
-                            "output": obs,
-                        }
-                    )
+                    await send_event({
+                        "type": "final_answer",
+                        "agent": target_name,
+                        "content": obs,
+                    })
+                    await send_event({
+                        "type": "tool_result",
+                        "agent": agent_node.name,
+                        "tool": f"transfer_to_{target_name}",
+                        "output": obs,
+                    })
                 else:
-                    observations += f"\nObservation: Error - agent '{target_name}' is not available.\n"
-            else:
-                fa_match = re.search(r"Final Answer:\s*(.*)", text, re.DOTALL)
-                if fa_match:
-                    answer = fa_match.group(1).strip()
-                    await send_event(
-                        {"type": "thought", "agent": agent_node.name, "content": text}
-                    )
-                    return answer
+                    observations += f"\nObservation: Agent '{target_name}' is not available.\n"
 
-                observations += f"\nObservation: Your response didn't follow the ReAct pattern. Please use the exact format specified.\n"
+            elif decision.final_answer:
+                return decision.final_answer
+
+            else:
+                observations += "\nObservation: You must provide either an action or a final_answer. Neither was set.\n"
 
         return "Router reached maximum rounds without producing a final answer."
 

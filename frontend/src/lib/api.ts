@@ -38,3 +38,19 @@ export async function deleteCanvas(id: string): Promise<void> {
   const res = await fetch(`${API_BASE}/canvases/${id}`, { method: "DELETE" });
   if (!res.ok) throw new Error("Failed to delete canvas");
 }
+
+export async function exportCanvas(id: string): Promise<CanvasResponse> {
+  const res = await fetch(`${API_BASE}/canvases/${id}/export`);
+  if (!res.ok) throw new Error("Failed to export canvas");
+  return res.json();
+}
+
+export async function importCanvas(payload: CanvasSavePayload): Promise<CanvasResponse> {
+  const res = await fetch(`${API_BASE}/canvases/import`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error("Failed to import canvas");
+  return res.json();
+}

@@ -4,7 +4,7 @@ import json
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
-from canvas_server.database import async_session_factory
+from canvas_server.database import get_session_factory
 from canvas_server.repos.canvas_repo import CanvasRepo
 from canvas_server.runner import CanvasRunner
 
@@ -20,7 +20,8 @@ async def run_canvas(websocket: WebSocket, canvas_id: uuid.UUID):
         body = json.loads(data)
         user_prompt = body.get("prompt", "")
 
-        async with async_session_factory() as session:
+        factory = get_session_factory()
+        async with factory() as session:
             repo = CanvasRepo(session)
             canvas = await repo.get_or_404(canvas_id)
 

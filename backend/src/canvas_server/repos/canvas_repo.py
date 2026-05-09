@@ -36,6 +36,60 @@ class CanvasRepo:
         )
         return result.scalar_one()
 
+    async def create_full(
+        self,
+        name: str,
+        agents: list[AgentNodeInput],
+        tools: list[ToolNodeInput],
+        edges: list[EdgeInput],
+    ) -> Canvas:
+        canvas = Canvas(name=name)
+        self.session.add(canvas)
+        await self.session.flush()
+
+        canvas_id = canvas.id
+        for a in agents:
+            node = AgentNode(
+                id=a.id,
+                canvas_id=canvas_id,
+                name=a.name,
+                role=a.role,
+                instructions=a.instructions,
+                model_name=a.model_name,
+                agent_type=a.agent_type,
+                position_x=a.position_x,
+                position_y=a.position_y,
+            )
+            self.session.add(node)
+
+        for t in tools:
+            node = ToolNode(
+                id=t.id,
+                canvas_id=canvas_id,
+                name=t.name,
+                code=t.code,
+                position_x=t.position_x,
+                position_y=t.position_y,
+            )
+            self.session.add(node)
+
+        for e in edges:
+            edge = Edge(
+                id=e.id,
+                canvas_id=canvas_id,
+                source_node_id=e.source_node_id,
+                target_node_id=e.target_node_id,
+                edge_type=e.edge_type,
+            )
+            self.session.add(edge)
+
+        await self.session.commit()
+
+        result = await self.session.execute(
+            self._eager_query().where(Canvas.id == canvas_id)
+        )
+        return result.scalar_one()
+
     async def get(self, canvas_id: uuid.UUID) -> Canvas | None:
         result = await self.session.execute(
             self._eager_query().where(Canvas.id == canvas_id)
@@ -121,4 +175,9 @@ class CanvasRepo:
 
         await self.session.commit()
 
-        return await self.get_or_404(canvas_id)
+        self.session.expunge_all()
+
+        result = await self.session.execute(
+            self._eager_query().where(Canvas.id == canvas_id)
+        )
+        return result.scalar_one()

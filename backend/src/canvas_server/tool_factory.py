@@ -28,15 +28,18 @@ async def compile_tool_from_code(name: str, code: str):
         logger.warning("No callable function found in tool '%s'", name)
         raise ToolCompilationError(f"No callable function found in tool '{name}'.")
 
-    @tool
+    desc = (user_func.__doc__ or "").strip() or f"Tool: {name}"
+    tool_kwargs = {"name": name, "description": desc}
+    if hasattr(tool, "__call__"):
+        pass
+
+    @tool(**tool_kwargs)
     def dynamic_tool(**kwargs) -> StringToolOutput:
         logger.debug("Calling tool '%s' with args: %s", name, kwargs)
         result = user_func(**kwargs)
         logger.debug("Tool '%s' result: %s", name, str(result)[:200])
         return StringToolOutput(str(result))
 
-    dynamic_tool.name = name
-    dynamic_tool.description = (user_func.__doc__ or "").strip()
     logger.info("Compiled tool '%s' successfully", name)
 
     return dynamic_tool

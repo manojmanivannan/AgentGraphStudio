@@ -1,8 +1,10 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { v4 as uuidv4 } from "uuid";
-import { Plus, Play, Square, Trash2 } from "lucide-react";
+import { Plus, Play, Square, Trash2, Download, Upload } from "lucide-react";
 import { useCanvasStore } from "@/store/canvasStore";
 import { useCanvasExecution } from "@/hooks/useCanvasExecution";
+import { importCanvas } from "@/lib/api";
+import type { CanvasSavePayload } from "@/types";
 
 export function CanvasToolbar() {
   const [prompt, setPrompt] = useState("");
@@ -15,6 +17,7 @@ export function CanvasToolbar() {
   const setEdges = useCanvasStore((s) => s.setEdges);
   const executionStatus = useCanvasStore((s) => s.executionStatus);
   const { run, abort } = useCanvasExecution();
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const addAgent = () => {
     const newId = uuidv4();
@@ -50,6 +53,102 @@ export function CanvasToolbar() {
 
   const handleStop = () => {
     abort();
+  };
+
+  const handleExport = () => {
+    const payload: CanvasSavePayload = {
+      name: canvasName,
+      nodes: {
+        agents: nodes
+          .filter((n) => n.type === "agent")
+          .map((n) => ({
+            id: n.id,
+            name: n.data.name as string,
+            role: (n.data.role as string) || "",
+            instructions: (n.data.instructions as string) || "",
+            model_name: (n.data.modelName as string) || "ollama:llama3.1",
+            agent_type: (n.data.agentType as string) || "worker",
+            position_x: n.position.x,
+            position_y: n.position.y,
+          })),
+        tools: nodes
+          .filter((n) => n.type === "tool")
+          .map((n) => ({
+            id: n.id,
+            name: n.data.name as string,
+            code: (n.data.code as string) || "",
+            position_x: n.position.x,
+            position_y: n.position.y,
+          })),
+      },
+      edges: edges.map((e) => ({
+        id: e.id,
+        source_node_id: e.source,
+        target_node_id: e.target,
+        edge_type: (e.data?.edgeType as string) || "tool_access",
+      })),
+    };
+
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${canvasName.replace(/[^a-zA-Z0-9]/g, "_")}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleImport = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const text = await file.text();
+      const data = JSON.parse(text) as CanvasSavePayload;
+      const imported = await importCanvas(data);
+
+      const { setCanvas, setNodes, setEdges } = useCanvasStore.getState();
+      setCanvas(imported.id, imported.name);
+
+      const agentNodes = imported.nodes.agents.map((a) => ({
+        id: a.id,
+        type: "agent" as const,
+        position: { x: a.position_x, y: a.position_y },
+        data: {
+          id: a.id,
+          name: a.name,
+          role: a.role,
+          instructions: a.instructions,
+          modelName: a.model_name,
+          agentType: a.agent_type,
+        },
+      }));
+
+      const toolNodes = imported.nodes.tools.map((t) => ({
+        id: t.id,
+        type: "tool" as const,
+        position: { x: t.position_x, y: t.position_y },
+        data: { id: t.id, name: t.name, code: t.code },
+      }));
+
+      setNodes([...agentNodes, ...toolNodes]);
+      setEdges(
+        imported.edges.map((e) => ({
+          id: e.id,
+          source: e.source_node_id,
+          target: e.target_node_id,
+          data: { edgeType: e.edge_type },
+        }))
+      );
+    } catch (err) {
+      console.error("Failed to import canvas:", err);
+    }
+
+    e.target.value = "";
   };
 
   return (
@@ -90,6 +189,34 @@ export function CanvasToolbar() {
         <Trash2 className="w-3.5 h-3.5" />
         Clear
       </button>
+
+      <div className="w-px h-6 bg-gray-200" />
+
+      <button
+        onClick={handleExport}
+        disabled={executionStatus === "running"}
+        className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-gray-600 hover:text-indigo-600 hover:bg-indigo-50 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+      >
+        <Download className="w-3.5 h-3.5" />
+        Export
+      </button>
+
+      <button
+        onClick={handleImport}
+        disabled={executionStatus === "running"}
+        className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-gray-600 hover:text-amber-600 hover:bg-amber-50 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+      >
+        <Upload className="w-3.5 h-3.5" />
+        Import
+      </button>
+
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".json"
+        onChange={handleFileChange}
+        className="hidden"
+      />
 
       <div className="flex-1" />
 
