@@ -5,7 +5,9 @@ import uuid
 from beeai_framework.agents.react import ReActAgent
 from beeai_framework.backend.chat import ChatModel, _ChatModelKwargsAdapter
 from beeai_framework.backend.message import UserMessage
-from beeai_framework.context import RunContext  # noqa: F401 — required for _ChatModelKwargsAdapter.rebuild()
+from beeai_framework.context import (
+    RunContext,
+)  # noqa: F401 — required for _ChatModelKwargsAdapter.rebuild()
 from beeai_framework.memory.unconstrained_memory import UnconstrainedMemory
 from pydantic import BaseModel, Field
 
@@ -140,21 +142,33 @@ class CanvasRunner:
                 return node.id
         return None
 
-    def _build_router_prompt(self, agent_node, user_prompt: str, observations: str = "") -> str:
+    def _build_router_prompt(
+        self, agent_node, user_prompt: str, observations: str = ""
+    ) -> str:
         parts = []
         handoff_targets = self._get_handoff_targets(agent_node.id)
-        action_names = [f"transfer_to_{self.node_map[tid].name}" for tid in handoff_targets if tid in self.node_map]
+        action_names = [
+            f"transfer_to_{self.node_map[tid].name}"
+            for tid in handoff_targets
+            if tid in self.node_map
+        ]
 
         tool_descriptions = []
         for tid in handoff_targets:
             target = self.node_map.get(tid)
             if target:
-                desc = target.instructions or target.role or f"Handles tasks related to {target.name}"
+                desc = (
+                    target.instructions
+                    or target.role
+                    or f"Handles tasks related to {target.name}"
+                )
                 tool_descriptions.append(f"{target.name}: {desc}")
 
+        if agent_node.instructions:
+            parts.append(agent_node.instructions)
+
         parts.append(
-            "Answer the following questions as best you can. "
-            "You have access to the following sub-agents:\n\n"
+            "\nYou have access to the following sub-agents:\n\n"
             + "\n".join(tool_descriptions)
         )
 
@@ -162,16 +176,15 @@ class CanvasRunner:
             "\nUse the following format:\n\n"
             "Question: the input question you must answer\n"
             "Thought: you should always think about what to do\n"
-            "Action: the action to take, should be one of [" + ", ".join(action_names) + "]\n"
+            "Action: the action to take, should be one of ["
+            + ", ".join(action_names)
+            + "]\n"
             "Action Input: the input to the action (the question to delegate)\n"
             "Observation: the result of the action\n"
             "... (this Thought/Action/Action Input/Observation can repeat N times)\n"
             "Thought: I now know the final answer\n"
             "Final Answer: the final answer to the original input question\n"
         )
-
-        if agent_node.instructions:
-            parts.append(agent_node.instructions)
 
         parts.append(f"Question: {user_prompt}")
         if observations:
@@ -285,7 +298,9 @@ class CanvasRunner:
                     break
 
             if decision is None:
-                await send_event({"type": "error", "message": "Router could not parse response"})
+                await send_event(
+                    {"type": "error", "message": "Router could not parse response"}
+                )
                 return "Router failed: could not parse response"
 
             logger.info(
@@ -296,11 +311,13 @@ class CanvasRunner:
                 decision.action,
             )
 
-            await send_event({
-                "type": "thought",
-                "agent": agent_node.name,
-                "content": decision.thought,
-            })
+            await send_event(
+                {
+                    "type": "thought",
+                    "agent": agent_node.name,
+                    "content": decision.thought,
+                }
+            )
 
             if decision.final_answer:
                 return decision.final_answer
@@ -308,7 +325,7 @@ class CanvasRunner:
             if decision.action:
                 target_name = None
                 if decision.action.startswith("transfer_to_"):
-                    target_name = decision.action[len("transfer_to_"):]
+                    target_name = decision.action[len("transfer_to_") :]
 
                 if not target_name:
                     err_msg = (
@@ -325,16 +342,20 @@ class CanvasRunner:
                     target_node = self.node_map[target_id]
                     sub_agent = self.agents[target_id]
 
-                    await send_event({
-                        "type": "handoff",
-                        "from": agent_node.name,
-                        "to": target_name,
-                    })
-                    await send_event({
-                        "type": "agent_start",
-                        "agent": target_name,
-                        "agentType": target_node.agent_type,
-                    })
+                    await send_event(
+                        {
+                            "type": "handoff",
+                            "from": agent_node.name,
+                            "to": target_name,
+                        }
+                    )
+                    await send_event(
+                        {
+                            "type": "agent_start",
+                            "agent": target_name,
+                            "agentType": target_node.agent_type,
+                        }
+                    )
 
                     sub_agent.memory = UnconstrainedMemory()
                     sub_prompt = self._build_worker_prompt(target_node, sub_task)
@@ -344,26 +365,34 @@ class CanvasRunner:
                         obs = self._extract_text(result)
                     except Exception as e:
                         obs = f"Error: {e}"
-                        logger.error("Sub-agent %s failed: %s", target_name, e, exc_info=True)
+                        logger.error(
+                            "Sub-agent %s failed: %s", target_name, e, exc_info=True
+                        )
 
                     observations += f"\nThought: {decision.thought}\n"
                     observations += f"Action: {decision.action}\n"
                     observations += f"Action Input: {decision.action_input or ''}\n"
                     observations += f"Observation: {obs}\n"
 
-                    await send_event({
-                        "type": "final_answer",
-                        "agent": target_name,
-                        "content": obs,
-                    })
-                    await send_event({
-                        "type": "tool_result",
-                        "agent": agent_node.name,
-                        "tool": f"transfer_to_{target_name}",
-                        "output": obs,
-                    })
+                    await send_event(
+                        {
+                            "type": "final_answer",
+                            "agent": target_name,
+                            "content": obs,
+                        }
+                    )
+                    await send_event(
+                        {
+                            "type": "tool_result",
+                            "agent": agent_node.name,
+                            "tool": f"transfer_to_{target_name}",
+                            "output": obs,
+                        }
+                    )
                 else:
-                    observations += f"\nObservation: Agent '{target_name}' is not available.\n"
+                    observations += (
+                        f"\nObservation: Agent '{target_name}' is not available.\n"
+                    )
 
             else:
                 observations += "\nObservation: You must provide either an action or a final_answer. Neither was set.\n"
