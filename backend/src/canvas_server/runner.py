@@ -169,11 +169,7 @@ class CanvasRunner:
             "Observation: the result of the action\n"
             "... (this Thought/Action/Action Input/Observation can repeat N times)\n"
             "Thought: I now know the final answer\n"
-            "Final Answer: the final answer to the original input question\n\n"
-            "IMPORTANT: When you receive an Observation from a sub-agent, "
-            "you MUST NOT answer the question yourself. "
-            "Instead, repeat the Observation content as your Final Answer. "
-            "Never compute or reason about the answer yourself after receiving an Observation.\n"
+            "Final Answer: the final answer to the original input question\n"
         )
 
         if agent_node.instructions:
