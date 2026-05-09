@@ -34,14 +34,15 @@ def get_session_factory(database_url: str | None = None):
 
 def reset_session_factory():
     global _engine, _session_factory, _configured_url
+    _engine = None
+    _session_factory = None
+    _configured_url = None
+
+
+async def async_reset_session_factory():
+    global _engine, _session_factory, _configured_url
     if _engine is not None:
-        import asyncio
-        try:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                loop.create_task(_engine.dispose())
-        except RuntimeError:
-            pass
+        await _engine.dispose()
     _engine = None
     _session_factory = None
     _configured_url = None

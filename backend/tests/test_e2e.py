@@ -305,7 +305,8 @@ class TestE2EAPIIntegration:
         assert len(exported["nodes"]["agents"]) == 3
         assert len(exported["edges"]) == 2
 
-        import_resp = await test_client.post("/api/canvases/import", json=exported)
+        imported_payload = _make_team_with_fresh_ids(exported)
+        import_resp = await test_client.post("/api/canvases/import", json=imported_payload)
         assert import_resp.status_code == 200
         imported = import_resp.json()
         assert imported["name"] == "Demo Team"
@@ -313,7 +314,7 @@ class TestE2EAPIIntegration:
 
     @pytest.mark.asyncio
     async def test_demo_team_agents_and_edges_persist_correctly(self, test_client):
-        team = load_demo_team()
+        team = _make_team_with_fresh_ids(load_demo_team())
 
         create_resp = await test_client.post(
             "/api/canvases", json={"name": team["name"]}
@@ -342,6 +343,9 @@ class TestE2EAPIIntegration:
 class TestE2ERealLLM:
     """End-to-end tests that call actual LLMs. Requires Ollama running at LLM_BASE_URL."""
 
+    e2e = pytest.mark.e2e
+
+    @e2e
     @pytest.mark.asyncio
     async def test_real_llm_math_question_returns_answer(self):
         """Ask 'what is 2+2' and verify the system produces a final answer with '4'."""
@@ -372,6 +376,7 @@ class TestE2ERealLLM:
         all_texts = " ".join(str(e.get("content", "")) for e in final_answers)
         assert "4" in all_texts, f"should find '4' in answers, got: {all_texts[:500]}"
 
+    @e2e
     @pytest.mark.asyncio
     async def test_real_llm_weather_question_gets_routed(self):
         """Ask about weather and verify it routes to WeatherAgent."""
@@ -396,6 +401,7 @@ class TestE2ERealLLM:
             "sunny" in all_texts or "20c" in all_texts
         ), f"should mention weather, got: {all_texts[:500]}"
 
+    @e2e
     @pytest.mark.asyncio
     async def test_real_llm_does_not_loop_infinitely(self):
         """Verify the router stops within max_rounds (10) and produces a result."""
@@ -421,6 +427,7 @@ class TestE2ERealLLM:
             "maximum rounds" not in router_text
         ), f"router should not hit max rounds, got: {router_text}"
 
+    @e2e
     @pytest.mark.asyncio
     async def test_real_llm_handoff_event_sequence(self):
         """Verify the event sequence follows: run_start -> thought -> handoff -> agent_start -> final_answer -> run_complete."""

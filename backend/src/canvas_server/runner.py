@@ -1,5 +1,6 @@
 import uuid
 import logging
+import re
 
 from pydantic import BaseModel, Field
 
@@ -213,6 +214,41 @@ class CanvasRunner:
                     return msg.text
         return str(result)
 
+    def _parse_react_response(self, text: str) -> RouterDecision:
+        """Parse a text ReAct response into a RouterDecision."""
+        thought = ""
+        action = None
+        action_input = None
+        final_answer = None
+
+        thought_match = re.search(r"Thought:\s*(.+)", text, re.IGNORECASE)
+        if thought_match:
+            thought = thought_match.group(1).strip()
+
+        action_match = re.search(r"Action:\s*(.+?)(?:\n|$)", text, re.IGNORECASE)
+        if action_match:
+            action = action_match.group(1).strip()
+            if not action.startswith("transfer_to_"):
+                action = None
+
+        ai_match = re.search(r"Action Input:\s*(.+)", text, re.IGNORECASE)
+        if ai_match:
+            action_input = ai_match.group(1).strip()
+
+        fa_match = re.search(r"Final Answer:\s*(.+)", text, re.IGNORECASE)
+        if fa_match:
+            final_answer = fa_match.group(1).strip()
+
+        if not thought and not action and not final_answer:
+            thought = text[:100]
+
+        return RouterDecision(
+            thought=thought,
+            action=action,
+            action_input=action_input,
+            final_answer=final_answer,
+        )
+
     async def _run_router_loop(self, agent_node, user_prompt: str, send_event):
         llm = self.llms[agent_node.id]
         observations = ""
@@ -223,17 +259,32 @@ class CanvasRunner:
             logger.info("Router %s round %d", agent_node.name, round_num + 1)
             logger.debug("Router prompt: %s", prompt)
 
-            try:
-                decision = await self._call_llm(llm, prompt, response_format=RouterDecision)
-            except Exception as e:
-                logger.error("Router call failed: %s", e, exc_info=True)
-                await send_event({"type": "error", "message": f"Router error: {e}"})
-                return f"Router failed: {e}"
+            decision = None
+            for attempt in range(2):
+                use_structured = attempt == 0
+                try:
+                    fmt = RouterDecision if use_structured else None
+                    result = await self._call_llm(llm, prompt, response_format=fmt)
+                except Exception as e:
+                    logger.error("Router call failed: %s", e, exc_info=True)
+                    if use_structured:
+                        continue
+                    await send_event({"type": "error", "message": f"Router error: {e}"})
+                    return f"Router failed: {e}"
 
-            if not isinstance(decision, RouterDecision):
-                logger.warning("Router returned non-structured response: %s", str(decision)[:300])
-                observations += f"\nObservation: Invalid response format. Please respond with valid JSON.\n"
-                continue
+                if use_structured and isinstance(result, RouterDecision):
+                    decision = result
+                    break
+                elif not use_structured and isinstance(result, str):
+                    decision = self._parse_react_response(result)
+                    break
+                elif isinstance(result, RouterDecision):
+                    decision = result
+                    break
+
+            if decision is None:
+                await send_event({"type": "error", "message": "Router could not parse response"})
+                return "Router failed: could not parse response"
 
             logger.info(
                 "Router %s round %d decision: thought=%s action=%s",

@@ -10,7 +10,7 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U canvas -d canvas_db" ]
+      test: ["CMD-SHELL", "pg_isready -U canvas -d canvas_db"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -23,8 +23,9 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://canvas:canvas@postgres:5432/canvas_db
       DEFAULT_LLM: ollama:granite4.1:3b
-      OLLAMA_HOST: http://ollama:11434
-      OLLAMA_API_BASE: http://ollama:11434
+      LLM_BASE_URL: http://ollama:11434
+      LLM_MODEL_ROUTER: ollama:granite4.1:3b
+      LLM_MODEL_AGENT: ollama:granite4.1:3b
     depends_on:
       postgres:
         condition: service_healthy
@@ -72,7 +73,7 @@ services:
           devices:
             - driver: nvidia
               count: 1
-              capabilities: [ gpu ]
+              capabilities: [gpu]
 volumes:
   pgdata:
   ollama_data:

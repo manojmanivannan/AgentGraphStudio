@@ -4,11 +4,10 @@ import asyncio
 import pytest
 import pytest_asyncio
 from httpx import AsyncClient, ASGITransport
-from sqlalchemy import text
 
 TEST_DB_URL = os.environ.get(
     "TEST_DATABASE_URL",
-    "postgresql+asyncpg://canvas:canvas@localhost:5432/canvas_test",
+    "sqlite+aiosqlite:///test.db",
 )
 
 
@@ -32,23 +31,20 @@ def _test_db_url():
 
 @pytest_asyncio.fixture
 async def fresh_db():
-    from canvas_server.database import Base, get_engine
+    from canvas_server.database import Base, get_engine, async_reset_session_factory
+    from canvas_server.models.canvas import Canvas, AgentNode, ToolNode, Edge
 
     _reset_engine_and_factory()
     engine = get_engine(TEST_DB_URL)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
-        await conn.execute(text("DROP TYPE IF EXISTS agent_type_enum CASCADE"))
-        await conn.execute(text("DROP TYPE IF EXISTS edge_type_enum CASCADE"))
         await conn.run_sync(Base.metadata.create_all)
 
     yield
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
-        await conn.execute(text("DROP TYPE IF EXISTS agent_type_enum CASCADE"))
-        await conn.execute(text("DROP TYPE IF EXISTS edge_type_enum CASCADE"))
-    _reset_engine_and_factory()
+    await async_reset_session_factory()
 
 
 @pytest_asyncio.fixture

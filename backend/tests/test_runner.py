@@ -213,6 +213,7 @@ class TestCanvasRunner:
         runner.node_map[worker.id] = worker
         runner.agents[worker.id] = MagicMock()
         runner.agents[worker.id].run = AsyncMock(side_effect=Exception("test error"))
+        runner.setup = AsyncMock()
 
         await runner.run("do work", collect)
 
