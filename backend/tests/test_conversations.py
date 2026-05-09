@@ -270,17 +270,15 @@ class TestRunnerWithConversation:
         async def collect(event):
             pass
 
-        with (
-            patch.object(ChatModel, "from_name") as m_from_name,
-            patch.object(ReActAgent, "run", new_callable=AsyncMock) as m_agent_run,
-        ):
+        with patch.object(ChatModel, "from_name") as m_from_name:
             m_from_name.return_value = MagicMock(spec=ChatModel)
-            m_agent_run.return_value = _mock_worker_result("Done!")
+            m_agent_run = AsyncMock(return_value=_mock_worker_result("Done!"))
 
-            runner = CanvasRunner(
-                canvas, conversation_repo=repo, conversation_id=conv_id
-            )
-            await runner.run("Hello world", collect)
+            with patch.object(ReActAgent, "run", m_agent_run):
+                runner = CanvasRunner(
+                    canvas, conversation_repo=repo, conversation_id=conv_id
+                )
+                await runner.run("Hello world", collect)
 
         await test_session.commit()
         test_session.expire_all()
@@ -305,17 +303,15 @@ class TestRunnerWithConversation:
         async def collect(event):
             pass
 
-        with (
-            patch.object(ChatModel, "from_name") as m_from_name,
-            patch.object(ReActAgent, "run", new_callable=AsyncMock) as m_agent_run,
-        ):
+        with patch.object(ChatModel, "from_name") as m_from_name:
             m_from_name.return_value = MagicMock(spec=ChatModel)
-            m_agent_run.return_value = _mock_worker_result("Done!")
+            m_agent_run = AsyncMock(return_value=_mock_worker_result("Done!"))
 
-            runner = CanvasRunner(
-                canvas, conversation_repo=repo, conversation_id=conv_id
-            )
-            await runner.run("test", collect)
+            with patch.object(ReActAgent, "run", m_agent_run):
+                runner = CanvasRunner(
+                    canvas, conversation_repo=repo, conversation_id=conv_id
+                )
+                await runner.run("test", collect)
 
         await test_session.commit()
         test_session.expire_all()
@@ -357,10 +353,7 @@ class TestRunnerWithConversation:
         async def collect(event):
             pass
 
-        with (
-            patch.object(ChatModel, "from_name") as m_from_name,
-            patch.object(ReActAgent, "run", new_callable=AsyncMock) as m_agent_run,
-        ):
+        with patch.object(ChatModel, "from_name") as m_from_name:
             mock_llm = MagicMock(spec=ChatModel)
             mock_llm.run = AsyncMock()
             m_from_name.return_value = mock_llm
@@ -386,12 +379,13 @@ class TestRunnerWithConversation:
                 ),
             ]
 
-            m_agent_run.return_value = _mock_worker_result("21")
+            m_agent_run = AsyncMock(return_value=_mock_worker_result("21"))
 
-            runner = CanvasRunner(
-                canvas, conversation_repo=repo, conversation_id=conv_id
-            )
-            await runner.run("what is 3*7?", collect)
+            with patch.object(ReActAgent, "run", m_agent_run):
+                runner = CanvasRunner(
+                    canvas, conversation_repo=repo, conversation_id=conv_id
+                )
+                await runner.run("what is 3*7?", collect)
 
         await test_session.commit()
         test_session.expire_all()
@@ -417,17 +411,15 @@ class TestRunnerWithConversation:
         async def collect(event):
             pass
 
-        with (
-            patch.object(ChatModel, "from_name") as m_from_name,
-            patch.object(ReActAgent, "run", new_callable=AsyncMock) as m_agent_run,
-        ):
+        with patch.object(ChatModel, "from_name") as m_from_name:
             m_from_name.return_value = MagicMock(spec=ChatModel)
-            m_agent_run.return_value = _mock_worker_result("Done!")
+            m_agent_run = AsyncMock(return_value=_mock_worker_result("Done!"))
 
-            runner = CanvasRunner(
-                canvas, conversation_repo=repo, conversation_id=conv_id
-            )
-            await runner.run("do work", collect)
+            with patch.object(ReActAgent, "run", m_agent_run):
+                runner = CanvasRunner(
+                    canvas, conversation_repo=repo, conversation_id=conv_id
+                )
+                await runner.run("do work", collect)
 
         await test_session.commit()
         test_session.expire_all()
@@ -457,15 +449,13 @@ class TestRunnerWithConversation:
         async def collect(event):
             events.append(event)
 
-        with (
-            patch.object(ChatModel, "from_name") as m_from_name,
-            patch.object(ReActAgent, "run", new_callable=AsyncMock) as m_agent_run,
-        ):
+        with patch.object(ChatModel, "from_name") as m_from_name:
             m_from_name.return_value = MagicMock(spec=ChatModel)
-            m_agent_run.return_value = _mock_worker_result("42")
+            m_agent_run = AsyncMock(return_value=_mock_worker_result("42"))
 
-            runner = CanvasRunner(canvas)
-            await runner.run("do work", collect, target_agent_id=worker.id)
+            with patch.object(ReActAgent, "run", m_agent_run):
+                runner = CanvasRunner(canvas)
+                await runner.run("do work", collect, target_agent_id=worker.id)
 
         agent_starts = [e for e in events if e["type"] == "agent_start"]
         assert len(agent_starts) == 1
@@ -491,10 +481,7 @@ class TestRunnerWithConversation:
         async def collect(event):
             events.append(event)
 
-        with (
-            patch.object(ChatModel, "from_name") as m_from_name,
-            patch.object(ReActAgent, "run", new_callable=AsyncMock) as m_agent_run,
-        ):
+        with patch.object(ChatModel, "from_name") as m_from_name:
             mock_llm = MagicMock(spec=ChatModel)
             mock_llm.run = AsyncMock()
             m_from_name.return_value = mock_llm
@@ -520,10 +507,11 @@ class TestRunnerWithConversation:
                 ),
             ]
 
-            m_agent_run.return_value = _mock_worker_result("4")
+            m_agent_run = AsyncMock(return_value=_mock_worker_result("4"))
 
-            runner = CanvasRunner(canvas)
-            await runner.run("what is 2+2?", collect)
+            with patch.object(ReActAgent, "run", m_agent_run):
+                runner = CanvasRunner(canvas)
+                await runner.run("what is 2+2?", collect)
 
         for event in events:
             if event["type"] in (

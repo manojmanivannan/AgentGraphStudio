@@ -191,10 +191,52 @@ export function ChatPanel() {
             id: crypto.randomUUID(),
             conversation_id: convId,
             role: "assistant",
-            content: `Thought: ${event.content}`,
+            content: event.content,
             agent_name: event.agent,
             node_id: event.node_id ?? null,
             event_type: "thought",
+            created_at: new Date().toISOString(),
+          };
+          addMessageLocal(msg);
+        }
+
+        if (event.type === "handoff") {
+          const msg: Message = {
+            id: crypto.randomUUID(),
+            conversation_id: convId,
+            role: "system",
+            content: `Delegating to ${event.to}...`,
+            agent_name: event.from,
+            node_id: event.node_id ?? null,
+            event_type: "handoff",
+            created_at: new Date().toISOString(),
+          };
+          addMessageLocal(msg);
+        }
+
+        if (event.type === "agent_start") {
+          const msg: Message = {
+            id: crypto.randomUUID(),
+            conversation_id: convId,
+            role: "system",
+            content: `${event.agent} is working...`,
+            agent_name: event.agent,
+            node_id: event.node_id ?? null,
+            event_type: "agent_start",
+            created_at: new Date().toISOString(),
+          };
+          addMessageLocal(msg);
+        }
+
+        if (event.type === "tool_result") {
+          const msg: Message = {
+            id: crypto.randomUUID(),
+            conversation_id: convId,
+            role: "assistant",
+            content: event.output,
+            agent_name: event.tool?.replace("transfer_to_", "") ?? event.agent,
+            node_id: event.node_id ?? null,
+            event_type: "tool_result",
             created_at: new Date().toISOString(),
           };
           addMessageLocal(msg);
@@ -315,6 +357,9 @@ export function ChatPanel() {
         {messages.map((msg) => {
           const isThought = msg.event_type === "thought";
           const isCollapsed = collapsed.has(msg.id);
+          const isHandoff = msg.event_type === "handoff";
+          const isToolResult = msg.event_type === "tool_result";
+          const isAgentStart = msg.event_type === "agent_start";
 
           return (
           <div
@@ -323,24 +368,32 @@ export function ChatPanel() {
               msg.role === "user" ? "items-end" : "items-start"
             }`}
           >
-            {msg.agent_name && msg.role !== "user" && (
+            {msg.agent_name && msg.role !== "user" && !isHandoff && !isAgentStart && (
               <span className="text-[10px] text-gray-400 mb-0.5 px-1">
                 {msg.agent_name}
-                {msg.event_type && ` · ${msg.event_type}`}
+                {msg.event_type === "tool_result" ? "" : msg.event_type && ` · ${msg.event_type}`}
               </span>
             )}
             <div
               className={`max-w-[85%] rounded-lg px-3 py-2 text-sm ${
                 msg.role === "user"
                   ? "bg-indigo-600 text-white"
+                  : isHandoff || isAgentStart
+                  ? "bg-blue-50 text-blue-600 border border-blue-200"
                   : msg.role === "system"
                   ? "bg-red-50 text-red-600 border border-red-200"
                   : isThought
                   ? "bg-purple-50 text-purple-700 border border-purple-200 text-xs"
+                  : isToolResult
+                  ? "bg-green-50 text-green-700 border border-green-200"
                   : "bg-gray-100 text-gray-800"
               }`}
             >
-              {isThought && isCollapsed ? (
+              {(isHandoff || isAgentStart) ? (
+                <div className="flex items-center gap-2 text-xs">
+                  <span>{msg.content}</span>
+                </div>
+              ) : isThought && isCollapsed ? (
                 <button
                   onClick={() => toggleCollapse(msg.id)}
                   className="flex items-center gap-1 text-purple-500 hover:text-purple-700 cursor-pointer w-full text-left"
