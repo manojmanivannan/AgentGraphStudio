@@ -21,11 +21,11 @@ export function useCanvasPersistence() {
           .filter((n) => n.type === "agent")
           .map((n) => ({
             id: n.id,
-            name: n.data?.name || "Agent",
-            role: n.data?.role || "",
-            instructions: n.data?.instructions || "",
-            model_name: n.data?.modelName || "ollama:llama3.1",
-            agent_type: n.data?.agentType || "worker",
+            name: (n.data?.name as string) || "Agent",
+            role: (n.data?.role as string) || "",
+            instructions: (n.data?.instructions as string) || "",
+            model_name: (n.data?.modelName as string) || "ollama:llama3.1",
+            agent_type: (n.data?.agentType as string) || "worker",
             position_x: n.position.x,
             position_y: n.position.y,
           })),
@@ -33,8 +33,8 @@ export function useCanvasPersistence() {
           .filter((n) => n.type === "tool")
           .map((n) => ({
             id: n.id,
-            name: n.data?.name || "Tool",
-            code: n.data?.code || "",
+            name: (n.data?.name as string) || "Tool",
+            code: (n.data?.code as string) || "",
             position_x: n.position.x,
             position_y: n.position.y,
           })),
@@ -43,7 +43,7 @@ export function useCanvasPersistence() {
         id: e.id,
         source_node_id: e.source,
         target_node_id: e.target,
-        edge_type: e.data?.edgeType || "tool_access",
+        edge_type: (e.data?.edgeType as string) || "tool_access",
       })),
     };
 

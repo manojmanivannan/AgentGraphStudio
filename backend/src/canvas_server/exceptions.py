@@ -2,6 +2,10 @@ class CanvasNotFoundError(Exception):
     pass
 
 
+class ConversationNotFoundError(Exception):
+    pass
+
+
 class ToolCompilationError(Exception):
     pass
 

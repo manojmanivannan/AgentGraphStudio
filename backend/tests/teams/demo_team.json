@@ -3,49 +3,49 @@
   "nodes": {
     "agents": [
       {
-        "id": "b0000000-0000-0000-0000-000000000001",
+        "id": "6da247ed-76e3-4a05-92a6-48ca7b792a74",
         "name": "Master",
-        "role": "Router",
-        "instructions": "You route the user question to the correct agent.",
-        "model_name": "ollama:glm-5.1:cloud",
+        "role": "RoutingExpert",
+        "instructions": "You answer questions by routing to other agents",
+        "model_name": "ollama:granite4.1:3b",
         "agent_type": "router",
-        "position_x": 200,
-        "position_y": 250
+        "position_x": 375.42711382676606,
+        "position_y": 174.967469955174
       },
       {
-        "id": "b0000000-0000-0000-0000-000000000002",
+        "id": "a40dd845-2a95-42f9-a0c3-4f42901dddce",
         "name": "MathAgent",
-        "role": "Math Expert",
-        "instructions": "You answer math questions. Always show your work step by step.",
-        "model_name": "ollama:glm-5.1:cloud",
+        "role": "Math expert",
+        "instructions": "you answer math questions",
+        "model_name": "ollama:granite4.1:3b",
         "agent_type": "worker",
-        "position_x": 150,
-        "position_y": 420
+        "position_x": 260.21655314623877,
+        "position_y": 318.16679599286323
       },
       {
-        "id": "b0000000-0000-0000-0000-000000000003",
+        "id": "b6348295-9e2e-43a7-91fa-d527f5e4577c",
         "name": "WeatherAgent",
         "role": "Weather Expert",
-        "instructions": "You always answer the weather is 'Sunny 20C' at any location.",
-        "model_name": "ollama:glm-5.1:cloud",
+        "instructions": "you answer weather questions with 'It is sunny today'",
+        "model_name": "ollama:granite4.1:3b",
         "agent_type": "worker",
-        "position_x": 400,
-        "position_y": 420
+        "position_x": 521.0998277343767,
+        "position_y": 341.54947068910764
       }
     ],
     "tools": []
   },
   "edges": [
     {
-      "id": "e0000000-0000-0000-0000-000000000001",
-      "source_node_id": "b0000000-0000-0000-0000-000000000001",
-      "target_node_id": "b0000000-0000-0000-0000-000000000002",
+      "id": "ac877161-215e-49d4-b586-60a36ee307c3",
+      "source_node_id": "6da247ed-76e3-4a05-92a6-48ca7b792a74",
+      "target_node_id": "a40dd845-2a95-42f9-a0c3-4f42901dddce",
       "edge_type": "handoff"
     },
     {
-      "id": "e0000000-0000-0000-0000-000000000002",
-      "source_node_id": "b0000000-0000-0000-0000-000000000001",
-      "target_node_id": "b0000000-0000-0000-0000-000000000003",
+      "id": "9e8fd3d7-bf64-4d11-8d44-0a6746731f3c",
+      "source_node_id": "6da247ed-76e3-4a05-92a6-48ca7b792a74",
+      "target_node_id": "b6348295-9e2e-43a7-91fa-d527f5e4577c",
       "edge_type": "handoff"
     }
   ]
