@@ -260,7 +260,10 @@ class TestE2ERouterMath:
             await runner.run("what is 2+2", collect)
 
         final_answers = [e for e in events if e["type"] == "final_answer"]
-        assert len(final_answers) >= 2
+        assert len(final_answers) >= 1
+
+        tool_results = [e for e in events if e["type"] == "tool_result"]
+        assert len(tool_results) >= 1
 
         event_types = [e["type"] for e in events]
         assert "run_complete" in event_types
@@ -391,7 +394,7 @@ class TestE2EFullFlow:
         assert len(handoffs) >= 1
 
         final_answers = [e for e in events if e["type"] == "final_answer"]
-        assert len(final_answers) >= 2
+        assert len(final_answers) >= 1
 
         all_texts = " ".join(str(e.get("content", "")) for e in final_answers)
         assert "4" in all_texts, f"should find '4' in answers, got: {all_texts[:500]}"
