@@ -14,7 +14,7 @@ export function PropertiesSidebar() {
 
   if (!propertiesOpen) {
     return (
-      <div className="w-12 h-full border-l border-gray-200 bg-white flex flex-col items-center py-3 gap-3">
+      <div data-testid="properties-sidebar" className="w-12 h-full border-l border-gray-200 bg-white flex flex-col items-center py-3 gap-3">
         <button
           onClick={toggleProperties}
           data-testid="properties-toggle"
@@ -42,7 +42,6 @@ export function PropertiesSidebar() {
         <button
           onClick={() => {
             selectNode(null);
-            toggleProperties();
           }}
           data-testid="properties-close"
           className="p-1 text-gray-400 hover:text-gray-600 rounded"

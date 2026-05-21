@@ -332,6 +332,7 @@ export function ChatPanel() {
                     </span>
                   </button>
                   <button
+                    data-testid="delete-conversation-button"
                     onClick={(e) => {
                       e.stopPropagation();
                       handleDeleteConversation(c.id);

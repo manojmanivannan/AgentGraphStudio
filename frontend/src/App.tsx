@@ -27,6 +27,16 @@ export default function App() {
     loadCanvases();
   }, [canvasId]);
 
+  // Support deep-linking via ?canvas=<id> (used by E2E tests and shareable URLs)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const initialId = params.get("canvas");
+    if (initialId && !canvasId) {
+      handleOpenCanvas(initialId);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const handleCreateCanvas = async () => {
     setLoading(true);
     try {
