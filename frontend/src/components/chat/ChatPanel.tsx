@@ -280,6 +280,7 @@ export function ChatPanel() {
         <div className="relative">
           <button
             onClick={() => setSelectorOpen(!selectorOpen)}
+            data-testid="conversation-selector"
             className="w-full flex items-center justify-between px-3 py-2 text-sm border border-gray-200 rounded-lg hover:border-gray-300"
           >
             <span className="text-gray-700 truncate flex-1 text-left">
@@ -295,6 +296,7 @@ export function ChatPanel() {
             <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-50 max-h-64 overflow-y-auto">
               <button
                 onClick={handleNewConversation}
+                data-testid="new-conversation-button"
                 className="w-full flex items-center gap-2 px-3 py-2 text-sm text-indigo-600 hover:bg-indigo-50 border-b border-gray-100"
               >
                 <Plus className="w-4 h-4" />
@@ -449,11 +451,13 @@ export function ChatPanel() {
             }}
             placeholder="Type a message..."
             disabled={running || !canvasId}
+            data-testid="chat-input"
             className="flex-1 px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-400 focus:border-indigo-400 disabled:opacity-50"
           />
           <button
             onClick={running ? stopRun : handleSend}
             disabled={!running && (!input.trim() || !canvasId)}
+            data-testid={running ? "stop-button" : "send-button"}
             className={`px-3 py-2 rounded-lg text-white text-sm font-medium transition-colors disabled:opacity-50 ${
               running
                 ? "bg-red-600 hover:bg-red-700"
