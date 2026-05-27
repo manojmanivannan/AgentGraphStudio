@@ -1,7 +1,7 @@
-import { useState } from "react";
 import { Settings, X } from "lucide-react";
 import { AgentEditor } from "@/components/sidebar/AgentEditor";
 import { ToolEditor } from "@/components/sidebar/ToolEditor";
+import { ResizablePanel } from "@/components/layout/ResizablePanel";
 import { useCanvasStore } from "@/store/canvasStore";
 
 export function PropertiesSidebar() {
@@ -34,7 +34,13 @@ export function PropertiesSidebar() {
   }
 
   return (
-    <div data-testid="properties-sidebar" className="w-64 h-full border-l border-gray-200 bg-white flex flex-col">
+    <ResizablePanel
+      data-testid="properties-sidebar"
+      defaultWidth={256}
+      minWidth={220}
+      maxWidth={500}
+      className="border-l border-gray-200 bg-white"
+    >
       <div className="flex items-center justify-between px-3 py-2 border-b border-gray-200">
         <span className="text-xs font-semibold text-gray-600">
           Properties
@@ -59,6 +65,6 @@ export function PropertiesSidebar() {
           </div>
         )}
       </div>
-    </div>
+    </ResizablePanel>
   );
 }
