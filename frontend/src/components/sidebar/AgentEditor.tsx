@@ -6,7 +6,7 @@ const MODEL_SUGGESTIONS = [
   "ollama:llama3.2",
   "ollama:mistral",
   "ollama:codellama",
-  "ollama:granite4.1:3b",
+  "ollama:granite4.1:8b",
   "openai:gpt-4o",
   "openai:gpt-4o-mini",
   "anthropic:claude-sonnet-4-20250514",
@@ -108,7 +108,7 @@ export function AgentEditor() {
           onChange={(e) => updateField("modelName", e.target.value)}
           data-testid="agent-model-input"
           className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-indigo-400 focus:border-indigo-400"
-          placeholder="e.g. ollama:granite4.1:3b"
+          placeholder="e.g. ollama:granite4.1:8b"
         />
         <datalist id="model-suggestions">
           {MODEL_SUGGESTIONS.map((m) => (
