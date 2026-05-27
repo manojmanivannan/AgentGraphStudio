@@ -1,37 +1,14 @@
 import contextlib
 import logging
-import re
 import uuid
 
-from beeai_framework.agents.react import ReActAgent
-from beeai_framework.backend.chat import ChatModel, _ChatModelKwargsAdapter
-from beeai_framework.backend.message import UserMessage
-from beeai_framework.context import RunContext  # noqa: F401
-from beeai_framework.memory.unconstrained_memory import UnconstrainedMemory
-from pydantic import BaseModel, Field
+import dspy
 
 from canvas_server.config import settings
+from canvas_server.streaming_react import StreamingReAct
 from canvas_server.tool_factory import compile_tool_from_code
 
-_ChatModelKwargsAdapter.rebuild()
-
 logger = logging.getLogger("canvas_server.runner")
-
-
-class RouterDecision(BaseModel):
-    thought: str = Field(description="Your reasoning about what to do next")
-    action: str | None = Field(
-        default=None,
-        description="The transfer action to take, e.g. transfer_to_MathAgent. Null if giving a final answer.",
-    )
-    action_input: str | None = Field(
-        default=None,
-        description="The task/question to pass to the sub-agent. Null if giving a final answer.",
-    )
-    final_answer: str | None = Field(
-        default=None,
-        description="The final answer if no further routing is needed. Null if routing to a sub-agent.",
-    )
 
 
 class CanvasRunner:
@@ -40,14 +17,18 @@ class CanvasRunner:
         self.conversation_repo = conversation_repo
         self.conversation_id = conversation_id
         self.tools: dict[uuid.UUID, object] = {}
-        self.agents: dict[uuid.UUID, ReActAgent] = {}
-        self.llms: dict[uuid.UUID, object] = {}
+        # worker agents built during setup; router agents built at run time
+        self.agents: dict[uuid.UUID, StreamingReAct] = {}
         self.node_map: dict[uuid.UUID, object] = {}
+        self._lm = dspy.LM(
+            settings.llm_model, api_base=settings.llm_base_url, api_key=""
+        )
 
     async def setup(self):
         logger.info("Setting up canvas runner")
         for node in self.canvas.agent_nodes:
             self.node_map[node.id] = node
+
         await self._build_tools()
         await self._build_agents()
         logger.info(
@@ -58,10 +39,8 @@ class CanvasRunner:
         logger.debug("Building tools from %d tool nodes", len(self.canvas.tool_nodes))
         for tool_node in self.canvas.tool_nodes:
             try:
-                beeai_tool = await compile_tool_from_code(
-                    tool_node.name, tool_node.code
-                )
-                self.tools[tool_node.id] = beeai_tool
+                fn = await compile_tool_from_code(tool_node.name, tool_node.code)
+                self.tools[tool_node.id] = fn
                 logger.debug(
                     "  compiled tool: id=%s name=%s", tool_node.id, tool_node.name
                 )
@@ -75,9 +54,9 @@ class CanvasRunner:
         agent_tools = []
         for edge in self.canvas.edges:
             if edge.source_node_id == agent_id and edge.edge_type == "tool_access":
-                tool = self.tools.get(edge.target_node_id)
-                if tool:
-                    agent_tools.append(tool)
+                fn = self.tools.get(edge.target_node_id)
+                if fn:
+                    agent_tools.append(fn)
         return agent_tools
 
     def _get_handoff_targets(self, agent_id: uuid.UUID) -> list:
@@ -87,62 +66,135 @@ class CanvasRunner:
                 targets.append(edge.target_node_id)
         return targets
 
-    def _model_kwargs(self, agent_node) -> dict:
-        kwargs = {}
-        model = agent_node.model_name
-        if model.startswith("ollama:"):
-            kwargs["base_url"] = settings.llm_base_url
-            kwargs["stream"] = False
-        return kwargs
+    def _build_agent_signature(self, agent_node):
+        role = agent_node.role or ""
+        instructions = agent_node.instructions or ""
+        if role and instructions:
+            full_instructions = f"{role}\n\n{instructions}"
+        elif role:
+            full_instructions = role
+        else:
+            full_instructions = instructions or "You are a helpful AI agent."
 
-    def _resolve_model_name(self, agent_node) -> str:
-        if agent_node.agent_type == "router" and settings.llm_model_router:
-            return settings.llm_model_router
-        if agent_node.agent_type == "worker" and settings.llm_model_agent:
-            return settings.llm_model_agent
-        return agent_node.model_name
+        class _AgentSig(dspy.Signature):
+            user_request: str = dspy.InputField()
+            process_result: str = dspy.OutputField(
+                desc="Final answer summarizing the result and information the user needs"
+            )
+
+        return _AgentSig.with_instructions(full_instructions)
+
+    def _build_worker_prompt(self, user_prompt: str, history: str = "") -> str:
+        parts = []
+        if history:
+            parts.append(history)
+        parts.append(user_prompt)
+        return "\n\n".join(parts)
 
     async def _build_agents(self):
         logger.debug(
             "Building agents from %d agent nodes", len(self.canvas.agent_nodes)
         )
-        for agent_node in self.canvas.agent_nodes:
-            tools = self._get_agent_tools(agent_node.id)
-            model_name = self._resolve_model_name(agent_node)
-            logger.debug(
-                "  agent: id=%s name=%s type=%s model=%s tools=%d",
-                agent_node.id,
-                agent_node.name,
-                agent_node.agent_type,
-                model_name,
-                len(tools),
-            )
-            try:
-                model_kwargs = self._model_kwargs(agent_node)
-                llm = ChatModel.from_name(model_name, **model_kwargs)
-                self.llms[agent_node.id] = llm
 
-                agent = ReActAgent(
-                    llm=llm,
-                    tools=tools,
-                    memory=UnconstrainedMemory(),
+        # Build worker agents at setup time; router agents are built at run time
+        # (they need send_event and history which aren't available during setup).
+        for agent_node in self.canvas.agent_nodes:
+            if agent_node.agent_type == "worker":
+                await self._build_single_worker(agent_node)
+
+        logger.info(
+            "Built %d agents successfully", len(self.agents)
+        )
+
+    async def _build_single_worker(self, agent_node):
+        tools = self._get_agent_tools(agent_node.id)
+        signature = self._build_agent_signature(agent_node)
+        agent = StreamingReAct(signature, tools=tools)
+        self.agents[agent_node.id] = agent
+        logger.debug(
+            "  built worker: id=%s name=%s tools=%d",
+            agent_node.id,
+            agent_node.name,
+            len(tools),
+        )
+
+    def _attach_events(self, agent_id: uuid.UUID, send_event):
+        """Wire event callbacks on an agent so StreamingReAct events flow to send_event."""
+        agent = self.agents.get(agent_id)
+        agent_node = self.node_map.get(agent_id)
+        if agent and agent_node:
+            agent.on_event(
+                lambda event, aid=agent_id, aname=agent_node.name: send_event(
+                    {"agent": aname, "node_id": str(aid), **event}
                 )
-                self.agents[agent_node.id] = agent
+            )
+
+    def _make_handoff_tool(self, target_id: uuid.UUID, router_name: str, send_event, history: str):
+        """Create a DSPy tool function that delegates to a sub-agent."""
+        target_agent = self.agents[target_id]
+        target_node = self.node_map[target_id]
+        target_name = target_node.name
+
+        async def transfer(task: str) -> str:
+            await send_event(
+                {
+                    "type": "handoff",
+                    "from": router_name,
+                    "to": target_name,
+                    "node_id": str(target_id),
+                }
+            )
+            await send_event(
+                {
+                    "type": "agent_start",
+                    "agent": target_name,
+                    "agentType": target_node.agent_type,
+                    "node_id": str(target_id),
+                }
+            )
+
+            prompt = self._build_worker_prompt(task, history)
+            try:
+                result = await target_agent.aforward(user_request=prompt)
+                answer = result.process_result
             except Exception as e:
+                answer = f"Error: {e}"
                 logger.error(
-                    "  failed to build agent %s: %s", agent_node.name, e, exc_info=True
+                    "Sub-agent %s failed: %s", target_name, e, exc_info=True
                 )
-        logger.info("Built %d agents successfully", len(self.agents))
+
+            await self._persist_message(
+                role="assistant",
+                content=answer,
+                agent_name=target_name,
+                node_id=target_id,
+                event_type="final_answer",
+            )
+            return answer
+
+        transfer.__name__ = f"transfer_to_{target_name}"
+        transfer.__doc__ = (
+            f"Route the user request to {target_name}, who handles: {target_node.role or target_name}"
+        )
+        return transfer
+
+    def _build_router_agent(self, agent_node, send_event, history: str):
+        """Create a fresh StreamingReAct for a router with handoff tools baked in."""
+        tools = self._get_agent_tools(agent_node.id)
+        handoff_tool_fns = [
+            self._make_handoff_tool(tid, agent_node.name, send_event, history)
+            for tid in self._get_handoff_targets(agent_node.id)
+        ]
+        all_tools = tools + handoff_tool_fns
+
+        signature = self._build_agent_signature(agent_node)
+        agent = StreamingReAct(signature, tools=all_tools)
+        self._attach_events(agent_node.id, send_event)
+        return agent
 
     def _agent_name(self, agent_id: uuid.UUID) -> str:
         node = self.node_map.get(agent_id)
         return node.name if node else "Unknown"
-
-    def _find_agent_id_by_name(self, name: str) -> uuid.UUID | None:
-        for node in self.canvas.agent_nodes:
-            if node.name == name:
-                return node.id
-        return None
 
     def _format_history(self, messages: list) -> str:
         if not messages:
@@ -193,312 +245,8 @@ class CanvasRunner:
         kwargs["type"] = type_
         return kwargs
 
-    def _build_router_prompt(
-        self,
-        agent_node,
-        user_prompt: str,
-        observations: str = "",
-        history: str = "",
-    ) -> str:
-        parts = []
-        handoff_targets = self._get_handoff_targets(agent_node.id)
-        action_names = [
-            f"transfer_to_{self.node_map[tid].name}"
-            for tid in handoff_targets
-            if tid in self.node_map
-        ]
-
-        tool_descriptions = []
-        for tid in handoff_targets:
-            target = self.node_map.get(tid)
-            if target:
-                desc = target.role or f"Handles tasks related to {target.name}"
-                tool_descriptions.append(f"{target.name}: {desc}")
-
-        if agent_node.instructions:
-            parts.append(agent_node.instructions)
-
-        if history:
-            parts.append(history)
-
-        parts.append(
-            "\nYou have access to the following sub-agents:\n\n"
-            + "\n".join(tool_descriptions)
-        )
-
-        parts.append(
-            "\nUse the following format:\n\n"
-            "Question: the input question you must answer\n"
-            "Thought: you should always think about what to do\n"
-            "Action: the action to take, should be one of ["
-            + ", ".join(action_names)
-            + "]\n"
-            "Action Input: the input to the action (the question to delegate)\n"
-            "Observation: the result of the action\n"
-            "... (this Thought/Action/Action Input/Observation can repeat N times)\n"
-            "Thought: I now know the final answer\n"
-            "Final Answer: the final answer to the original input question\n"
-        )
-
-        parts.append(f"Question: {user_prompt}")
-        if observations:
-            parts.append(observations)
-
-        return "\n".join(parts)
-
-    def _extract_text(self, result) -> str:
-        if hasattr(result, "iterations"):
-            for iteration in reversed(result.iterations):
-                if iteration.state and iteration.state.final_answer:
-                    return iteration.state.final_answer
-        if hasattr(result, "result"):
-            msg = result.result
-            if hasattr(msg, "text"):
-                return msg.text
-            if hasattr(msg, "content"):
-                return str(msg.content)
-        return str(result)
-
-    async def _call_llm(self, llm, prompt: str, response_format=None) -> str:
-        kwargs = {}
-        if response_format is not None:
-            kwargs["response_format"] = response_format
-
-        result = await llm.run([UserMessage(prompt)], **kwargs)
-
-        if (
-            response_format is not None
-            and hasattr(result, "output_structured")
-            and result.output_structured is not None
-        ):
-            return result.output_structured
-
-        if hasattr(result, "get_text_content"):
-            text = result.get_text_content()
-            if text:
-                return text
-        if hasattr(result, "messages"):
-            for msg in result.messages:
-                if hasattr(msg, "text"):
-                    return msg.text
-        return str(result)
-
-    def _parse_react_response(self, text: str) -> RouterDecision:
-        thought = ""
-        action = None
-        action_input = None
-        final_answer = None
-
-        thought_match = re.search(r"Thought:\s*(.+)", text, re.IGNORECASE)
-        if thought_match:
-            thought = thought_match.group(1).strip()
-
-        action_match = re.search(r"Action:\s*(.+?)(?:\n|$)", text, re.IGNORECASE)
-        if action_match:
-            action = action_match.group(1).strip()
-            if not action.startswith("transfer_to_"):
-                action = None
-
-        ai_match = re.search(r"Action Input:\s*(.+)", text, re.IGNORECASE)
-        if ai_match:
-            action_input = ai_match.group(1).strip()
-
-        fa_match = re.search(r"Final Answer:\s*(.+)", text, re.IGNORECASE)
-        if fa_match:
-            final_answer = fa_match.group(1).strip()
-
-        if not thought and not action and not final_answer:
-            thought = text[:100]
-
-        return RouterDecision(
-            thought=thought,
-            action=action,
-            action_input=action_input,
-            final_answer=final_answer,
-        )
-
-    async def _run_router_loop(self, agent_node, user_prompt: str, send_event):
-        llm = self.llms[agent_node.id]
-        observations = ""
-        max_rounds = 10
-
-        history_messages = await self._load_conversation_history()
-        history_text = self._format_history(history_messages)
-
-        for round_num in range(max_rounds):
-            prompt = self._build_router_prompt(
-                agent_node, user_prompt, observations, history_text
-            )
-            logger.info("Router %s round %d", agent_node.name, round_num + 1)
-            logger.debug("Router prompt: %s", prompt)
-
-            decision = None
-            for attempt in range(2):
-                use_structured = attempt == 0
-                try:
-                    fmt = RouterDecision if use_structured else None
-                    result = await self._call_llm(llm, prompt, response_format=fmt)
-                except Exception as e:
-                    logger.error("Router call failed: %s", e, exc_info=True)
-                    if use_structured:
-                        continue
-                    err = self._event(
-                        "error",
-                        message=f"Router error: {e}",
-                        node_id=str(agent_node.id),
-                    )
-                    await send_event(err)
-                    await self._persist_message(
-                        role="system",
-                        content=f"Router error: {e}",
-                        node_id=agent_node.id,
-                        event_type="error",
-                    )
-                    return f"Router failed: {e}"
-
-                if use_structured and isinstance(result, RouterDecision):
-                    decision = result
-                    break
-                elif not use_structured and isinstance(result, str):
-                    decision = self._parse_react_response(result)
-                    break
-                elif isinstance(result, RouterDecision):
-                    decision = result
-                    break
-
-            if decision is None:
-                err = self._event(
-                    "error",
-                    message="Router could not parse response",
-                    node_id=str(agent_node.id),
-                )
-                await send_event(err)
-                await self._persist_message(
-                    role="system",
-                    content="Router could not parse response",
-                    node_id=agent_node.id,
-                    event_type="error",
-                )
-                return "Router failed: could not parse response"
-
-            logger.info(
-                "Router %s round %d decision: thought=%s action=%s",
-                agent_node.name,
-                round_num + 1,
-                decision.thought[:100],
-                decision.action,
-            )
-
-            thought_evt = self._event(
-                "thought",
-                agent=agent_node.name,
-                content=decision.thought,
-                node_id=str(agent_node.id),
-            )
-            await send_event(thought_evt)
-
-            if decision.final_answer:
-                return decision.final_answer
-
-            if decision.action:
-                target_name = None
-                if decision.action.startswith("transfer_to_"):
-                    target_name = decision.action[len("transfer_to_") :]
-
-                if not target_name:
-                    err_msg = (
-                        f"\nObservation: Unknown action '{decision.action}'. "
-                        "Use one of the valid transfer_to_X actions.\n"
-                    )
-                    observations += err_msg
-                    continue
-
-                sub_task = decision.action_input or user_prompt
-                target_id = self._find_agent_id_by_name(target_name)
-
-                if target_id and target_id in self.agents:
-                    target_node = self.node_map[target_id]
-                    sub_agent = self.agents[target_id]
-
-                    handoff_evt = {
-                        "type": "handoff",
-                        "from": agent_node.name,
-                        "to": target_name,
-                        "node_id": str(target_id),
-                    }
-                    await send_event(handoff_evt)
-
-                    agent_start_evt = self._event(
-                        "agent_start",
-                        agent=target_name,
-                        agentType=target_node.agent_type,
-                        node_id=str(target_id),
-                    )
-                    await send_event(agent_start_evt)
-
-                    sub_agent.memory = UnconstrainedMemory()
-                    sub_prompt = self._build_worker_prompt(
-                        target_node, sub_task, history_text
-                    )
-
-                    try:
-                        result = await sub_agent.run(sub_prompt)
-                        obs = self._extract_text(result)
-                    except Exception as e:
-                        obs = f"Error: {e}"
-                        logger.error(
-                            "Sub-agent %s failed: %s", target_name, e, exc_info=True
-                        )
-
-                    observations += f"\nThought: {decision.thought}\n"
-                    observations += f"Action: {decision.action}\n"
-                    observations += f"Action Input: {decision.action_input or ''}\n"
-                    observations += f"Observation: {obs}\n"
-
-                    tool_evt = self._event(
-                        "tool_result",
-                        agent=agent_node.name,
-                        tool=f"transfer_to_{target_name}",
-                        output=obs,
-                        node_id=str(target_id),
-                    )
-                    await send_event(tool_evt)
-
-                    await self._persist_message(
-                        role="assistant",
-                        content=obs,
-                        agent_name=target_name,
-                        node_id=target_id,
-                        event_type="final_answer",
-                    )
-                else:
-                    observations += (
-                        f"\nObservation: Agent '{target_name}' is not available.\n"
-                    )
-
-            else:
-                observations += "\nObservation: You must provide either an action or a final_answer. Neither was set.\n"
-
-        return "Router reached maximum rounds without producing a final answer."
-
-    def _build_worker_prompt(
-        self,
-        agent_node,
-        user_prompt: str,
-        history: str = "",
-    ) -> str:
-        parts = []
-        if agent_node.role:
-            parts.append(f"You are: {agent_node.role}")
-        if agent_node.instructions:
-            parts.append(agent_node.instructions)
-        if history:
-            parts.append(history)
-        parts.append(user_prompt)
-        return "\n\n".join(parts)
-
     async def _run_worker(
-        self, agent_id: uuid.UUID, user_prompt: str, send_event, history: str = ""
+        self, agent_id: uuid.UUID, user_prompt: str, send_event
     ):
         agent = self.agents.get(agent_id)
         agent_node = self.node_map.get(agent_id)
@@ -507,33 +255,18 @@ class CanvasRunner:
             return None
 
         logger.info(
-            "Running agent: %s (type=%s model=%s)",
+            "Running agent: %s (type=%s)",
             agent_node.name,
             agent_node.agent_type,
-            agent_node.model_name,
-        )
-        await send_event(
-            self._event(
-                "agent_start",
-                agent=agent_node.name,
-                agentType=agent_node.agent_type,
-                node_id=str(agent_id),
-            )
         )
 
-        prompt = self._build_worker_prompt(agent_node, user_prompt, history)
+        prompt = self._build_worker_prompt(user_prompt)
 
         try:
-            result = await agent.run(prompt)
-            text = self._extract_text(result)
-            logger.info("Agent %s completed: result=%s", agent_node.name, text[:200])
-            await send_event(
-                self._event(
-                    "final_answer",
-                    agent=agent_node.name,
-                    content=text,
-                    node_id=str(agent_id),
-                )
+            result = await agent.aforward(user_request=prompt)
+            text = result.process_result
+            logger.info(
+                "Agent %s completed: result=%s", agent_node.name, text[:200]
             )
             await self._persist_message(
                 role="assistant",
@@ -544,14 +277,8 @@ class CanvasRunner:
             )
             return text
         except Exception as e:
-            logger.error("Agent %s failed: %s", agent_node.name, e, exc_info=True)
-            await send_event(
-                self._event(
-                    "error",
-                    message=str(e),
-                    agent=agent_node.name,
-                    node_id=str(agent_id),
-                )
+            logger.error(
+                "Agent %s failed: %s", agent_node.name, e, exc_info=True
             )
             await self._persist_message(
                 role="system",
@@ -594,85 +321,120 @@ class CanvasRunner:
         history_messages = await self._load_conversation_history()
         history_text = self._format_history(history_messages)
 
-        agent_ids = [n.id for n in self.canvas.agent_nodes]
+        with dspy.context(lm=self._lm):
 
-        if target_agent_id is not None and target_agent_id in self.agents:
-            agent_node = self.node_map[target_agent_id]
-            if agent_node.agent_type == "router":
-                final_text = await self._run_router_loop(
-                    agent_node, user_prompt, send_event
-                )
-                await send_event(
-                    self._event(
-                        "final_answer",
-                        agent=agent_node.name,
-                        content=final_text,
-                        node_id=str(target_agent_id),
+            agent_ids = [n.id for n in self.canvas.agent_nodes]
+
+            if target_agent_id is not None and target_agent_id in self.agents:
+                agent_node = self.node_map[target_agent_id]
+
+                if agent_node.agent_type == "router":
+                    agent = self._build_router_agent(
+                        agent_node, send_event, history_text
                     )
-                )
-            else:
-                final_text = await self._run_worker(
-                    target_agent_id, user_prompt, send_event, history_text
-                )
-        else:
-            first_node = self.node_map[agent_ids[0]]
-
-            if first_node.agent_type == "router":
-                final_text = await self._run_router_loop(
-                    first_node, user_prompt, send_event
-                )
-                await send_event(
-                    self._event(
-                        "final_answer",
-                        agent=first_node.name,
-                        content=final_text,
-                        node_id=str(first_node.id),
+                    prompt = self._build_worker_prompt(user_prompt, history_text)
+                    result = await agent.aforward(user_request=prompt)
+                    final_text = result.process_result
+                    await send_event(
+                        self._event(
+                            "final_answer",
+                            agent=agent_node.name,
+                            content=final_text,
+                            node_id=str(target_agent_id),
+                        )
                     )
-                )
-            else:
-                handoff_map = {}
-                for agent_node in self.canvas.agent_nodes:
-                    handoff_map[agent_node.id] = self._get_handoff_targets(
-                        agent_node.id
-                    )
-
-                current_agent_id = agent_ids[0]
-                visited = set()
-
-                while current_agent_id is not None and current_agent_id not in visited:
-                    visited.add(current_agent_id)
+                else:
+                    self._attach_events(target_agent_id, send_event)
                     result = await self._run_worker(
-                        current_agent_id, user_prompt, send_event, history_text
+                        target_agent_id, user_prompt, send_event
                     )
-                    if result is None:
-                        break
-
-                    handoff_targets = handoff_map.get(current_agent_id, [])
-                    next_agent_id = handoff_targets[0] if handoff_targets else None
-
-                    if next_agent_id and next_agent_id != current_agent_id:
-                        next_name = self._agent_name(next_agent_id)
-                        logger.info(
-                            "Handoff: %s -> %s",
-                            self._agent_name(current_agent_id),
-                            next_name,
-                        )
+                    final_text = result
+                    if result is not None:
                         await send_event(
-                            {
-                                "type": "handoff",
-                                "from": self._agent_name(current_agent_id),
-                                "to": next_name,
-                                "node_id": str(next_agent_id),
-                            }
+                            self._event(
+                                "final_answer",
+                                agent=agent_node.name,
+                                content=result,
+                                node_id=str(target_agent_id),
+                            )
+                        )
+            else:
+                first_node = self.node_map[agent_ids[0]]
+
+                if first_node.agent_type == "router":
+                    agent = self._build_router_agent(
+                        first_node, send_event, history_text
+                    )
+                    prompt = self._build_worker_prompt(user_prompt, history_text)
+                    result = await agent.aforward(user_request=prompt)
+                    final_text = result.process_result
+                    await send_event(
+                        self._event(
+                            "final_answer",
+                            agent=first_node.name,
+                            content=final_text,
+                            node_id=str(first_node.id),
+                        )
+                    )
+                else:
+                    handoff_map = {}
+                    for agent_node in self.canvas.agent_nodes:
+                        handoff_map[agent_node.id] = self._get_handoff_targets(
+                            agent_node.id
                         )
 
-                    current_agent_id = next_agent_id
+                    current_agent_id = agent_ids[0]
+                    visited = set()
+
+                    while current_agent_id is not None and current_agent_id not in visited:
+                        visited.add(current_agent_id)
+                        self._attach_events(current_agent_id, send_event)
+
+                        result_text = await self._run_worker(
+                            current_agent_id, user_prompt, send_event
+                        )
+                        if result_text is None:
+                            break
+
+                        await send_event(
+                            self._event(
+                                "final_answer",
+                                agent=self._agent_name(current_agent_id),
+                                content=result_text,
+                                node_id=str(current_agent_id),
+                            )
+                        )
+
+                        handoff_targets = handoff_map.get(current_agent_id, [])
+                        next_agent_id = handoff_targets[0] if handoff_targets else None
+
+                        if next_agent_id and next_agent_id != current_agent_id:
+                            next_name = self._agent_name(next_agent_id)
+                            logger.info(
+                                "Handoff: %s -> %s",
+                                self._agent_name(current_agent_id),
+                                next_name,
+                            )
+                            await send_event(
+                                {
+                                    "type": "handoff",
+                                    "from": self._agent_name(current_agent_id),
+                                    "to": next_name,
+                                    "node_id": str(next_agent_id),
+                                }
+                            )
+
+                        current_agent_id = next_agent_id
 
         if self.conversation_repo and self.conversation_id:
             with contextlib.suppress(Exception):
-                await self.conversation_repo.complete_conversation(self.conversation_id)
+                await self.conversation_repo.complete_conversation(
+                    self.conversation_id
+                )
 
-        logger.info("Canvas execution completed: canvas_id=%s", self.canvas.id)
+        logger.info(
+            "Canvas execution completed: canvas_id=%s", self.canvas.id
+        )
         await send_event(
             self._event("run_complete", result="Workflow execution completed.")
         )

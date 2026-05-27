@@ -7,7 +7,7 @@
         "name": "Master",
         "role": "RoutingExpert",
         "instructions": "You answer questions by routing to other agents",
-        "model_name": "ollama:granite4.1:8b",
+        "model_name": "ollama:gemma4:31b",
         "agent_type": "router",
         "position_x": 375.42711382676606,
         "position_y": 174.967469955174
@@ -17,7 +17,7 @@
         "name": "MathAgent",
         "role": "Math expert",
         "instructions": "you answer math questions",
-        "model_name": "ollama:granite4.1:8b",
+        "model_name": "ollama:gemma4:31b",
         "agent_type": "worker",
         "position_x": 260.21655314623877,
         "position_y": 318.16679599286323
@@ -27,7 +27,7 @@
         "name": "WeatherAgent",
         "role": "Weather Expert",
         "instructions": "you answer weather questions with 'It is sunny today'",
-        "model_name": "ollama:granite4.1:8b",
+        "model_name": "ollama:gemma4:31b",
         "agent_type": "worker",
         "position_x": 521.0998277343767,
         "position_y": 341.54947068910764

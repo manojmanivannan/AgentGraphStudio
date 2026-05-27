@@ -22,10 +22,10 @@ services:
       - "8000:8000"
     environment:
       DATABASE_URL: postgresql+asyncpg://canvas:canvas@postgres:5432/canvas_db
-      DEFAULT_LLM: ollama:granite4.1:8b
+      DEFAULT_LLM: ollama:gemma4:31b
       LLM_BASE_URL: http://ollama:11434
-      LLM_MODEL_ROUTER: ollama:granite4.1:8b
-      LLM_MODEL_AGENT: ollama:granite4.1:8b
+      LLM_MODEL_ROUTER: ollama:gemma4:31b
+      LLM_MODEL_AGENT: ollama:gemma4:31b
     depends_on:
       postgres:
         condition: service_healthy
