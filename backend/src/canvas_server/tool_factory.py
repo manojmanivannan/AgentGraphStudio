@@ -39,16 +39,31 @@ async def compile_tool_from_code(name: str, code: str):
     # The beeai-framework can infer the schema from the function signature and docstring.
     # We need to wrap the user_func to ensure it returns a ToolOutput,
     # but we must preserve the original signature for the schema generation.
-    @functools.wraps(user_func)
-    def wrapper(*args, **kwargs) -> StringToolOutput:
-        logger.debug("Calling tool '%s' with args: %s, kwargs: %s", name, args, kwargs)
-        result = user_func(*args, **kwargs)
-        logger.debug("Tool '%s' result: %s", name, str(result)[:200])
-        return StringToolOutput(str(result))
 
-    # We need to set the name of the wrapper to the desired tool name.
-    wrapper.__name__ = name
-    # The docstring is carried over by @functools.wraps.
+    # Create a wrapper with the same signature as the original function
+    sig = inspect.signature(user_func)
+    params = sig.parameters
+    
+    wrapper_code = f"""
+@functools.wraps(user_func)
+def wrapper({', '.join(params)}):
+    logger.debug("Calling tool '{name}' with args: %s, kwargs: %s", {tuple(params)}, {{}})
+    result = user_func({', '.join(f'{p}={p}' for p in params)})
+    logger.debug("Tool '%s' result: %s", name, str(result)[:200])
+    return StringToolOutput(str(result))
+"""
+    
+    local_vars = {
+        'user_func': user_func,
+        'logger': logger,
+        'StringToolOutput': StringToolOutput,
+        'name': name,
+        'functools': functools,
+        'params': params,
+    }
+    exec(wrapper_code, local_vars)
+    wrapper = local_vars['wrapper']
+
 
     # Now, create the tool by applying the decorator programmatically.
     # The decorator will use the function's signature and docstring to create the schema.

@@ -12,7 +12,7 @@ class TestSettings:
 
     def test_default_llm(self):
         settings = Settings()
-        assert settings.default_llm == "ollama:ollama/granite4.1:3b"
+        assert settings.default_llm == "ollama:ollama/granite4.1:8b"
 
     def test_env_override(self, monkeypatch):
         monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://user:pass@host/db")

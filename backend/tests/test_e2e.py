@@ -56,7 +56,7 @@ class FakeNode:
         self.name = data["name"]
         self.role = data.get("role", "")
         self.instructions = data.get("instructions", "")
-        self.model_name = data.get("model_name", "ollama:granite4.1:3b")
+        self.model_name = data.get("model_name", "ollama:granite4.1:8b")
         self.agent_type = data.get("agent_type", "worker")
         self.position_x = data.get("position_x", 0)
         self.position_y = data.get("position_y", 0)
