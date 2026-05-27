@@ -46,6 +46,7 @@ export function AgentEditor() {
         <select
           value={(data as any).agentType ?? "worker"}
           onChange={(e) => updateField("agentType", e.target.value)}
+          data-testid="agent-type-select"
           className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-indigo-400 focus:border-indigo-400 bg-white"
         >
           <option value="worker">Worker</option>
@@ -59,6 +60,7 @@ export function AgentEditor() {
           type="text"
           value={(data as any).name ?? ""}
           onChange={(e) => updateField("name", e.target.value)}
+          data-testid="agent-name-input"
           className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-indigo-400 focus:border-indigo-400"
           placeholder="Agent name"
         />
@@ -70,6 +72,7 @@ export function AgentEditor() {
           type="text"
           value={(data as any).role ?? ""}
           onChange={(e) => updateField("role", e.target.value)}
+          data-testid="agent-role-input"
           className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-indigo-400 focus:border-indigo-400"
           placeholder="e.g. You are a helpful assistant"
         />
@@ -80,6 +83,7 @@ export function AgentEditor() {
         <textarea
           value={(data as any).instructions ?? ""}
           onChange={(e) => updateField("instructions", e.target.value)}
+          data-testid="agent-instructions-input"
           rows={4}
           className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-indigo-400 focus:border-indigo-400 resize-none"
           placeholder="Instructions for the agent..."
@@ -93,6 +97,7 @@ export function AgentEditor() {
           list="model-suggestions"
           value={(data as any).modelName ?? "ollama:llama3.1"}
           onChange={(e) => updateField("modelName", e.target.value)}
+          data-testid="agent-model-input"
           className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-indigo-400 focus:border-indigo-400"
           placeholder="e.g. ollama:granite4.1:3b"
         />

@@ -17,6 +17,8 @@ function ToolNodeComponent({ id, data, selected }: NodeProps) {
 
   return (
     <div
+      data-testid="tool-node"
+      data-node-id={id}
       className={`
         relative min-w-[180px] rounded-lg border-2 bg-white shadow-md transition-all
         ${selected ? "border-blue-500 ring-2 ring-blue-200" : "border-gray-200"}

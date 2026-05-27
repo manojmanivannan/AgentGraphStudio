@@ -37,6 +37,7 @@ export function ToolEditor() {
           type="text"
           value={(data as any).name ?? ""}
           onChange={(e) => updateField("name", e.target.value)}
+          data-testid="tool-name-input"
           className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-amber-400 focus:border-amber-400"
           placeholder="Tool name"
         />
@@ -51,6 +52,7 @@ export function ToolEditor() {
             value={(data as any).code ?? ""}
             onChange={(value) => updateField("code", value ?? "")}
             theme="vs-light"
+            wrapperProps={{ "data-testid": "tool-code-editor" }}
             options={{
               minimap: { enabled: false },
               fontSize: 13,
