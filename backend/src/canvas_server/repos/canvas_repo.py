@@ -48,9 +48,13 @@ class CanvasRepo:
         await self.session.flush()
 
         canvas_id = canvas.id
+        id_map = {}
+
         for a in agents:
+            new_id = uuid.uuid4()
+            id_map[a.id] = new_id
             node = AgentNode(
-                id=a.id,
+                id=new_id,
                 canvas_id=canvas_id,
                 name=a.name,
                 role=a.role,
@@ -63,8 +67,10 @@ class CanvasRepo:
             self.session.add(node)
 
         for t in tools:
+            new_id = uuid.uuid4()
+            id_map[t.id] = new_id
             node = ToolNode(
-                id=t.id,
+                id=new_id,
                 canvas_id=canvas_id,
                 name=t.name,
                 code=t.code,
@@ -74,11 +80,15 @@ class CanvasRepo:
             self.session.add(node)
 
         for e in edges:
+            # Map source and target IDs to their new versions
+            source_id = id_map.get(e.source_node_id, e.source_node_id)
+            target_id = id_map.get(e.target_node_id, e.target_node_id)
+            
             edge = Edge(
-                id=e.id,
+                id=uuid.uuid4(),
                 canvas_id=canvas_id,
-                source_node_id=e.source_node_id,
-                target_node_id=e.target_node_id,
+                source_node_id=source_id,
+                target_node_id=target_id,
                 edge_type=e.edge_type,
             )
             self.session.add(edge)

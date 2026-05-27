@@ -1,4 +1,5 @@
 import { useCanvasStore } from "@/store/canvasStore";
+import { Wrench } from "lucide-react";
 
 const MODEL_SUGGESTIONS = [
   "ollama:llama3.1",
@@ -36,6 +37,14 @@ export function AgentEditor() {
     );
     setNodes(updatedNodes);
   };
+
+  const edges = useCanvasStore((s) => s.edges);
+  const selectNode = useCanvasStore((s) => s.selectNode);
+
+  const connectedTools = nodes.filter((n) => {
+    if (n.type !== "tool") return false;
+    return edges.some(edge => edge.source === selectedNodeId && edge.target === n.id);
+  });
 
   return (
     <div className="space-y-4">
@@ -106,6 +115,32 @@ export function AgentEditor() {
             <option key={m} value={m} />
           ))}
         </datalist>
+      </div>
+
+      <div className="pt-4 border-t border-gray-100">
+        <h4 className="text-xs font-semibold text-gray-600 mb-2 flex items-center gap-1">
+          <Wrench className="w-3 h-3" /> Connected Tools
+        </h4>
+        <div className="space-y-1">
+          {connectedTools.length > 0 ? (
+            connectedTools.map((tool) => (
+              <div
+                key={tool.id}
+                className="flex items-center justify-between px-2 py-1 bg-amber-50 text-amber-700 rounded border border-amber-100 text-[11px] font-medium"
+              >
+                <span className="truncate">{tool.data.name}</span>
+                <button
+                  onClick={() => selectNode(tool.id)}
+                  className="text-amber-500 hover:text-amber-600 font-bold px-1"
+                >
+                  →
+                </button>
+              </div>
+            ))
+          ) : (
+            <p className="text-[11px] text-gray-400 italic">No tools connected</p>
+          )}
+        </div>
       </div>
     </div>
   );

@@ -71,6 +71,10 @@ vite.svg
 .expo/
 .expo-shared/
 
+# Playwright-report
+frontend/playwright-report/*
+frontend/test-results/*
+
 # ----------------------
 # IDE / Editor
 # ----------------------
