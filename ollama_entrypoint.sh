@@ -13,7 +13,7 @@ pid=$!
 sleep 5
 
 echo "🔴 Retrieve model..."
-ollama pull granite4.1:8b
+ollama pull gemma4:31b
 echo "🟢 Done!"
 
 # Wait for Ollama process to finish.
