@@ -92,6 +92,7 @@ class CanvasRunner:
         model = agent_node.model_name
         if model.startswith("ollama:"):
             kwargs["base_url"] = settings.llm_base_url
+            kwargs["stream"] = False
         return kwargs
 
     def _resolve_model_name(self, agent_node) -> str:

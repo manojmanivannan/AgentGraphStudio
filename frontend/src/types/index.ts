@@ -26,6 +26,11 @@ export type ExecutionEvent =
 
 export type ExecutionStatus = "idle" | "running" | "done" | "error";
 
+export interface ToolArgument {
+  name: string;
+  type: string;
+}
+
 export interface CanvasSavePayload {
   name: string;
   nodes: {
@@ -40,9 +45,10 @@ export interface CanvasSavePayload {
       position_y: number;
     }[];
     tools: {
-      id: string;
+      id:string;
       name: string;
       code: string;
+      args: ToolArgument[];
       position_x: number;
       position_y: number;
     }[];
@@ -77,6 +83,7 @@ export interface CanvasResponse {
       canvas_id: string;
       name: string;
       code: string;
+      args: ToolArgument[];
       position_x: number;
       position_y: number;
     }>;
