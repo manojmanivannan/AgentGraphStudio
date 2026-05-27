@@ -10,9 +10,13 @@ class TestSettings:
         settings = Settings()
         assert "http://localhost:5173" in settings.cors_origins
 
-    def test_default_llm(self):
+    def test_default_llm_model(self):
         settings = Settings()
-        assert settings.default_llm == "ollama:ollama/granite4.1:3b"
+        assert settings.llm_model != ""
+
+    def test_llm_base_url_has_default(self):
+        settings = Settings()
+        assert settings.llm_base_url != ""
 
     def test_env_override(self, monkeypatch):
         monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://user:pass@host/db")

@@ -23,9 +23,13 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-// Helper: render ChatPanel and wait for initial conversation list load
+// Helper: render ChatPanel, open it, and wait for initial conversation list load
 async function setup() {
   const utils = render(<ChatPanel />);
+  // Open the chat panel first
+  await act(async () => {
+    await userEvent.click(screen.getByTestId("chat-toggle"));
+  });
   // Wait for listConversations to settle
   await waitFor(() =>
     expect(screen.queryByTestId("conversation-selector")).toBeInTheDocument()
@@ -208,9 +212,11 @@ describe("ChatPanel", () => {
       expect(screen.getByTestId("chat-input")).toBeDisabled();
     });
 
-    it("disables the input when canvasId is null", () => {
+    it("disables the input when canvasId is null", async () => {
       useCanvasStore.getState().reset(); // clears canvasId
+      const user = userEvent.setup();
       render(<ChatPanel />);
+      await user.click(screen.getByTestId("chat-toggle"));
 
       expect(screen.getByTestId("chat-input")).toBeDisabled();
     });

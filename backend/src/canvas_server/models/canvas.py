@@ -5,8 +5,10 @@ from datetime import UTC, datetime
 
 from sqlalchemy import DateTime, Double, ForeignKey, Index, String, Text, Uuid
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.types import JSON
 
 from canvas_server.database import Base
+
 
 
 def _utcnow():
@@ -74,6 +76,7 @@ class ToolNode(Base):
     )
     name: Mapped[str] = mapped_column(String(255), default="Tool")
     code: Mapped[str] = mapped_column(Text, default="")
+    args: Mapped[list] = mapped_column(JSON, default=[])
     position_x: Mapped[float] = mapped_column(Double, default=0)
     position_y: Mapped[float] = mapped_column(Double, default=0)
 

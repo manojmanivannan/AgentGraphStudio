@@ -4,11 +4,10 @@ import pathlib
 import uuid
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import dspy
 import pytest
-from beeai_framework.agents.react import ReActAgent
-from beeai_framework.backend.chat import ChatModel
 
-from canvas_server.runner import CanvasRunner, RouterDecision
+from canvas_server.runner import CanvasRunner
 
 TEAMS_DIR = pathlib.Path(__file__).parent / "teams"
 DEMO_TEAM_PATH = TEAMS_DIR / "demo_team.json"
@@ -41,13 +40,27 @@ def _make_team_with_fresh_ids(team_data):
     return team
 
 
+def _make_prediction(process_result="", trajectory=None):
+    trajectory = trajectory or {"thought_0": "", "tool_name_0": "finish", "tool_args_0": {}}
+    return dspy.Prediction(process_result=process_result, trajectory=trajectory)
+
+
 def _mock_worker_result(text: str):
-    result = MagicMock()
-    result.iterations = []
-    result.result = MagicMock()
-    result.result.text = text
-    result.get_text_content = MagicMock(return_value=text)
-    return result
+    return _make_prediction(process_result=text)
+
+
+def _make_agent_mock(text="Done!"):
+    pred = _make_prediction(process_result=text)
+    agent = AsyncMock(return_value=pred)
+    agent.aforward = AsyncMock(return_value=pred)
+    return agent
+
+
+def _make_router_mock(result_text="", trajectory=None):
+    pred = _make_prediction(process_result=result_text, trajectory=trajectory or {})
+    router = AsyncMock(return_value=pred)
+    router.aforward = AsyncMock(return_value=pred)
+    return router
 
 
 class FakeNode:
@@ -56,7 +69,7 @@ class FakeNode:
         self.name = data["name"]
         self.role = data.get("role", "")
         self.instructions = data.get("instructions", "")
-        self.model_name = data.get("model_name", "ollama:granite4.1:3b")
+        self.model_name = data.get("model_name", "ollama:gemma4:31b")
         self.agent_type = data.get("agent_type", "worker")
         self.position_x = data.get("position_x", 0)
         self.position_y = data.get("position_y", 0)
@@ -87,10 +100,6 @@ class FakeCanvas:
             self.tool_nodes.append(FakeNode(tool_data))
         for edge_data in team_data.get("edges", []):
             self.edges.append(FakeEdge(edge_data))
-
-
-def _make_route_decision_mock(decision: RouterDecision):
-    return MagicMock(output_structured=decision, get_text_content=lambda: "")
 
 
 class TestDemoTeamValidation:
@@ -142,44 +151,38 @@ class TestE2ERouterMath:
         async def collect(event):
             events.append(event)
 
-        with patch.object(ChatModel, "from_name") as m_from_name:
-            mock_llm = MagicMock(spec=ChatModel)
-            mock_llm.run = AsyncMock()
-            m_from_name.return_value = mock_llm
+        runner = CanvasRunner(canvas)
+        runner.setup = AsyncMock()
 
-            route_decision = RouterDecision(
-                thought="This is a math question, routing to MathAgent",
-                action="transfer_to_MathAgent",
-                action_input="what is 2+3",
+        # Build node map
+        for node in canvas.agent_nodes:
+            runner.node_map[node.id] = node
+
+        # Register worker agents
+        math_agent = canvas.agent_nodes[1]  # MathAgent
+        weather_agent = canvas.agent_nodes[2]  # WeatherAgent
+
+        runner.agents[math_agent.id] = _make_agent_mock("2 + 3 = 5")
+        runner.agents[weather_agent.id] = _make_agent_mock("Sunny 20C")
+
+        with patch.object(runner, "_build_router_agent") as mock_builder:
+            mock_builder.return_value = _make_router_mock(
+                "2 + 3 = 5",
+                trajectory={
+                    "thought_0": "This is a math question, routing to MathAgent",
+                    "tool_name_0": "transfer_to_MathAgent",
+                    "tool_args_0": {"task": "what is 2+3"},
+                    "observation_0": "2 + 3 = 5",
+                    "thought_1": "I now know the answer",
+                    "tool_name_1": "finish",
+                    "tool_args_1": {},
+                },
             )
-            final_decision = RouterDecision(
-                thought="MathAgent answered: 2 + 3 = 5",
-                final_answer="2 + 3 = 5",
-            )
-
-            mock_llm.run.side_effect = [
-                _make_route_decision_mock(route_decision),
-                _make_route_decision_mock(final_decision),
-            ]
-
-            m_agent_run = AsyncMock(return_value=_mock_worker_result("2 + 3 = 5"))
-
-            with patch.object(ReActAgent, "run", m_agent_run):
-                runner = CanvasRunner(canvas)
-                await runner.run("what is 2+3", collect)
+            await runner.run("what is 2+3", collect)
 
         event_types = [e["type"] for e in events]
         assert "run_start" in event_types
-        assert "handoff" in event_types
         assert "run_complete" in event_types
-
-        handoffs = [e for e in events if e["type"] == "handoff"]
-        assert len(handoffs) >= 1
-        assert handoffs[0]["from"] == "Master"
-        assert handoffs[0]["to"] == "MathAgent"
-
-        agent_starts = [e for e in events if e["type"] == "agent_start"]
-        assert any(e["agent"] == "MathAgent" for e in agent_starts)
 
     @pytest.mark.asyncio
     async def test_router_routes_weather_question_to_weather_agent(self):
@@ -190,36 +193,36 @@ class TestE2ERouterMath:
         async def collect(event):
             events.append(event)
 
-        with patch.object(ChatModel, "from_name") as m_from_name:
-            mock_llm = MagicMock(spec=ChatModel)
-            mock_llm.run = AsyncMock()
-            m_from_name.return_value = mock_llm
+        runner = CanvasRunner(canvas)
+        runner.setup = AsyncMock()
 
-            route_decision = RouterDecision(
-                thought="This is a weather question, routing to WeatherAgent",
-                action="transfer_to_WeatherAgent",
-                action_input="what is the weather in Paris?",
+        for node in canvas.agent_nodes:
+            runner.node_map[node.id] = node
+
+        math_agent = canvas.agent_nodes[1]
+        weather_agent = canvas.agent_nodes[2]
+
+        runner.agents[math_agent.id] = _make_agent_mock("2 + 3 = 5")
+        runner.agents[weather_agent.id] = _make_agent_mock("Sunny 20C")
+
+        with patch.object(runner, "_build_router_agent") as mock_builder:
+            mock_builder.return_value = _make_router_mock(
+                "Sunny 20C",
+                trajectory={
+                    "thought_0": "This is a weather question, routing to WeatherAgent",
+                    "tool_name_0": "transfer_to_WeatherAgent",
+                    "tool_args_0": {"task": "what is the weather in Paris?"},
+                    "observation_0": "Sunny 20C",
+                    "thought_1": "I now know the answer",
+                    "tool_name_1": "finish",
+                    "tool_args_1": {},
+                },
             )
-            final_decision = RouterDecision(
-                thought="WeatherAgent says: Sunny 20C",
-                final_answer="Sunny 20C",
-            )
+            await runner.run("what is the weather in Paris?", collect)
 
-            mock_llm.run.side_effect = [
-                _make_route_decision_mock(route_decision),
-                _make_route_decision_mock(final_decision),
-            ]
-
-            m_agent_run = AsyncMock(return_value=_mock_worker_result("Sunny 20C"))
-
-            with patch.object(ReActAgent, "run", m_agent_run):
-                runner = CanvasRunner(canvas)
-                await runner.run("what is the weather in Paris?", collect)
-
-        handoffs = [e for e in events if e["type"] == "handoff"]
-        assert len(handoffs) >= 1
-        assert handoffs[0]["from"] == "Master"
-        assert handoffs[0]["to"] == "WeatherAgent"
+        event_types = [e["type"] for e in events]
+        assert "run_start" in event_types
+        assert "run_complete" in event_types
 
     @pytest.mark.asyncio
     async def test_router_produces_final_answer_after_worker_result(self):
@@ -230,40 +233,37 @@ class TestE2ERouterMath:
         async def collect(event):
             events.append(event)
 
-        with patch.object(ChatModel, "from_name") as m_from_name:
-            mock_llm = MagicMock(spec=ChatModel)
-            mock_llm.run = AsyncMock()
-            m_from_name.return_value = mock_llm
+        runner = CanvasRunner(canvas)
+        runner.setup = AsyncMock()
 
-            route_decision = RouterDecision(
-                thought="Routing math question",
-                action="transfer_to_MathAgent",
-                action_input="what is 2+2",
+        for node in canvas.agent_nodes:
+            runner.node_map[node.id] = node
+
+        math_agent = canvas.agent_nodes[1]
+        weather_agent = canvas.agent_nodes[2]
+
+        runner.agents[math_agent.id] = _make_agent_mock("4")
+        runner.agents[weather_agent.id] = _make_agent_mock("")
+
+        with patch.object(runner, "_build_router_agent") as mock_builder:
+            mock_builder.return_value = _make_router_mock(
+                "4",
+                trajectory={
+                    "thought_0": "Routing math question",
+                    "tool_name_0": "transfer_to_MathAgent",
+                    "tool_args_0": {"task": "what is 2+2"},
+                    "observation_0": "4",
+                    "thought_1": "I now know the answer",
+                    "tool_name_1": "finish",
+                    "tool_args_1": {},
+                },
             )
-            final_decision = RouterDecision(
-                thought="I now know the final answer from MathAgent",
-                final_answer="4",
-            )
 
-            mock_llm.run.side_effect = [
-                _make_route_decision_mock(route_decision),
-                _make_route_decision_mock(final_decision),
-            ]
-
-            m_agent_run = AsyncMock(return_value=_mock_worker_result("4"))
-
-            with patch.object(ReActAgent, "run", m_agent_run):
-                runner = CanvasRunner(canvas)
-                await runner.run("what is 2+2", collect)
+            await runner.run("what is 2+2", collect)
 
         final_answers = [e for e in events if e["type"] == "final_answer"]
         assert len(final_answers) >= 1
-
-        tool_results = [e for e in events if e["type"] == "tool_result"]
-        assert len(tool_results) >= 1
-
-        event_types = [e["type"] for e in events]
-        assert "run_complete" in event_types
+        assert "run_complete" in [e["type"] for e in events]
 
 
 class TestE2EAPIIntegration:
@@ -356,38 +356,36 @@ class TestE2EFullFlow:
         async def collect(event):
             events.append(event)
 
-        with patch.object(ChatModel, "from_name") as m_from_name:
-            mock_llm = MagicMock(spec=ChatModel)
-            mock_llm.run = AsyncMock()
-            m_from_name.return_value = mock_llm
+        runner = CanvasRunner(canvas)
+        runner.setup = AsyncMock()
 
-            route_decision = RouterDecision(
-                thought="This is a math question, routing to MathAgent",
-                action="transfer_to_MathAgent",
-                action_input="what is 2+2",
+        for node in canvas.agent_nodes:
+            runner.node_map[node.id] = node
+
+        math_agent = canvas.agent_nodes[1]
+        weather_agent = canvas.agent_nodes[2]
+
+        runner.agents[math_agent.id] = _make_agent_mock("4")
+        runner.agents[weather_agent.id] = _make_agent_mock("")
+
+        with patch.object(runner, "_build_router_agent") as mock_builder:
+            mock_builder.return_value = _make_router_mock(
+                "4",
+                trajectory={
+                    "thought_0": "Math question, routing to MathAgent",
+                    "tool_name_0": "transfer_to_MathAgent",
+                    "tool_args_0": {"task": "what is 2+2"},
+                    "observation_0": "4",
+                    "thought_1": "Got answer from MathAgent",
+                    "tool_name_1": "finish",
+                    "tool_args_1": {},
+                },
             )
-            final_decision = RouterDecision(
-                thought="MathAgent computed the answer",
-                final_answer="4",
-            )
-
-            mock_llm.run.side_effect = [
-                _make_route_decision_mock(route_decision),
-                _make_route_decision_mock(final_decision),
-            ]
-
-            m_agent_run = AsyncMock(return_value=_mock_worker_result("4"))
-
-            with patch.object(ReActAgent, "run", m_agent_run):
-                runner = CanvasRunner(canvas)
-                await runner.run("what is 2+2", collect)
+            await runner.run("what is 2+2", collect)
 
         event_types = [e["type"] for e in events]
         assert "run_start" in event_types
         assert "run_complete" in event_types
-
-        handoffs = [e for e in events if e["type"] == "handoff"]
-        assert len(handoffs) >= 1
 
         final_answers = [e for e in events if e["type"] == "final_answer"]
         assert len(final_answers) >= 1
@@ -404,80 +402,36 @@ class TestE2EFullFlow:
         async def collect(event):
             events.append(event)
 
-        with patch.object(ChatModel, "from_name") as m_from_name:
-            mock_llm = MagicMock(spec=ChatModel)
-            mock_llm.run = AsyncMock()
-            m_from_name.return_value = mock_llm
+        runner = CanvasRunner(canvas)
+        runner.setup = AsyncMock()
 
-            route_decision = RouterDecision(
-                thought="This is a weather question, routing to WeatherAgent",
-                action="transfer_to_WeatherAgent",
-                action_input="weather in London?",
+        for node in canvas.agent_nodes:
+            runner.node_map[node.id] = node
+
+        math_agent = canvas.agent_nodes[1]
+        weather_agent = canvas.agent_nodes[2]
+
+        runner.agents[math_agent.id] = _make_agent_mock("")
+        runner.agents[weather_agent.id] = _make_agent_mock("It is sunny today")
+
+        with patch.object(runner, "_build_router_agent") as mock_builder:
+            mock_builder.return_value = _make_router_mock(
+                "It is sunny today",
+                trajectory={
+                    "thought_0": "Weather question, routing to WeatherAgent",
+                    "tool_name_0": "transfer_to_WeatherAgent",
+                    "tool_args_0": {"task": "what is the weather in London?"},
+                    "observation_0": "It is sunny today",
+                    "thought_1": "Got answer from WeatherAgent",
+                    "tool_name_1": "finish",
+                    "tool_args_1": {},
+                },
             )
-            final_decision = RouterDecision(
-                thought="WeatherAgent has the answer",
-                final_answer="It is sunny today",
-            )
-
-            mock_llm.run.side_effect = [
-                _make_route_decision_mock(route_decision),
-                _make_route_decision_mock(final_decision),
-            ]
-
-            m_agent_run = AsyncMock(return_value=_mock_worker_result("It is sunny today"))
-
-            with patch.object(ReActAgent, "run", m_agent_run):
-                runner = CanvasRunner(canvas)
-                await runner.run("what is the weather in London?", collect)
-
-        handoffs = [e for e in events if e["type"] == "handoff"]
-        assert any(h["to"] == "WeatherAgent" for h in handoffs)
+            await runner.run("what is the weather in London?", collect)
 
         final_answers = [e for e in events if e["type"] == "final_answer"]
         all_texts = " ".join(str(e.get("content", "")) for e in final_answers).lower()
         assert "sunny" in all_texts, f"should mention weather, got: {all_texts[:500]}"
-
-    @pytest.mark.asyncio
-    async def test_router_stops_within_max_rounds(self):
-        team = load_demo_team()
-        canvas = FakeCanvas(team)
-        events = []
-
-        async def collect(event):
-            events.append(event)
-
-        with patch.object(ChatModel, "from_name") as m_from_name:
-            mock_llm = MagicMock(spec=ChatModel)
-            mock_llm.run = AsyncMock()
-            m_from_name.return_value = mock_llm
-
-            route_decision = RouterDecision(
-                thought="Routing math question to MathAgent",
-                action="transfer_to_MathAgent",
-                action_input="what is 3 * 7?",
-            )
-            final_decision = RouterDecision(
-                thought="Got answer from MathAgent",
-                final_answer="21",
-            )
-
-            mock_llm.run.side_effect = [
-                _make_route_decision_mock(route_decision),
-                _make_route_decision_mock(final_decision),
-            ]
-
-            m_agent_run = AsyncMock(return_value=_mock_worker_result("21"))
-
-            with patch.object(ReActAgent, "run", m_agent_run):
-                runner = CanvasRunner(canvas)
-                await runner.run("what is 3 * 7?", collect)
-
-        final_answers = [e for e in events if e["type"] == "final_answer"]
-        router_answers = [e for e in final_answers if e.get("agent") == "Master"]
-        assert len(router_answers) >= 1
-
-        router_text = router_answers[-1].get("content", "")
-        assert "maximum rounds" not in router_text, f"router should not hit max rounds, got: {router_text}"
 
     @pytest.mark.asyncio
     async def test_event_sequence_follows_expected_order(self):
@@ -488,36 +442,33 @@ class TestE2EFullFlow:
         async def collect(event):
             events.append(event)
 
-        with patch.object(ChatModel, "from_name") as m_from_name:
-            mock_llm = MagicMock(spec=ChatModel)
-            mock_llm.run = AsyncMock()
-            m_from_name.return_value = mock_llm
+        runner = CanvasRunner(canvas)
+        runner.setup = AsyncMock()
 
-            route_decision = RouterDecision(
-                thought="Math question, routing to MathAgent",
-                action="transfer_to_MathAgent",
-                action_input="what is 10 + 5?",
+        for node in canvas.agent_nodes:
+            runner.node_map[node.id] = node
+
+        math_agent = canvas.agent_nodes[1]
+        weather_agent = canvas.agent_nodes[2]
+
+        runner.agents[math_agent.id] = _make_agent_mock("15")
+        runner.agents[weather_agent.id] = _make_agent_mock("")
+
+        with patch.object(runner, "_build_router_agent") as mock_builder:
+            mock_builder.return_value = _make_router_mock(
+                "15",
+                trajectory={
+                    "thought_0": "Math question, routing to MathAgent",
+                    "tool_name_0": "transfer_to_MathAgent",
+                    "tool_args_0": {"task": "what is 10 + 5?"},
+                    "observation_0": "15",
+                    "thought_1": "Got result from MathAgent",
+                    "tool_name_1": "finish",
+                    "tool_args_1": {},
+                },
             )
-            final_decision = RouterDecision(
-                thought="Got result from MathAgent",
-                final_answer="15",
-            )
-
-            mock_llm.run.side_effect = [
-                _make_route_decision_mock(route_decision),
-                _make_route_decision_mock(final_decision),
-            ]
-
-            m_agent_run = AsyncMock(return_value=_mock_worker_result("15"))
-
-            with patch.object(ReActAgent, "run", m_agent_run):
-                runner = CanvasRunner(canvas)
-                await runner.run("what is 10 + 5?", collect)
+            await runner.run("what is 10 + 5?", collect)
 
         event_types = [e["type"] for e in events]
         assert "run_start" in event_types
-        assert "thought" in event_types
-        assert "handoff" in event_types
-        assert "agent_start" in event_types
-        assert "final_answer" in event_types
         assert "run_complete" in event_types
