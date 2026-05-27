@@ -24,6 +24,7 @@ export function CanvasToolbar() {
         x: 250 + Math.random() * 300,
         y: 150 + Math.random() * 300,
       },
+      style: { width: 280 },
       data: {
         id: newId,
         name: `Agent ${nodes.filter((n) => n.type === "agent").length + 1}`,
@@ -45,6 +46,7 @@ export function CanvasToolbar() {
         x: 250 + Math.random() * 300,
         y: 150 + Math.random() * 300,
       },
+      style: { width: 220 },
       data: {
         id: newId,
         name: `Tool ${nodes.filter((n) => n.type === "tool").length + 1}`,
@@ -124,6 +126,7 @@ export function CanvasToolbar() {
         id: a.id,
         type: "agent" as const,
         position: { x: a.position_x, y: a.position_y },
+        style: { width: 280 },
         data: {
           id: a.id,
           name: a.name,
@@ -138,6 +141,7 @@ export function CanvasToolbar() {
         id: t.id,
         type: "tool" as const,
         position: { x: t.position_x, y: t.position_y },
+        style: { width: 220 },
         data: { id: t.id, name: t.name, code: t.code },
       }));
 

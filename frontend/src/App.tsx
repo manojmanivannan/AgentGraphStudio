@@ -61,6 +61,7 @@ export default function App() {
         id: a.id,
         type: "agent" as const,
         position: { x: a.position_x, y: a.position_y },
+        style: { width: 280 },
         data: {
           id: a.id,
           name: a.name,
@@ -75,6 +76,7 @@ export default function App() {
         id: t.id,
         type: "tool" as const,
         position: { x: t.position_x, y: t.position_y },
+        style: { width: 220 },
         data: {
           id: t.id,
           name: t.name,
