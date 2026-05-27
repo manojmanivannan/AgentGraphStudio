@@ -1,5 +1,5 @@
 import { memo } from "react";
-import { Handle, Position, type NodeProps } from "@xyflow/react";
+import { Handle, Position, NodeResizer, type NodeProps } from "@xyflow/react";
 import { Brain, GitBranch } from "lucide-react";
 import type { AgentNodeData } from "@/types";
 import { useCanvasStore } from "@/store/canvasStore";
@@ -16,11 +16,18 @@ function AgentNodeComponent({ id, data, selected }: NodeProps) {
       data-node-id={id}
       data-agent-type={agentData.agentType}
       className={`
-        relative min-w-[200px] rounded-lg border-2 bg-white shadow-md transition-all duration-300
+        relative h-full flex flex-col rounded-lg border-2 bg-white shadow-md transition-all duration-300
         ${selected ? "border-blue-500 ring-2 ring-blue-200" : isRouter ? "border-purple-300" : "border-gray-200"}
         ${isActive ? "border-green-400 ring-2 ring-green-200 animate-pulse" : ""}
       `}
     >
+      <NodeResizer
+        isVisible={selected}
+        minWidth={200}
+        minHeight={100}
+        handleClassName="!w-2 !h-2 !bg-white !border-blue-400 !rounded-sm"
+        lineClassName="!border-blue-300"
+      />
       <Handle
         type="target"
         position={Position.Top}
@@ -51,14 +58,14 @@ function AgentNodeComponent({ id, data, selected }: NodeProps) {
           {isRouter ? "Router" : "Worker"}
         </span>
       </div>
-      <div className="px-3 py-2">
+      <div className="px-3 py-2 flex-1 overflow-hidden">
         {agentData.role && (
           <p className="text-xs text-gray-500 line-clamp-2">
             {agentData.role}
           </p>
         )}
         {agentData.instructions && (
-          <p className="text-xs text-gray-400 mt-1 line-clamp-2">
+          <p className="text-xs text-gray-400 mt-1 line-clamp-4">
             {agentData.instructions}
           </p>
         )}

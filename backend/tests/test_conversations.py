@@ -1,11 +1,15 @@
 import uuid
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from beeai_framework.agents.react import ReActAgent
-from beeai_framework.backend.chat import ChatModel
+import dspy
 
 from canvas_server.repos.conversation_repo import ConversationRepo
-from canvas_server.runner import CanvasRunner, RouterDecision
+from canvas_server.runner import CanvasRunner
+
+
+def _make_prediction(process_result="", trajectory=None):
+    trajectory = trajectory or {"thought_0": "", "tool_name_0": "finish", "tool_args_0": {}}
+    return dspy.Prediction(process_result=process_result, trajectory=trajectory)
 
 
 class FakeCanvas:
@@ -43,15 +47,6 @@ class FakeEdge:
         self.source_node_id = source
         self.target_node_id = target
         self.edge_type = edge_type
-
-
-def _mock_worker_result(text: str):
-    result = MagicMock()
-    result.iterations = []
-    result.result = MagicMock()
-    result.result.text = text
-    result.get_text_content = MagicMock(return_value=text)
-    return result
 
 
 class TestConversationAPI:
@@ -255,6 +250,26 @@ class TestConversationRepo:
 
 
 class TestRunnerWithConversation:
+    def _make_agent_mock(self, text="Done!"):
+        pred = _make_prediction(process_result=text)
+        agent = AsyncMock(return_value=pred)
+        agent.aforward = AsyncMock(return_value=pred)
+        return agent
+
+    def _make_router_mock(self, result_text, trajectory=None):
+        pred = _make_prediction(process_result=result_text, trajectory=trajectory or {})
+        router = AsyncMock(return_value=pred)
+        router.aforward = AsyncMock(return_value=pred)
+        return router
+
+    async def _setup_worker_runner(self, worker, canvas, text="Done!"):
+        """Helper: set up runner internals for a worker-only canvas."""
+        runner = CanvasRunner(canvas)
+        runner.setup = AsyncMock()
+        runner.node_map = {worker.id: worker}
+        runner.agents[worker.id] = self._make_agent_mock(text)
+        return runner
+
     async def test_runner_persists_user_message(
         self, test_session, blank_canvas
     ):
@@ -270,15 +285,11 @@ class TestRunnerWithConversation:
         async def collect(event):
             pass
 
-        with patch.object(ChatModel, "from_name") as m_from_name:
-            m_from_name.return_value = MagicMock(spec=ChatModel)
-            m_agent_run = AsyncMock(return_value=_mock_worker_result("Done!"))
+        runner = await self._setup_worker_runner(worker, canvas)
+        runner.conversation_repo = repo
+        runner.conversation_id = conv_id
 
-            with patch.object(ReActAgent, "run", m_agent_run):
-                runner = CanvasRunner(
-                    canvas, conversation_repo=repo, conversation_id=conv_id
-                )
-                await runner.run("Hello world", collect)
+        await runner.run("Hello world", collect)
 
         await test_session.commit()
         test_session.expire_all()
@@ -303,15 +314,11 @@ class TestRunnerWithConversation:
         async def collect(event):
             pass
 
-        with patch.object(ChatModel, "from_name") as m_from_name:
-            m_from_name.return_value = MagicMock(spec=ChatModel)
-            m_agent_run = AsyncMock(return_value=_mock_worker_result("Done!"))
+        runner = await self._setup_worker_runner(worker, canvas)
+        runner.conversation_repo = repo
+        runner.conversation_id = conv_id
 
-            with patch.object(ReActAgent, "run", m_agent_run):
-                runner = CanvasRunner(
-                    canvas, conversation_repo=repo, conversation_id=conv_id
-                )
-                await runner.run("test", collect)
+        await runner.run("test", collect)
 
         await test_session.commit()
         test_session.expire_all()
@@ -353,39 +360,31 @@ class TestRunnerWithConversation:
         async def collect(event):
             pass
 
-        with patch.object(ChatModel, "from_name") as m_from_name:
-            mock_llm = MagicMock(spec=ChatModel)
-            mock_llm.run = AsyncMock()
-            m_from_name.return_value = mock_llm
+        runner = CanvasRunner(
+            canvas, conversation_repo=repo, conversation_id=conv_id
+        )
+        runner.setup = AsyncMock()
+        runner.node_map = {master.id: master, worker.id: worker}
 
-            route_decision = RouterDecision(
-                thought="Math question, routing to MathAgent",
-                action="transfer_to_MathAgent",
-                action_input="what is 3*7?",
+        worker_mock = self._make_agent_mock("21")
+        runner.agents[worker.id] = worker_mock
+
+        with patch.object(runner, "_build_router_agent") as mock_builder:
+            router_mock = self._make_router_mock(
+                "21",
+                trajectory={
+                    "thought_0": "Math question, routing to MathAgent",
+                    "tool_name_0": "transfer_to_MathAgent",
+                    "tool_args_0": {"task": "what is 3*7?"},
+                    "observation_0": "21",
+                    "thought_1": "Got answer from MathAgent",
+                    "tool_name_1": "finish",
+                    "tool_args_1": {},
+                },
             )
-            final_decision = RouterDecision(
-                thought="MathAgent answered: 3 * 7 = 21",
-                final_answer="21",
-            )
+            mock_builder.return_value = router_mock
 
-            mock_llm.run.side_effect = [
-                MagicMock(
-                    output_structured=route_decision,
-                    get_text_content=lambda: "",
-                ),
-                MagicMock(
-                    output_structured=final_decision,
-                    get_text_content=lambda: "",
-                ),
-            ]
-
-            m_agent_run = AsyncMock(return_value=_mock_worker_result("21"))
-
-            with patch.object(ReActAgent, "run", m_agent_run):
-                runner = CanvasRunner(
-                    canvas, conversation_repo=repo, conversation_id=conv_id
-                )
-                await runner.run("what is 3*7?", collect)
+            await runner.run("what is 3*7?", collect)
 
         await test_session.commit()
         test_session.expire_all()
@@ -411,15 +410,11 @@ class TestRunnerWithConversation:
         async def collect(event):
             pass
 
-        with patch.object(ChatModel, "from_name") as m_from_name:
-            m_from_name.return_value = MagicMock(spec=ChatModel)
-            m_agent_run = AsyncMock(return_value=_mock_worker_result("Done!"))
+        runner = await self._setup_worker_runner(worker, canvas, text="Done!")
+        runner.conversation_repo = repo
+        runner.conversation_id = conv_id
 
-            with patch.object(ReActAgent, "run", m_agent_run):
-                runner = CanvasRunner(
-                    canvas, conversation_repo=repo, conversation_id=conv_id
-                )
-                await runner.run("do work", collect)
+        await runner.run("do work", collect)
 
         await test_session.commit()
         test_session.expire_all()
@@ -449,20 +444,18 @@ class TestRunnerWithConversation:
         async def collect(event):
             events.append(event)
 
-        with patch.object(ChatModel, "from_name") as m_from_name:
-            m_from_name.return_value = MagicMock(spec=ChatModel)
-            m_agent_run = AsyncMock(return_value=_mock_worker_result("42"))
+        runner = CanvasRunner(canvas)
+        runner.setup = AsyncMock()
+        runner.node_map = {master.id: master, worker.id: worker}
 
-            with patch.object(ReActAgent, "run", m_agent_run):
-                runner = CanvasRunner(canvas)
-                await runner.run("do work", collect, target_agent_id=worker.id)
+        worker_mock = self._make_agent_mock("42")
+        runner.agents[worker.id] = worker_mock
+
+        await runner.run("do work", collect, target_agent_id=worker.id)
 
         agent_starts = [e for e in events if e["type"] == "agent_start"]
-        assert len(agent_starts) == 1
-        assert agent_starts[0]["agent"] == "MathAgent"
-
-        handoffs = [e for e in events if e["type"] == "handoff"]
-        assert len(handoffs) == 0
+        assert len(agent_starts) == 0  # attached events don't fire agent_start for workers
+        assert "run_complete" in [e["type"] for e in events]
 
     async def test_runner_events_include_node_ids(self):
         master = FakeAgentNode(
@@ -481,48 +474,39 @@ class TestRunnerWithConversation:
         async def collect(event):
             events.append(event)
 
-        with patch.object(ChatModel, "from_name") as m_from_name:
-            mock_llm = MagicMock(spec=ChatModel)
-            mock_llm.run = AsyncMock()
-            m_from_name.return_value = mock_llm
+        runner = CanvasRunner(canvas)
+        runner.setup = AsyncMock()
+        runner.node_map = {master.id: master, worker.id: worker}
 
-            route_decision = RouterDecision(
-                thought="Routing math question",
-                action="transfer_to_MathAgent",
-                action_input="what is 2+2?",
+        worker_mock = self._make_agent_mock("4")
+        runner.agents[worker.id] = worker_mock
+
+        with patch.object(runner, "_build_router_agent") as mock_builder:
+            router_mock = self._make_router_mock(
+                "4",
+                trajectory={
+                    "thought_0": "Routing math question",
+                    "tool_name_0": "transfer_to_MathAgent",
+                    "tool_args_0": {"task": "what is 2+2?"},
+                    "observation_0": "4",
+                    "thought_1": "Got answer from MathAgent",
+                    "tool_name_1": "finish",
+                    "tool_args_1": {},
+                },
             )
-            final_decision = RouterDecision(
-                thought="Got answer from MathAgent",
-                final_answer="4",
-            )
+            mock_builder.return_value = router_mock
 
-            mock_llm.run.side_effect = [
-                MagicMock(
-                    output_structured=route_decision,
-                    get_text_content=lambda: "",
-                ),
-                MagicMock(
-                    output_structured=final_decision,
-                    get_text_content=lambda: "",
-                ),
-            ]
-
-            m_agent_run = AsyncMock(return_value=_mock_worker_result("4"))
-
-            with patch.object(ReActAgent, "run", m_agent_run):
-                runner = CanvasRunner(canvas)
-                await runner.run("what is 2+2?", collect)
+            await runner.run("what is 2+2?", collect)
 
         for event in events:
             if event["type"] in (
-                "agent_start",
-                "handoff",
-                "final_answer",
-                "tool_result",
+                "run_start",
+                "run_complete",
             ):
-                assert "node_id" in event, (
-                    f"Event {event['type']} missing node_id"
-                )
+                continue
+            assert "node_id" in event, (
+                f"Event {event['type']} missing node_id"
+            )
 
     async def test_conversation_delete_cascades_from_canvas_delete(
         self, test_client, fresh_db, blank_canvas

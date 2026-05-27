@@ -23,6 +23,7 @@ class ToolNodeInput(BaseModel):
     id: uuid.UUID
     name: str = "Tool"
     code: str = ""
+    args: list[dict] = Field(default_factory=list)
     position_x: float = 0
     position_y: float = 0
 

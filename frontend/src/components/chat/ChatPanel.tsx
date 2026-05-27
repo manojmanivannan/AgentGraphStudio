@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Send, Plus, Trash2, MessageSquare, ChevronDown, ChevronRight } from "lucide-react";
+import { Send, Plus, Trash2, MessageSquare, ChevronDown, ChevronRight, X } from "lucide-react";
 import { useCanvasStore } from "@/store/canvasStore";
+import { ResizablePanel } from "@/components/layout/ResizablePanel";
 import {
   createConversation,
   listConversations,
@@ -14,6 +15,8 @@ const WS_BASE = `ws://${import.meta.env.VITE_API_HOST || "localhost:8000"}`;
 export function ChatPanel() {
   const canvasId = useCanvasStore((s) => s.canvasId);
   const setActiveNodeId = useCanvasStore((s) => s.setActiveNodeId);
+  const chatOpen = useCanvasStore((s) => s.chatOpen);
+  const toggleChat = useCanvasStore((s) => s.toggleChat);
 
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [activeConvId, setActiveConvId] = useState<string | null>(null);
@@ -274,8 +277,40 @@ export function ChatPanel() {
     setActiveNodeId(null);
   };
 
+  if (!chatOpen) {
+    return (
+      <div data-testid="chat-panel" className="w-12 h-full border-l border-gray-200 bg-white flex flex-col items-center py-3 gap-3">
+        <button
+          onClick={toggleChat}
+          data-testid="chat-toggle"
+          className="p-2 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+          title="Open chat"
+        >
+          <MessageSquare className="w-4 h-4" />
+        </button>
+      </div>
+    );
+  }
+
   return (
-    <div className="w-96 h-full border-l border-gray-200 bg-white flex flex-col">
+    <ResizablePanel
+      data-testid="chat-panel"
+      defaultWidth={384}
+      minWidth={280}
+      maxWidth={600}
+      className="border-l border-gray-200 bg-white"
+    >
+      <div className="flex items-center justify-between px-3 py-2 border-b border-gray-200">
+        <span className="text-xs font-semibold text-gray-600">Conversation</span>
+        <button
+          onClick={toggleChat}
+          data-testid="chat-close"
+          className="p-1 text-gray-400 hover:text-gray-600 rounded"
+          title="Close chat"
+        >
+          <X className="w-3.5 h-3.5" />
+        </button>
+      </div>
       <div className="border-b border-gray-200 p-3">
         <div className="relative">
           <button
@@ -469,6 +504,6 @@ export function ChatPanel() {
           </button>
         </div>
       </div>
-    </div>
+    </ResizablePanel>
   );
 }

@@ -1,11 +1,10 @@
 import uuid
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import dspy
 import pytest
-from beeai_framework.backend.chat import ChatModel
-from pydantic import ValidationError
 
-from canvas_server.runner import CanvasRunner, RouterDecision
+from canvas_server.runner import CanvasRunner
 
 
 class FakeCanvas:
@@ -17,7 +16,15 @@ class FakeCanvas:
 
 
 class FakeAgentNode:
-    def __init__(self, id=None, name="", role="", instructions="", model_name="ollama:llama3.1", agent_type="worker"):
+    def __init__(
+        self,
+        id=None,
+        name="",
+        role="",
+        instructions="",
+        model_name="ollama:llama3.1",
+        agent_type="worker",
+    ):
         self.id = id or uuid.uuid4()
         self.name = name
         self.role = role
@@ -28,29 +35,23 @@ class FakeAgentNode:
         self.position_y = 0
 
 
-class TestRouterDecision:
-    def test_routing_decision(self):
-        d = RouterDecision(
-            thought="Need to do math",
-            action="transfer_to_MathAgent",
-            action_input="what is 2+3",
-        )
-        assert d.thought == "Need to do math"
-        assert d.action == "transfer_to_MathAgent"
-        assert d.action_input == "what is 2+3"
-        assert d.final_answer is None
+def _make_prediction(process_result="", trajectory=None):
+    trajectory = trajectory or {"thought_0": "", "tool_name_0": "finish", "tool_args_0": {}}
+    return dspy.Prediction(process_result=process_result, trajectory=trajectory)
 
-    def test_final_answer_decision(self):
-        d = RouterDecision(
-            thought="I have the answer",
-            final_answer="The result is 5",
-        )
-        assert d.final_answer == "The result is 5"
-        assert d.action is None
 
-    def test_validate_missing_thought(self):
-        with pytest.raises(ValidationError):
-            RouterDecision()
+def _make_agent_mock(text="Done!"):
+    pred = _make_prediction(process_result=text)
+    agent = AsyncMock(return_value=pred)
+    agent.aforward = AsyncMock(return_value=pred)
+    return agent
+
+
+def _make_router_mock(result_text="", trajectory=None):
+    pred = _make_prediction(process_result=result_text, trajectory=trajectory or {})
+    router = AsyncMock(return_value=pred)
+    router.aforward = AsyncMock(return_value=pred)
+    return router
 
 
 class TestCanvasRunner:
@@ -72,40 +73,99 @@ class TestCanvasRunner:
         agent = FakeAgentNode(name="Worker1", agent_type="worker")
         canvas = FakeCanvas(agent_nodes=[agent])
 
-        with patch.object(ChatModel, "from_name") as mock_from_name:
-            mock_llm = MagicMock(spec=ChatModel)
-            mock_from_name.return_value = mock_llm
+        runner = CanvasRunner(canvas)
+        await runner.setup()
 
-            runner = CanvasRunner(canvas)
-            await runner.setup()
-
-            assert len(runner.llms) == 1
-            assert len(runner.agents) == 1
-            assert list(runner.llms.keys())[0] == agent.id
-            assert list(runner.agents.keys())[0] == agent.id
+        assert len(runner.agents) == 1
+        assert list(runner.agents.keys())[0] == agent.id
 
     async def test_setup_with_router_and_workers(self):
         master = FakeAgentNode(name="Master", agent_type="router")
         worker = FakeAgentNode(name="Worker", agent_type="worker")
+        math_agent = FakeAgentNode(name="MathAgent", agent_type="worker")
 
-        canvas = FakeCanvas(agent_nodes=[master, worker])
+        canvas = FakeCanvas(agent_nodes=[master, worker, math_agent])
 
-        with patch.object(ChatModel, "from_name") as mock_from_name:
-            mock_llm = MagicMock(spec=ChatModel)
-            mock_from_name.return_value = mock_llm
+        runner = CanvasRunner(canvas)
+        await runner.setup()
 
-            runner = CanvasRunner(canvas)
-            await runner.setup()
+        # Router agents are built at run time, so only workers are in agents
+        assert runner.agents.keys() == {worker.id, math_agent.id}
 
-            assert len(runner.llms) == 2
-            assert len(runner.agents) == 2
+    async def test_setup_with_router_only(self):
+        master = FakeAgentNode(name="Master", agent_type="router")
+        canvas = FakeCanvas(agent_nodes=[master])
 
-    async def test_router_loop_routes_to_worker(self):
+        runner = CanvasRunner(canvas)
+        await runner.setup()
+
+        assert len(runner.agents) == 0  # no workers to build
+
+    async def test_worker_run_returns_result(self):
+        worker = FakeAgentNode(
+            id=uuid.uuid4(), name="Worker", agent_type="worker", model_name="ollama:llama3.1"
+        )
+
+        canvas = FakeCanvas(agent_nodes=[worker])
+        events = []
+
+        async def collect(event):
+            events.append(event)
+
+        runner = CanvasRunner(canvas)
+        runner.node_map[worker.id] = worker
+        runner.setup = AsyncMock()
+        runner.agents[worker.id] = _make_agent_mock("The answer is 42")
+
+        await runner.run("what is the answer?", collect)
+
+        event_types = [e["type"] for e in events]
+        assert "run_start" in event_types
+        assert "final_answer" in event_types
+        assert "run_complete" in event_types
+
+        final_answers = [e for e in events if e["type"] == "final_answer"]
+        assert any("42" in str(e.get("content", "")) for e in final_answers)
+
+    async def test_worker_run_emits_events_on_error(self):
+        worker = FakeAgentNode(
+            id=uuid.uuid4(), name="Worker", agent_type="worker", model_name="ollama:llama3.1"
+        )
+
+        canvas = FakeCanvas(agent_nodes=[worker])
+        events = []
+
+        async def collect(event):
+            events.append(event)
+
+        runner = CanvasRunner(canvas)
+
+        runner.node_map[worker.id] = worker
+        runner.setup = AsyncMock()
+        runner.agents[worker.id] = AsyncMock(
+            side_effect=Exception("test error")
+        )
+
+        await runner.run("do work", collect)
+
+        event_types = [e["type"] for e in events]
+        assert "run_start" in event_types
+        assert "run_complete" in event_types
+
+    async def test_router_routes_to_worker_and_produces_final_answer(self):
         master = FakeAgentNode(
-            id=uuid.uuid4(), name="Master", role="Router", agent_type="router", model_name="ollama:llama3.1"
+            id=uuid.uuid4(),
+            name="Master",
+            role="Router",
+            agent_type="router",
+            model_name="ollama:llama3.1",
         )
         worker = FakeAgentNode(
-            id=uuid.uuid4(), name="MathAgent", role="Math expert", agent_type="worker", model_name="ollama:llama3.1"
+            id=uuid.uuid4(),
+            name="MathAgent",
+            role="Math expert",
+            agent_type="worker",
+            model_name="ollama:llama3.1",
         )
 
         class FakeEdge:
@@ -126,46 +186,56 @@ class TestCanvasRunner:
         async def collect(event):
             events.append(event)
 
-        with patch.object(ChatModel, "from_name") as mock_from_name:
-            mock_llm = MagicMock(spec=ChatModel)
-            mock_llm.run = AsyncMock()
-            mock_from_name.return_value = mock_llm
+        runner = CanvasRunner(canvas)
+        runner.setup = AsyncMock()
+        runner.node_map = {master.id: master, worker.id: worker}
+        runner.agents[worker.id] = _make_agent_mock("2 + 3 = 5")
 
-            routing_decision = RouterDecision(
-                thought="This is a math question",
-                action="transfer_to_MathAgent",
-                action_input="what is 2+3",
+        router_result = _make_prediction(
+            process_result="The answer is 5",
+            trajectory={
+                "thought_0": "This is a math question",
+                "tool_name_0": "transfer_to_MathAgent",
+                "tool_args_0": {"task": "what is 2+3"},
+                "observation_0": "2 + 3 = 5",
+                "thought_1": "I now know the answer",
+                "tool_name_1": "finish",
+                "tool_args_1": {},
+            },
+        )
+
+        with patch.object(runner, "_build_router_agent") as mock_builder:
+            router_mock = _make_router_mock(
+                "The answer is 5",
+                trajectory={
+                    "thought_0": "This is a math question",
+                    "tool_name_0": "transfer_to_MathAgent",
+                    "tool_args_0": {"task": "what is 2+3"},
+                    "observation_0": "2 + 3 = 5",
+                    "thought_1": "I now know the answer",
+                    "tool_name_1": "finish",
+                    "tool_args_1": {},
+                },
             )
+            mock_builder.return_value = router_mock
 
-            worker_response = MagicMock()
-            worker_response.iterations = []
-            worker_response.result = MagicMock()
-            worker_response.result.text = "The answer is 5"
-            worker_response.get_text_content = MagicMock(return_value="The answer is 5")
-
-            mock_llm.run.side_effect = [
-                MagicMock(output_structured=routing_decision, get_text_content=lambda: ""),
-                worker_response,
-            ]
-
-            runner = CanvasRunner(canvas)
             await runner.run("what is 2+3", collect)
 
-            event_types = [e["type"] for e in events]
-            assert "run_start" in event_types
-            assert "handoff" in event_types
-            assert "agent_start" in event_types
-            assert "final_answer" in event_types
-            assert "run_complete" in event_types
+        event_types = [e["type"] for e in events]
+        assert "run_start" in event_types
+        assert "final_answer" in event_types
+        assert "run_complete" in event_types
 
-            handoff_events = [e for e in events if e["type"] == "handoff"]
-            assert len(handoff_events) >= 1
-            assert handoff_events[0]["from"] == "Master"
-            assert handoff_events[0]["to"] == "MathAgent"
+        final_answers = [e for e in events if e["type"] == "final_answer"]
+        assert len(final_answers) >= 1
 
-    async def test_router_loop_final_answer_direct(self):
+    async def test_router_produces_final_answer_directly(self):
         master = FakeAgentNode(
-            id=uuid.uuid4(), name="Master", role="Router", agent_type="router", model_name="ollama:llama3.1"
+            id=uuid.uuid4(),
+            name="Master",
+            role="Router",
+            agent_type="router",
+            model_name="ollama:llama3.1",
         )
 
         canvas = FakeCanvas(agent_nodes=[master])
@@ -174,50 +244,22 @@ class TestCanvasRunner:
         async def collect(event):
             events.append(event)
 
-        with patch.object(ChatModel, "from_name") as mock_from_name:
-            mock_llm = MagicMock(spec=ChatModel)
-            mock_llm.run = AsyncMock()
-            mock_from_name.return_value = mock_llm
+        runner = CanvasRunner(canvas)
+        runner.setup = AsyncMock()
+        runner.node_map = {master.id: master}
 
-            routing_decision = RouterDecision(
-                thought="Simple question, I'll answer directly",
-                final_answer="The answer is 42",
+        with patch.object(runner, "_build_router_agent") as mock_builder:
+            router_mock = _make_router_mock(
+                "The answer is 42",
+                trajectory={
+                    "thought_0": "Simple question, answering directly",
+                    "tool_name_0": "finish",
+                    "tool_args_0": {},
+                },
             )
+            mock_builder.return_value = router_mock
 
-            mock_llm.run.return_value = MagicMock(
-                output_structured=routing_decision,
-                get_text_content=lambda: "",
-            )
-
-            runner = CanvasRunner(canvas)
             await runner.run("what is the answer?", collect)
 
-            final_answers = [e for e in events if e["type"] == "final_answer"]
-            assert len(final_answers) >= 1
-
-    async def test_worker_run_emits_events(self):
-        worker = FakeAgentNode(
-            id=uuid.uuid4(), name="Worker", agent_type="worker", model_name="ollama:llama3.1"
-        )
-
-        canvas = FakeCanvas(agent_nodes=[worker])
-        events = []
-
-        async def collect(event):
-            events.append(event)
-
-        runner = CanvasRunner(canvas)
-
-        runner.llms[worker.id] = MagicMock(spec=ChatModel)
-        runner.node_map[worker.id] = worker
-        runner.agents[worker.id] = MagicMock()
-        runner.agents[worker.id].run = AsyncMock(side_effect=Exception("test error"))
-        runner.setup = AsyncMock()
-
-        await runner.run("do work", collect)
-
-        event_types = [e["type"] for e in events]
-        assert "run_start" in event_types
-        assert "agent_start" in event_types
-        assert "error" in event_types
-        assert "run_complete" in event_types
+        final_answers = [e for e in events if e["type"] == "final_answer"]
+        assert len(final_answers) >= 1

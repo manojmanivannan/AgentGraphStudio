@@ -19,12 +19,17 @@ import {
 import "@xyflow/react/dist/style.css";
 import { AgentNode } from "./AgentNode";
 import { ToolNode } from "./ToolNode";
+import { CustomEdge } from "./CustomEdge";
 import { useCanvasStore } from "@/store/canvasStore";
 import { useCanvasPersistence } from "@/hooks/useCanvasPersistence";
 
 const nodeTypes = {
   agent: AgentNode,
   tool: ToolNode,
+};
+
+const edgeTypes = {
+  default: CustomEdge,
 };
 
 const defaultEdgeOptions = {
@@ -118,6 +123,7 @@ export function CanvasView() {
         onNodeClick={onNodeClick}
         onPaneClick={onPaneClick}
         nodeTypes={nodeTypes}
+        edgeTypes={edgeTypes}
         isValidConnection={isValidConnection as any}
         defaultEdgeOptions={defaultEdgeOptions}
         fitView
