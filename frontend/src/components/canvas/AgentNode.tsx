@@ -12,6 +12,9 @@ function AgentNodeComponent({ id, data, selected }: NodeProps) {
 
   return (
     <div
+      data-testid="agent-node"
+      data-node-id={id}
+      data-agent-type={agentData.agentType}
       className={`
         relative min-w-[200px] rounded-lg border-2 bg-white shadow-md transition-all duration-300
         ${selected ? "border-blue-500 ring-2 ring-blue-200" : isRouter ? "border-purple-300" : "border-gray-200"}

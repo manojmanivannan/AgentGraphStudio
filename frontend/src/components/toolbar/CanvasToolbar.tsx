@@ -163,6 +163,7 @@ export function CanvasToolbar() {
         type="text"
         value={canvasName}
         onChange={(e) => setName(e.target.value)}
+        data-testid="canvas-name-input"
         className="text-sm font-semibold text-gray-800 bg-transparent border-b border-transparent hover:border-gray-300 focus:border-indigo-400 focus:outline-none px-1 py-0.5 w-48"
         placeholder="Canvas name"
       />
@@ -171,6 +172,7 @@ export function CanvasToolbar() {
 
       <button
         onClick={addAgent}
+        data-testid="add-agent-button"
         className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-md transition-colors"
       >
         <Plus className="w-3.5 h-3.5" />
@@ -179,6 +181,7 @@ export function CanvasToolbar() {
 
       <button
         onClick={addTool}
+        data-testid="add-tool-button"
         className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-white bg-amber-600 hover:bg-amber-700 rounded-md transition-colors"
       >
         <Plus className="w-3.5 h-3.5" />
@@ -187,6 +190,7 @@ export function CanvasToolbar() {
 
       <button
         onClick={clearCanvas}
+        data-testid="clear-canvas-button"
         className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-gray-600 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
       >
         <Trash2 className="w-3.5 h-3.5" />
@@ -197,6 +201,7 @@ export function CanvasToolbar() {
 
       <button
         onClick={handleExport}
+        data-testid="export-button"
         className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-gray-600 hover:text-indigo-600 hover:bg-indigo-50 rounded-md transition-colors"
       >
         <Download className="w-3.5 h-3.5" />
@@ -205,6 +210,7 @@ export function CanvasToolbar() {
 
       <button
         onClick={handleImport}
+        data-testid="import-button"
         className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-gray-600 hover:text-amber-600 hover:bg-amber-50 rounded-md transition-colors"
       >
         <Upload className="w-3.5 h-3.5" />
