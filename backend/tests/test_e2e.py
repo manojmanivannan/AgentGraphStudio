@@ -2,7 +2,7 @@ import copy
 import json
 import pathlib
 import uuid
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import dspy
 import pytest

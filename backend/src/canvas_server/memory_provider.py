@@ -18,7 +18,10 @@ class MemoryProvider:
         self.memory = memory
 
     async def store_memory(self, content: str) -> str:
-        """Persist a fact, preference, or detail from the current conversation into long-term memory so it can be recalled later. Call this after you learn something about the user or the task."""
+        """
+        Persist a fact, preference, or detail from the current conversation into long-term memory
+        so it can be recalled later. Call this after you learn something about the user or the task.
+        """
         try:
             self.memory.add(content, user_id=self.user_id, infer=False)
             return f"Stored memory: {content}"
@@ -27,9 +30,12 @@ class MemoryProvider:
             return f"Error storing memory: {e}"
 
     async def search_memories(self, query: str) -> str:
-        """Search stored memories semantically by meaning. Returns up to 5 matching memories. Use this when you need to recall past information the user shared."""
+        """Search stored memories semantically by meaning. Returns up to 5 matching memories.
+        Use this when you need to recall past information the user shared."""
         try:
-            results = self.memory.search(query, filters={"user_id": self.user_id}, limit=5)
+            results = self.memory.search(
+                query, filters={"user_id": self.user_id}, limit=5
+            )
             if not results.get("results"):
                 return "No relevant memories found."
             lines = []
