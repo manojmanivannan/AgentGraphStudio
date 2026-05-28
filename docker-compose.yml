@@ -9,6 +9,8 @@ services:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+    networks:
+      - agent_network
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U canvas -d canvas_db"]
       interval: 5s
@@ -22,10 +24,11 @@ services:
       - "8000:8000"
     environment:
       DATABASE_URL: postgresql+asyncpg://canvas:canvas@postgres:5432/canvas_db
-      DEFAULT_LLM: ollama:gemma4:31b
-      LLM_BASE_URL: http://ollama:11434
-      LLM_MODEL_ROUTER: ollama:gemma4:31b
-      LLM_MODEL_AGENT: ollama:gemma4:31b
+    env_file: ./backend/.env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - agent_network
     depends_on:
       postgres:
         condition: service_healthy
@@ -44,6 +47,8 @@ services:
       - "5173:5173"
     environment:
       VITE_API_HOST: localhost:8000
+    networks:
+      - agent_network
     depends_on:
       - backend
     develop:
@@ -57,23 +62,27 @@ services:
         - action: rebuild
           path: ./frontend/package.json
 
-  ollama:
-    image: ollama/ollama:latest
-    ports:
-      - "11434:11434"
-    volumes:
-      - ollama_data:/root/.ollama
-      - ./ollama_entrypoint.sh:/entrypoint.sh
-    tty: true
-    restart: always
-    entrypoint: ["/usr/bin/bash", "/entrypoint.sh"]
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
+  # ollama:
+  #   image: ollama/ollama:latest
+  #   ports:
+  #     - "11434:11434"
+  #   volumes:
+  #     - ollama_data:/root/.ollama
+  #     - ./ollama_entrypoint.sh:/entrypoint.sh
+  #   tty: true
+  #   restart: always
+  #   entrypoint: ["/usr/bin/bash", "/entrypoint.sh"]
+  #   deploy:
+  #     resources:
+  #       reservations:
+  #         devices:
+  #           - driver: nvidia
+  #             count: 1
+  #             capabilities: [gpu]
+
+networks:
+  agent_network:
+    driver: bridge
+
 volumes:
   pgdata:
-  ollama_data:

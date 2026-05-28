@@ -114,4 +114,63 @@ describe("AgentEditor", () => {
 
     expect(document.getElementById("model-suggestions")).toBeInTheDocument();
   });
+
+  it("shows memory toggle for worker agents", () => {
+    useCanvasStore.getState().setNodes([agentNode]);
+    useCanvasStore.getState().selectNode("agent-1");
+    render(<AgentEditor />);
+
+    expect(screen.getByTestId("agent-enable-memory")).toBeInTheDocument();
+  });
+
+  it("shows memory toggle for router agents", async () => {
+    const user = userEvent.setup();
+    useCanvasStore.getState().setNodes([agentNode]);
+    useCanvasStore.getState().selectNode("agent-1");
+    render(<AgentEditor />);
+
+    await user.selectOptions(screen.getByTestId("agent-type-select"), "router");
+
+    expect(screen.getByTestId("agent-enable-memory")).toBeInTheDocument();
+  });
+
+  it("shows history toggle only for router agents", async () => {
+    const user = userEvent.setup();
+    useCanvasStore.getState().setNodes([agentNode]);
+    useCanvasStore.getState().selectNode("agent-1");
+    render(<AgentEditor />);
+
+    // Worker: history toggle should not be visible
+    expect(screen.queryByTestId("agent-enable-history")).not.toBeInTheDocument();
+
+    // Switch to router: history toggle should appear
+    await user.selectOptions(screen.getByTestId("agent-type-select"), "router");
+
+    expect(screen.getByTestId("agent-enable-history")).toBeInTheDocument();
+  });
+
+  it("memory toggle updates store", async () => {
+    const user = userEvent.setup();
+    useCanvasStore.getState().setNodes([agentNode]);
+    useCanvasStore.getState().selectNode("agent-1");
+    render(<AgentEditor />);
+
+    await user.click(screen.getByTestId("agent-enable-memory"));
+
+    const stored = useCanvasStore.getState().nodes.find((n) => n.id === "agent-1");
+    expect(stored?.data.enableMemory).toBe(true);
+  });
+
+  it("history toggle updates store for router agents", async () => {
+    const user = userEvent.setup();
+    const routerNode = { ...agentNode, data: { ...agentNode.data, agentType: "router" } };
+    useCanvasStore.getState().setNodes([routerNode]);
+    useCanvasStore.getState().selectNode("agent-1");
+    render(<AgentEditor />);
+
+    await user.click(screen.getByTestId("agent-enable-history"));
+
+    const stored = useCanvasStore.getState().nodes.find((n) => n.id === "agent-1");
+    expect(stored?.data.enableConversationHistory).toBe(true);
+  });
 });

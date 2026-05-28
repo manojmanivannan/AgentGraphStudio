@@ -47,6 +47,8 @@ def _canvas_to_response(canvas) -> CanvasResponse:
                     instructions=n.instructions,
                     model_name=n.model_name,
                     agent_type=n.agent_type,
+                    enable_memory=n.enable_memory,
+                    enable_conversation_history=n.enable_conversation_history,
                     position_x=n.position_x,
                     position_y=n.position_y,
                 )

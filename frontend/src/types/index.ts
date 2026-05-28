@@ -5,6 +5,8 @@ export interface AgentNodeData {
   instructions: string;
   modelName: string;
   agentType: "worker" | "router";
+  enableMemory?: boolean;
+  enableConversationHistory?: boolean;
 }
 
 export interface ToolNodeData {
@@ -41,6 +43,8 @@ export interface CanvasSavePayload {
       instructions: string;
       model_name: string;
       agent_type: string;
+      enable_memory: boolean;
+      enable_conversation_history: boolean;
       position_x: number;
       position_y: number;
     }[];
@@ -75,6 +79,8 @@ export interface CanvasResponse {
       instructions: string;
       model_name: string;
       agent_type: string;
+      enable_memory: boolean;
+      enable_conversation_history: boolean;
       position_x: number;
       position_y: number;
     }>;
