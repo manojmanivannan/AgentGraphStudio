@@ -3,6 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 
+import sqlalchemy as sa
 from sqlalchemy import DateTime, Double, ForeignKey, Index, String, Text, Uuid
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import JSON
@@ -58,6 +59,8 @@ class AgentNode(Base):
     instructions: Mapped[str] = mapped_column(Text, default="")
     model_name: Mapped[str] = mapped_column(String(255), default="ollama:llama3.1")
     agent_type: Mapped[str] = mapped_column(String(20), default="worker")
+    enable_memory: Mapped[bool] = mapped_column(sa.Boolean(), default=False, server_default=sa.text("false"), nullable=False)
+    enable_conversation_history: Mapped[bool] = mapped_column(sa.Boolean(), default=False, server_default=sa.text("false"), nullable=False)
     position_x: Mapped[float] = mapped_column(Double, default=0)
     position_y: Mapped[float] = mapped_column(Double, default=0)
 
