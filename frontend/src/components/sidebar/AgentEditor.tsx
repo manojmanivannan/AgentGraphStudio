@@ -117,7 +117,56 @@ export function AgentEditor() {
         </datalist>
       </div>
 
-      <div className="pt-4 border-t border-gray-100">
+      <div className="pt-4 border-t border-gray-100 space-y-3">
+        <h4 className="text-xs font-semibold text-gray-600 mb-2">Capabilities</h4>
+
+        <div>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={(data as any).enableMemory ?? false}
+              onChange={(e) => {
+                const checked = e.target.checked;
+                const updatedNodes = nodes.map((n) =>
+                  n.id === selectedNodeId
+                    ? { ...n, data: { ...n.data, enableMemory: checked } }
+                    : n
+                );
+                setNodes(updatedNodes);
+              }}
+              data-testid="agent-enable-memory"
+              className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+            />
+            <span className="text-xs font-medium text-gray-600">Enable Memory</span>
+          </label>
+          <p className="text-[10px] text-gray-400 ml-5">Agent stores and retrieves long-term memories</p>
+        </div>
+
+        {(data as any).agentType === "router" && (
+          <div>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={(data as any).enableConversationHistory ?? false}
+                onChange={(e) => {
+                  const checked = e.target.checked;
+                  const updatedNodes = nodes.map((n) =>
+                    n.id === selectedNodeId
+                      ? { ...n, data: { ...n.data, enableConversationHistory: checked } }
+                      : n
+                  );
+                  setNodes(updatedNodes);
+                }}
+                data-testid="agent-enable-history"
+                className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+              />
+              <span className="text-xs font-medium text-gray-600">Enable Conversation History</span>
+            </label>
+            <p className="text-[10px] text-gray-400 ml-5">Agent sees prior conversation turns</p>
+          </div>
+        )}
+
+        <div className="pt-2 border-t border-gray-100">
         <h4 className="text-xs font-semibold text-gray-600 mb-2 flex items-center gap-1">
           <Wrench className="w-3 h-3" /> Connected Tools
         </h4>
@@ -142,6 +191,7 @@ export function AgentEditor() {
           )}
         </div>
       </div>
+    </div>
     </div>
   );
 }

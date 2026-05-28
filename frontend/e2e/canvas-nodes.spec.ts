@@ -75,7 +75,7 @@ test.describe("Canvas Nodes — active pulse during execution", () => {
     canvasWithWorkflow,
     wsFixture,
   }) => {
-    const { routerId, researcherId, summariserId, toolId } = canvasWithWorkflow;
+    const { researcherId } = canvasWithWorkflow;
 
     // Open a conversation and send a message
     await page.getByTestId("conversation-selector").click();
@@ -83,14 +83,14 @@ test.describe("Canvas Nodes — active pulse during execution", () => {
     await page.getByTestId("chat-input").fill("test");
     await page.getByTestId("chat-input").press("Enter");
 
-    // Trigger the mock execution stream
-    await wsFixture.triggerRun(canvasWithWorkflow);
-
-    // Router node should pulse during agent_start (Orchestrator)
-    // After handoff, Researcher should pulse
     const researcherNode = page.locator(
       `[data-testid="agent-node"][data-node-id="${researcherId}"]`
     );
+
+    // Fire triggerRun without awaiting — check the pulse while events stream
+    wsFixture.triggerRun(canvasWithWorkflow);
+
+    // The agent_start for Researcher (event 4 of 9) should trigger the pulse
     await expect(researcherNode).toHaveClass(/animate-pulse/, {
       timeout: 10_000,
     });
@@ -108,8 +108,8 @@ test.describe("Canvas Nodes — active pulse during execution", () => {
 
     await wsFixture.triggerRun(canvasWithWorkflow);
 
-    // Wait for run to complete (send button re-enabled)
-    await expect(page.getByTestId("send-button")).toBeEnabled({
+    // Wait for run to complete (send button visible, stop button gone)
+    await expect(page.getByTestId("send-button")).toBeVisible({
       timeout: 15_000,
     });
 

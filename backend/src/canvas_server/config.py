@@ -7,6 +7,11 @@ class Settings(BaseSettings):
     llm_base_url: str = "http://192.168.1.120:11434"
     llm_model: str = "ollama_chat/gemma4:31b"
 
+    # Memory (mem0) settings
+    mem0_llm_provider: str = "ollama"
+    mem0_llm_model: str = "gemma4:31b"
+    mem0_embedder_provider: str = "ollama"
+    mem0_embedder_model: str = "nomic-embed-text"
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
 

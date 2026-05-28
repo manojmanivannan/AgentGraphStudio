@@ -3,49 +3,55 @@
   "nodes": {
     "agents": [
       {
-        "id": "6da247ed-76e3-4a05-92a6-48ca7b792a74",
+        "id": "dc9d43c9-dfea-4160-857f-706c07bedfe1",
         "name": "Master",
-        "role": "RoutingExpert",
-        "instructions": "You answer questions by routing to other agents",
-        "model_name": "ollama:gemma4:31b",
+        "role": "Routing Expert",
+        "instructions": "You route the questions to the sub agent for math or weather related queries.",
+        "model_name": "ollama:gemma4:31b-cloud",
         "agent_type": "router",
-        "position_x": 375.42711382676606,
-        "position_y": 174.967469955174
+        "enable_memory": true,
+        "enable_conversation_history": true,
+        "position_x": 188.47760174983188,
+        "position_y": 305.42081381191036
       },
       {
-        "id": "a40dd845-2a95-42f9-a0c3-4f42901dddce",
+        "id": "bec4a5b4-9cef-4082-8919-b61d33f65531",
         "name": "MathAgent",
-        "role": "Math expert",
-        "instructions": "you answer math questions",
-        "model_name": "ollama:gemma4:31b",
+        "role": "Math Expert",
+        "instructions": "You response to math questions",
+        "model_name": "ollama:gemma4:31b-cloud",
         "agent_type": "worker",
-        "position_x": 260.21655314623877,
-        "position_y": 318.16679599286323
+        "enable_memory": false,
+        "enable_conversation_history": false,
+        "position_x": 26.60931614888949,
+        "position_y": 514.4314565250704
       },
       {
-        "id": "b6348295-9e2e-43a7-91fa-d527f5e4577c",
+        "id": "d9155727-7a96-4137-9e2d-203abc7cbd74",
         "name": "WeatherAgent",
-        "role": "Weather Expert",
-        "instructions": "you answer weather questions with 'It is sunny today'",
-        "model_name": "ollama:gemma4:31b",
+        "role": "Weather specialist",
+        "instructions": "You are a mock weather agent for testing. You also respond that the weather is sunny for any given location",
+        "model_name": "ollama:gemma4:31b-cloud",
         "agent_type": "worker",
-        "position_x": 521.0998277343767,
-        "position_y": 341.54947068910764
+        "enable_memory": false,
+        "enable_conversation_history": false,
+        "position_x": 324.0410798286265,
+        "position_y": 489.87916701821223
       }
     ],
     "tools": []
   },
   "edges": [
     {
-      "id": "ac877161-215e-49d4-b586-60a36ee307c3",
-      "source_node_id": "6da247ed-76e3-4a05-92a6-48ca7b792a74",
-      "target_node_id": "a40dd845-2a95-42f9-a0c3-4f42901dddce",
+      "id": "3a5b1900-401d-43b3-8250-0e7414f1f017",
+      "source_node_id": "dc9d43c9-dfea-4160-857f-706c07bedfe1",
+      "target_node_id": "bec4a5b4-9cef-4082-8919-b61d33f65531",
       "edge_type": "handoff"
     },
     {
-      "id": "9e8fd3d7-bf64-4d11-8d44-0a6746731f3c",
-      "source_node_id": "6da247ed-76e3-4a05-92a6-48ca7b792a74",
-      "target_node_id": "b6348295-9e2e-43a7-91fa-d527f5e4577c",
+      "id": "453d2f5d-7908-4448-98b1-25b7715f8cef",
+      "source_node_id": "dc9d43c9-dfea-4160-857f-706c07bedfe1",
+      "target_node_id": "d9155727-7a96-4137-9e2d-203abc7cbd74",
       "edge_type": "handoff"
     }
   ]

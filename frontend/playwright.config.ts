@@ -5,7 +5,7 @@ export default defineConfig({
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
-  workers: process.env.CI ? 1 : undefined,
+  workers: 1,
   reporter: "html",
   use: {
     baseURL: "http://localhost:5173",
@@ -20,7 +20,7 @@ export default defineConfig({
   webServer: [
     {
       // Backend: requires DATABASE_URL env var pointing to SQLite for CI
-      command: "uv run uvicorn canvas_server.main:app --host 127.0.0.1 --port 8000",
+      command: "uv run alembic upgrade head && uv run uvicorn canvas_server.main:app --host 127.0.0.1 --port 8000",
       cwd: "../backend",
       url: "http://127.0.0.1:8000/health",
       reuseExistingServer: !process.env.CI,

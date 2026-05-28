@@ -1,8 +1,7 @@
 import uuid
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import dspy
-import pytest
 
 from canvas_server.runner import CanvasRunner
 
@@ -36,7 +35,11 @@ class FakeAgentNode:
 
 
 def _make_prediction(process_result="", trajectory=None):
-    trajectory = trajectory or {"thought_0": "", "tool_name_0": "finish", "tool_args_0": {}}
+    trajectory = trajectory or {
+        "thought_0": "",
+        "tool_name_0": "finish",
+        "tool_args_0": {},
+    }
     return dspy.Prediction(process_result=process_result, trajectory=trajectory)
 
 
@@ -103,7 +106,10 @@ class TestCanvasRunner:
 
     async def test_worker_run_returns_result(self):
         worker = FakeAgentNode(
-            id=uuid.uuid4(), name="Worker", agent_type="worker", model_name="ollama:llama3.1"
+            id=uuid.uuid4(),
+            name="Worker",
+            agent_type="worker",
+            model_name="ollama:llama3.1",
         )
 
         canvas = FakeCanvas(agent_nodes=[worker])
@@ -129,7 +135,10 @@ class TestCanvasRunner:
 
     async def test_worker_run_emits_events_on_error(self):
         worker = FakeAgentNode(
-            id=uuid.uuid4(), name="Worker", agent_type="worker", model_name="ollama:llama3.1"
+            id=uuid.uuid4(),
+            name="Worker",
+            agent_type="worker",
+            model_name="ollama:llama3.1",
         )
 
         canvas = FakeCanvas(agent_nodes=[worker])
@@ -142,9 +151,7 @@ class TestCanvasRunner:
 
         runner.node_map[worker.id] = worker
         runner.setup = AsyncMock()
-        runner.agents[worker.id] = AsyncMock(
-            side_effect=Exception("test error")
-        )
+        runner.agents[worker.id] = AsyncMock(side_effect=Exception("test error"))
 
         await runner.run("do work", collect)
 
@@ -191,18 +198,18 @@ class TestCanvasRunner:
         runner.node_map = {master.id: master, worker.id: worker}
         runner.agents[worker.id] = _make_agent_mock("2 + 3 = 5")
 
-        router_result = _make_prediction(
-            process_result="The answer is 5",
-            trajectory={
-                "thought_0": "This is a math question",
-                "tool_name_0": "transfer_to_MathAgent",
-                "tool_args_0": {"task": "what is 2+3"},
-                "observation_0": "2 + 3 = 5",
-                "thought_1": "I now know the answer",
-                "tool_name_1": "finish",
-                "tool_args_1": {},
-            },
-        )
+        # router_result = _make_prediction(
+        #     process_result="The answer is 5",
+        #     trajectory={
+        #         "thought_0": "This is a math question",
+        #         "tool_name_0": "transfer_to_MathAgent",
+        #         "tool_args_0": {"task": "what is 2+3"},
+        #         "observation_0": "2 + 3 = 5",
+        #         "thought_1": "I now know the answer",
+        #         "tool_name_1": "finish",
+        #         "tool_args_1": {},
+        #     },
+        # )
 
         with patch.object(runner, "_build_router_agent") as mock_builder:
             router_mock = _make_router_mock(

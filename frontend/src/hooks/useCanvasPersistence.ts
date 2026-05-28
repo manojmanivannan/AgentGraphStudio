@@ -26,6 +26,8 @@ export function useCanvasPersistence() {
             instructions: (n.data?.instructions as string) || "",
             model_name: (n.data?.modelName as string) || "ollama:llama3.1",
             agent_type: (n.data?.agentType as string) || "worker",
+            enable_memory: (n.data?.enableMemory as boolean) ?? false,
+            enable_conversation_history: (n.data?.enableConversationHistory as boolean) ?? false,
             position_x: n.position.x,
             position_y: n.position.y,
           })),

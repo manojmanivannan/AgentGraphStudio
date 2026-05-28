@@ -24,6 +24,8 @@ test.describe("Canvas landing page", () => {
     expect(res.ok()).toBeTruthy();
 
     await page.goto("/");
+    // Scroll to top — the landing page is centered and may overflow with many canvases
+    await page.evaluate(() => window.scrollTo(0, 0));
     await expect(page.getByText("E2E Test Canvas")).toBeVisible();
   });
 
@@ -34,6 +36,7 @@ test.describe("Canvas landing page", () => {
     });
 
     await page.goto("/");
+    await page.evaluate(() => window.scrollTo(0, 0));
     await page.getByText("Canvas To Open").click();
 
     await expect(page.locator(".react-flow")).toBeVisible({ timeout: 10_000 });
