@@ -3,7 +3,7 @@ import type { WebSocketRoute } from "@playwright/test";
 import { test as canvasTest, type CanvasFixture } from "./canvas";
 import type { WorkflowNodeIds } from "./canvas";
 
-const WS_URL_PATTERN = "ws://localhost:8000/ws/conversations/*/run";
+const WS_URL_PATTERN = /ws:\/\/localhost:8000\/ws\/conversations\/.+\/run/;
 
 export interface WsHelper {
   /** Stream all 9 execution events through the intercepted WebSocket. */
