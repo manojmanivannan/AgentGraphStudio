@@ -85,7 +85,7 @@ class CanvasRepo:
             # Map source and target IDs to their new versions
             source_id = id_map.get(e.source_node_id, e.source_node_id)
             target_id = id_map.get(e.target_node_id, e.target_node_id)
-            
+
             edge = Edge(
                 id=uuid.uuid4(),
                 canvas_id=canvas_id,

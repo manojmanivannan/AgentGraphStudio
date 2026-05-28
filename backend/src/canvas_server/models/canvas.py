@@ -11,7 +11,6 @@ from sqlalchemy.types import JSON
 from canvas_server.database import Base
 
 
-
 def _utcnow():
     return datetime.now(UTC)
 
@@ -20,27 +19,40 @@ class Canvas(Base):
     __tablename__ = "canvases"
 
     id: Mapped[uuid.UUID] = mapped_column(
-        Uuid, primary_key=True, default=uuid.uuid4,
+        Uuid,
+        primary_key=True,
+        default=uuid.uuid4,
     )
     name: Mapped[str] = mapped_column(String(255), default="Untitled Canvas")
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=_utcnow,
+        DateTime(timezone=True),
+        default=_utcnow,
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow,
+        DateTime(timezone=True),
+        default=_utcnow,
+        onupdate=_utcnow,
     )
 
     agent_nodes: Mapped[list[AgentNode]] = relationship(
-        "AgentNode", back_populates="canvas", cascade="all, delete-orphan",
+        "AgentNode",
+        back_populates="canvas",
+        cascade="all, delete-orphan",
     )
     tool_nodes: Mapped[list[ToolNode]] = relationship(
-        "ToolNode", back_populates="canvas", cascade="all, delete-orphan",
+        "ToolNode",
+        back_populates="canvas",
+        cascade="all, delete-orphan",
     )
     edges: Mapped[list[Edge]] = relationship(
-        "Edge", back_populates="canvas", cascade="all, delete-orphan",
+        "Edge",
+        back_populates="canvas",
+        cascade="all, delete-orphan",
     )
     conversations: Mapped[list[Conversation]] = relationship(
-        "Conversation", back_populates="canvas", cascade="all, delete-orphan",
+        "Conversation",
+        back_populates="canvas",
+        cascade="all, delete-orphan",
     )
 
 
@@ -49,18 +61,25 @@ class AgentNode(Base):
     __table_args__ = (Index("idx_agent_nodes_canvas", "canvas_id"),)
 
     id: Mapped[uuid.UUID] = mapped_column(
-        Uuid, primary_key=True, default=uuid.uuid4,
+        Uuid,
+        primary_key=True,
+        default=uuid.uuid4,
     )
     canvas_id: Mapped[uuid.UUID] = mapped_column(
-        Uuid, ForeignKey("canvases.id", ondelete="CASCADE"),
+        Uuid,
+        ForeignKey("canvases.id", ondelete="CASCADE"),
     )
     name: Mapped[str] = mapped_column(String(255), default="Agent")
     role: Mapped[str] = mapped_column(Text, default="")
     instructions: Mapped[str] = mapped_column(Text, default="")
     model_name: Mapped[str] = mapped_column(String(255), default="ollama:llama3.1")
     agent_type: Mapped[str] = mapped_column(String(20), default="worker")
-    enable_memory: Mapped[bool] = mapped_column(sa.Boolean(), default=False, server_default=sa.text("false"), nullable=False)
-    enable_conversation_history: Mapped[bool] = mapped_column(sa.Boolean(), default=False, server_default=sa.text("false"), nullable=False)
+    enable_memory: Mapped[bool] = mapped_column(
+        sa.Boolean(), default=False, server_default=sa.text("false"), nullable=False
+    )
+    enable_conversation_history: Mapped[bool] = mapped_column(
+        sa.Boolean(), default=False, server_default=sa.text("false"), nullable=False
+    )
     position_x: Mapped[float] = mapped_column(Double, default=0)
     position_y: Mapped[float] = mapped_column(Double, default=0)
 
@@ -72,10 +91,13 @@ class ToolNode(Base):
     __table_args__ = (Index("idx_tool_nodes_canvas", "canvas_id"),)
 
     id: Mapped[uuid.UUID] = mapped_column(
-        Uuid, primary_key=True, default=uuid.uuid4,
+        Uuid,
+        primary_key=True,
+        default=uuid.uuid4,
     )
     canvas_id: Mapped[uuid.UUID] = mapped_column(
-        Uuid, ForeignKey("canvases.id", ondelete="CASCADE"),
+        Uuid,
+        ForeignKey("canvases.id", ondelete="CASCADE"),
     )
     name: Mapped[str] = mapped_column(String(255), default="Tool")
     code: Mapped[str] = mapped_column(Text, default="")
@@ -91,10 +113,13 @@ class Edge(Base):
     __table_args__ = (Index("idx_edges_canvas", "canvas_id"),)
 
     id: Mapped[uuid.UUID] = mapped_column(
-        Uuid, primary_key=True, default=uuid.uuid4,
+        Uuid,
+        primary_key=True,
+        default=uuid.uuid4,
     )
     canvas_id: Mapped[uuid.UUID] = mapped_column(
-        Uuid, ForeignKey("canvases.id", ondelete="CASCADE"),
+        Uuid,
+        ForeignKey("canvases.id", ondelete="CASCADE"),
     )
     source_node_id: Mapped[uuid.UUID] = mapped_column(Uuid)
     target_node_id: Mapped[uuid.UUID] = mapped_column(Uuid)
@@ -108,23 +133,31 @@ class Conversation(Base):
     __table_args__ = (Index("idx_conversations_canvas", "canvas_id"),)
 
     id: Mapped[uuid.UUID] = mapped_column(
-        Uuid, primary_key=True, default=uuid.uuid4,
+        Uuid,
+        primary_key=True,
+        default=uuid.uuid4,
     )
     canvas_id: Mapped[uuid.UUID] = mapped_column(
-        Uuid, ForeignKey("canvases.id", ondelete="CASCADE"),
+        Uuid,
+        ForeignKey("canvases.id", ondelete="CASCADE"),
     )
     name: Mapped[str] = mapped_column(String(255), default="New Conversation")
     status: Mapped[str] = mapped_column(String(20), default="active")
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=_utcnow,
+        DateTime(timezone=True),
+        default=_utcnow,
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow,
+        DateTime(timezone=True),
+        default=_utcnow,
+        onupdate=_utcnow,
     )
 
     canvas: Mapped[Canvas] = relationship("Canvas", back_populates="conversations")
     messages: Mapped[list[Message]] = relationship(
-        "Message", back_populates="conversation", cascade="all, delete-orphan",
+        "Message",
+        back_populates="conversation",
+        cascade="all, delete-orphan",
     )
 
 
@@ -133,18 +166,28 @@ class Message(Base):
     __table_args__ = (Index("idx_messages_conversation", "conversation_id"),)
 
     id: Mapped[uuid.UUID] = mapped_column(
-        Uuid, primary_key=True, default=uuid.uuid4,
+        Uuid,
+        primary_key=True,
+        default=uuid.uuid4,
     )
     conversation_id: Mapped[uuid.UUID] = mapped_column(
-        Uuid, ForeignKey("conversations.id", ondelete="CASCADE"),
+        Uuid,
+        ForeignKey("conversations.id", ondelete="CASCADE"),
     )
     role: Mapped[str] = mapped_column(String(10))
     content: Mapped[str] = mapped_column(Text, default="")
-    agent_name: Mapped[str | None] = mapped_column(String(255), nullable=True, default=None)
+    agent_name: Mapped[str | None] = mapped_column(
+        String(255), nullable=True, default=None
+    )
     node_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True, default=None)
-    event_type: Mapped[str | None] = mapped_column(String(30), nullable=True, default=None)
+    event_type: Mapped[str | None] = mapped_column(
+        String(30), nullable=True, default=None
+    )
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=_utcnow,
+        DateTime(timezone=True),
+        default=_utcnow,
     )
 
-    conversation: Mapped[Conversation] = relationship("Conversation", back_populates="messages")
+    conversation: Mapped[Conversation] = relationship(
+        "Conversation", back_populates="messages"
+    )
