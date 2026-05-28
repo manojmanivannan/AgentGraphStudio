@@ -177,7 +177,8 @@ test.describe("Chat Panel — message sending and streaming", () => {
 
     await wsFixture.triggerRun(canvasWithWorkflow);
 
-    await expect(page.getByTestId("send-button")).toBeEnabled({
+    // Button switches from stop to send; may be disabled if input is empty
+    await expect(page.getByTestId("send-button")).toBeVisible({
       timeout: 15_000,
     });
   });

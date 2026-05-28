@@ -11,6 +11,8 @@ class AgentNodeInput(BaseModel):
     instructions: str = ""
     model_name: str = "ollama:llama3.1"
     agent_type: str = "worker"
+    enable_memory: bool = False
+    enable_conversation_history: bool = False
     position_x: float = 0
     position_y: float = 0
 
