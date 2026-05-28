@@ -44,6 +44,10 @@ class StreamingReAct(dspy.ReAct):
             if pred.next_tool_name == "finish":
                 break
 
+            await self._emit(
+                {"type": "tool_start", "tool": pred.next_tool_name}
+            )
+
             try:
                 observation = await self.tools[pred.next_tool_name].acall(
                     **pred.next_tool_args

@@ -16,7 +16,7 @@ function AgentNodeComponent({ id, data, selected }: NodeProps) {
       data-node-id={id}
       data-agent-type={agentData.agentType}
       className={`
-        relative h-full flex flex-col rounded-lg border-2 bg-white shadow-md transition-all duration-300
+        relative h-full flex flex-col rounded-lg border-2 bg-white shadow-md
         ${selected ? "border-blue-500 ring-2 ring-blue-200" : isRouter ? "border-purple-300" : "border-gray-200"}
         ${isActive ? "border-green-400 ring-2 ring-green-200 animate-pulse" : ""}
       `}
