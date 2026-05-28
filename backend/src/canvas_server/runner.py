@@ -3,6 +3,7 @@ import logging
 import uuid
 
 import dspy
+import mlflow
 
 from canvas_server.config import settings
 from canvas_server.memory_config import build_mem0_config
@@ -19,6 +20,8 @@ class CanvasRunner:
         self.conversation_repo = conversation_repo
         self.conversation_id = conversation_id
         self.tools: dict[uuid.UUID, object] = {}
+        self._tool_name_to_id: dict[str, uuid.UUID] = {}
+        self._wired_agents: set[uuid.UUID] = set()
         # worker agents built during setup; router agents built at run time
         self.agents: dict[uuid.UUID, StreamingReAct] = {}
         self.node_map: dict[uuid.UUID, object] = {}
@@ -45,6 +48,7 @@ class CanvasRunner:
             try:
                 fn = await compile_tool_from_code(tool_node.name, tool_node.code)
                 self.tools[tool_node.id] = fn
+                self._tool_name_to_id[tool_node.name] = tool_node.id
                 logger.debug(
                     "  compiled tool: id=%s name=%s", tool_node.id, tool_node.name
                 )
@@ -179,14 +183,27 @@ class CanvasRunner:
 
     def _attach_events(self, agent_id: uuid.UUID, send_event):
         """Wire event callbacks on an agent so StreamingReAct events flow to send_event."""
+        if agent_id in self._wired_agents:
+            return
         agent = self.agents.get(agent_id)
         agent_node = self.node_map.get(agent_id)
         if agent and agent_node:
-            agent.on_event(
-                lambda event, aid=agent_id, aname=agent_node.name: send_event(
+            self._wired_agents.add(agent_id)
+            tool_name_to_id = self._tool_name_to_id
+
+            async def callback(event, aid=agent_id, aname=agent_node.name):
+                await send_event(
                     {"agent": aname, "node_id": str(aid), **event}
                 )
-            )
+                if event.get("type") == "tool_start":
+                    tool_name = event.get("tool", "")
+                    tool_node_id = tool_name_to_id.get(tool_name)
+                    if tool_node_id:
+                        await send_event(
+                            {"type": "tool_start", "tool": tool_name, "node_id": str(tool_node_id)}
+                        )
+
+            agent.on_event(callback)
 
     def _make_handoff_tool(self, target_id: uuid.UUID, router_name: str, send_event, history: str, dspy_history=None):
         """Create a DSPy tool function that delegates to a sub-agent."""
@@ -212,6 +229,7 @@ class CanvasRunner:
                 }
             )
 
+            self._attach_events(target_id, send_event)
             prompt = self._build_worker_prompt(task, history)
             try:
                 if dspy_history is not None and self._needs_history(target_node):
@@ -261,6 +279,7 @@ class CanvasRunner:
 
         signature = self._build_agent_signature(agent_node)
         agent = StreamingReAct(signature, tools=all_tools)
+        self.agents[agent_node.id] = agent
         self._attach_events(agent_node.id, send_event)
         return agent
 
@@ -364,12 +383,13 @@ class CanvasRunner:
             )
             return None
 
+    @mlflow.trace(name="canvas_run", span_type="CHAIN", attributes={"component": "agent"})
     async def run(
         self,
         user_prompt: str,
         send_event,
         target_agent_id: uuid.UUID | None = None,
-    ):
+    ) -> str | None:
         logger.info(
             "Starting canvas execution: canvas_id=%s prompt=%s target=%s",
             self.canvas.id,
@@ -383,7 +403,7 @@ class CanvasRunner:
             await send_event(
                 self._event("error", message="Canvas has no agents to run.")
             )
-            return
+            return None
 
         await send_event(self._event("run_start", canvas_id=str(self.canvas.id)))
 
@@ -413,6 +433,8 @@ class CanvasRunner:
                 elif msg.role == "assistant":
                     dspy_messages.append({"process_result": msg.content})
             dspy_history = dspy.History(messages=dspy_messages)
+
+        final_text = None
 
         with dspy.context(lm=self._lm):
 
@@ -559,3 +581,4 @@ class CanvasRunner:
         await send_event(
             self._event("run_complete", result="Workflow execution completed.")
         )
+        return final_text
