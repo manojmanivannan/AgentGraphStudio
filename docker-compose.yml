@@ -24,6 +24,7 @@ services:
       - "8000:8000"
     environment:
       DATABASE_URL: postgresql+asyncpg://canvas:canvas@postgres:5432/canvas_db
+      MLFLOW_TRACKING_URI: http://mlflow:5000
     env_file: ./backend/.env
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -62,6 +63,23 @@ services:
         - action: rebuild
           path: ./frontend/package.json
 
+  mlflow:
+    build:
+      context: ./mlflow
+    ports:
+      - "5000:5000"
+    environment:
+      MLFLOW_SERVER_ALLOWED_HOSTS: "*"
+    volumes:
+      - mlflow_data:/app/mlflow
+    networks:
+      - agent_network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   # ollama:
   #   image: ollama/ollama:latest
   #   ports:
@@ -86,3 +104,4 @@ networks:
 
 volumes:
   pgdata:
+  mlflow_data:

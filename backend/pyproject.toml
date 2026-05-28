@@ -20,6 +20,7 @@ dependencies = [
     "mem0ai>=2.0.4",
     "ollama>=0.4",
     "fastembed>=0.8.0",
+    "mlflow>=2.20.0",
 ]
 
 [dependency-groups]

@@ -2,6 +2,7 @@ import logging
 import time
 from contextlib import asynccontextmanager
 
+import mlflow
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -20,10 +21,23 @@ logger = logging.getLogger("canvas_server")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Canvas server starting up")
-    url_part = settings.database_url.split("@")[1] if "@" in settings.database_url else "..."
+    url_part = (
+        settings.database_url.split("@")[1] if "@" in settings.database_url else "..."
+    )
     logger.debug("Config: database_url=%s", url_part)
     logger.debug("Config: llm_model=%s", settings.llm_model)
     logger.debug(f"Config: cors_origins={settings.cors_origins}")
+
+    # Initialize MLflow tracing for DSPy
+    mlflow.set_tracking_uri(settings.mlflow_tracking_uri)
+    mlflow.set_experiment(settings.mlflow_experiment_name)
+    mlflow.dspy.autolog()
+    logger.info(
+        "MLflow tracing enabled: tracking_uri=%s experiment=%s",
+        settings.mlflow_tracking_uri,
+        settings.mlflow_experiment_name,
+    )
+
     yield
     logger.info("Canvas server shutting down")
 
@@ -42,16 +56,23 @@ app.add_middleware(
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
     start = time.time()
-    logger.debug(f"--> {request.method} {request.url.path} from {request.client.host if request.client else '?'}")
+    logger.debug(
+        f"--> {request.method} {request.url.path} from {request.client.host if request.client else '?'}"
+    )
     response = await call_next(request)
     elapsed = time.time() - start
-    logger.debug(f"<-- {request.method} {request.url.path} [{response.status_code}] {elapsed:.3f}s")
+    logger.debug(
+        f"<-- {request.method} {request.url.path} [{response.status_code}] {elapsed:.3f}s"
+    )
     return response
 
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
-    logger.error(f"Unhandled exception on {request.method} {request.url.path}: {exc}", exc_info=True)
+    logger.error(
+        f"Unhandled exception on {request.method} {request.url.path}: {exc}",
+        exc_info=True,
+    )
     return JSONResponse(
         status_code=500,
         content={"detail": str(exc)},
