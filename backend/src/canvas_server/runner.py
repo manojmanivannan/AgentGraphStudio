@@ -3,6 +3,7 @@ import logging
 import uuid
 
 import dspy
+import mlflow
 
 from canvas_server.config import settings
 from canvas_server.memory_config import build_mem0_config
@@ -382,12 +383,13 @@ class CanvasRunner:
             )
             return None
 
+    @mlflow.trace(name="canvas_run", span_type="CHAIN", attributes={"component": "agent"})
     async def run(
         self,
         user_prompt: str,
         send_event,
         target_agent_id: uuid.UUID | None = None,
-    ):
+    ) -> str | None:
         logger.info(
             "Starting canvas execution: canvas_id=%s prompt=%s target=%s",
             self.canvas.id,
@@ -401,7 +403,7 @@ class CanvasRunner:
             await send_event(
                 self._event("error", message="Canvas has no agents to run.")
             )
-            return
+            return None
 
         await send_event(self._event("run_start", canvas_id=str(self.canvas.id)))
 
@@ -431,6 +433,8 @@ class CanvasRunner:
                 elif msg.role == "assistant":
                     dspy_messages.append({"process_result": msg.content})
             dspy_history = dspy.History(messages=dspy_messages)
+
+        final_text = None
 
         with dspy.context(lm=self._lm):
 
@@ -577,3 +581,4 @@ class CanvasRunner:
         await send_event(
             self._event("run_complete", result="Workflow execution completed.")
         )
+        return final_text
