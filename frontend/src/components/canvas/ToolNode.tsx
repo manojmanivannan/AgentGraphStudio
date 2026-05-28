@@ -20,7 +20,7 @@ function ToolNodeComponent({ id, data, selected }: NodeProps) {
       data-testid="tool-node"
       data-node-id={id}
       className={`
-        relative min-w-[180px] rounded-lg border-2 bg-white shadow-md transition-all
+        relative min-w-[180px] rounded-lg border-2 bg-white shadow-md
         ${selected ? "border-blue-500 ring-2 ring-blue-200" : "border-gray-200"}
         ${isActive ? "border-green-400 ring-2 ring-green-200 animate-pulse" : ""}
       `}
