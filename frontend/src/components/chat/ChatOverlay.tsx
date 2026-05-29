@@ -1,7 +1,16 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Send, Plus, Trash2, MessageSquare, ChevronDown, ChevronRight, X, Square } from "lucide-react";
+import {
+  Send,
+  Plus,
+  Trash2,
+  MessageSquare,
+  ChevronDown,
+  ChevronRight,
+  X,
+  Square,
+} from "lucide-react";
 import { useCanvasStore } from "@/store/canvasStore";
-import { ResizablePanel } from "@/components/layout/ResizablePanel";
+import { OverlayPanel } from "@/components/layout/OverlayPanel";
 import {
   createConversation,
   listConversations,
@@ -12,11 +21,12 @@ import type { ConversationSummary, Message, ExecutionEvent } from "@/types";
 
 const WS_BASE = `ws://${import.meta.env.VITE_API_HOST || "localhost:8000"}`;
 
-export function ChatPanel() {
+export function ChatOverlay() {
   const canvasId = useCanvasStore((s) => s.canvasId);
   const setActiveNodeId = useCanvasStore((s) => s.setActiveNodeId);
   const chatOpen = useCanvasStore((s) => s.chatOpen);
   const toggleChat = useCanvasStore((s) => s.toggleChat);
+  const selectedNodeId = useCanvasStore((s) => s.selectedNodeId);
 
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [activeConvId, setActiveConvId] = useState<string | null>(null);
@@ -277,31 +287,22 @@ export function ChatPanel() {
     setActiveNodeId(null);
   };
 
-  if (!chatOpen) {
-    return (
-      <div data-testid="chat-panel" className="w-12 h-full border-l border-[var(--color-border-subtle)] bg-[var(--color-surface)] flex flex-col items-center py-3 gap-3">
-        <button
-          onClick={toggleChat}
-          data-testid="chat-toggle"
-          className="p-2 text-[var(--color-text-tertiary)] hover:text-[var(--color-accent)] hover:bg-[var(--color-accent-subtle)] rounded-lg transition-all duration-150"
-          title="Open chat"
-        >
-          <MessageSquare className="w-4 h-4" />
-        </button>
-      </div>
-    );
-  }
+  // Properties panel offset: if a node is selected, chat shifts left by 320px
+  const offsetRight = selectedNodeId ? 320 : 0;
 
   return (
-    <ResizablePanel
+    <OverlayPanel
+      open={chatOpen}
+      width={400}
+      offsetRight={offsetRight}
+      onClose={toggleChat}
       data-testid="chat-panel"
-      defaultWidth={384}
-      minWidth={280}
-      maxWidth={600}
-      className="border-l border-[var(--color-border-subtle)] bg-[var(--color-surface)]"
     >
-      <div className="flex items-center justify-between px-3 py-2.5 border-b border-[var(--color-border-subtle)]">
-        <span className="text-[11px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-[0.08em]">Conversation</span>
+      {/* Header */}
+      <div className="flex items-center justify-between px-4 py-2.5 border-b border-[var(--color-border-subtle)]">
+        <span className="text-[11px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-[0.08em]">
+          Conversation
+        </span>
         <button
           onClick={toggleChat}
           data-testid="chat-close"
@@ -311,6 +312,8 @@ export function ChatPanel() {
           <X className="w-3.5 h-3.5" />
         </button>
       </div>
+
+      {/* Conversation selector */}
       <div className="border-b border-[var(--color-border-subtle)] p-3">
         <div className="relative">
           <button
@@ -383,6 +386,7 @@ export function ChatPanel() {
         </div>
       </div>
 
+      {/* Messages */}
       <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
         {messages.length === 0 && !running && (
           <div className="flex items-center justify-center h-full text-[var(--color-text-tertiary)] text-[12px]">
@@ -400,62 +404,64 @@ export function ChatPanel() {
           const isAgentStart = msg.event_type === "agent_start";
 
           return (
-          <div
-            key={msg.id}
-            className={`flex flex-col ${
-              msg.role === "user" ? "items-end" : "items-start"
-            }`}
-            style={{ animation: "staggerFadeIn 0.3s ease-out" }}
-          >
-            {msg.agent_name && msg.role !== "user" && !isHandoff && !isAgentStart && (
-              <span className="text-[10px] text-[var(--color-text-tertiary)] mb-1 px-1 font-medium">
-                {msg.agent_name}
-                {msg.event_type === "tool_result" ? "" : msg.event_type && ` · ${msg.event_type}`}
-              </span>
-            )}
             <div
-              className={`max-w-[85%] rounded-xl px-3 py-2.5 text-[13px] leading-relaxed ${
-                msg.role === "user"
-                  ? "bg-[var(--color-accent)] text-[var(--color-text-inverse)] rounded-br-sm"
-                  : isHandoff || isAgentStart
-                  ? "bg-[var(--color-info-subtle)] text-[var(--color-info)] border border-[var(--color-info)]/20 rounded-bl-sm"
-                  : msg.role === "system"
-                  ? "bg-[var(--color-danger-subtle)] text-[var(--color-danger)] border border-[var(--color-danger)]/20 rounded-bl-sm"
-                  : isThought
-                  ? "bg-[var(--color-agent-subtle)] text-[var(--color-agent)] border border-[var(--color-agent)]/20 text-[12px] rounded-bl-sm"
-                  : isToolResult
-                  ? "bg-[var(--color-success-subtle)] text-[var(--color-success)] border border-[var(--color-success)]/20 rounded-bl-sm"
-                  : "bg-[var(--color-elevated)] text-[var(--color-text-primary)] border border-[var(--color-border-subtle)] rounded-bl-sm"
+              key={msg.id}
+              className={`flex flex-col ${
+                msg.role === "user" ? "items-end" : "items-start"
               }`}
+              style={{ animation: "staggerFadeIn 0.3s ease-out" }}
             >
-              {(isHandoff || isAgentStart) ? (
-                <div className="flex items-center gap-2 text-[12px]">
-                  <span>{msg.content}</span>
-                </div>
-              ) : isThought && isCollapsed ? (
-                <button
-                  onClick={() => toggleCollapse(msg.id)}
-                  className="flex items-center gap-1 text-[var(--color-agent)] hover:text-[var(--color-agent)]/80 cursor-pointer w-full text-left"
-                >
-                  <ChevronRight className="w-3 h-3 flex-shrink-0" />
-                  <span className="text-[11px]">Thinking...</span>
-                </button>
-              ) : isThought ? (
-                <div>
+              {msg.agent_name && msg.role !== "user" && !isHandoff && !isAgentStart && (
+                <span className="text-[10px] text-[var(--color-text-tertiary)] mb-1 px-1 font-medium">
+                  {msg.agent_name}
+                  {msg.event_type === "tool_result"
+                    ? ""
+                    : msg.event_type && ` · ${msg.event_type}`}
+                </span>
+              )}
+              <div
+                className={`max-w-[85%] rounded-xl px-3 py-2.5 text-[13px] leading-relaxed ${
+                  msg.role === "user"
+                    ? "bg-[var(--color-accent)] text-[var(--color-text-inverse)] rounded-br-sm"
+                    : isHandoff || isAgentStart
+                    ? "bg-[var(--color-info-subtle)] text-[var(--color-info)] border border-[var(--color-info)]/20 rounded-bl-sm"
+                    : msg.role === "system"
+                    ? "bg-[var(--color-danger-subtle)] text-[var(--color-danger)] border border-[var(--color-danger)]/20 rounded-bl-sm"
+                    : isThought
+                    ? "bg-[var(--color-agent-subtle)] text-[var(--color-agent)] border border-[var(--color-agent)]/20 text-[12px] rounded-bl-sm"
+                    : isToolResult
+                    ? "bg-[var(--color-success-subtle)] text-[var(--color-success)] border border-[var(--color-success)]/20 rounded-bl-sm"
+                    : "bg-[var(--color-elevated)] text-[var(--color-text-primary)] border border-[var(--color-border-subtle)] rounded-bl-sm"
+                }`}
+              >
+                {isHandoff || isAgentStart ? (
+                  <div className="flex items-center gap-2 text-[12px]">
+                    <span>{msg.content}</span>
+                  </div>
+                ) : isThought && isCollapsed ? (
                   <button
                     onClick={() => toggleCollapse(msg.id)}
-                    className="flex items-center gap-1 text-[var(--color-agent)] hover:text-[var(--color-agent)]/80 cursor-pointer mb-1"
+                    className="flex items-center gap-1 text-[var(--color-agent)] hover:text-[var(--color-agent)]/80 cursor-pointer w-full text-left"
                   >
-                    <ChevronDown className="w-3 h-3 flex-shrink-0" />
-                    <span className="text-[10px]">Hide thought</span>
+                    <ChevronRight className="w-3 h-3 flex-shrink-0" />
+                    <span className="text-[11px]">Thinking...</span>
                   </button>
-                  {msg.content}
-                </div>
-              ) : (
-                msg.content
-              )}
+                ) : isThought ? (
+                  <div>
+                    <button
+                      onClick={() => toggleCollapse(msg.id)}
+                      className="flex items-center gap-1 text-[var(--color-agent)] hover:text-[var(--color-agent)]/80 cursor-pointer mb-1"
+                    >
+                      <ChevronDown className="w-3 h-3 flex-shrink-0" />
+                      <span className="text-[10px]">Hide thought</span>
+                    </button>
+                    {msg.content}
+                  </div>
+                ) : (
+                  msg.content
+                )}
+              </div>
             </div>
-          </div>
           );
         })}
 
@@ -481,6 +487,7 @@ export function ChatPanel() {
         <div ref={messagesEndRef} />
       </div>
 
+      {/* Input */}
       <div className="border-t border-[var(--color-border-subtle)] p-3">
         <div className="flex gap-2">
           <input
@@ -507,7 +514,6 @@ export function ChatPanel() {
                 ? "bg-[var(--color-danger)] hover:bg-[var(--color-danger)]/90"
                 : "bg-[var(--color-accent)] hover:bg-[var(--color-accent-bright)]"
             }`}
-            style={!running ? {} : undefined}
           >
             {running ? (
               <Square className="w-3.5 h-3.5" />
@@ -517,6 +523,6 @@ export function ChatPanel() {
           </button>
         </div>
       </div>
-    </ResizablePanel>
+    </OverlayPanel>
   );
 }

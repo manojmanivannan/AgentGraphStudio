@@ -1,19 +1,26 @@
-import { CanvasToolbar } from "@/components/toolbar/CanvasToolbar";
 import { CanvasView } from "@/components/canvas/CanvasView";
-import { PropertiesSidebar } from "@/components/PropertiesSidebar";
-import { ChatPanel } from "@/components/chat/ChatPanel";
+import { SidebarRail } from "@/components/layout/SidebarRail";
+import { TopBar } from "@/components/layout/TopBar";
+import { PropertiesOverlay } from "@/components/PropertiesOverlay";
+import { ChatOverlay } from "@/components/chat/ChatOverlay";
 
 export function AppShell() {
   return (
-    <div className="h-screen w-screen flex flex-col bg-[var(--color-base)]">
-      <CanvasToolbar />
-      <div className="flex-1 flex overflow-hidden">
-        <div className="flex-1">
-          <CanvasView />
-        </div>
-        <PropertiesSidebar />
-        <ChatPanel />
+    <div className="h-screen w-screen relative overflow-hidden bg-[var(--color-base)]">
+      {/* Canvas fills the entire viewport */}
+      <div className="absolute inset-0 z-0">
+        <CanvasView />
       </div>
+
+      {/* Top breadcrumb bar */}
+      <TopBar />
+
+      {/* Left sidebar rail */}
+      <SidebarRail />
+
+      {/* Overlay panels (slide in from right) */}
+      <PropertiesOverlay />
+      <ChatOverlay />
     </div>
   );
 }

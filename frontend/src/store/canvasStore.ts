@@ -1,6 +1,10 @@
 import { create } from "zustand";
 import type { Node, Edge } from "@xyflow/react";
 
+type SaveStatus = "idle" | "saving" | "saved" | "error";
+
+type Viewport = { x: number; y: number; zoom: number };
+
 interface CanvasStore {
   canvasId: string | null;
   canvasName: string;
@@ -8,8 +12,9 @@ interface CanvasStore {
   edges: Edge[];
   selectedNodeId: string | null;
   activeNodeId: string | null;
-  propertiesOpen: boolean;
   chatOpen: boolean;
+  saveStatus: SaveStatus;
+  viewport: Viewport;
 
   setCanvas: (id: string, name: string) => void;
   setName: (name: string) => void;
@@ -17,8 +22,9 @@ interface CanvasStore {
   setEdges: (edges: Edge[]) => void;
   selectNode: (id: string | null) => void;
   setActiveNodeId: (id: string | null) => void;
-  toggleProperties: () => void;
   toggleChat: () => void;
+  setSaveStatus: (status: SaveStatus) => void;
+  setViewport: (viewport: Viewport) => void;
   reset: () => void;
 }
 
@@ -29,17 +35,19 @@ export const useCanvasStore = create<CanvasStore>((set) => ({
   edges: [],
   selectedNodeId: null,
   activeNodeId: null,
-  propertiesOpen: false,
   chatOpen: false,
+  saveStatus: "idle",
+  viewport: { x: 0, y: 0, zoom: 1 },
 
   setCanvas: (id, name) => set({ canvasId: id, canvasName: name }),
   setName: (name) => set({ canvasName: name }),
   setNodes: (nodes) => set({ nodes }),
   setEdges: (edges) => set({ edges }),
-  selectNode: (id) => set({ selectedNodeId: id, propertiesOpen: id !== null }),
+  selectNode: (id) => set({ selectedNodeId: id }),
   setActiveNodeId: (id) => set({ activeNodeId: id }),
-  toggleProperties: () => set((s) => ({ propertiesOpen: !s.propertiesOpen })),
   toggleChat: () => set((s) => ({ chatOpen: !s.chatOpen })),
+  setSaveStatus: (status) => set({ saveStatus: status }),
+  setViewport: (viewport) => set({ viewport }),
   reset: () =>
     set({
       canvasId: null,
@@ -48,7 +56,8 @@ export const useCanvasStore = create<CanvasStore>((set) => ({
       edges: [],
       selectedNodeId: null,
       activeNodeId: null,
-      propertiesOpen: false,
       chatOpen: false,
+      saveStatus: "idle",
+      viewport: { x: 0, y: 0, zoom: 1 },
     }),
 }));

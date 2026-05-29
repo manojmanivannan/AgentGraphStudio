@@ -1,0 +1,52 @@
+import { Check, Loader2, AlertCircle } from "lucide-react";
+import { useCanvasStore } from "@/store/canvasStore";
+
+export function TopBar() {
+  const canvasName = useCanvasStore((s) => s.canvasName);
+  const setName = useCanvasStore((s) => s.setName);
+  const saveStatus = useCanvasStore((s) => s.saveStatus);
+
+  return (
+    <div
+      data-testid="top-bar"
+      className="absolute top-0 left-12 right-0 h-10 chrome-glass border-b border-[var(--color-border-subtle)] flex items-center px-4 gap-3 z-30"
+    >
+      {/* Canvas name */}
+      <input
+        type="text"
+        value={canvasName}
+        onChange={(e) => setName(e.target.value)}
+        data-testid="canvas-name-input"
+        className="text-[14px] font-semibold text-[var(--color-text-primary)] bg-transparent border-b border-transparent hover:border-[var(--color-border-default)] focus:border-[var(--color-accent)] focus:outline-none px-1 py-0.5 w-52 placeholder:text-[var(--color-text-tertiary)] transition-colors tracking-[-0.01em]"
+        placeholder="Canvas name"
+      />
+
+      <div className="flex-1" />
+
+      {/* Save status indicator */}
+      <div
+        className="flex items-center gap-1.5 text-[11px] text-[var(--color-text-tertiary)]"
+        data-testid="save-status"
+      >
+        {saveStatus === "saving" && (
+          <>
+            <Loader2 className="w-3 h-3 save-indicator-saving" />
+            <span>Saving…</span>
+          </>
+        )}
+        {saveStatus === "saved" && (
+          <>
+            <Check className="w-3 h-3 text-[var(--color-success)]" />
+            <span className="text-[var(--color-success)]">Saved</span>
+          </>
+        )}
+        {saveStatus === "error" && (
+          <>
+            <AlertCircle className="w-3 h-3 text-[var(--color-danger)]" />
+            <span className="text-[var(--color-danger)]">Save failed</span>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}

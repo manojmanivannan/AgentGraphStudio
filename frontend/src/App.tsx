@@ -5,7 +5,6 @@ import { createCanvas, listCanvases, getCanvas } from "@/lib/api";
 import { Plus, FileText, Workflow } from "lucide-react";
 import type { AgentNodeData, ToolNodeData } from "@/types";
 import type { Node } from "@xyflow/react";
-import { ThemeToggle } from "@/components/ThemeToggle";
 
 export default function App() {
   const canvasId = useCanvasStore((s) => s.canvasId);
@@ -107,11 +106,6 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[var(--color-base)] flex items-center justify-center noise-bg relative overflow-hidden">
-      {/* Theme Toggle — top right */}
-      <div className="absolute top-4 right-4 z-20">
-        <ThemeToggle />
-      </div>
-
       {/* Ambient background glow */}
       <div className="absolute top-1/4 left-1/3 w-[500px] h-[500px] bg-[var(--color-accent)] opacity-[0.03] rounded-full blur-[120px] pointer-events-none" />
       <div className="absolute bottom-1/4 right-1/3 w-[400px] h-[400px] bg-[var(--color-secondary)] opacity-[0.02] rounded-full blur-[100px] pointer-events-none" />

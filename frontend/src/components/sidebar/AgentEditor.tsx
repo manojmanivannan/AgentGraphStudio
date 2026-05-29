@@ -189,7 +189,7 @@ export function AgentEditor() {
                   key={tool.id}
                   className="flex items-center justify-between px-2.5 py-1.5 bg-[var(--color-secondary-surface)] text-[var(--color-secondary)] border border-[var(--color-secondary)]/15 rounded-lg text-[11px] font-medium transition-colors hover:border-[var(--color-secondary)]/30"
                 >
-                  <span className="truncate">{tool.data.name}</span>
+                  <span className="truncate">{(tool.data as any)?.name}</span>
                   <button
                     onClick={() => selectNode(tool.id)}
                     className="text-[var(--color-secondary)] hover:text-[var(--color-secondary-bright)] font-bold px-1 transition-colors"

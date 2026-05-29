@@ -2,7 +2,8 @@
 
 /* ═══════════════════════════════════════════════════════════════
    Agent Builder — Design System
-   Refined dark technical interface (default) + warm light mode
+   Editorial / Clean aesthetic — dark technical interface (default)
+   + warm light mode
    ═══════════════════════════════════════════════════════════════ */
 
 @theme {
@@ -54,6 +55,12 @@
   --color-agent: #8b5cf6;
   --color-agent-subtle: rgba(139, 92, 246, 0.12);
   --color-agent-surface: rgba(139, 92, 246, 0.06);
+
+  /* Layout tokens */
+  --width-rail: 48px;
+  --width-topbar: 40px;
+  --width-properties-overlay: 320px;
+  --width-chat-overlay: 400px;
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -194,7 +201,90 @@ body {
   z-index: 0;
 }
 
-/* ─── Glow Effects ───────────────────────────────────────── */
+/* ─── Chrome Glass (TopBar + SidebarRail) ──────────────────── */
+
+.chrome-glass {
+  background-color: color-mix(in srgb, var(--color-surface) 80%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+html[data-theme="light"] .chrome-glass {
+  background-color: color-mix(in srgb, var(--color-surface) 90%, transparent);
+}
+
+/* ─── Overlay Panel ───────────────────────────────────────── */
+
+.overlay-panel {
+  animation: overlaySlideIn 250ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  box-shadow: -8px 0 32px -8px rgba(0, 0, 0, 0.3);
+}
+
+.overlay-panel-exit {
+  animation: overlaySlideOut 200ms cubic-bezier(0.7, 0, 0.84, 0) forwards;
+}
+
+html[data-theme="light"] .overlay-panel {
+  box-shadow: -8px 0 32px -8px rgba(0, 0, 0, 0.1);
+}
+
+/* ─── Sidebar Rail Items ─────────────────────────────────── */
+
+.rail-item {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  color: var(--color-text-tertiary);
+  transition: color 0.15s ease, background-color 0.15s ease;
+  cursor: pointer;
+  border: none;
+  background: transparent;
+}
+
+.rail-item:hover {
+  color: var(--color-text-secondary);
+  background-color: var(--color-elevated);
+}
+
+.rail-item:active {
+  color: var(--color-accent);
+  background-color: var(--color-accent-subtle);
+}
+
+.rail-item-danger:hover {
+  color: var(--color-danger);
+  background-color: var(--color-danger-subtle);
+}
+
+.rail-item-active {
+  color: var(--color-accent);
+  background-color: var(--color-accent-subtle);
+}
+
+/* ─── Rail Popover ────────────────────────────────────────── */
+
+.rail-popover {
+  position: absolute;
+  left: calc(100% + 8px);
+  top: 0;
+  width: 192px;
+  background-color: var(--color-elevated);
+  border: 1px solid var(--color-border-default);
+  border-radius: 10px;
+  box-shadow: 0 8px 32px -8px rgba(0, 0, 0, 0.4);
+  padding: 4px;
+  z-index: 50;
+  animation: popoverIn 150ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+html[data-theme="light"] .rail-popover {
+  box-shadow: 0 8px 32px -8px rgba(0, 0, 0, 0.12);
+}
+
+/* ─── Glow Effects (for nodes only) ───────────────────────── */
 
 .glow-accent {
   box-shadow: 0 0 20px -4px rgba(20, 184, 166, 0.3),
@@ -254,37 +344,25 @@ body {
   font-size: 12px;
   font-weight: 600;
   color: var(--color-text-inverse);
-  background: linear-gradient(
-    135deg,
-    var(--color-accent) 0%,
-    var(--color-accent-dim) 100%
-  );
+  background-color: var(--color-accent);
   border-radius: 8px;
   border: none;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: background-color 0.15s ease, opacity 0.15s ease;
   letter-spacing: 0.01em;
 }
 
 .btn-primary:hover {
-  background: linear-gradient(
-    135deg,
-    var(--color-accent-bright) 0%,
-    var(--color-accent) 100%
-  );
-  box-shadow: 0 0 20px -4px rgba(20, 184, 166, 0.35);
-  transform: translateY(-0.5px);
+  background-color: var(--color-accent-bright);
 }
 
 .btn-primary:active {
-  transform: translateY(0px);
+  opacity: 0.9;
 }
 
 .btn-primary:disabled {
   opacity: 0.4;
   cursor: not-allowed;
-  transform: none;
-  box-shadow: none;
 }
 
 .btn-secondary {
@@ -299,7 +377,7 @@ body {
   border: 1px solid var(--color-border-default);
   border-radius: 8px;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all 0.15s ease;
 }
 
 .btn-secondary:hover {
@@ -437,9 +515,72 @@ body {
   }
 }
 
+/* ─── Overlay Panel Animations ───────────────────────────── */
+
+@keyframes overlaySlideIn {
+  from {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes overlaySlideOut {
+  from {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+}
+
+@keyframes popoverIn {
+  from {
+    opacity: 0;
+    transform: translateX(-4px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+
+@keyframes pulseRing {
+  0% {
+    box-shadow: 0 0 0 0 rgba(20, 184, 166, 0.4);
+  }
+  70% {
+    box-shadow: 0 0 0 8px rgba(20, 184, 166, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(20, 184, 166, 0);
+  }
+}
+
+.node-selected-pulse {
+  animation: pulseRing 0.6s ease-out 1;
+}
+
+@keyframes savePulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.save-indicator-saving {
+  animation: savePulse 1.5s ease-in-out infinite;
+}
+
 /* ─── ReactFlow Overrides ────────────────────────────────── */
 
 .react-flow__controls {
+  position: absolute !important;
+  bottom: 16px !important;
+  left: calc(var(--width-rail) + 12px) !important;
   border: 1px solid var(--color-border-default) !important;
   border-radius: 10px !important;
   overflow: hidden;
@@ -471,6 +612,8 @@ html[data-theme="dark"] .react-flow__controls {
 }
 
 .react-flow__minimap {
+  width: 140px !important;
+  height: 90px !important;
   border: 1px solid var(--color-border-default) !important;
   border-radius: 10px !important;
   overflow: hidden;
@@ -550,7 +693,7 @@ html[data-theme="light"] .btn-primary {
 }
 
 html[data-theme="light"] .btn-primary:hover {
-  box-shadow: 0 0 20px -6px rgba(13, 148, 136, 0.3);
+  background-color: var(--color-accent-bright);
 }
 
 html[data-theme="light"] .btn-ghost:hover {
