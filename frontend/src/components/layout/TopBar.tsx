@@ -1,10 +1,12 @@
-import { Check, Loader2, AlertCircle } from "lucide-react";
+import { Check, Loader2, AlertCircle, MessageSquare } from "lucide-react";
 import { useCanvasStore } from "@/store/canvasStore";
 
 export function TopBar() {
   const canvasName = useCanvasStore((s) => s.canvasName);
   const setName = useCanvasStore((s) => s.setName);
   const saveStatus = useCanvasStore((s) => s.saveStatus);
+  const chatOpen = useCanvasStore((s) => s.chatOpen);
+  const toggleChat = useCanvasStore((s) => s.toggleChat);
 
   return (
     <div
@@ -47,6 +49,20 @@ export function TopBar() {
           </>
         )}
       </div>
+
+      {/* Chat toggle */}
+      <button
+        onClick={toggleChat}
+        data-testid="chat-toggle"
+        className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[12px] font-medium transition-colors ${
+          chatOpen
+            ? "text-[var(--color-accent)] bg-[var(--color-accent-subtle)]"
+            : "text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)] hover:bg-[var(--color-elevated)]"
+        }`}
+      >
+        <MessageSquare className="w-3.5 h-3.5" />
+        Chat
+      </button>
     </div>
   );
 }
