@@ -203,6 +203,10 @@ export function CanvasToolbar() {
         Tool
       </button>
 
+      <div className="flex-1" />
+
+      <div className="w-px h-5 bg-[var(--color-border-subtle)] mx-1" />
+
       {/* Clear */}
       <button
         onClick={clearCanvas}
@@ -212,8 +216,6 @@ export function CanvasToolbar() {
         <Trash2 className="w-3.5 h-3.5" />
         Clear
       </button>
-
-      <div className="w-px h-5 bg-[var(--color-border-subtle)] mx-1" />
 
       {/* Export */}
       <button
@@ -235,7 +237,7 @@ export function CanvasToolbar() {
         Import
       </button>
 
-      <div className="flex-1" />
+      <div className="w-px h-5 bg-[var(--color-border-subtle)] mx-1" />
 
       {/* Theme Toggle */}
       <ThemeToggle />
