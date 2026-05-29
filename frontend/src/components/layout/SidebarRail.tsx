@@ -9,7 +9,6 @@ import {
   Sun,
   Moon,
   GitBranch,
-  MessageSquare,
 } from "lucide-react";
 import { useCanvasStore } from "@/store/canvasStore";
 import { useThemeStore } from "@/store/themeStore";
@@ -25,8 +24,6 @@ export function SidebarRail() {
   const setNodes = useCanvasStore((s) => s.setNodes);
   const setEdges = useCanvasStore((s) => s.setEdges);
   const setCanvas = useCanvasStore((s) => s.setCanvas);
-  const chatOpen = useCanvasStore((s) => s.chatOpen);
-  const toggleChat = useCanvasStore((s) => s.toggleChat);
   const theme = useThemeStore((s) => s.theme);
   const toggleTheme = useThemeStore((s) => s.toggleTheme);
 
@@ -303,15 +300,6 @@ export function SidebarRail() {
 
       {/* Spacer */}
       <div className="flex-1" />
-
-      {/* Chat toggle */}
-      <RailItem
-        icon={MessageSquare}
-        label="Chat"
-        onClick={toggleChat}
-        active={chatOpen}
-        data-testid="chat-toggle"
-      />
 
       {/* Divider */}
       <div className="w-6 h-px bg-[var(--color-border-subtle)] my-2" />
