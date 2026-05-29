@@ -1,12 +1,13 @@
 import { memo } from "react";
 import { Handle, Position, NodeResizer, type NodeProps } from "@xyflow/react";
-import { Brain, GitBranch } from "lucide-react";
+import { Brain, GitBranch, Settings } from "lucide-react";
 import type { AgentNodeData } from "@/types";
 import { useCanvasStore } from "@/store/canvasStore";
 
 function AgentNodeComponent({ id, data, selected }: NodeProps) {
   const agentData = data as unknown as AgentNodeData;
   const activeNodeId = useCanvasStore((s) => s.activeNodeId);
+  const selectNode = useCanvasStore((s) => s.selectNode);
   const isRouter = agentData.agentType === "router";
   const isActive = activeNodeId === agentData.id;
 
@@ -72,6 +73,16 @@ function AgentNodeComponent({ id, data, selected }: NodeProps) {
         >
           {isRouter ? "Router" : "Worker"}
         </span>
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            selectNode(id);
+          }}
+          className="p-1 text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)] rounded-md hover:bg-[var(--color-elevated)] transition-all duration-150"
+          title="Settings"
+        >
+          <Settings className="w-3.5 h-3.5" />
+        </button>
       </div>
       <div className="px-3 py-2.5 flex-1 overflow-hidden">
         {agentData.role && (
