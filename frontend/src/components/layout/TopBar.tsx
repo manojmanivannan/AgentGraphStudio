@@ -1,4 +1,4 @@
-import { Check, Loader2, AlertCircle, MessageSquare } from "lucide-react";
+import { Check, Loader2, AlertCircle, MessageSquare, Activity, Layout } from "lucide-react";
 import { useCanvasStore } from "@/store/canvasStore";
 
 export function TopBar() {
@@ -7,11 +7,16 @@ export function TopBar() {
   const saveStatus = useCanvasStore((s) => s.saveStatus);
   const chatOpen = useCanvasStore((s) => s.chatOpen);
   const toggleChat = useCanvasStore((s) => s.toggleChat);
+  const observabilityOpen = useCanvasStore((s) => s.observabilityOpen);
+  const toggleObservability = useCanvasStore((s) => s.toggleObservability);
+
+  // When observability is open, the sidebar rail is hidden so left offset resets to 0
+  const leftOffset = observabilityOpen ? "left-0" : "left-12";
 
   return (
     <div
       data-testid="top-bar"
-      className="absolute top-0 left-12 right-0 h-10 chrome-glass border-b border-[var(--color-border-subtle)] flex items-center px-4 gap-3 z-30"
+      className={`absolute top-0 ${leftOffset} right-0 h-10 chrome-glass border-b border-[var(--color-border-subtle)] flex items-center px-4 gap-3 z-30`}
     >
       {/* Canvas name */}
       <input
@@ -49,6 +54,32 @@ export function TopBar() {
           </>
         )}
       </div>
+
+      {/* Back to Canvas button - only show when in observability mode */}
+      {observabilityOpen && (
+        <button
+          onClick={toggleObservability}
+          data-testid="back-to-canvas"
+          className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[12px] font-medium transition-colors text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-elevated)]"
+        >
+          <Layout className="w-3.5 h-3.5" />
+          Canvas
+        </button>
+      )}
+
+      {/* Observability toggle */}
+      <button
+        onClick={toggleObservability}
+        data-testid="observability-toggle"
+        className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[12px] font-medium transition-colors ${
+          observabilityOpen
+            ? "text-[var(--color-accent)] bg-[var(--color-accent-subtle)]"
+            : "text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)] hover:bg-[var(--color-elevated)]"
+        }`}
+      >
+        <Activity className="w-3.5 h-3.5" />
+        Observability
+      </button>
 
       {/* Chat toggle */}
       <button

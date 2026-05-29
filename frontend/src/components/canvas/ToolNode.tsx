@@ -1,12 +1,13 @@
 import { memo } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
-import { Wrench } from "lucide-react";
+import { Wrench, Settings } from "lucide-react";
 import type { ToolNodeData } from "@/types";
 import { useCanvasStore } from "@/store/canvasStore";
 
 function ToolNodeComponent({ id, data, selected }: NodeProps) {
   const toolData = data as unknown as ToolNodeData;
   const activeNodeId = useCanvasStore((s) => s.activeNodeId);
+  const selectNode = useCanvasStore((s) => s.selectNode);
   const isActive = activeNodeId === toolData.id;
 
   const codePreview =
@@ -42,6 +43,19 @@ function ToolNodeComponent({ id, data, selected }: NodeProps) {
         <span className="font-semibold text-[13px] text-[var(--color-text-primary)] truncate flex-1">
           {toolData.name}
         </span>
+        <span className="text-[10px] px-1.5 py-0.5 rounded-md font-semibold tracking-wide uppercase bg-[var(--color-secondary-subtle)] text-[var(--color-secondary)]">
+          Tool
+        </span>
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            selectNode(id);
+          }}
+          className="p-1 text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)] rounded-md hover:bg-[var(--color-elevated)] transition-all duration-150"
+          title="Settings"
+        >
+          <Settings className="w-3.5 h-3.5" />
+        </button>
       </div>
       <div className="px-3 py-2.5">
         {codePreview ? (

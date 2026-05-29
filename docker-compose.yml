@@ -48,6 +48,7 @@ services:
       - "5173:5173"
     environment:
       VITE_API_HOST: localhost:8000
+      MLFLOW_PROXY_TARGET: http://mlflow:5000
     networks:
       - agent_network
     depends_on:

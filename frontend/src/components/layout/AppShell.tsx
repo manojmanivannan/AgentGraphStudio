@@ -3,24 +3,33 @@ import { SidebarRail } from "@/components/layout/SidebarRail";
 import { TopBar } from "@/components/layout/TopBar";
 import { PropertiesOverlay } from "@/components/PropertiesOverlay";
 import { ChatOverlay } from "@/components/chat/ChatOverlay";
+import { ObservabilityView } from "@/components/observability/ObservabilityView";
+import { useCanvasStore } from "@/store/canvasStore";
 
 export function AppShell() {
+  const observabilityOpen = useCanvasStore((s) => s.observabilityOpen);
+
   return (
     <div className="h-screen w-screen relative overflow-hidden bg-[var(--color-base)]">
-      {/* Canvas fills the entire viewport */}
-      <div className="absolute inset-0 z-0">
-        <CanvasView />
-      </div>
-
-      {/* Top breadcrumb bar */}
-      <TopBar />
-
-      {/* Left sidebar rail */}
-      <SidebarRail />
-
-      {/* Overlay panels (slide in from right) */}
-      <PropertiesOverlay />
-      <ChatOverlay />
+      {observabilityOpen ? (
+        /* Observability mode: iframe fills viewport, no sidebar rail */
+        <>
+          <ObservabilityView />
+          <TopBar />
+          <ChatOverlay />
+        </>
+      ) : (
+        /* Canvas mode: full canvas + rail + overlays */
+        <>
+          <div className="absolute inset-0 z-0">
+            <CanvasView />
+          </div>
+          <TopBar />
+          <SidebarRail />
+          <PropertiesOverlay />
+          <ChatOverlay />
+        </>
+      )}
     </div>
   );
 }

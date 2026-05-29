@@ -13,6 +13,7 @@ interface CanvasStore {
   selectedNodeId: string | null;
   activeNodeId: string | null;
   chatOpen: boolean;
+  observabilityOpen: boolean;
   saveStatus: SaveStatus;
   viewport: Viewport;
 
@@ -23,6 +24,7 @@ interface CanvasStore {
   selectNode: (id: string | null) => void;
   setActiveNodeId: (id: string | null) => void;
   toggleChat: () => void;
+  toggleObservability: () => void;
   setSaveStatus: (status: SaveStatus) => void;
   setViewport: (viewport: Viewport) => void;
   reset: () => void;
@@ -36,6 +38,7 @@ export const useCanvasStore = create<CanvasStore>((set) => ({
   selectedNodeId: null,
   activeNodeId: null,
   chatOpen: false,
+  observabilityOpen: false,
   saveStatus: "idle",
   viewport: { x: 0, y: 0, zoom: 1 },
 
@@ -46,6 +49,7 @@ export const useCanvasStore = create<CanvasStore>((set) => ({
   selectNode: (id) => set({ selectedNodeId: id }),
   setActiveNodeId: (id) => set({ activeNodeId: id }),
   toggleChat: () => set((s) => ({ chatOpen: !s.chatOpen })),
+  toggleObservability: () => set((s) => ({ observabilityOpen: !s.observabilityOpen })),
   setSaveStatus: (status) => set({ saveStatus: status }),
   setViewport: (viewport) => set({ viewport }),
   reset: () =>
@@ -57,6 +61,7 @@ export const useCanvasStore = create<CanvasStore>((set) => ({
       selectedNodeId: null,
       activeNodeId: null,
       chatOpen: false,
+      observabilityOpen: false,
       saveStatus: "idle",
       viewport: { x: 0, y: 0, zoom: 1 },
     }),

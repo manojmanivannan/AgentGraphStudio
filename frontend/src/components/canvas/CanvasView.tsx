@@ -144,7 +144,6 @@ export function CanvasView() {
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
-        onNodeClick={onNodeClick}
         onPaneClick={onPaneClick}
         onMoveEnd={onMoveEnd}
         onInit={onInit}
