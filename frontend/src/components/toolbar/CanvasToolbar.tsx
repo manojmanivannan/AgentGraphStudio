@@ -1,9 +1,10 @@
 import { useRef } from "react";
 import { v4 as uuidv4 } from "uuid";
-import { Plus, Trash2, Download, Upload } from "lucide-react";
+import { Plus, Trash2, Download, Upload, Brain, Wrench } from "lucide-react";
 import { useCanvasStore } from "@/store/canvasStore";
 import { importCanvas } from "@/lib/api";
 import type { CanvasSavePayload } from "@/types";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 export function CanvasToolbar() {
   const canvasId = useCanvasStore((s) => s.canvasId);
@@ -11,8 +12,8 @@ export function CanvasToolbar() {
   const setName = useCanvasStore((s) => s.setName);
   const nodes = useCanvasStore((s) => s.nodes);
   const setNodes = useCanvasStore((s) => s.setNodes);
-  const edges = useCanvasStore((s) => s.edges);
   const setEdges = useCanvasStore((s) => s.setEdges);
+  const edges = useCanvasStore((s) => s.edges);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const addAgent = () => {
@@ -166,64 +167,78 @@ export function CanvasToolbar() {
   };
 
   return (
-    <div className="h-12 bg-white border-b border-gray-200 flex items-center px-4 gap-3">
+    <div className="h-12 bg-[var(--color-surface)] border-b border-[var(--color-border-subtle)] flex items-center px-4 gap-2">
+      {/* Canvas Name */}
       <input
         type="text"
         value={canvasName}
         onChange={(e) => setName(e.target.value)}
         data-testid="canvas-name-input"
-        className="text-sm font-semibold text-gray-800 bg-transparent border-b border-transparent hover:border-gray-300 focus:border-indigo-400 focus:outline-none px-1 py-0.5 w-48"
+        className="text-sm font-semibold text-[var(--color-text-primary)] bg-transparent border-b border-transparent hover:border-[var(--color-border-default)] focus:border-[var(--color-accent)] focus:outline-none px-1 py-0.5 w-48 placeholder:text-[var(--color-text-tertiary)] transition-colors"
         placeholder="Canvas name"
       />
 
-      <div className="w-px h-6 bg-gray-200" />
+      <div className="w-px h-5 bg-[var(--color-border-subtle)] mx-1" />
 
+      {/* Add Agent */}
       <button
         onClick={addAgent}
         data-testid="add-agent-button"
-        className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-md transition-colors"
+        className="btn-primary text-[11px] py-1.5 px-2.5"
       >
-        <Plus className="w-3.5 h-3.5" />
+        <Brain className="w-3.5 h-3.5" />
         Agent
       </button>
 
+      {/* Add Tool */}
       <button
         onClick={addTool}
         data-testid="add-tool-button"
-        className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-white bg-amber-600 hover:bg-amber-700 rounded-md transition-colors"
+        className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-semibold text-[var(--color-text-inverse)] rounded-lg transition-all duration-200"
+        style={{
+          background: "linear-gradient(135deg, var(--color-secondary) 0%, var(--color-secondary-dim) 100%)",
+        }}
       >
-        <Plus className="w-3.5 h-3.5" />
+        <Wrench className="w-3.5 h-3.5" />
         Tool
       </button>
 
+      {/* Clear */}
       <button
         onClick={clearCanvas}
         data-testid="clear-canvas-button"
-        className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-gray-600 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
+        className="btn-danger-ghost"
       >
         <Trash2 className="w-3.5 h-3.5" />
         Clear
       </button>
 
-      <div className="w-px h-6 bg-gray-200" />
+      <div className="w-px h-5 bg-[var(--color-border-subtle)] mx-1" />
 
+      {/* Export */}
       <button
         onClick={handleExport}
         data-testid="export-button"
-        className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-gray-600 hover:text-indigo-600 hover:bg-indigo-50 rounded-md transition-colors"
+        className="btn-ghost"
       >
         <Download className="w-3.5 h-3.5" />
         Export
       </button>
 
+      {/* Import */}
       <button
         onClick={handleImport}
         data-testid="import-button"
-        className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-gray-600 hover:text-amber-600 hover:bg-amber-50 rounded-md transition-colors"
+        className="btn-ghost"
       >
         <Upload className="w-3.5 h-3.5" />
         Import
       </button>
+
+      <div className="flex-1" />
+
+      {/* Theme Toggle */}
+      <ThemeToggle />
 
       <input
         ref={fileInputRef}

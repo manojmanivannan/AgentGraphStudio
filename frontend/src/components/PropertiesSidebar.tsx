@@ -14,18 +14,18 @@ export function PropertiesSidebar() {
 
   if (!propertiesOpen) {
     return (
-      <div data-testid="properties-sidebar" className="w-12 h-full border-l border-gray-200 bg-white flex flex-col items-center py-3 gap-3">
+      <div data-testid="properties-sidebar" className="w-12 h-full border-l border-[var(--color-border-subtle)] bg-[var(--color-surface)] flex flex-col items-center py-3 gap-3">
         <button
           onClick={toggleProperties}
           data-testid="properties-toggle"
-          className="p-2 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+          className="p-2 text-[var(--color-text-tertiary)] hover:text-[var(--color-accent)] hover:bg-[var(--color-accent-subtle)] rounded-lg transition-all duration-150"
           title="Open properties"
         >
           <Settings className="w-4 h-4" />
         </button>
         {selectedNodeId && (
           <div
-            className="w-2 h-2 rounded-full bg-blue-500"
+            className="w-1.5 h-1.5 rounded-full bg-[var(--color-accent)]"
             title="Node selected"
           />
         )}
@@ -39,10 +39,10 @@ export function PropertiesSidebar() {
       defaultWidth={256}
       minWidth={220}
       maxWidth={500}
-      className="border-l border-gray-200 bg-white"
+      className="border-l border-[var(--color-border-subtle)] bg-[var(--color-surface)]"
     >
-      <div className="flex items-center justify-between px-3 py-2 border-b border-gray-200">
-        <span className="text-xs font-semibold text-gray-600">
+      <div className="flex items-center justify-between px-3 py-2.5 border-b border-[var(--color-border-subtle)]">
+        <span className="text-[11px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-[0.08em]">
           Properties
         </span>
         <button
@@ -50,7 +50,7 @@ export function PropertiesSidebar() {
             selectNode(null);
           }}
           data-testid="properties-close"
-          className="p-1 text-gray-400 hover:text-gray-600 rounded"
+          className="p-1 text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)] rounded-md hover:bg-[var(--color-elevated)] transition-all duration-150"
         >
           <X className="w-3.5 h-3.5" />
         </button>
@@ -60,7 +60,7 @@ export function PropertiesSidebar() {
         {selectedNode?.type === "agent" && <AgentEditor />}
         {selectedNode?.type === "tool" && <ToolEditor />}
         {!selectedNode && (
-          <div className="flex items-center justify-center h-full text-gray-400 text-sm text-center">
+          <div className="flex items-center justify-center h-full text-[var(--color-text-tertiary)] text-[12px] text-center leading-relaxed">
             Select a node to edit its properties
           </div>
         )}

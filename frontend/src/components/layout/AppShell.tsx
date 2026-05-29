@@ -5,7 +5,7 @@ import { ChatPanel } from "@/components/chat/ChatPanel";
 
 export function AppShell() {
   return (
-    <div className="h-screen w-screen flex flex-col bg-gray-50">
+    <div className="h-screen w-screen flex flex-col bg-[var(--color-base)]">
       <CanvasToolbar />
       <div className="flex-1 flex overflow-hidden">
         <div className="flex-1">

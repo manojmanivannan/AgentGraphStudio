@@ -16,61 +16,76 @@ function AgentNodeComponent({ id, data, selected }: NodeProps) {
       data-node-id={id}
       data-agent-type={agentData.agentType}
       className={`
-        relative h-full flex flex-col rounded-lg border-2 bg-white shadow-md
-        ${selected ? "border-blue-500 ring-2 ring-blue-200" : isRouter ? "border-purple-300" : "border-gray-200"}
-        ${isActive ? "border-green-400 ring-2 ring-green-200 animate-pulse" : ""}
+        relative h-full flex flex-col rounded-xl bg-[var(--color-surface)] border
+        shadow-[0_4px_24px_-4px_rgba(0,0,0,0.5)]
+        transition-all duration-200
+        ${selected
+          ? "border-[var(--color-accent)] shadow-[0_0_0_1px_var(--color-accent),0_4px_24px_-4px_rgba(20,184,166,0.2)]"
+          : isRouter
+          ? "border-[var(--color-agent)]/30"
+          : "border-[var(--color-border-default)]"
+        }
+        ${isActive ? "border-[var(--color-success)] shadow-[0_0_0_1px_var(--color-success),0_0_20px_-4px_rgba(16,185,129,0.3)] animate-pulse" : ""}
       `}
     >
       <NodeResizer
         isVisible={selected}
         minWidth={200}
         minHeight={100}
-        handleClassName="!w-2 !h-2 !bg-white !border-blue-400 !rounded-sm"
-        lineClassName="!border-blue-300"
+        handleClassName="!w-2 !h-2 !bg-[var(--color-surface)] !border-[var(--color-accent)] !rounded-sm"
+        lineClassName="!border-[var(--color-accent)]/50"
       />
       <Handle
         type="target"
         position={Position.Top}
-        className="!bg-gray-400 !w-2.5 !h-2.5"
+        className="!bg-[var(--color-text-tertiary)] !w-2 !h-2 !border-2 !border-[var(--color-surface)]"
       />
       <div
-        className={`flex items-center gap-2 px-3 py-2 rounded-t-lg border-b border-gray-100 ${
+        className={`flex items-center gap-2 px-3 py-2.5 rounded-t-xl border-b ${
           isRouter
-            ? "bg-gradient-to-r from-purple-50 to-pink-50"
-            : "bg-gradient-to-r from-indigo-50 to-purple-50"
+            ? "bg-[var(--color-agent-surface)] border-[var(--color-agent)]/10"
+            : "bg-[var(--color-accent-surface)] border-[var(--color-accent)]/10"
         }`}
       >
-        {isRouter ? (
-          <GitBranch className="w-4 h-4 text-purple-500" />
-        ) : (
-          <Brain className="w-4 h-4 text-indigo-500" />
-        )}
-        <span className="font-semibold text-sm text-gray-800 truncate">
+        <div
+          className={`flex items-center justify-center w-5 h-5 rounded-md ${
+            isRouter
+              ? "bg-[var(--color-agent-subtle)]"
+              : "bg-[var(--color-accent-subtle)]"
+          }`}
+        >
+          {isRouter ? (
+            <GitBranch className="w-3 h-3 text-[var(--color-agent)]" />
+          ) : (
+            <Brain className="w-3 h-3 text-[var(--color-accent)]" />
+          )}
+        </div>
+        <span className="font-semibold text-[13px] text-[var(--color-text-primary)] truncate flex-1">
           {agentData.name}
         </span>
         <span
-          className={`ml-auto text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
+          className={`text-[10px] px-1.5 py-0.5 rounded-md font-semibold tracking-wide uppercase ${
             isRouter
-              ? "bg-purple-100 text-purple-600"
-              : "bg-indigo-100 text-indigo-600"
+              ? "bg-[var(--color-agent-subtle)] text-[var(--color-agent)]"
+              : "bg-[var(--color-accent-subtle)] text-[var(--color-accent)]"
           }`}
         >
           {isRouter ? "Router" : "Worker"}
         </span>
       </div>
-      <div className="px-3 py-2 flex-1 overflow-hidden">
+      <div className="px-3 py-2.5 flex-1 overflow-hidden">
         {agentData.role && (
-          <p className="text-xs text-gray-500 line-clamp-2">
+          <p className="text-[12px] text-[var(--color-text-secondary)] line-clamp-2 leading-relaxed">
             {agentData.role}
           </p>
         )}
         {agentData.instructions && (
-          <p className="text-xs text-gray-400 mt-1 line-clamp-4">
+          <p className="text-[11px] text-[var(--color-text-tertiary)] mt-1.5 line-clamp-4 leading-relaxed font-[var(--font-mono)]">
             {agentData.instructions}
           </p>
         )}
         {!agentData.role && !agentData.instructions && (
-          <p className="text-xs text-gray-300 italic">
+          <p className="text-[11px] text-[var(--color-text-tertiary)] italic">
             Configure agent properties
           </p>
         )}
@@ -78,7 +93,9 @@ function AgentNodeComponent({ id, data, selected }: NodeProps) {
       <Handle
         type="source"
         position={Position.Bottom}
-        className={`!w-2.5 !h-2.5 ${isRouter ? "!bg-purple-500" : "!bg-indigo-500"}`}
+        className={`!w-2 !h-2 !border-2 !border-[var(--color-surface)] ${
+          isRouter ? "!bg-[var(--color-agent)]" : "!bg-[var(--color-accent)]"
+        }`}
       />
     </div>
   );

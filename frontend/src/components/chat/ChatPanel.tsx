@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Send, Plus, Trash2, MessageSquare, ChevronDown, ChevronRight, X } from "lucide-react";
+import { Send, Plus, Trash2, MessageSquare, ChevronDown, ChevronRight, X, Square } from "lucide-react";
 import { useCanvasStore } from "@/store/canvasStore";
 import { ResizablePanel } from "@/components/layout/ResizablePanel";
 import {
@@ -279,11 +279,11 @@ export function ChatPanel() {
 
   if (!chatOpen) {
     return (
-      <div data-testid="chat-panel" className="w-12 h-full border-l border-gray-200 bg-white flex flex-col items-center py-3 gap-3">
+      <div data-testid="chat-panel" className="w-12 h-full border-l border-[var(--color-border-subtle)] bg-[var(--color-surface)] flex flex-col items-center py-3 gap-3">
         <button
           onClick={toggleChat}
           data-testid="chat-toggle"
-          className="p-2 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+          className="p-2 text-[var(--color-text-tertiary)] hover:text-[var(--color-accent)] hover:bg-[var(--color-accent-subtle)] rounded-lg transition-all duration-150"
           title="Open chat"
         >
           <MessageSquare className="w-4 h-4" />
@@ -298,69 +298,69 @@ export function ChatPanel() {
       defaultWidth={384}
       minWidth={280}
       maxWidth={600}
-      className="border-l border-gray-200 bg-white"
+      className="border-l border-[var(--color-border-subtle)] bg-[var(--color-surface)]"
     >
-      <div className="flex items-center justify-between px-3 py-2 border-b border-gray-200">
-        <span className="text-xs font-semibold text-gray-600">Conversation</span>
+      <div className="flex items-center justify-between px-3 py-2.5 border-b border-[var(--color-border-subtle)]">
+        <span className="text-[11px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-[0.08em]">Conversation</span>
         <button
           onClick={toggleChat}
           data-testid="chat-close"
-          className="p-1 text-gray-400 hover:text-gray-600 rounded"
+          className="p-1 text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)] rounded-md hover:bg-[var(--color-elevated)] transition-all duration-150"
           title="Close chat"
         >
           <X className="w-3.5 h-3.5" />
         </button>
       </div>
-      <div className="border-b border-gray-200 p-3">
+      <div className="border-b border-[var(--color-border-subtle)] p-3">
         <div className="relative">
           <button
             onClick={() => setSelectorOpen(!selectorOpen)}
             data-testid="conversation-selector"
-            className="w-full flex items-center justify-between px-3 py-2 text-sm border border-gray-200 rounded-lg hover:border-gray-300"
+            className="w-full flex items-center justify-between px-3 py-2 text-[13px] border border-[var(--color-border-default)] rounded-lg hover:border-[var(--color-border-strong)] bg-[var(--color-base)] transition-colors"
           >
-            <span className="text-gray-700 truncate flex-1 text-left">
+            <span className="text-[var(--color-text-secondary)] truncate flex-1 text-left">
               {activeConvId
                 ? conversations.find((c) => c.id === activeConvId)?.name ??
                   "Conversation"
                 : "Select conversation"}
             </span>
-            <ChevronDown className="w-4 h-4 text-gray-400 ml-2" />
+            <ChevronDown className="w-3.5 h-3.5 text-[var(--color-text-tertiary)] ml-2" />
           </button>
 
           {selectorOpen && (
-            <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-50 max-h-64 overflow-y-auto">
+            <div className="absolute top-full left-0 right-0 mt-1 bg-[var(--color-elevated)] border border-[var(--color-border-default)] rounded-lg shadow-[0_8px_32px_-8px_rgba(0,0,0,0.6)] z-50 max-h-64 overflow-y-auto">
               <button
                 onClick={handleNewConversation}
                 data-testid="new-conversation-button"
-                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-indigo-600 hover:bg-indigo-50 border-b border-gray-100"
+                className="w-full flex items-center gap-2 px-3 py-2.5 text-[13px] text-[var(--color-accent)] hover:bg-[var(--color-accent-subtle)] border-b border-[var(--color-border-subtle)] transition-colors"
               >
-                <Plus className="w-4 h-4" />
+                <Plus className="w-3.5 h-3.5" />
                 New Conversation
               </button>
               {conversations.length === 0 && (
-                <div className="px-3 py-4 text-sm text-gray-400 text-center">
+                <div className="px-3 py-4 text-[12px] text-[var(--color-text-tertiary)] text-center">
                   No conversations yet
                 </div>
               )}
               {conversations.map((c) => (
                 <div
                   key={c.id}
-                  className="flex items-center px-3 py-2 hover:bg-gray-50 cursor-pointer"
+                  className="flex items-center px-3 py-2 hover:bg-[var(--color-overlay)] cursor-pointer transition-colors"
                 >
                   <button
-                    className="flex items-center gap-2 flex-1 text-sm text-gray-700 text-left"
+                    className="flex items-center gap-2 flex-1 text-[13px] text-[var(--color-text-secondary)] text-left hover:text-[var(--color-text-primary)]"
                     onClick={() => {
                       loadConversation(c.id);
                       setSelectorOpen(false);
                     }}
                   >
-                    <MessageSquare className="w-4 h-4 text-gray-400" />
+                    <MessageSquare className="w-3.5 h-3.5 text-[var(--color-text-tertiary)]" />
                     <span className="truncate">{c.name}</span>
                     <span
-                      className={`text-[10px] ml-auto px-1.5 py-0.5 rounded-full ${
+                      className={`text-[10px] ml-auto px-1.5 py-0.5 rounded-md font-medium ${
                         c.status === "active"
-                          ? "bg-green-100 text-green-600"
-                          : "bg-gray-100 text-gray-500"
+                          ? "bg-[var(--color-success-subtle)] text-[var(--color-success)]"
+                          : "bg-[var(--color-elevated)] text-[var(--color-text-tertiary)]"
                       }`}
                     >
                       {c.status}
@@ -372,9 +372,9 @@ export function ChatPanel() {
                       e.stopPropagation();
                       handleDeleteConversation(c.id);
                     }}
-                    className="ml-2 p-1 text-gray-400 hover:text-red-500 rounded"
+                    className="ml-2 p-1 text-[var(--color-text-tertiary)] hover:text-[var(--color-danger)] rounded-md hover:bg-[var(--color-danger-subtle)] transition-all duration-150"
                   >
-                    <Trash2 className="w-3.5 h-3.5" />
+                    <Trash2 className="w-3 h-3" />
                   </button>
                 </div>
               ))}
@@ -385,7 +385,7 @@ export function ChatPanel() {
 
       <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
         {messages.length === 0 && !running && (
-          <div className="flex items-center justify-center h-full text-gray-400 text-sm">
+          <div className="flex items-center justify-center h-full text-[var(--color-text-tertiary)] text-[12px]">
             {activeConvId
               ? "Send a message to start"
               : "Select or create a conversation"}
@@ -405,45 +405,46 @@ export function ChatPanel() {
             className={`flex flex-col ${
               msg.role === "user" ? "items-end" : "items-start"
             }`}
+            style={{ animation: "staggerFadeIn 0.3s ease-out" }}
           >
             {msg.agent_name && msg.role !== "user" && !isHandoff && !isAgentStart && (
-              <span className="text-[10px] text-gray-400 mb-0.5 px-1">
+              <span className="text-[10px] text-[var(--color-text-tertiary)] mb-1 px-1 font-medium">
                 {msg.agent_name}
                 {msg.event_type === "tool_result" ? "" : msg.event_type && ` · ${msg.event_type}`}
               </span>
             )}
             <div
-              className={`max-w-[85%] rounded-lg px-3 py-2 text-sm ${
+              className={`max-w-[85%] rounded-xl px-3 py-2.5 text-[13px] leading-relaxed ${
                 msg.role === "user"
-                  ? "bg-indigo-600 text-white"
+                  ? "bg-[var(--color-accent)] text-[var(--color-text-inverse)] rounded-br-sm"
                   : isHandoff || isAgentStart
-                  ? "bg-blue-50 text-blue-600 border border-blue-200"
+                  ? "bg-[var(--color-info-subtle)] text-[var(--color-info)] border border-[var(--color-info)]/20 rounded-bl-sm"
                   : msg.role === "system"
-                  ? "bg-red-50 text-red-600 border border-red-200"
+                  ? "bg-[var(--color-danger-subtle)] text-[var(--color-danger)] border border-[var(--color-danger)]/20 rounded-bl-sm"
                   : isThought
-                  ? "bg-purple-50 text-purple-700 border border-purple-200 text-xs"
+                  ? "bg-[var(--color-agent-subtle)] text-[var(--color-agent)] border border-[var(--color-agent)]/20 text-[12px] rounded-bl-sm"
                   : isToolResult
-                  ? "bg-green-50 text-green-700 border border-green-200"
-                  : "bg-gray-100 text-gray-800"
+                  ? "bg-[var(--color-success-subtle)] text-[var(--color-success)] border border-[var(--color-success)]/20 rounded-bl-sm"
+                  : "bg-[var(--color-elevated)] text-[var(--color-text-primary)] border border-[var(--color-border-subtle)] rounded-bl-sm"
               }`}
             >
               {(isHandoff || isAgentStart) ? (
-                <div className="flex items-center gap-2 text-xs">
+                <div className="flex items-center gap-2 text-[12px]">
                   <span>{msg.content}</span>
                 </div>
               ) : isThought && isCollapsed ? (
                 <button
                   onClick={() => toggleCollapse(msg.id)}
-                  className="flex items-center gap-1 text-purple-500 hover:text-purple-700 cursor-pointer w-full text-left"
+                  className="flex items-center gap-1 text-[var(--color-agent)] hover:text-[var(--color-agent)]/80 cursor-pointer w-full text-left"
                 >
                   <ChevronRight className="w-3 h-3 flex-shrink-0" />
-                  <span>Thinking...</span>
+                  <span className="text-[11px]">Thinking...</span>
                 </button>
               ) : isThought ? (
                 <div>
                   <button
                     onClick={() => toggleCollapse(msg.id)}
-                    className="flex items-center gap-1 text-purple-500 hover:text-purple-700 cursor-pointer mb-1"
+                    className="flex items-center gap-1 text-[var(--color-agent)] hover:text-[var(--color-agent)]/80 cursor-pointer mb-1"
                   >
                     <ChevronDown className="w-3 h-3 flex-shrink-0" />
                     <span className="text-[10px]">Hide thought</span>
@@ -460,11 +461,18 @@ export function ChatPanel() {
 
         {running && (
           <div className="flex items-start">
-            <div className="bg-gray-100 rounded-lg px-3 py-2">
-              <div className="flex gap-1">
-                <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" />
-                <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce [animation-delay:0.1s]" />
-                <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce [animation-delay:0.2s]" />
+            <div className="bg-[var(--color-elevated)] border border-[var(--color-border-subtle)] rounded-xl rounded-bl-sm px-3 py-2.5">
+              <div className="flex gap-1.5 items-center">
+                {[0, 1, 2].map((i) => (
+                  <span
+                    key={i}
+                    className="w-1.5 h-1.5 rounded-full bg-[var(--color-accent)]"
+                    style={{
+                      animation: "dotPulse 1.2s ease-in-out infinite",
+                      animationDelay: `${i * 0.15}s`,
+                    }}
+                  />
+                ))}
               </div>
             </div>
           </div>
@@ -473,7 +481,7 @@ export function ChatPanel() {
         <div ref={messagesEndRef} />
       </div>
 
-      <div className="border-t border-gray-200 p-3">
+      <div className="border-t border-[var(--color-border-subtle)] p-3">
         <div className="flex gap-2">
           <input
             type="text"
@@ -488,19 +496,24 @@ export function ChatPanel() {
             placeholder="Type a message..."
             disabled={running || !canvasId}
             data-testid="chat-input"
-            className="flex-1 px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-400 focus:border-indigo-400 disabled:opacity-50"
+            className="input-base flex-1"
           />
           <button
             onClick={running ? stopRun : handleSend}
             disabled={!running && (!input.trim() || !canvasId)}
             data-testid={running ? "stop-button" : "send-button"}
-            className={`px-3 py-2 rounded-lg text-white text-sm font-medium transition-colors disabled:opacity-50 ${
+            className={`px-3 py-2 rounded-lg text-white text-sm font-medium transition-all duration-200 disabled:opacity-40 flex items-center justify-center ${
               running
-                ? "bg-red-600 hover:bg-red-700"
-                : "bg-indigo-600 hover:bg-indigo-700"
+                ? "bg-[var(--color-danger)] hover:bg-[var(--color-danger)]/90"
+                : "bg-[var(--color-accent)] hover:bg-[var(--color-accent-bright)]"
             }`}
+            style={!running ? {} : undefined}
           >
-            <Send className="w-4 h-4" />
+            {running ? (
+              <Square className="w-3.5 h-3.5" />
+            ) : (
+              <Send className="w-4 h-4" />
+            )}
           </button>
         </div>
       </div>
