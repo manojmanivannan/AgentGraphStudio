@@ -1,22 +1,25 @@
 /**
- * E2E tests for the CanvasToolbar component.
+ * E2E tests for the SidebarRail actions.
  * Uses canvasWithWorkflow fixture to open a seeded canvas.
  */
 import { test, expect } from "./fixtures";
 
-test.describe("Canvas Toolbar", () => {
-  test("clicking + Agent adds a new agent node to the canvas", async ({
+test.describe("Sidebar Rail", () => {
+  test("clicking Add Agent opens popover, then Worker adds a new agent node", async ({
     page,
     canvasWithWorkflow,
   }) => {
-    const { routerId, researcherId, summariserId } = canvasWithWorkflow;
-
-    // Count initial agent nodes
     const initialCount = await page
       .locator('[data-testid="agent-node"]')
       .count();
 
     await page.getByTestId("add-agent-button").click();
+
+    // Popover should appear
+    await expect(page.getByTestId("rail-popover")).toBeVisible();
+
+    // Click Worker option
+    await page.locator("button", { hasText: "Worker" }).click();
 
     // Wait for the new node to appear
     await expect(page.locator('[data-testid="agent-node"]')).toHaveCount(
@@ -25,7 +28,7 @@ test.describe("Canvas Toolbar", () => {
     );
   });
 
-  test("clicking + Tool adds a new tool node to the canvas", async ({
+  test("clicking Add Tool adds a new tool node to the canvas", async ({
     page,
     canvasWithWorkflow,
   }) => {
@@ -41,7 +44,7 @@ test.describe("Canvas Toolbar", () => {
     );
   });
 
-  test("clicking Clear removes all nodes from the canvas", async ({
+  test("clicking Clear opens confirmation, then clears the canvas", async ({
     page,
     canvasWithWorkflow: _,
   }) => {
@@ -51,6 +54,12 @@ test.describe("Canvas Toolbar", () => {
     ).toBeVisible();
 
     await page.getByTestId("clear-canvas-button").click();
+
+    // Confirmation popover should appear
+    await expect(page.getByTestId("rail-popover")).toBeVisible();
+
+    // Click Clear in confirmation
+    await page.locator("button", { hasText: "Clear" }).click();
 
     // All agent and tool nodes should be gone
     await expect(page.locator('[data-testid="agent-node"]')).toHaveCount(0, {

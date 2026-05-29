@@ -16,7 +16,8 @@ describe("canvasStore", () => {
       expect(store().edges).toEqual([]);
       expect(store().selectedNodeId).toBeNull();
       expect(store().activeNodeId).toBeNull();
-      expect(store().propertiesOpen).toBe(false);
+      expect(store().chatOpen).toBe(false);
+      expect(store().saveStatus).toBe("idle");
     });
   });
 
@@ -54,17 +55,15 @@ describe("canvasStore", () => {
   });
 
   describe("selectNode", () => {
-    it("sets selectedNodeId and opens properties panel when id is non-null", () => {
+    it("sets selectedNodeId when id is non-null", () => {
       store().selectNode("n1");
       expect(store().selectedNodeId).toBe("n1");
-      expect(store().propertiesOpen).toBe(true);
     });
 
-    it("clears selectedNodeId and closes properties panel when id is null", () => {
+    it("clears selectedNodeId when id is null", () => {
       store().selectNode("n1");
       store().selectNode(null);
       expect(store().selectedNodeId).toBeNull();
-      expect(store().propertiesOpen).toBe(false);
     });
   });
 
@@ -81,13 +80,24 @@ describe("canvasStore", () => {
     });
   });
 
-  describe("toggleProperties", () => {
-    it("toggles the properties panel open/closed", () => {
-      expect(store().propertiesOpen).toBe(false);
-      store().toggleProperties();
-      expect(store().propertiesOpen).toBe(true);
-      store().toggleProperties();
-      expect(store().propertiesOpen).toBe(false);
+  describe("toggleChat", () => {
+    it("toggles the chat panel open/closed", () => {
+      expect(store().chatOpen).toBe(false);
+      store().toggleChat();
+      expect(store().chatOpen).toBe(true);
+      store().toggleChat();
+      expect(store().chatOpen).toBe(false);
+    });
+  });
+
+  describe("setSaveStatus", () => {
+    it("updates the save status", () => {
+      store().setSaveStatus("saving");
+      expect(store().saveStatus).toBe("saving");
+      store().setSaveStatus("saved");
+      expect(store().saveStatus).toBe("saved");
+      store().setSaveStatus("error");
+      expect(store().saveStatus).toBe("error");
     });
   });
 
@@ -97,6 +107,8 @@ describe("canvasStore", () => {
       store().setNodes([{ id: "n1", type: "agent", position: { x: 0, y: 0 }, data: {} }] as any);
       store().selectNode("n1");
       store().setActiveNodeId("n1");
+      store().toggleChat();
+      store().setSaveStatus("saving");
 
       store().reset();
 
@@ -106,7 +118,8 @@ describe("canvasStore", () => {
       expect(store().edges).toEqual([]);
       expect(store().selectedNodeId).toBeNull();
       expect(store().activeNodeId).toBeNull();
-      expect(store().propertiesOpen).toBe(false);
+      expect(store().chatOpen).toBe(false);
+      expect(store().saveStatus).toBe("idle");
     });
   });
 });
