@@ -15,6 +15,8 @@ import {
   MarkerType,
   type OnNodesChange,
   type OnEdgesChange,
+  type Viewport,
+  type ReactFlowInstance,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { AgentNode } from "./AgentNode";
@@ -60,6 +62,7 @@ export function CanvasView() {
   const setNodes = useCanvasStore((s) => s.setNodes);
   const setEdges = useCanvasStore((s) => s.setEdges);
   const selectNode = useCanvasStore((s) => s.selectNode);
+  const setViewport = useCanvasStore((s) => s.setViewport);
   const theme = useThemeStore((s) => s.theme);
   const isDark = theme === "dark";
 
@@ -115,6 +118,24 @@ export function CanvasView() {
     selectNode(null);
   }, [selectNode]);
 
+  const onMoveEnd = useCallback(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (_event: any, viewport: Viewport) => {
+      setViewport(viewport);
+    },
+    [setViewport],
+  );
+
+  const onInit = useCallback(
+    (instance: ReactFlowInstance) => {
+      // Capture viewport after fitView completes
+      setTimeout(() => {
+        setViewport(instance.getViewport());
+      }, 100);
+    },
+    [setViewport],
+  );
+
   return (
     <div ref={containerRef} className="w-full h-full bg-[var(--color-inset)]">
       <ReactFlow
@@ -125,6 +146,8 @@ export function CanvasView() {
         onConnect={onConnect}
         onNodeClick={onNodeClick}
         onPaneClick={onPaneClick}
+        onMoveEnd={onMoveEnd}
+        onInit={onInit}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
         isValidConnection={isValidConnection as any}
@@ -144,7 +167,7 @@ export function CanvasView() {
             node.type === "agent" ? "var(--color-accent)" : "var(--color-secondary)"
           }
           maskColor={isDark ? "rgba(9,9,11,0.85)" : "rgba(247,247,249,0.85)"}
-          style={{ border: "none" }}
+          style={{ border: "none", width: 140, height: 90 }}
         />
       </ReactFlow>
     </div>

@@ -1,28 +1,15 @@
 /**
- * E2E tests for PropertiesSidebar, AgentEditor, and ToolEditor.
+ * E2E tests for PropertiesOverlay, AgentEditor, and ToolEditor.
  * Uses canvasWithWorkflow fixture.
  */
 import { test, expect } from "./fixtures";
 
-test.describe("Properties Sidebar", () => {
-  test("sidebar is collapsed by default (toggle button visible, close button hidden)", async ({
+test.describe("Properties Overlay", () => {
+  test("properties overlay is hidden when no node is selected", async ({
     page,
     canvasWithWorkflow: _,
   }) => {
-    await expect(page.getByTestId("properties-toggle")).toBeVisible();
-    await expect(page.getByTestId("properties-close")).not.toBeVisible();
-  });
-
-  test("clicking the toggle opens the properties panel", async ({
-    page,
-    canvasWithWorkflow: _,
-  }) => {
-    await page.getByTestId("properties-toggle").click();
-
-    await expect(page.getByTestId("properties-close")).toBeVisible();
-    await expect(
-      page.getByText("Select a node to edit its properties")
-    ).toBeVisible();
+    await expect(page.getByTestId("properties-overlay")).not.toBeVisible();
   });
 
   test("clicking the Orchestrator node opens AgentEditor with its values", async ({
@@ -33,6 +20,7 @@ test.describe("Properties Sidebar", () => {
       .locator(`[data-testid="agent-node"][data-node-id="${routerId}"]`)
       .click();
 
+    await expect(page.getByTestId("properties-overlay")).toBeVisible();
     await expect(page.getByTestId("agent-name-input")).toHaveValue(
       "Orchestrator"
     );
@@ -60,20 +48,37 @@ test.describe("Properties Sidebar", () => {
     ).toBeVisible({ timeout: 5000 });
   });
 
-  test("clicking X closes the properties panel", async ({
+  test("clicking X closes the properties overlay", async ({
     page,
     canvasWithWorkflow: { routerId },
   }) => {
-    // Open panel by clicking a node
+    // Open overlay by clicking a node
     await page
       .locator(`[data-testid="agent-node"][data-node-id="${routerId}"]`)
       .click();
 
-    await expect(page.getByTestId("properties-close")).toBeVisible();
+    await expect(page.getByTestId("properties-overlay")).toBeVisible();
 
     await page.getByTestId("properties-close").click();
 
-    await expect(page.getByTestId("properties-close")).not.toBeVisible();
+    await expect(page.getByTestId("properties-overlay")).not.toBeVisible();
+  });
+
+  test("clicking canvas pane closes the properties overlay", async ({
+    page,
+    canvasWithWorkflow: { routerId },
+  }) => {
+    // Open overlay by clicking a node
+    await page
+      .locator(`[data-testid="agent-node"][data-node-id="${routerId}"]`)
+      .click();
+
+    await expect(page.getByTestId("properties-overlay")).toBeVisible();
+
+    // Click empty canvas area
+    await page.locator(".react-flow__pane").click();
+
+    await expect(page.getByTestId("properties-overlay")).not.toBeVisible();
   });
 
   test("clicking a tool node switches to ToolEditor", async ({
