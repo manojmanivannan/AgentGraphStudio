@@ -1,11 +1,14 @@
 import { useState, useEffect, useRef } from "react";
 import Editor from "@monaco-editor/react";
 import { useCanvasStore } from "@/store/canvasStore";
+import { useThemeStore } from "@/store/themeStore";
 
 export function ToolEditor() {
   const selectedNodeId = useCanvasStore((s) => s.selectedNodeId);
   const nodes = useCanvasStore((s) => s.nodes);
   const setNodes = useCanvasStore((s) => s.setNodes);
+  const theme = useThemeStore((s) => s.theme);
+  const editorTheme = theme === "dark" ? "vs-dark" : "light";
 
   const selectedNode = nodes.find((n) => n.id === selectedNodeId && n.type === "tool");
 
@@ -21,7 +24,7 @@ export function ToolEditor() {
 
   if (!selectedNode) {
     return (
-      <div className="flex items-center justify-center h-full text-gray-400 text-sm">
+      <div className="flex items-center justify-center h-full text-[var(--color-text-tertiary)] text-[12px]">
         Select a tool node to edit its code
       </div>
     );
@@ -51,27 +54,34 @@ export function ToolEditor() {
 
   return (
     <div className="space-y-3">
-      <h3 className="text-sm font-semibold text-gray-700 border-b pb-2">Tool Properties</h3>
+      <div className="flex items-center gap-2 pb-3 border-b border-[var(--color-border-subtle)]">
+        <div className="w-5 h-5 rounded-md bg-[var(--color-secondary-subtle)] flex items-center justify-center">
+          <svg className="w-3 h-3 text-[var(--color-secondary)]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>
+          </svg>
+        </div>
+        <h3 className="text-[13px] font-semibold text-[var(--color-text-primary)]">Tool Properties</h3>
+      </div>
 
-      <div className="flex items-center justify-between p-2 bg-amber-50 rounded border border-amber-100 mb-3">
-        <span className="text-[11px] font-semibold text-amber-700 uppercase tracking-wider">
+      <div className="flex items-center justify-between p-2.5 bg-[var(--color-secondary-surface)] border border-[var(--color-secondary)]/15 rounded-lg">
+        <span className="text-[10px] font-semibold text-[var(--color-secondary)] uppercase tracking-[0.1em]">
           Inferred Arguments
         </span>
         <div className="flex gap-1">
           {args.length > 0 ? (
             args.map((arg) => (
-              <span key={arg} className="px-1.5 py-0.5 bg-white border border-amber-200 text-amber-600 rounded text-[10px] font-mono">
+              <span key={arg} className="px-1.5 py-0.5 bg-[var(--color-base)] border border-[var(--color-secondary)]/20 text-[var(--color-secondary)] rounded text-[10px] font-[var(--font-mono)]">
                 {arg}
               </span>
             ))
           ) : (
-            <span className="text-[10px] text-amber-400 italic">None detected</span>
+            <span className="text-[10px] text-[var(--color-text-tertiary)] italic">None detected</span>
           )}
         </div>
       </div>
 
       <div>
-        <label className="block text-xs font-medium text-gray-500 mb-1">Name</label>
+        <label className="block text-[11px] font-semibold text-[var(--color-text-tertiary)] mb-1.5 uppercase tracking-[0.06em]">Name</label>
         <input
           type="text"
           value={localName}
@@ -80,14 +90,14 @@ export function ToolEditor() {
             updateStore("name", e.target.value);
           }}
           data-testid="tool-name-input"
-          className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-amber-400 focus:border-amber-400"
+          className="input-base w-full"
           placeholder="Tool name"
         />
       </div>
 
       <div>
-        <label className="block text-xs font-medium text-gray-500 mb-1">Python Code</label>
-        <div className="border border-gray-200 rounded-md overflow-hidden h-[300px]">
+        <label className="block text-[11px] font-semibold text-[var(--color-text-tertiary)] mb-1.5 uppercase tracking-[0.06em]">Python Code</label>
+        <div className="border border-[var(--color-border-default)] rounded-lg overflow-hidden h-[300px]">
           <Editor
             height="300px"
             defaultLanguage="python"
@@ -96,15 +106,19 @@ export function ToolEditor() {
               setLocalCode(value ?? "");
               updateStore("code", value ?? "");
             }}
-            theme="vs-light"
+            theme={editorTheme}
             wrapperProps={{ "data-testid": "tool-code-editor" }}
             options={{
               minimap: { enabled: false },
               fontSize: 13,
+              fontFamily: "JetBrains Mono, monospace",
               lineNumbers: "on",
               scrollBeyondLastLine: false,
               wordWrap: "on",
               automaticLayout: true,
+              padding: { top: 8 },
+              renderLineHighlight: "gutter",
+              bracketPairColorization: { enabled: true },
             }}
           />
         </div>

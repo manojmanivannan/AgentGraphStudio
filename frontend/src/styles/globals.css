@@ -1,1 +1,723 @@
 @import "tailwindcss";
+
+/* ═══════════════════════════════════════════════════════════════
+   Agent Builder — Design System
+   Editorial / Clean aesthetic — dark technical interface (default)
+   + warm light mode
+   ═══════════════════════════════════════════════════════════════ */
+
+@theme {
+  --font-sans: "Outfit", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+
+  /* Surface layers — deep to elevated */
+  --color-base: #09090b;
+  --color-surface: #131316;
+  --color-elevated: #1c1c22;
+  --color-overlay: #24242c;
+  --color-inset: #0e0e11;
+
+  /* Borders */
+  --color-border-subtle: #23232b;
+  --color-border-default: #2e2e38;
+  --color-border-strong: #3d3d4a;
+
+  /* Text */
+  --color-text-primary: #ededef;
+  --color-text-secondary: #9494a5;
+  --color-text-tertiary: #626272;
+  --color-text-inverse: #09090b;
+
+  /* Primary accent — distinctive teal */
+  --color-accent: #14b8a6;
+  --color-accent-dim: #0d9488;
+  --color-accent-bright: #2dd4bf;
+  --color-accent-subtle: rgba(20, 184, 166, 0.12);
+  --color-accent-surface: rgba(20, 184, 166, 0.06);
+
+  /* Secondary accent — warm amber for tools */
+  --color-secondary: #f59e0b;
+  --color-secondary-dim: #d97706;
+  --color-secondary-bright: #fbbf24;
+  --color-secondary-subtle: rgba(245, 158, 11, 0.12);
+  --color-secondary-surface: rgba(245, 158, 11, 0.06);
+
+  /* Semantic */
+  --color-success: #10b981;
+  --color-success-subtle: rgba(16, 185, 129, 0.12);
+  --color-danger: #ef4444;
+  --color-danger-subtle: rgba(239, 68, 68, 0.12);
+  --color-warning: #f59e0b;
+  --color-info: #3b82f6;
+  --color-info-subtle: rgba(59, 130, 246, 0.12);
+
+  /* Agent purple */
+  --color-agent: #8b5cf6;
+  --color-agent-subtle: rgba(139, 92, 246, 0.12);
+  --color-agent-surface: rgba(139, 92, 246, 0.06);
+
+  /* Layout tokens */
+  --width-rail: 48px;
+  --width-topbar: 40px;
+  --width-properties-overlay: 320px;
+  --width-chat-overlay: 400px;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   Light Mode — Warm, airy, paper-like surfaces
+   ═══════════════════════════════════════════════════════════════ */
+
+html[data-theme="light"] {
+  /* Surface layers — airy and warm */
+  --color-base: #f7f7f9;
+  --color-surface: #ffffff;
+  --color-elevated: #f0f0f4;
+  --color-overlay: #e8e8ed;
+  --color-inset: #ececf0;
+
+  /* Borders */
+  --color-border-subtle: #e8e8ed;
+  --color-border-default: #d8d8e0;
+  --color-border-strong: #c0c0cc;
+
+  /* Text */
+  --color-text-primary: #1c1c28;
+  --color-text-secondary: #6e6e82;
+  --color-text-tertiary: #9c9cb0;
+  --color-text-inverse: #ffffff;
+
+  /* Primary accent — teal (adjusted for light bg) */
+  --color-accent: #0d9488;
+  --color-accent-dim: #0f766e;
+  --color-accent-bright: #14b8a6;
+  --color-accent-subtle: rgba(13, 148, 136, 0.10);
+  --color-accent-surface: rgba(13, 148, 136, 0.05);
+
+  /* Secondary accent — amber (adjusted for light bg) */
+  --color-secondary: #d97706;
+  --color-secondary-dim: #b45309;
+  --color-secondary-bright: #f59e0b;
+  --color-secondary-subtle: rgba(217, 119, 6, 0.10);
+  --color-secondary-surface: rgba(217, 119, 6, 0.05);
+
+  /* Semantic (adjusted for light bg) */
+  --color-success: #059669;
+  --color-success-subtle: rgba(5, 150, 105, 0.10);
+  --color-danger: #dc2626;
+  --color-danger-subtle: rgba(220, 38, 38, 0.08);
+  --color-warning: #d97706;
+  --color-info: #2563eb;
+  --color-info-subtle: rgba(37, 99, 235, 0.08);
+
+  /* Agent purple (adjusted for light bg) */
+  --color-agent: #7c3aed;
+  --color-agent-subtle: rgba(124, 58, 237, 0.10);
+  --color-agent-surface: rgba(124, 58, 237, 0.05);
+}
+
+/* ─── Theme Transition ───────────────────────────────────── */
+
+html.theme-transition,
+html.theme-transition *,
+html.theme-transition *::before,
+html.theme-transition *::after {
+  transition: color 0.35s ease,
+              background-color 0.35s ease,
+              border-color 0.35s ease,
+              box-shadow 0.35s ease,
+              fill 0.35s ease !important;
+}
+
+/* ─── Base Reset ─────────────────────────────────────────── */
+
+html {
+  color-scheme: dark;
+  background-color: var(--color-base);
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: var(--color-base);
+  color: var(--color-text-primary);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow: hidden;
+}
+
+#root {
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* ─── Scrollbar ──────────────────────────────────────────── */
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: var(--color-border-default);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: var(--color-border-strong);
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* ─── Selection ──────────────────────────────────────────── */
+
+::selection {
+  background-color: rgba(20, 184, 166, 0.25);
+  color: var(--color-text-primary);
+}
+
+/* ─── Focus Ring ─────────────────────────────────────────── */
+
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* ─── Noise Texture Overlay ──────────────────────────────── */
+
+.noise-bg::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+  opacity: 0.018;
+  mix-blend-mode: overlay;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* ─── Chrome Glass (TopBar + SidebarRail) ──────────────────── */
+
+.chrome-glass {
+  background-color: color-mix(in srgb, var(--color-surface) 80%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+html[data-theme="light"] .chrome-glass {
+  background-color: color-mix(in srgb, var(--color-surface) 90%, transparent);
+}
+
+/* ─── Overlay Panel ───────────────────────────────────────── */
+
+.overlay-panel {
+  animation: overlaySlideIn 250ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  box-shadow: -8px 0 32px -8px rgba(0, 0, 0, 0.3);
+}
+
+.overlay-panel-exit {
+  animation: overlaySlideOut 200ms cubic-bezier(0.7, 0, 0.84, 0) forwards;
+}
+
+html[data-theme="light"] .overlay-panel {
+  box-shadow: -8px 0 32px -8px rgba(0, 0, 0, 0.1);
+}
+
+/* ─── Sidebar Rail Items ─────────────────────────────────── */
+
+.rail-item {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  color: var(--color-text-tertiary);
+  transition: color 0.15s ease, background-color 0.15s ease;
+  cursor: pointer;
+  border: none;
+  background: transparent;
+}
+
+.rail-item:hover {
+  color: var(--color-text-secondary);
+  background-color: var(--color-elevated);
+}
+
+.rail-item:active {
+  color: var(--color-accent);
+  background-color: var(--color-accent-subtle);
+}
+
+.rail-item-danger:hover {
+  color: var(--color-danger);
+  background-color: var(--color-danger-subtle);
+}
+
+.rail-item-active {
+  color: var(--color-accent);
+  background-color: var(--color-accent-subtle);
+}
+
+/* ─── Rail Popover ────────────────────────────────────────── */
+
+.rail-popover {
+  position: absolute;
+  left: calc(100% + 8px);
+  top: 0;
+  width: 192px;
+  background-color: var(--color-elevated);
+  border: 1px solid var(--color-border-default);
+  border-radius: 10px;
+  box-shadow: 0 8px 32px -8px rgba(0, 0, 0, 0.4);
+  padding: 4px;
+  z-index: 50;
+  animation: popoverIn 150ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+html[data-theme="light"] .rail-popover {
+  box-shadow: 0 8px 32px -8px rgba(0, 0, 0, 0.12);
+}
+
+/* ─── Glow Effects (for nodes only) ───────────────────────── */
+
+.glow-accent {
+  box-shadow: 0 0 20px -4px rgba(20, 184, 166, 0.3),
+    0 0 8px -2px rgba(20, 184, 166, 0.15);
+}
+
+.glow-secondary {
+  box-shadow: 0 0 20px -4px rgba(245, 158, 11, 0.3),
+    0 0 8px -2px rgba(245, 158, 11, 0.15);
+}
+
+.glow-danger {
+  box-shadow: 0 0 20px -4px rgba(239, 68, 68, 0.3),
+    0 0 8px -2px rgba(239, 68, 68, 0.15);
+}
+
+/* ─── Panel Surface ──────────────────────────────────────── */
+
+.panel-surface {
+  background-color: var(--color-surface);
+  border-color: var(--color-border-subtle);
+}
+
+/* ─── Input Base ─────────────────────────────────────────── */
+
+.input-base {
+  background-color: var(--color-base);
+  border: 1px solid var(--color-border-default);
+  border-radius: 8px;
+  color: var(--color-text-primary);
+  font-size: 13px;
+  padding: 6px 10px;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.input-base::placeholder {
+  color: var(--color-text-tertiary);
+}
+
+.input-base:hover {
+  border-color: var(--color-border-strong);
+}
+
+.input-base:focus {
+  outline: none;
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px var(--color-accent-subtle);
+}
+
+/* ─── Button Base ────────────────────────────────────────── */
+
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-inverse);
+  background-color: var(--color-accent);
+  border-radius: 8px;
+  border: none;
+  cursor: pointer;
+  transition: background-color 0.15s ease, opacity 0.15s ease;
+  letter-spacing: 0.01em;
+}
+
+.btn-primary:hover {
+  background-color: var(--color-accent-bright);
+}
+
+.btn-primary:active {
+  opacity: 0.9;
+}
+
+.btn-primary:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  background-color: var(--color-elevated);
+  border: 1px solid var(--color-border-default);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-secondary:hover {
+  color: var(--color-text-primary);
+  background-color: var(--color-overlay);
+  border-color: var(--color-border-strong);
+}
+
+.btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-text-tertiary);
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-ghost:hover {
+  color: var(--color-text-secondary);
+  background-color: var(--color-elevated);
+}
+
+.btn-danger-ghost {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-text-tertiary);
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-danger-ghost:hover {
+  color: var(--color-danger);
+  background-color: var(--color-danger-subtle);
+}
+
+/* ─── Keyframes ──────────────────────────────────────────── */
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fadeInScale {
+  from {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes slideInRight {
+  from {
+    opacity: 0;
+    transform: translateX(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes slideInLeft {
+  from {
+    opacity: 0;
+    transform: translateX(-12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes pulseGlow {
+  0%,
+  100% {
+    box-shadow: 0 0 8px -2px rgba(20, 184, 166, 0.2);
+  }
+  50% {
+    box-shadow: 0 0 16px -2px rgba(20, 184, 166, 0.4);
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+@keyframes dotPulse {
+  0%,
+  80%,
+  100% {
+    opacity: 0.25;
+    transform: scale(0.8);
+  }
+  40% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes staggerFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ─── Overlay Panel Animations ───────────────────────────── */
+
+@keyframes overlaySlideIn {
+  from {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes overlaySlideOut {
+  from {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+}
+
+@keyframes popoverIn {
+  from {
+    opacity: 0;
+    transform: translateX(-4px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+
+@keyframes pulseRing {
+  0% {
+    box-shadow: 0 0 0 0 rgba(20, 184, 166, 0.4);
+  }
+  70% {
+    box-shadow: 0 0 0 8px rgba(20, 184, 166, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(20, 184, 166, 0);
+  }
+}
+
+.node-selected-pulse {
+  animation: pulseRing 0.6s ease-out 1;
+}
+
+@keyframes savePulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.save-indicator-saving {
+  animation: savePulse 1.5s ease-in-out infinite;
+}
+
+/* ─── ReactFlow Overrides ────────────────────────────────── */
+
+.react-flow__controls {
+  position: absolute !important;
+  bottom: 16px !important;
+  left: calc(var(--width-rail) + 12px) !important;
+  border: 1px solid var(--color-border-default) !important;
+  border-radius: 10px !important;
+  overflow: hidden;
+  background-color: var(--color-surface) !important;
+  box-shadow: 0 4px 24px -4px rgba(0, 0, 0, 0.15) !important;
+}
+
+html[data-theme="dark"] .react-flow__controls {
+  box-shadow: 0 4px 24px -4px rgba(0, 0, 0, 0.4) !important;
+}
+
+.react-flow__controls button {
+  background-color: var(--color-surface) !important;
+  border-bottom: 1px solid var(--color-border-subtle) !important;
+  width: 28px !important;
+  height: 28px !important;
+}
+
+.react-flow__controls button:hover {
+  background-color: var(--color-elevated) !important;
+}
+
+.react-flow__controls button svg {
+  fill: var(--color-text-secondary) !important;
+}
+
+.react-flow__controls button:last-child {
+  border-bottom: none !important;
+}
+
+.react-flow__minimap {
+  width: 140px !important;
+  height: 90px !important;
+  border: 1px solid var(--color-border-default) !important;
+  border-radius: 10px !important;
+  overflow: hidden;
+  background-color: var(--color-surface) !important;
+  box-shadow: 0 4px 24px -4px rgba(0, 0, 0, 0.15) !important;
+}
+
+html[data-theme="dark"] .react-flow__minimap {
+  box-shadow: 0 4px 24px -4px rgba(0, 0, 0, 0.4) !important;
+}
+
+.react-flow__attribution {
+  display: none !important;
+}
+
+.react-flow__handle {
+  transition: all 0.15s ease;
+}
+
+.react-flow__handle:hover {
+  filter: brightness(1.3);
+}
+
+html[data-theme="light"] .react-flow__handle:hover {
+  filter: brightness(0.9);
+}
+
+.react-flow__edge-path {
+  transition: stroke 0.2s ease;
+}
+
+/* ─── Monaco Editor Override ─────────────────────────────── */
+
+.monaco-editor .margin,
+.monaco-editor,
+.monaco-editor-background,
+.monaco-editor .inputarea {
+  background-color: var(--color-base) !important;
+}
+
+.monaco-editor .line-numbers {
+  color: var(--color-text-tertiary) !important;
+}
+
+.monaco-editor .current-line ~ .line-numbers {
+  color: var(--color-text-secondary) !important;
+}
+
+/* ─── Light Mode: Noise Texture ──────────────────────────── */
+
+html[data-theme="light"] .noise-bg::before {
+  opacity: 0.012;
+  mix-blend-mode: multiply;
+}
+
+/* ─── Light Mode: Shadows ────────────────────────────────── */
+
+html[data-theme="light"] .glow-accent {
+  box-shadow: 0 0 20px -6px rgba(13, 148, 136, 0.2),
+    0 0 8px -4px rgba(13, 148, 136, 0.1);
+}
+
+html[data-theme="light"] .glow-secondary {
+  box-shadow: 0 0 20px -6px rgba(217, 119, 6, 0.2),
+    0 0 8px -4px rgba(217, 119, 6, 0.1);
+}
+
+html[data-theme="light"] .glow-danger {
+  box-shadow: 0 0 20px -6px rgba(220, 38, 38, 0.15),
+    0 0 8px -4px rgba(220, 38, 38, 0.08);
+}
+
+/* ─── Light Mode: Button Overrides ───────────────────────── */
+
+html[data-theme="light"] .btn-primary {
+  color: #ffffff;
+}
+
+html[data-theme="light"] .btn-primary:hover {
+  background-color: var(--color-accent-bright);
+}
+
+html[data-theme="light"] .btn-ghost:hover {
+  background-color: var(--color-elevated);
+}
+
+html[data-theme="light"] .btn-danger-ghost:hover {
+  color: var(--color-danger);
+  background-color: var(--color-danger-subtle);
+}
+
+/* ─── Light Mode: Selection ──────────────────────────────── */
+
+html[data-theme="light"] ::selection {
+  background-color: rgba(13, 148, 136, 0.18);
+  color: var(--color-text-primary);
+}
+
+/* ─── Light Mode: Scrollbar ──────────────────────────────── */
+
+html[data-theme="light"] ::-webkit-scrollbar-thumb {
+  background-color: var(--color-border-default);
+}
+
+html[data-theme="light"] ::-webkit-scrollbar-thumb:hover {
+  background-color: var(--color-border-strong);
+}
