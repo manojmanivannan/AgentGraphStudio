@@ -22,6 +22,7 @@ import { ToolNode } from "./ToolNode";
 import { CustomEdge } from "./CustomEdge";
 import { useCanvasStore } from "@/store/canvasStore";
 import { useCanvasPersistence } from "@/hooks/useCanvasPersistence";
+import { useThemeStore } from "@/store/themeStore";
 
 const nodeTypes = {
   agent: AgentNode,
@@ -59,6 +60,8 @@ export function CanvasView() {
   const setNodes = useCanvasStore((s) => s.setNodes);
   const setEdges = useCanvasStore((s) => s.setEdges);
   const selectNode = useCanvasStore((s) => s.selectNode);
+  const theme = useThemeStore((s) => s.theme);
+  const isDark = theme === "dark";
 
   useCanvasPersistence();
 
@@ -113,7 +116,7 @@ export function CanvasView() {
   }, [selectNode]);
 
   return (
-    <div ref={containerRef} className="w-full h-full">
+    <div ref={containerRef} className="w-full h-full bg-[var(--color-inset)]">
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -131,16 +134,17 @@ export function CanvasView() {
       >
         <Background
           variant={BackgroundVariant.Dots}
-          gap={20}
+          gap={24}
           size={1}
-          color="#e5e7eb"
+          color={isDark ? "#1e1e28" : "#d8d8e2"}
         />
         <Controls />
         <MiniMap
           nodeColor={(node) =>
-            node.type === "agent" ? "#818cf8" : "#fbbf24"
+            node.type === "agent" ? "var(--color-accent)" : "var(--color-secondary)"
           }
-          maskColor="rgba(0,0,0,0.08)"
+          maskColor={isDark ? "rgba(9,9,11,0.85)" : "rgba(247,247,249,0.85)"}
+          style={{ border: "none" }}
         />
       </ReactFlow>
     </div>

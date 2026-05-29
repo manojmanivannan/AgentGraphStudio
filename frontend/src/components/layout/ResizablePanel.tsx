@@ -65,10 +65,13 @@ export function ResizablePanel({
       data-testid={dataTestId}
     >
       <div
-        className="absolute left-0 top-0 bottom-0 w-1 -ml-0.5 cursor-col-resize hover:bg-indigo-400 hover:w-1 transition-colors z-10"
+        className="absolute left-0 top-0 bottom-0 w-1 -ml-0.5 cursor-col-resize hover:bg-[var(--color-accent)] transition-colors duration-150 z-10 group"
         onMouseDown={onMouseDown}
         data-testid="resize-handle"
-      />
+      >
+        {/* Resize indicator line */}
+        <div className="absolute inset-y-0 left-0 w-px bg-[var(--color-border-subtle)] group-hover:bg-[var(--color-accent)] transition-colors duration-150" />
+      </div>
       {children}
     </div>
   );

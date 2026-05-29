@@ -2,9 +2,10 @@ import { useEffect, useState } from "react";
 import { AppShell } from "@/components/layout/AppShell";
 import { useCanvasStore } from "@/store/canvasStore";
 import { createCanvas, listCanvases, getCanvas } from "@/lib/api";
-import { Plus, FileText } from "lucide-react";
+import { Plus, FileText, Workflow } from "lucide-react";
 import type { AgentNodeData, ToolNodeData } from "@/types";
 import type { Node } from "@xyflow/react";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 export default function App() {
   const canvasId = useCanvasStore((s) => s.canvasId);
@@ -105,46 +106,79 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-      <div className="w-full max-w-md p-8">
-        <div className="text-center mb-8">
-          <h1 className="text-2xl font-bold text-gray-800 mb-2">Agent Builder</h1>
-          <p className="text-sm text-gray-500">Build AI agent workflows visually</p>
+    <div className="min-h-screen bg-[var(--color-base)] flex items-center justify-center noise-bg relative overflow-hidden">
+      {/* Theme Toggle — top right */}
+      <div className="absolute top-4 right-4 z-20">
+        <ThemeToggle />
+      </div>
+
+      {/* Ambient background glow */}
+      <div className="absolute top-1/4 left-1/3 w-[500px] h-[500px] bg-[var(--color-accent)] opacity-[0.03] rounded-full blur-[120px] pointer-events-none" />
+      <div className="absolute bottom-1/4 right-1/3 w-[400px] h-[400px] bg-[var(--color-secondary)] opacity-[0.02] rounded-full blur-[100px] pointer-events-none" />
+
+      <div className="w-full max-w-md p-8 relative z-10" style={{ animation: "fadeIn 0.6s ease-out" }}>
+        {/* Brand */}
+        <div className="text-center mb-10">
+          <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-[var(--color-accent-subtle)] border border-[var(--color-border-default)] mb-5">
+            <Workflow className="w-6 h-6 text-[var(--color-accent)]" />
+          </div>
+          <h1 className="text-3xl font-bold tracking-tight text-[var(--color-text-primary)] mb-2">
+            Agent Builder
+          </h1>
+          <p className="text-sm text-[var(--color-text-tertiary)] font-light tracking-wide">
+            Build AI agent workflows visually
+          </p>
         </div>
 
+        {/* New Canvas Button */}
         <button
           onClick={handleCreateCanvas}
           disabled={loading}
-          className="w-full flex items-center justify-center gap-2 px-4 py-3 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-colors mb-6 disabled:opacity-50"
+          data-testid="create-canvas-button"
+          className="btn-primary w-full justify-center py-3 text-[13px] rounded-xl mb-8"
         >
           <Plus className="w-4 h-4" />
           New Canvas
         </button>
 
+        {/* Recent Canvases */}
         {canvases.length > 0 && (
-          <div>
-            <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
+          <div style={{ animation: "fadeIn 0.6s ease-out 0.15s both" }}>
+            <h2 className="text-[11px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-[0.1em] mb-3 px-1">
               Recent Canvases
             </h2>
             <div className="space-y-1">
-              {canvases.map((c) => (
+              {canvases.map((c, i) => (
                 <button
                   key={c.id}
                   onClick={() => handleOpenCanvas(c.id)}
                   disabled={loading}
-                  className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-white hover:shadow-sm rounded-lg transition-all disabled:opacity-50 border border-transparent hover:border-gray-200"
+                  className="w-full flex items-center gap-3 px-3 py-2.5 text-[13px] text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-elevated)] rounded-lg transition-all duration-150 disabled:opacity-40 border border-transparent hover:border-[var(--color-border-default)]"
+                  style={{ animation: `staggerFadeIn 0.4s ease-out ${0.05 * i}s both` }}
                 >
-                  <FileText className="w-4 h-4 text-gray-400" />
-                  {c.name}
+                  <FileText className="w-4 h-4 text-[var(--color-text-tertiary)]" />
+                  <span className="truncate flex-1 text-left">{c.name}</span>
                 </button>
               ))}
             </div>
           </div>
         )}
 
+        {/* Loading Spinner */}
         {loading && (
           <div className="flex justify-center mt-6">
-            <span className="w-5 h-5 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin" />
+            <div className="flex gap-1.5">
+              {[0, 1, 2].map((i) => (
+                <span
+                  key={i}
+                  className="w-1.5 h-1.5 rounded-full bg-[var(--color-accent)]"
+                  style={{
+                    animation: "dotPulse 1.2s ease-in-out infinite",
+                    animationDelay: `${i * 0.15}s`,
+                  }}
+                />
+              ))}
+            </div>
           </div>
         )}
       </div>
