@@ -1,10 +1,9 @@
-import { useCallback, useRef } from "react";
+import { useCallback, useRef, useEffect } from "react";
 import { v4 as uuidv4 } from "uuid";
 import {
   ReactFlow,
   Background,
   Controls,
-  MiniMap,
   addEdge,
   applyNodeChanges,
   applyEdgeChanges,
@@ -57,14 +56,32 @@ function isValidConnection(connection: Connection): boolean {
 
 export function CanvasView() {
   const containerRef = useRef<HTMLDivElement>(null);
+  const rfInstanceRef = useRef<ReactFlowInstance | null>(null);
   const nodes = useCanvasStore((s) => s.nodes);
   const edges = useCanvasStore((s) => s.edges);
   const setNodes = useCanvasStore((s) => s.setNodes);
   const setEdges = useCanvasStore((s) => s.setEdges);
   const selectNode = useCanvasStore((s) => s.selectNode);
   const setViewport = useCanvasStore((s) => s.setViewport);
+  const chatOpen = useCanvasStore((s) => s.chatOpen);
+  const selectedNodeId = useCanvasStore((s) => s.selectedNodeId);
   const theme = useThemeStore((s) => s.theme);
   const isDark = theme === "dark";
+
+  const propertiesOpen = selectedNodeId !== null;
+
+  // Re-fit view when overlay panels open/close so nodes stay visible
+  // in the remaining canvas area. Delay matches the container transition.
+  useEffect(() => {
+    const instance = rfInstanceRef.current;
+    if (!instance) return;
+
+    const timeout = setTimeout(() => {
+      instance.fitView({ duration: 300, padding: 0.05 });
+    }, 350);
+
+    return () => clearTimeout(timeout);
+  }, [chatOpen, propertiesOpen]);
 
   useCanvasPersistence();
 
@@ -121,6 +138,7 @@ export function CanvasView() {
 
   const onInit = useCallback(
     (instance: ReactFlowInstance) => {
+      rfInstanceRef.current = instance;
       // Capture viewport after fitView completes
       setTimeout(() => {
         setViewport(instance.getViewport());
@@ -154,13 +172,6 @@ export function CanvasView() {
           color={isDark ? "#1e1e28" : "#d8d8e2"}
         />
         <Controls />
-        <MiniMap
-          nodeColor={(node) =>
-            node.type === "agent" ? "var(--color-accent)" : "var(--color-secondary)"
-          }
-          maskColor={isDark ? "rgba(9,9,11,0.85)" : "rgba(247,247,249,0.85)"}
-          style={{ border: "none", width: 140, height: 90 }}
-        />
       </ReactFlow>
     </div>
   );
