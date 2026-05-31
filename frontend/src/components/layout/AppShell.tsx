@@ -8,28 +8,33 @@ import { useCanvasStore } from "@/store/canvasStore";
 
 export function AppShell() {
   const observabilityOpen = useCanvasStore((s) => s.observabilityOpen);
+  const chatOpen = useCanvasStore((s) => s.chatOpen);
+  const selectedNodeId = useCanvasStore((s) => s.selectedNodeId);
+
+  const propertiesOpen = selectedNodeId !== null;
+  // Total right-side panel width so the canvas container shrinks and fitView
+  // accounts for the area covered by overlay panels.
+  const canvasRightOffset = (chatOpen ? 400 : 0) + (propertiesOpen ? 320 : 0);
 
   return (
     <div className="h-screen w-screen relative overflow-hidden bg-[var(--color-base)]">
       {observabilityOpen ? (
-        /* Observability mode: iframe fills viewport, no sidebar rail */
-        <>
-          <ObservabilityView />
-          <TopBar />
-          <ChatOverlay />
-        </>
+        <ObservabilityView />
       ) : (
-        /* Canvas mode: full canvas + rail + overlays */
         <>
-          <div className="absolute inset-0 z-0">
+          <div
+            className="absolute bottom-0 z-0 transition-[right] duration-300 ease-out"
+            style={{ top: 40, left: 48, right: canvasRightOffset }}
+          >
             <CanvasView />
           </div>
-          <TopBar />
           <SidebarRail />
           <PropertiesOverlay />
-          <ChatOverlay />
         </>
       )}
+      {/* Shared across both modes — persists across mode switches */}
+      <TopBar />
+      <ChatOverlay />
     </div>
   );
 }
