@@ -71,7 +71,6 @@ export function ChatOverlay() {
   const setActiveNodeId = useCanvasStore((s) => s.setActiveNodeId);
   const chatOpen = useCanvasStore((s) => s.chatOpen);
   const toggleChat = useCanvasStore((s) => s.toggleChat);
-  const selectedNodeId = useCanvasStore((s) => s.selectedNodeId);
 
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [activeConvId, setActiveConvId] = useState<string | null>(null);
@@ -310,8 +309,9 @@ export function ChatOverlay() {
     setActiveNodeId(null);
   };
 
-  // Properties panel offset: if a node is selected, chat shifts left by 320px
-  const offsetRight = selectedNodeId ? 320 : 0;
+  // Properties panel offset: if properties is open, chat stays at right edge
+  // and properties sits to the left of chat (handled in PropertiesOverlay)
+  const offsetRight = 0;
 
   // Group messages into turns for rendering
   const { preTurnMessages, turns } = groupMessagesIntoTurns(messages);
