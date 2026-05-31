@@ -74,6 +74,7 @@ function AgentNodeComponent({ id, data, selected }: NodeProps) {
           {isRouter ? "Router" : "Worker"}
         </span>
         <button
+          onPointerDown={(e) => e.nativeEvent.stopImmediatePropagation()}
           onClick={(e) => {
             e.stopPropagation();
             selectNode(id);
