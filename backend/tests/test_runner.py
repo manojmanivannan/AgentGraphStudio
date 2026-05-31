@@ -236,6 +236,43 @@ class TestCanvasRunner:
         final_answers = [e for e in events if e["type"] == "final_answer"]
         assert len(final_answers) >= 1
 
+    async def test_make_handoff_tool_defers_agent_lookup(self):
+        """Router→router handoff: target agent lookup is deferred to call time."""
+        master = FakeAgentNode(
+            id=uuid.uuid4(),
+            name="Master",
+            role="Router",
+            agent_type="router",
+        )
+        math_router = FakeAgentNode(
+            id=uuid.uuid4(),
+            name="MathTeam",
+            role="Math expert team",
+            agent_type="router",
+        )
+        math_worker = FakeAgentNode(
+            id=uuid.uuid4(),
+            name="FactorialAgent",
+            role="FactorialExpert",
+            agent_type="worker",
+        )
+
+        events = []
+
+        async def collect(event):
+            events.append(event)
+
+        runner = CanvasRunner(FakeCanvas(agent_nodes=[master, math_router, math_worker]))
+        runner.node_map = {master.id: master, math_router.id: math_router, math_worker.id: math_worker}
+        runner.agents[math_worker.id] = _make_agent_mock("6")
+
+        # _make_handoff_tool should NOT crash even though math_router
+        # is not yet in self.agents (it's a router, built lazily)
+        tool = runner._make_handoff_tool(
+            math_router.id, master.name, collect, history=""
+        )
+        assert tool.__name__ == "transfer_to_MathTeam"
+
     async def test_router_produces_final_answer_directly(self):
         master = FakeAgentNode(
             id=uuid.uuid4(),
