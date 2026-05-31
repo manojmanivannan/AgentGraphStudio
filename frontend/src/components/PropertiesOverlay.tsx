@@ -13,8 +13,8 @@ export function PropertiesOverlay() {
   const selectedNode = nodes.find((n) => n.id === selectedNodeId);
   const isOpen = selectedNodeId !== null;
 
-  // On narrow viewports, chat shifts behind properties (offset 0).
-  // On wider viewports, chat sits to the left of properties.
+  // Properties sits to the left of chat when both are open.
+  // Chat always anchors to the right edge.
   const offsetRight = chatOpen ? 400 : 0;
 
   const handleClose = () => {
