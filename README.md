@@ -1,8 +1,8 @@
-# MJ Agentic Framework
+# Canvas — Visual AI Agent Workflow Builder
 
 ![Canvas](./canvas_screen.png)
 
-Visual canvas for composing and executing AI agent workflows. Drag agent and tool nodes, wire them with edges, and run multi-agent teams backed by the [BeeAI Framework](https://github.com/i-am-bee/beeai-framework).
+Visual canvas for composing and executing AI agent workflows. Drag agent and tool nodes, wire them with edges, and run multi-agent teams powered by [DSPy](https://dspy.ai/).
 
 ## Quick Start
 
@@ -10,19 +10,16 @@ Visual canvas for composing and executing AI agent workflows. Drag agent and too
 docker compose up
 ```
 
-Launches PostgreSQL, backend (port 8000), frontend (port 5173), and Ollama. Open `http://localhost:5173`.
-
-Run migrations on first launch:
-```bash
-docker compose exec backend uv run alembic upgrade head
-```
+Launches PostgreSQL (pgvector), backend (port 8000), frontend (port 5173), and MLflow (port 5000). Open `http://localhost:5173`.
 
 ## Architecture
 
 - **Frontend:** React 19 + TypeScript + Vite, ReactFlow canvas, Tailwind CSS, zustand state
-- **Backend:** Python 3.12+ / FastAPI, BeeAI Framework for agent execution, WebSocket streaming
-- **Database:** PostgreSQL 17 (asyncpg) in production, SQLite (aiosqlite) for tests
-- **LLM:** Ollama (configurable model per agent type via `.env`)
+- **Backend:** Python 3.12+ / FastAPI, DSPy for agent execution, WebSocket streaming
+- **Database:** PostgreSQL 17 + pgvector (asyncpg)
+- **LLM:** Configurable per agent — defaults to Ollama (`ollama_chat/gemma4:31b`)
+- **Memory:** mem0 with Qdrant vector store, per-agent memory instances
+- **Observability:** MLflow DSPy autolog for tracing
 
 ### Layout & UX
 
@@ -43,85 +40,36 @@ Each canvas has persistent conversations (chat threads). Full conversation histo
 
 ### Agent Execution Model
 
-- **Router agents** orchestrate — they delegate tasks to worker sub-agents via transfer actions
-- **Worker agents** perform specialized work with optional Python tools
+- **Worker agents** are DSPy `ReAct` modules — they reason through tool calls iteratively
+- **Router agents** orchestrate — they delegate tasks to worker sub-agents via handoff tools (plain async callables)
 - Execution starts from the first agent node, or a specific agent (`target_agent_id`)
 - All events stream over WebSocket with `node_id` for real-time canvas highlighting
-- Sub-agent outputs appear as tool results; the final answer comes from the master agent
+- Sub-agent outputs appear as tool results; the final answer comes from the router agent
 - Thoughts are collapsed by default (click to expand)
+
+### Memory
+
+Agents can optionally enable per-agent memory powered by mem0. When enabled, three memory tools are automatically attached:
+
+| Tool | Description |
+|---|---|
+| `memory_search` | Search stored memories by query |
+| `memory_store` | Store a new memory |
+| `memory_get_all` | Retrieve all stored memories |
+
+### Observability
+
+MLflow DSPy autolog captures all agent calls, tool invocations, and LLM interactions. The built-in ObservabilityView embeds the MLflow UI directly in the canvas.
 
 ## Configuration
 
 `backend/.env`:
+
 | Variable | Default | Description |
 |---|---|---|
-| `LLM_BASE_URL` | `http://192.168.1.120:11434` | Ollama server |
-| `LLM_MODEL_ROUTER` | `ollama:kimi-k2.6:cloud` | Model for router agents |
-| `LLM_MODEL_AGENT` | `ollama:kimi-k2.6:cloud` | Model for worker agents |
+| `LLM_BASE_URL` | `http://192.168.1.120:11434` | LLM server URL |
+| `LLM_MODEL` | `ollama_chat/gemma4:31b` | Default model for agents |
+| `MLFLOW_TRACKING_URI` | `http://mlflow:5000` | MLflow server URL |
+| `MEM0_LLM_MODEL` | `gemma4:31b` | Model used by mem0 |
+| `MEM0_EMBEDDER_MODEL` | `nomic-embed-text` | Embedding model for mem0 |
 
-## Running Locally (without Docker)
-
-**Backend:**
-```bash
-cd backend
-uv sync && uv sync --group test
-uv run alembic upgrade head
-uv run uvicorn canvas_server.main:app --host 0.0.0.0 --port 8000 --reload
-```
-
-**Frontend:**
-```bash
-cd frontend
-npm install && npm run dev
-```
-
-## Development
-
-### Backend
-
-| Command | Purpose |
-|---|---|
-| `uv run pytest tests/ -v` | Run tests (SQLite, no real LLM calls) |
-| `uv run ruff check .` | Lint |
-| `uv run ruff check . --fix` | Auto-fix lint issues |
-| `uv run alembic revision --autogenerate -m "...""` | Create DB migration |
-
-### Frontend
-
-| Command | Purpose |
-|---|---|
-| `npm run dev` | Dev server |
-| `npm run build` | Production build (`tsc` + `vite build`) |
-| `npx tsc --noEmit` | Type-check only |
-
-### CI
-
-GitHub Actions on push/PR to `main`: installs uv with Python 3.14, runs `ruff` and `pytest`.
-
-## API Endpoints
-
-### Canvases
-| Method | Path | Description |
-|---|---|---|
-| `POST` | `/api/canvases` | Create canvas |
-| `GET` | `/api/canvases` | List all canvases |
-| `GET` | `/api/canvases/{id}` | Get full graph (nodes + edges) |
-| `PUT` | `/api/canvases/{id}` | Save nodes and edges |
-| `DELETE` | `/api/canvases/{id}` | Delete canvas |
-| `POST` | `/api/canvases/import` | Import from JSON |
-| `GET` | `/api/canvases/{id}/export` | Export as JSON |
-
-### Conversations
-| Method | Path | Description |
-|---|---|---|
-| `POST` | `/api/canvases/{id}/conversations` | Create conversation |
-| `GET` | `/api/canvases/{id}/conversations` | List conversations |
-| `GET` | `/api/canvases/{id}/conversations/{cid}` | Get conversation with messages |
-| `DELETE` | `/api/canvases/{id}/conversations/{cid}` | Delete conversation |
-
-### Execution
-| Method | Path | Description |
-|---|---|---|
-| `WS` | `/ws/conversations/{cid}/run` | Run workflow, stream events |
-
-WebSocket sends `{"prompt": "...", "target_agent_id?": "uuid"}` and receives streaming `ExecutionEvent` JSON (types: `run_start`, `agent_start`, `thought`, `handoff`, `tool_result`, `final_answer`, `run_complete`, `error`).
