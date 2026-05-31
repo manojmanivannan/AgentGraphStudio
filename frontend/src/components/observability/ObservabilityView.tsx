@@ -4,7 +4,7 @@ const MLFLOW_PATH = "/mlflow/";
 
 export function ObservabilityView() {
   return (
-    <div className="absolute inset-0 z-0 bg-[var(--color-base)]">
+    <div className="absolute top-10 right-0 bottom-0 left-0 z-0 bg-[var(--color-base)]">
       <iframe
         src={MLFLOW_PATH}
         className="w-full h-full border-none"
