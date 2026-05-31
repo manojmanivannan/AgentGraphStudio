@@ -22,7 +22,7 @@ export function OverlayPanel({
   const prevOpenRef = useRef(open);
 
   useEffect(() => {
-    // Always snapshot and update prevOpenRef before any early return
+    // Always update prevOpenRef before any early return
     const prevOpen = prevOpenRef.current;
     prevOpenRef.current = open;
 

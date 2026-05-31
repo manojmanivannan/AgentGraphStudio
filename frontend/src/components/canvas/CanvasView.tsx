@@ -107,13 +107,6 @@ export function CanvasView() {
     [nodes, edges, setEdges]
   );
 
-  const onNodeClick = useCallback(
-    (_: React.MouseEvent, node: Node) => {
-      selectNode(node.id);
-    },
-    [selectNode]
-  );
-
   const onPaneClick = useCallback(() => {
     selectNode(null);
   }, [selectNode]);

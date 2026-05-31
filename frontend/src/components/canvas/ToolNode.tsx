@@ -47,6 +47,7 @@ function ToolNodeComponent({ id, data, selected }: NodeProps) {
           Tool
         </span>
         <button
+          onPointerDown={(e) => e.nativeEvent.stopImmediatePropagation()}
           onClick={(e) => {
             e.stopPropagation();
             selectNode(id);
