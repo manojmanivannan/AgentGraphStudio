@@ -21,6 +21,51 @@ import type { ConversationSummary, Message, ExecutionEvent } from "@/types";
 
 const WS_BASE = `ws://${import.meta.env.VITE_API_HOST || "localhost:8000"}`;
 
+interface TurnGroup {
+  id: string;
+  userMessage: Message;
+  steps: Message[];
+  finalAnswer?: Message;
+  isStreaming: boolean;
+}
+
+function groupMessagesIntoTurns(messages: Message[]): {
+  preTurnMessages: Message[];
+  turns: TurnGroup[];
+} {
+  const preTurnMessages: Message[] = [];
+  const turns: TurnGroup[] = [];
+  let currentTurn: TurnGroup | null = null;
+
+  for (const msg of messages) {
+    if (msg.role === "user") {
+      currentTurn = {
+        id: msg.id,
+        userMessage: msg,
+        steps: [],
+        finalAnswer: undefined,
+        isStreaming: true,
+      };
+      turns.push(currentTurn);
+    } else if (currentTurn) {
+      if (msg.event_type === "final_answer") {
+        // If there's already a final_answer (from a sub-agent), move it to steps
+        if (currentTurn.finalAnswer) {
+          currentTurn.steps.push(currentTurn.finalAnswer);
+        }
+        currentTurn.finalAnswer = msg;
+        currentTurn.isStreaming = false;
+      } else {
+        currentTurn.steps.push(msg);
+      }
+    } else {
+      preTurnMessages.push(msg);
+    }
+  }
+
+  return { preTurnMessages, turns };
+}
+
 export function ChatOverlay() {
   const canvasId = useCanvasStore((s) => s.canvasId);
   const setActiveNodeId = useCanvasStore((s) => s.setActiveNodeId);
@@ -34,7 +79,9 @@ export function ChatOverlay() {
   const [input, setInput] = useState("");
   const [running, setRunning] = useState(false);
   const [selectorOpen, setSelectorOpen] = useState(false);
-  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
+  const [expandedTurns, setExpandedTurns] = useState<Set<string>>(
+    () => new Set()
+  );
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
@@ -59,6 +106,11 @@ export function ChatOverlay() {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  // Reset expand state when switching conversations
+  useEffect(() => {
+    setExpandedTurns(new Set());
+  }, [activeConvId]);
 
   const loadConversation = async (convId: string) => {
     if (!canvasId) return;
@@ -98,35 +150,20 @@ export function ChatOverlay() {
     }
   };
 
-  const toggleCollapse = useCallback((msgId: string) => {
-    setCollapsed((prev) => {
+  const toggleExpand = useCallback((turnId: string) => {
+    setExpandedTurns((prev) => {
       const next = new Set(prev);
-      if (next.has(msgId)) {
-        next.delete(msgId);
+      if (next.has(turnId)) {
+        next.delete(turnId);
       } else {
-        next.add(msgId);
+        next.add(turnId);
       }
       return next;
     });
   }, []);
 
-  useEffect(() => {
-    setCollapsed((prev) => {
-      const next = new Set(prev);
-      for (const msg of messages) {
-        if (msg.event_type === "thought") {
-          next.add(msg.id);
-        }
-      }
-      return next;
-    });
-  }, [messages]);
-
   const addMessageLocal = (msg: Message) => {
     setMessages((prev) => [...prev, msg]);
-    if (msg.event_type === "thought") {
-      setCollapsed((prev) => new Set(prev).add(msg.id));
-    }
   };
 
   const handleSend = () => {
@@ -227,20 +264,6 @@ export function ChatOverlay() {
           addMessageLocal(msg);
         }
 
-        if (event.type === "agent_start") {
-          const msg: Message = {
-            id: crypto.randomUUID(),
-            conversation_id: convId,
-            role: "system",
-            content: `${event.agent} is working...`,
-            agent_name: event.agent,
-            node_id: event.node_id ?? null,
-            event_type: "agent_start",
-            created_at: new Date().toISOString(),
-          };
-          addMessageLocal(msg);
-        }
-
         if (event.type === "tool_result") {
           const msg: Message = {
             id: crypto.randomUUID(),
@@ -289,6 +312,9 @@ export function ChatOverlay() {
 
   // Properties panel offset: if a node is selected, chat shifts left by 320px
   const offsetRight = selectedNodeId ? 320 : 0;
+
+  // Group messages into turns for rendering
+  const { preTurnMessages, turns } = groupMessagesIntoTurns(messages);
 
   return (
     <OverlayPanel
@@ -396,71 +422,118 @@ export function ChatOverlay() {
           </div>
         )}
 
-        {messages.map((msg) => {
-          const isThought = msg.event_type === "thought";
-          const isCollapsed = collapsed.has(msg.id);
-          const isHandoff = msg.event_type === "handoff";
-          const isToolResult = msg.event_type === "tool_result";
-          const isAgentStart = msg.event_type === "agent_start";
+        {/* Pre-turn standalone messages (errors before any user message) */}
+        {preTurnMessages.map((msg) => (
+          <div
+            key={msg.id}
+            className="flex flex-col items-start"
+            style={{ animation: "staggerFadeIn 0.3s ease-out" }}
+          >
+            <div className="max-w-[85%] rounded-xl px-3 py-2.5 text-[13px] leading-relaxed bg-[var(--color-danger-subtle)] text-[var(--color-danger)] border border-[var(--color-danger)]/20 rounded-bl-sm">
+              {msg.content}
+            </div>
+          </div>
+        ))}
+
+        {/* Turn-grouped messages */}
+        {turns.map((turn) => {
+          const isExpanded = expandedTurns.has(turn.id);
+          const hasSteps = turn.steps.length > 0;
 
           return (
-            <div
-              key={msg.id}
-              className={`flex flex-col ${
-                msg.role === "user" ? "items-end" : "items-start"
-              }`}
-              style={{ animation: "staggerFadeIn 0.3s ease-out" }}
-            >
-              {msg.agent_name && msg.role !== "user" && !isHandoff && !isAgentStart && (
-                <span className="text-[10px] text-[var(--color-text-tertiary)] mb-1 px-1 font-medium">
-                  {msg.agent_name}
-                  {msg.event_type === "tool_result"
-                    ? ""
-                    : msg.event_type && ` · ${msg.event_type}`}
-                </span>
-              )}
-              <div
-                className={`max-w-[85%] rounded-xl px-3 py-2.5 text-[13px] leading-relaxed ${
-                  msg.role === "user"
-                    ? "bg-[var(--color-accent)] text-[var(--color-text-inverse)] rounded-br-sm"
-                    : isHandoff || isAgentStart
-                    ? "bg-[var(--color-info-subtle)] text-[var(--color-info)] border border-[var(--color-info)]/20 rounded-bl-sm"
-                    : msg.role === "system"
-                    ? "bg-[var(--color-danger-subtle)] text-[var(--color-danger)] border border-[var(--color-danger)]/20 rounded-bl-sm"
-                    : isThought
-                    ? "bg-[var(--color-agent-subtle)] text-[var(--color-agent)] border border-[var(--color-agent)]/20 text-[12px] rounded-bl-sm"
-                    : isToolResult
-                    ? "bg-[var(--color-success-subtle)] text-[var(--color-success)] border border-[var(--color-success)]/20 rounded-bl-sm"
-                    : "bg-[var(--color-elevated)] text-[var(--color-text-primary)] border border-[var(--color-border-subtle)] rounded-bl-sm"
-                }`}
-              >
-                {isHandoff || isAgentStart ? (
-                  <div className="flex items-center gap-2 text-[12px]">
-                    <span>{msg.content}</span>
-                  </div>
-                ) : isThought && isCollapsed ? (
-                  <button
-                    onClick={() => toggleCollapse(msg.id)}
-                    className="flex items-center gap-1 text-[var(--color-agent)] hover:text-[var(--color-agent)]/80 cursor-pointer w-full text-left"
-                  >
-                    <ChevronRight className="w-3 h-3 flex-shrink-0" />
-                    <span className="text-[11px]">Thinking...</span>
-                  </button>
-                ) : isThought ? (
-                  <div>
-                    <button
-                      onClick={() => toggleCollapse(msg.id)}
-                      className="flex items-center gap-1 text-[var(--color-agent)] hover:text-[var(--color-agent)]/80 cursor-pointer mb-1"
-                    >
-                      <ChevronDown className="w-3 h-3 flex-shrink-0" />
-                      <span className="text-[10px]">Hide thought</span>
-                    </button>
-                    {msg.content}
-                  </div>
-                ) : (
-                  msg.content
-                )}
+            <div key={turn.id} className="space-y-2">
+              {/* User message */}
+              <div className="flex flex-col items-end">
+                <div className="max-w-[85%] rounded-xl px-3 py-2.5 text-[13px] leading-relaxed bg-[var(--color-accent)] text-[var(--color-text-inverse)] rounded-br-sm">
+                  {turn.userMessage.content}
+                </div>
               </div>
+
+              {/* Steps toggle — only for completed turns with steps */}
+              {!turn.isStreaming && hasSteps && (
+                <button
+                  onClick={() => toggleExpand(turn.id)}
+                  className="flex items-center gap-1.5 text-[11px] text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)] transition-colors cursor-pointer px-1"
+                >
+                  {isExpanded ? (
+                    <>
+                      <ChevronDown className="w-3 h-3" />
+                      <span>Hide steps</span>
+                    </>
+                  ) : (
+                    <>
+                      <ChevronRight className="w-3 h-3" />
+                      <span>
+                        {turn.steps.length} step{turn.steps.length !== 1 && "s"}
+                      </span>
+                    </>
+                  )}
+                </button>
+              )}
+
+              {/* Steps — shown live during streaming, or when user expands */}
+              {(turn.isStreaming || isExpanded) && hasSteps && (
+                <div className="ml-2 pl-3 border-l-2 border-[var(--color-border-subtle)] space-y-2">
+                  {turn.steps.map((stepMsg) => {
+                    const isThought = stepMsg.event_type === "thought";
+                    const isHandoff = stepMsg.event_type === "handoff";
+                    const isToolResult = stepMsg.event_type === "tool_result";
+                    const isError = stepMsg.event_type === "error";
+                    const isSubAnswer = stepMsg.event_type === "final_answer";
+
+                    return (
+                      <div
+                        key={stepMsg.id}
+                        className="flex flex-col items-start"
+                        style={{ animation: "staggerFadeIn 0.3s ease-out" }}
+                      >
+                        {stepMsg.agent_name && !isHandoff && !isError && (
+                          <span className="text-[10px] text-[var(--color-text-tertiary)] mb-0.5 px-1 font-medium">
+                            {stepMsg.agent_name}
+                            {stepMsg.event_type &&
+                              stepMsg.event_type !== "final_answer" &&
+                              ` · ${stepMsg.event_type}`}
+                          </span>
+                        )}
+                        <div
+                          className={`max-w-[85%] rounded-xl px-2.5 py-1.5 text-[12px] leading-relaxed ${
+                            isHandoff
+                              ? "bg-[var(--color-info-subtle)] text-[var(--color-info)] border border-[var(--color-info)]/20 rounded-bl-sm"
+                              : isError
+                              ? "bg-[var(--color-danger-subtle)] text-[var(--color-danger)] border border-[var(--color-danger)]/20 rounded-bl-sm"
+                              : isThought
+                              ? "bg-[var(--color-agent-subtle)] text-[var(--color-agent)] border border-[var(--color-agent)]/20 rounded-bl-sm"
+                              : isToolResult
+                              ? "bg-[var(--color-success-subtle)] text-[var(--color-success)] border border-[var(--color-success)]/20 rounded-bl-sm"
+                              : isSubAnswer
+                              ? "bg-[var(--color-elevated)] text-[var(--color-text-secondary)] border border-[var(--color-border-subtle)] rounded-bl-sm"
+                              : "bg-[var(--color-elevated)] text-[var(--color-text-primary)] border border-[var(--color-border-subtle)] rounded-bl-sm"
+                          }`}
+                        >
+                          {stepMsg.content}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Final answer */}
+              {turn.finalAnswer && (
+                <div
+                  className="flex flex-col items-start"
+                  style={{ animation: "staggerFadeIn 0.3s ease-out" }}
+                >
+                  {turn.finalAnswer.agent_name && (
+                    <span className="text-[10px] text-[var(--color-text-tertiary)] mb-1 px-1 font-medium">
+                      {turn.finalAnswer.agent_name}
+                    </span>
+                  )}
+                  <div className="max-w-[85%] rounded-xl px-3 py-2.5 text-[13px] leading-relaxed bg-[var(--color-elevated)] text-[var(--color-text-primary)] border border-[var(--color-border-subtle)] rounded-bl-sm">
+                    {turn.finalAnswer.content}
+                  </div>
+                </div>
+              )}
             </div>
           );
         })}

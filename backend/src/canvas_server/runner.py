@@ -206,12 +206,28 @@ class CanvasRunner:
             agent.on_event(callback)
 
     def _make_handoff_tool(self, target_id: uuid.UUID, router_name: str, send_event, history: str, dspy_history=None):
-        """Create a DSPy tool function that delegates to a sub-agent."""
-        target_agent = self.agents[target_id]
+        """Create a DSPy tool function that delegates to a sub-agent.
+
+        The target agent lookup is deferred to call time so that router→router
+        handoffs work: router agents are built lazily when first invoked, not
+        during the parent router's setup.
+        """
         target_node = self.node_map[target_id]
         target_name = target_node.name
 
         async def transfer(task: str) -> str:
+            # Lazily build the target agent if it hasn't been built yet
+            # (e.g. a router that wasn't pre-built during setup)
+            if target_id not in self.agents:
+                if target_node.agent_type == "router":
+                    self._build_router_agent(target_node, send_event, history, dspy_history)
+                else:
+                    raise RuntimeError(
+                        f"Worker agent '{target_name}' (id={target_id}) not found in agents dict"
+                    )
+
+            target_agent = self.agents[target_id]
+
             await send_event(
                 {
                     "type": "handoff",
