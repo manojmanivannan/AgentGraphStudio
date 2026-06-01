@@ -1,4 +1,3 @@
-import contextlib
 import logging
 import uuid
 
@@ -308,10 +307,13 @@ class CanvasRunner:
             return ""
         lines = ["## Conversation History"]
         for msg in messages:
-            role_label = msg.role.capitalize()
-            if msg.agent_name and msg.role == "assistant":
-                role_label = f"Assistant [{msg.agent_name}]"
-            lines.append(f"{role_label}: {msg.content}")
+            if msg.role == "system":
+                label = f"System [{msg.agent_name}]" if msg.agent_name else "System"
+            elif msg.agent_name and msg.role == "assistant":
+                label = f"Assistant [{msg.agent_name}]"
+            else:
+                label = msg.role.capitalize()
+            lines.append(f"{label}: {msg.content}")
             lines.append("---")
         return "\n".join(lines)
 
@@ -423,14 +425,7 @@ class CanvasRunner:
 
         await send_event(self._event("run_start", canvas_id=str(self.canvas.id)))
 
-        await self._persist_message(
-            role="user",
-            content=user_prompt,
-            event_type="run_start",
-        )
-
         history_messages = await self._load_conversation_history()
-        history_text = self._format_history(history_messages)
 
         agent_ids = [n.id for n in self.canvas.agent_nodes]
 
@@ -439,15 +434,64 @@ class CanvasRunner:
         target_node = self.node_map.get(first_agent_id) if first_agent_id else None
         conv_history_enabled = target_node and self._needs_history(target_node)
 
-        # Build dspy.History from stored conversation messages when enabled
+        # Persist the system prompt as a system message so conversation history
+        # includes the agent's own instructions.  Only store it on the first
+        # turn (when no prior system message exists for this agent).
+        if target_node and conv_history_enabled:
+            already_has_system = any(
+                msg.role == "system" and msg.node_id == first_agent_id
+                for msg in history_messages
+            )
+            if not already_has_system:
+                role = target_node.role or ""
+                instructions = target_node.instructions or ""
+                if role and instructions:
+                    full_instructions = f"{role}\n\n{instructions}"
+                elif role:
+                    full_instructions = role
+                else:
+                    full_instructions = instructions or "You are a helpful AI agent."
+                await self._persist_message(
+                    role="system",
+                    content=full_instructions,
+                    agent_name=target_node.name,
+                    node_id=first_agent_id,
+                    event_type="system_prompt",
+                )
+                # Re-load history so the system message is included
+                history_messages = await self._load_conversation_history()
+
+        await self._persist_message(
+            role="user",
+            content=user_prompt,
+            event_type="run_start",
+        )
+
+        history_text = self._format_history(history_messages)
+
+        # Build dspy.History from stored conversation messages when enabled.
+        # Include system messages so the agent sees its own instructions from
+        # previous turns in the structured history.
         dspy_history = None
         if conv_history_enabled:
             dspy_messages = []
+            system_prefix = ""
             for msg in history_messages:
-                if msg.role == "user":
-                    dspy_messages.append({"user_request": msg.content})
+                if msg.role == "system":
+                    # Accumulate system instructions; they'll be prepended to
+                    # the first user message so dspy.History carries them.
+                    system_prefix += msg.content + "\n"
+                elif msg.role == "user":
+                    content = f"{system_prefix}{msg.content}" if system_prefix else msg.content
+                    dspy_messages.append({"user_request": content})
+                    system_prefix = ""
                 elif msg.role == "assistant":
                     dspy_messages.append({"process_result": msg.content})
+            # If there were only system messages (no user messages yet), still
+            # include them as a synthetic user message so the agent sees its
+            # instructions.
+            if system_prefix and not dspy_messages:
+                dspy_messages.append({"user_request": system_prefix.strip()})
             dspy_history = dspy.History(messages=dspy_messages)
 
         final_text = None
@@ -467,6 +511,13 @@ class CanvasRunner:
                     else:
                         result = await agent.aforward(user_request=prompt)
                     final_text = result.process_result
+                    await self._persist_message(
+                        role="assistant",
+                        content=final_text,
+                        agent_name=agent_node.name,
+                        node_id=target_agent_id,
+                        event_type="final_answer",
+                    )
                     await send_event(
                         self._event(
                             "final_answer",
@@ -503,6 +554,13 @@ class CanvasRunner:
                     else:
                         result = await agent.aforward(user_request=prompt)
                     final_text = result.process_result
+                    await self._persist_message(
+                        role="assistant",
+                        content=final_text,
+                        agent_name=first_node.name,
+                        node_id=first_node.id,
+                        event_type="final_answer",
+                    )
                     await send_event(
                         self._event(
                             "final_answer",
@@ -585,11 +643,10 @@ class CanvasRunner:
                         except Exception as e:
                             logger.warning("Failed to auto-store memory: %s", e)
 
-        if self.conversation_repo and self.conversation_id:
-            with contextlib.suppress(Exception):
-                await self.conversation_repo.complete_conversation(
-                    self.conversation_id
-                )
+        # Do NOT mark the conversation as "completed" here — the user
+        # may send more messages in the same conversation.  Conversations
+        # should stay "active" across multiple turns so that
+        # enable_conversation_history works correctly.
 
         logger.info(
             "Canvas execution completed: canvas_id=%s", self.canvas.id

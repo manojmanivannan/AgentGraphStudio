@@ -29,6 +29,8 @@ class FakeAgentNode:
         instructions="",
         model_name="ollama:llama3.1",
         agent_type="worker",
+        enable_conversation_history=False,
+        enable_memory=False,
     ):
         self.id = id or uuid.uuid4()
         self.name = name
@@ -36,6 +38,8 @@ class FakeAgentNode:
         self.instructions = instructions
         self.model_name = model_name
         self.agent_type = agent_type
+        self.enable_conversation_history = enable_conversation_history
+        self.enable_memory = enable_memory
         self.position_x = 0
         self.position_y = 0
 
@@ -299,7 +303,7 @@ class TestRunnerWithConversation:
         assert len(user_msgs) == 1
         assert user_msgs[0].content == "Hello world"
 
-    async def test_runner_completes_conversation(
+    async def test_runner_keeps_conversation_active(
         self, test_session, blank_canvas
     ):
         worker = FakeAgentNode(
@@ -324,7 +328,9 @@ class TestRunnerWithConversation:
         test_session.expire_all()
 
         fetched = await repo.get(conv_id)
-        assert fetched.status == "completed"
+        # Conversations should stay "active" so that multi-turn
+        # conversation history works correctly across messages.
+        assert fetched.status == "active"
 
     async def test_runner_injects_history_into_router(
         self, test_session, blank_canvas
@@ -427,6 +433,67 @@ class TestRunnerWithConversation:
         assert assistant_msgs[0].content == "Done!"
         assert assistant_msgs[0].agent_name == "Worker"
 
+    async def test_router_persists_final_answer(
+        self, test_session, blank_canvas
+    ):
+        master = FakeAgentNode(
+            id=uuid.uuid4(), name="Master", role="Router", agent_type="router"
+        )
+        worker = FakeAgentNode(
+            id=uuid.uuid4(), name="MathAgent", role="Math expert", agent_type="worker"
+        )
+        canvas = FakeCanvas(
+            agent_nodes=[master, worker],
+            edges=[FakeEdge(master.id, worker.id, "handoff")],
+        )
+
+        repo = ConversationRepo(test_session)
+        conv = await repo.create(canvas_id=blank_canvas.id, name="Test")
+        conv_id = conv.id
+
+        async def collect(event):
+            pass
+
+        runner = CanvasRunner(
+            canvas, conversation_repo=repo, conversation_id=conv_id
+        )
+        runner.setup = AsyncMock()
+        runner.node_map = {master.id: master, worker.id: worker}
+
+        worker_mock = self._make_agent_mock("42")
+        runner.agents[worker.id] = worker_mock
+
+        with patch.object(runner, "_build_router_agent") as mock_builder:
+            router_mock = self._make_router_mock(
+                "The answer is 42",
+                trajectory={
+                    "thought_0": "Math question, routing to MathAgent",
+                    "tool_name_0": "transfer_to_MathAgent",
+                    "tool_args_0": {"task": "what is 6*7?"},
+                    "observation_0": "42",
+                    "thought_1": "Got answer from MathAgent",
+                    "tool_name_1": "finish",
+                    "tool_args_1": {},
+                },
+            )
+            mock_builder.return_value = router_mock
+
+            await runner.run("what is 6*7?", collect)
+
+        await test_session.commit()
+        test_session.expire_all()
+
+        fetched = await repo.get(conv_id)
+        # The router's final answer should be persisted as an assistant message
+        assistant_msgs = [
+            m for m in fetched.messages if m.role == "assistant"
+        ]
+        router_msgs = [
+            m for m in assistant_msgs if m.agent_name == "Master"
+        ]
+        assert len(router_msgs) >= 1
+        assert "42" in router_msgs[0].content
+
     async def test_runner_with_target_agent_id_uses_specific_agent(self):
         master = FakeAgentNode(
             id=uuid.uuid4(), name="Master", role="Router", agent_type="router"
@@ -507,6 +574,134 @@ class TestRunnerWithConversation:
             assert "node_id" in event, (
                 f"Event {event['type']} missing node_id"
             )
+
+    async def test_runner_persists_system_prompt_when_history_enabled(
+        self, test_session, blank_canvas
+    ):
+        """When enable_conversation_history is true, the agent's system prompt
+        (role + instructions) should be persisted as a system message on the
+        first turn so it appears in conversation history on subsequent turns."""
+        master = FakeAgentNode(
+            id=uuid.uuid4(),
+            name="MasterAgent",
+            role="Routing Expert",
+            instructions="You route the questions to the sub agent.",
+            agent_type="router",
+            enable_conversation_history=True,
+        )
+        worker = FakeAgentNode(
+            id=uuid.uuid4(), name="MathAgent", role="Math expert", agent_type="worker"
+        )
+        canvas = FakeCanvas(
+            agent_nodes=[master, worker],
+            edges=[FakeEdge(master.id, worker.id, "handoff")],
+        )
+
+        repo = ConversationRepo(test_session)
+        conv = await repo.create(canvas_id=blank_canvas.id, name="Test")
+        conv_id = conv.id
+
+        async def collect(event):
+            pass
+
+        runner = CanvasRunner(
+            canvas, conversation_repo=repo, conversation_id=conv_id
+        )
+        runner.setup = AsyncMock()
+        runner.node_map = {master.id: master, worker.id: worker}
+
+        worker_mock = self._make_agent_mock("720")
+        runner.agents[worker.id] = worker_mock
+
+        with patch.object(runner, "_build_router_agent") as mock_builder:
+            router_mock = self._make_router_mock(
+                "The factorial of 6 is 720",
+                trajectory={
+                    "thought_0": "Math question",
+                    "tool_name_0": "finish",
+                    "tool_args_0": {},
+                },
+            )
+            mock_builder.return_value = router_mock
+
+            await runner.run("what is the factorial of 6?", collect)
+
+        await test_session.commit()
+        test_session.expire_all()
+
+        fetched = await repo.get(conv_id)
+        system_msgs = [m for m in fetched.messages if m.role == "system"]
+        assert len(system_msgs) == 1
+        assert "Routing Expert" in system_msgs[0].content
+        assert "route the questions" in system_msgs[0].content
+        assert system_msgs[0].agent_name == "MasterAgent"
+        assert system_msgs[0].event_type == "system_prompt"
+
+    async def test_runner_does_not_duplicate_system_prompt_on_second_turn(
+        self, test_session, blank_canvas
+    ):
+        """On the second turn, the system prompt should NOT be persisted again."""
+        master = FakeAgentNode(
+            id=uuid.uuid4(),
+            name="MasterAgent",
+            role="Routing Expert",
+            instructions="You route the questions to the sub agent.",
+            agent_type="router",
+            enable_conversation_history=True,
+        )
+        worker = FakeAgentNode(
+            id=uuid.uuid4(), name="MathAgent", role="Math expert", agent_type="worker"
+        )
+        canvas = FakeCanvas(
+            agent_nodes=[master, worker],
+            edges=[FakeEdge(master.id, worker.id, "handoff")],
+        )
+
+        repo = ConversationRepo(test_session)
+        conv = await repo.create(canvas_id=blank_canvas.id, name="Test")
+        conv_id = conv.id
+
+        async def collect(event):
+            pass
+
+        # --- Turn 1 ---
+        runner = CanvasRunner(
+            canvas, conversation_repo=repo, conversation_id=conv_id
+        )
+        runner.setup = AsyncMock()
+        runner.node_map = {master.id: master, worker.id: worker}
+        worker_mock = self._make_agent_mock("720")
+        runner.agents[worker.id] = worker_mock
+
+        with patch.object(runner, "_build_router_agent") as mock_builder:
+            router_mock = self._make_router_mock("720")
+            mock_builder.return_value = router_mock
+            await runner.run("what is the factorial of 6?", collect)
+
+        await test_session.commit()
+        test_session.expire_all()
+
+        # --- Turn 2 ---
+        runner2 = CanvasRunner(
+            canvas, conversation_repo=repo, conversation_id=conv_id
+        )
+        runner2.setup = AsyncMock()
+        runner2.node_map = {master.id: master, worker.id: worker}
+        worker_mock2 = self._make_agent_mock("6")
+        runner2.agents[worker.id] = worker_mock2
+
+        with patch.object(runner2, "_build_router_agent") as mock_builder2:
+            router_mock2 = self._make_router_mock("The number is 6")
+            mock_builder2.return_value = router_mock2
+            await runner2.run("which number are we talking about?", collect)
+
+        await test_session.commit()
+        test_session.expire_all()
+
+        fetched = await repo.get(conv_id)
+        system_msgs = [m for m in fetched.messages if m.role == "system"]
+        # Should still be exactly 1 system message — not duplicated on turn 2
+        assert len(system_msgs) == 1
 
     async def test_conversation_delete_cascades_from_canvas_delete(
         self, test_client, fresh_db, blank_canvas
