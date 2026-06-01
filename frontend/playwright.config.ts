@@ -26,6 +26,7 @@ export default defineConfig({
       reuseExistingServer: !process.env.CI,
       env: {
         DATABASE_URL: process.env.DATABASE_URL ?? "sqlite+aiosqlite:///./e2e_test.db",
+        MLFLOW_ENABLED: process.env.MLFLOW_ENABLED ?? "false",
       },
       timeout: 30_000,
     },

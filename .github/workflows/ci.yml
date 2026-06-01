@@ -79,4 +79,5 @@ jobs:
         working-directory: frontend
         env:
           DATABASE_URL: sqlite+aiosqlite:///./e2e_test.db
+          MLFLOW_ENABLED: "false"
         run: npm run test:e2e
