@@ -15,6 +15,10 @@ export default defineConfig({
     globals: true,
     setupFiles: ["./src/test/setup.ts"],
     exclude: ["e2e/**", "node_modules/**"],
+    reporters: [
+      "default",
+      ["junit", { outputFile: "junit/vitest-results.xml" }],
+    ],
     coverage: {
       provider: "v8",
       exclude: [
