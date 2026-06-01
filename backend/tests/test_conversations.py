@@ -575,12 +575,225 @@ class TestRunnerWithConversation:
                 f"Event {event['type']} missing node_id"
             )
 
-    async def test_runner_persists_system_prompt_when_history_enabled(
+    async def test_history_excludes_system_prompts_and_intermediate_agents(
         self, test_session, blank_canvas
     ):
-        """When enable_conversation_history is true, the agent's system prompt
-        (role + instructions) should be persisted as a system message on the
-        first turn so it appears in conversation history on subsequent turns."""
+        """Conversation history should only include user messages and final
+        answers from history-enabled agents.  System prompts and intermediate
+        sub-agent responses must be excluded."""
+        master_id = uuid.uuid4()
+        math_team_id = uuid.uuid4()
+        factorial_id = uuid.uuid4()
+
+        master = FakeAgentNode(
+            id=master_id,
+            name="MasterAgent",
+            role="Routing Expert",
+            instructions="You route questions.",
+            agent_type="router",
+            enable_conversation_history=True,
+        )
+        math_team = FakeAgentNode(
+            id=math_team_id,
+            name="MathTeam",
+            role="Math expert team",
+            agent_type="router",
+            enable_conversation_history=False,
+        )
+        factorial = FakeAgentNode(
+            id=factorial_id,
+            name="FactorialAgent",
+            role="FactorialExpert",
+            agent_type="worker",
+            enable_conversation_history=False,
+        )
+        canvas = FakeCanvas(
+            agent_nodes=[master, math_team, factorial],
+            edges=[
+                FakeEdge(master_id, math_team_id, "handoff"),
+                FakeEdge(math_team_id, factorial_id, "handoff"),
+            ],
+        )
+
+        repo = ConversationRepo(test_session)
+        conv = await repo.create(canvas_id=blank_canvas.id, name="Test")
+        conv_id = conv.id
+
+        # Pre-populate messages mimicking a real multi-agent run:
+        # - A system prompt (should be excluded from history)
+        # - A user message
+        # - FactorialAgent intermediate answer (excluded — no history)
+        # - MathTeam intermediate answer (excluded — no history)
+        # - MasterAgent final answer (included — has history)
+        await repo.add_message(
+            conversation_id=conv_id,
+            role="system",
+            content="Routing Expert\n\nYou route questions.",
+            agent_name="MasterAgent",
+            node_id=master_id,
+            event_type="system_prompt",
+        )
+        await repo.add_message(
+            conversation_id=conv_id,
+            role="user",
+            content="what is the factorial of 8",
+            event_type="run_start",
+        )
+        await repo.add_message(
+            conversation_id=conv_id,
+            role="assistant",
+            content="40320",
+            agent_name="FactorialAgent",
+            node_id=factorial_id,
+            event_type="final_answer",
+        )
+        await repo.add_message(
+            conversation_id=conv_id,
+            role="assistant",
+            content="The factorial of 8 (8!) is 40,320.",
+            agent_name="MathTeam",
+            node_id=math_team_id,
+            event_type="final_answer",
+        )
+        await repo.add_message(
+            conversation_id=conv_id,
+            role="assistant",
+            content="The factorial of 8 is 40,320.",
+            agent_name="MasterAgent",
+            node_id=master_id,
+            event_type="final_answer",
+        )
+        await test_session.commit()
+        test_session.expire_all()
+
+        runner = CanvasRunner(
+            canvas, conversation_repo=repo, conversation_id=conv_id
+        )
+        runner.setup = AsyncMock()
+        runner.node_map = {master_id: master, math_team_id: math_team, factorial_id: factorial}
+
+        # Load history and format it
+        history_messages = await runner._load_conversation_history()
+        history_enabled_ids = {
+            n.id for n in canvas.agent_nodes if n.enable_conversation_history
+        }
+        history_text = runner._format_history(
+            history_messages, history_enabled_node_ids=history_enabled_ids
+        )
+
+        # History should contain user + MasterAgent answer only
+        assert "User: what is the factorial of 8" in history_text
+        assert "Assistant [MasterAgent]" in history_text
+        assert "The factorial of 8 is 40,320" in history_text
+
+        # History should NOT contain system prompt or intermediate agents
+        assert "Routing Expert" not in history_text
+        assert "FactorialAgent" not in history_text
+        assert "40320" not in history_text
+        assert "MathTeam" not in history_text
+        assert "8!) is" not in history_text
+
+    async def test_dspy_history_excludes_intermediate_agents(
+        self, test_session, blank_canvas
+    ):
+        """dspy.History should only contain user/assistant pairs from
+        history-enabled agents — not system messages or sub-agent responses."""
+        import dspy
+
+        master_id = uuid.uuid4()
+        math_team_id = uuid.uuid4()
+
+        master = FakeAgentNode(
+            id=master_id,
+            name="MasterAgent",
+            role="Router",
+            agent_type="router",
+            enable_conversation_history=True,
+        )
+        math_team = FakeAgentNode(
+            id=math_team_id,
+            name="MathTeam",
+            role="Math expert",
+            agent_type="worker",
+            enable_conversation_history=False,
+        )
+        canvas = FakeCanvas(
+            agent_nodes=[master, math_team],
+            edges=[FakeEdge(master_id, math_team_id, "handoff")],
+        )
+
+        repo = ConversationRepo(test_session)
+        conv = await repo.create(canvas_id=blank_canvas.id, name="Test")
+        conv_id = conv.id
+
+        # Pre-populate: user asks, sub-agent answers, master summarizes
+        await repo.add_message(
+            conversation_id=conv_id,
+            role="system",
+            content="Router\n\nYou are a router.",
+            agent_name="MasterAgent",
+            node_id=master_id,
+            event_type="system_prompt",
+        )
+        await repo.add_message(
+            conversation_id=conv_id,
+            role="user",
+            content="what is 2+2?",
+            event_type="run_start",
+        )
+        await repo.add_message(
+            conversation_id=conv_id,
+            role="assistant",
+            content="4",
+            agent_name="MathTeam",
+            node_id=math_team_id,
+            event_type="final_answer",
+        )
+        await repo.add_message(
+            conversation_id=conv_id,
+            role="assistant",
+            content="The answer is 4.",
+            agent_name="MasterAgent",
+            node_id=master_id,
+            event_type="final_answer",
+        )
+        await test_session.commit()
+        test_session.expire_all()
+
+        runner = CanvasRunner(
+            canvas, conversation_repo=repo, conversation_id=conv_id
+        )
+        runner.setup = AsyncMock()
+        runner.node_map = {master_id: master, math_team_id: math_team}
+
+        history_messages = await runner._load_conversation_history()
+        history_enabled_ids = {
+            n.id for n in canvas.agent_nodes if n.enable_conversation_history
+        }
+
+        # Build dspy.History the same way run() does
+        dspy_messages = []
+        for msg in history_messages:
+            if msg.role == "system":
+                continue
+            elif msg.role == "user":
+                dspy_messages.append({"user_request": msg.content})
+            elif msg.role == "assistant":
+                if msg.node_id in history_enabled_ids:
+                    dspy_messages.append({"process_result": msg.content})
+        dspy_history = dspy.History(messages=dspy_messages)
+
+        # dspy.History should have exactly 2 entries: user request + master answer
+        assert len(dspy_history.messages) == 2
+        assert dspy_history.messages[0]["user_request"] == "what is 2+2?"
+        assert dspy_history.messages[1]["process_result"] == "The answer is 4."
+
+    async def test_no_system_prompt_persisted_when_history_enabled(
+        self, test_session, blank_canvas
+    ):
+        """System prompts should NOT be persisted as messages when
+        enable_conversation_history is true — they're already in the
+        DSPy signature instructions."""
         master = FakeAgentNode(
             id=uuid.uuid4(),
             name="MasterAgent",
@@ -631,77 +844,8 @@ class TestRunnerWithConversation:
 
         fetched = await repo.get(conv_id)
         system_msgs = [m for m in fetched.messages if m.role == "system"]
-        assert len(system_msgs) == 1
-        assert "Routing Expert" in system_msgs[0].content
-        assert "route the questions" in system_msgs[0].content
-        assert system_msgs[0].agent_name == "MasterAgent"
-        assert system_msgs[0].event_type == "system_prompt"
-
-    async def test_runner_does_not_duplicate_system_prompt_on_second_turn(
-        self, test_session, blank_canvas
-    ):
-        """On the second turn, the system prompt should NOT be persisted again."""
-        master = FakeAgentNode(
-            id=uuid.uuid4(),
-            name="MasterAgent",
-            role="Routing Expert",
-            instructions="You route the questions to the sub agent.",
-            agent_type="router",
-            enable_conversation_history=True,
-        )
-        worker = FakeAgentNode(
-            id=uuid.uuid4(), name="MathAgent", role="Math expert", agent_type="worker"
-        )
-        canvas = FakeCanvas(
-            agent_nodes=[master, worker],
-            edges=[FakeEdge(master.id, worker.id, "handoff")],
-        )
-
-        repo = ConversationRepo(test_session)
-        conv = await repo.create(canvas_id=blank_canvas.id, name="Test")
-        conv_id = conv.id
-
-        async def collect(event):
-            pass
-
-        # --- Turn 1 ---
-        runner = CanvasRunner(
-            canvas, conversation_repo=repo, conversation_id=conv_id
-        )
-        runner.setup = AsyncMock()
-        runner.node_map = {master.id: master, worker.id: worker}
-        worker_mock = self._make_agent_mock("720")
-        runner.agents[worker.id] = worker_mock
-
-        with patch.object(runner, "_build_router_agent") as mock_builder:
-            router_mock = self._make_router_mock("720")
-            mock_builder.return_value = router_mock
-            await runner.run("what is the factorial of 6?", collect)
-
-        await test_session.commit()
-        test_session.expire_all()
-
-        # --- Turn 2 ---
-        runner2 = CanvasRunner(
-            canvas, conversation_repo=repo, conversation_id=conv_id
-        )
-        runner2.setup = AsyncMock()
-        runner2.node_map = {master.id: master, worker.id: worker}
-        worker_mock2 = self._make_agent_mock("6")
-        runner2.agents[worker.id] = worker_mock2
-
-        with patch.object(runner2, "_build_router_agent") as mock_builder2:
-            router_mock2 = self._make_router_mock("The number is 6")
-            mock_builder2.return_value = router_mock2
-            await runner2.run("which number are we talking about?", collect)
-
-        await test_session.commit()
-        test_session.expire_all()
-
-        fetched = await repo.get(conv_id)
-        system_msgs = [m for m in fetched.messages if m.role == "system"]
-        # Should still be exactly 1 system message — not duplicated on turn 2
-        assert len(system_msgs) == 1
+        # No system prompt messages should be persisted
+        assert len(system_msgs) == 0
 
     async def test_conversation_delete_cascades_from_canvas_delete(
         self, test_client, fresh_db, blank_canvas

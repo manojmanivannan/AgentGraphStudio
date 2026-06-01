@@ -302,14 +302,22 @@ class CanvasRunner:
         node = self.node_map.get(agent_id)
         return node.name if node else "Unknown"
 
-    def _format_history(self, messages: list) -> str:
+    def _format_history(
+        self, messages: list, history_enabled_node_ids: set | None = None
+    ) -> str:
         if not messages:
             return ""
         lines = ["## Conversation History"]
         for msg in messages:
+            # System prompts are already in the DSPy signature — skip them
             if msg.role == "system":
-                label = f"System [{msg.agent_name}]" if msg.agent_name else "System"
-            elif msg.agent_name and msg.role == "assistant":
+                continue
+            # Only include assistant messages from agents with history enabled;
+            # intermediate sub-agent responses are internal implementation details.
+            if msg.role == "assistant" and history_enabled_node_ids is not None:
+                if msg.node_id not in history_enabled_node_ids:
+                    continue
+            if msg.agent_name and msg.role == "assistant":
                 label = f"Assistant [{msg.agent_name}]"
             else:
                 label = msg.role.capitalize()
@@ -434,32 +442,13 @@ class CanvasRunner:
         target_node = self.node_map.get(first_agent_id) if first_agent_id else None
         conv_history_enabled = target_node and self._needs_history(target_node)
 
-        # Persist the system prompt as a system message so conversation history
-        # includes the agent's own instructions.  Only store it on the first
-        # turn (when no prior system message exists for this agent).
-        if target_node and conv_history_enabled:
-            already_has_system = any(
-                msg.role == "system" and msg.node_id == first_agent_id
-                for msg in history_messages
-            )
-            if not already_has_system:
-                role = target_node.role or ""
-                instructions = target_node.instructions or ""
-                if role and instructions:
-                    full_instructions = f"{role}\n\n{instructions}"
-                elif role:
-                    full_instructions = role
-                else:
-                    full_instructions = instructions or "You are a helpful AI agent."
-                await self._persist_message(
-                    role="system",
-                    content=full_instructions,
-                    agent_name=target_node.name,
-                    node_id=first_agent_id,
-                    event_type="system_prompt",
-                )
-                # Re-load history so the system message is included
-                history_messages = await self._load_conversation_history()
+        # Compute which agents have history enabled — used to filter intermediate
+        # sub-agent responses from conversation history.  Only messages from
+        # history-enabled agents should appear; sub-agent responses are internal
+        # details that don't belong in the agent's conversation context.
+        history_enabled_node_ids = {
+            n.id for n in self.canvas.agent_nodes if self._needs_history(n)
+        }
 
         await self._persist_message(
             role="user",
@@ -467,31 +456,26 @@ class CanvasRunner:
             event_type="run_start",
         )
 
-        history_text = self._format_history(history_messages)
+        history_text = self._format_history(
+            history_messages, history_enabled_node_ids=history_enabled_node_ids
+        )
 
         # Build dspy.History from stored conversation messages when enabled.
-        # Include system messages so the agent sees its own instructions from
-        # previous turns in the structured history.
+        # Only include user messages and assistant messages from history-enabled
+        # agents.  System prompts are excluded — they're already in the DSPy
+        # signature instructions.  Intermediate sub-agent responses are excluded
+        # — only the final answers from history-enabled agents matter.
         dspy_history = None
         if conv_history_enabled:
             dspy_messages = []
-            system_prefix = ""
             for msg in history_messages:
                 if msg.role == "system":
-                    # Accumulate system instructions; they'll be prepended to
-                    # the first user message so dspy.History carries them.
-                    system_prefix += msg.content + "\n"
+                    continue
                 elif msg.role == "user":
-                    content = f"{system_prefix}{msg.content}" if system_prefix else msg.content
-                    dspy_messages.append({"user_request": content})
-                    system_prefix = ""
+                    dspy_messages.append({"user_request": msg.content})
                 elif msg.role == "assistant":
-                    dspy_messages.append({"process_result": msg.content})
-            # If there were only system messages (no user messages yet), still
-            # include them as a synthetic user message so the agent sees its
-            # instructions.
-            if system_prefix and not dspy_messages:
-                dspy_messages.append({"user_request": system_prefix.strip()})
+                    if msg.node_id in history_enabled_node_ids:
+                        dspy_messages.append({"process_result": msg.content})
             dspy_history = dspy.History(messages=dspy_messages)
 
         final_text = None
