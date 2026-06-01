@@ -27,7 +27,22 @@ jobs:
 
       - name: Test
         working-directory: backend
-        run: uv run pytest tests/ -v
+        run: uv run pytest tests/ -v --junitxml=junit/test-results.xml
+
+      - name: Publish test results
+        if: always()
+        uses: dorny/test-reporter@v1
+        with:
+          name: Backend Tests (pytest)
+          path: backend/junit/test-results.xml
+          reporter: java-junit
+
+      - name: Upload test results artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-test-results
+          path: backend/junit/
 
   frontend-unit:
     runs-on: ubuntu-latest
@@ -47,6 +62,21 @@ jobs:
       - name: Unit & component tests (with coverage)
         working-directory: frontend
         run: npm run test:coverage
+
+      - name: Publish test results
+        if: always()
+        uses: dorny/test-reporter@v1
+        with:
+          name: Frontend Unit Tests (vitest)
+          path: frontend/junit/vitest-results.xml
+          reporter: java-junit
+
+      - name: Upload test results artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-unit-test-results
+          path: frontend/junit/
 
   frontend-e2e:
     runs-on: ubuntu-latest
@@ -81,3 +111,18 @@ jobs:
           DATABASE_URL: sqlite+aiosqlite:///./e2e_test.db
           MLFLOW_ENABLED: "false"
         run: npm run test:e2e
+
+      - name: Publish test results
+        if: always()
+        uses: dorny/test-reporter@v1
+        with:
+          name: Frontend E2E Tests (Playwright)
+          path: frontend/junit/e2e-results.xml
+          reporter: java-junit
+
+      - name: Upload test results artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-e2e-test-results
+          path: frontend/junit/
