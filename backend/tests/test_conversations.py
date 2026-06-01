@@ -8,7 +8,11 @@ from canvas_server.runner import CanvasRunner
 
 
 def _make_prediction(process_result="", trajectory=None):
-    trajectory = trajectory or {"thought_0": "", "tool_name_0": "finish", "tool_args_0": {}}
+    trajectory = trajectory or {
+        "thought_0": "",
+        "tool_name_0": "finish",
+        "tool_args_0": {},
+    }
     return dspy.Prediction(process_result=process_result, trajectory=trajectory)
 
 
@@ -89,21 +93,15 @@ class TestConversationAPI:
             f"/api/canvases/{blank_canvas.id}/conversations", json={"name": "C2"}
         )
 
-        resp = await test_client.get(
-            f"/api/canvases/{blank_canvas.id}/conversations"
-        )
+        resp = await test_client.get(f"/api/canvases/{blank_canvas.id}/conversations")
         assert resp.status_code == 200
         data = resp.json()
         assert len(data) == 2
         names = {c["name"] for c in data}
         assert names == {"C1", "C2"}
 
-    async def test_list_conversations_empty(
-        self, test_client, fresh_db, blank_canvas
-    ):
-        resp = await test_client.get(
-            f"/api/canvases/{blank_canvas.id}/conversations"
-        )
+    async def test_list_conversations_empty(self, test_client, fresh_db, blank_canvas):
+        resp = await test_client.get(f"/api/canvases/{blank_canvas.id}/conversations")
         assert resp.status_code == 200
         assert resp.json() == []
 
@@ -172,9 +170,7 @@ class TestConversationAPI:
 
 
 class TestConversationRepo:
-    async def test_complete_conversation_sets_status(
-        self, test_session, blank_canvas
-    ):
+    async def test_complete_conversation_sets_status(self, test_session, blank_canvas):
         repo = ConversationRepo(test_session)
         conv = await repo.create(canvas_id=blank_canvas.id, name="Test Conv")
         conv_id = conv.id
@@ -186,9 +182,7 @@ class TestConversationRepo:
         fetched = await repo.get(conv_id)
         assert fetched.status == "completed"
 
-    async def test_get_conversation_includes_messages(
-        self, test_session, blank_canvas
-    ):
+    async def test_get_conversation_includes_messages(self, test_session, blank_canvas):
         repo = ConversationRepo(test_session)
         conv = await repo.create(canvas_id=blank_canvas.id, name="Test Conv")
         conv_id = conv.id
@@ -274,12 +268,8 @@ class TestRunnerWithConversation:
         runner.agents[worker.id] = self._make_agent_mock(text)
         return runner
 
-    async def test_runner_persists_user_message(
-        self, test_session, blank_canvas
-    ):
-        worker = FakeAgentNode(
-            id=uuid.uuid4(), name="Worker", agent_type="worker"
-        )
+    async def test_runner_persists_user_message(self, test_session, blank_canvas):
+        worker = FakeAgentNode(id=uuid.uuid4(), name="Worker", agent_type="worker")
         canvas = FakeCanvas(agent_nodes=[worker])
 
         repo = ConversationRepo(test_session)
@@ -303,12 +293,8 @@ class TestRunnerWithConversation:
         assert len(user_msgs) == 1
         assert user_msgs[0].content == "Hello world"
 
-    async def test_runner_keeps_conversation_active(
-        self, test_session, blank_canvas
-    ):
-        worker = FakeAgentNode(
-            id=uuid.uuid4(), name="Worker", agent_type="worker"
-        )
+    async def test_runner_keeps_conversation_active(self, test_session, blank_canvas):
+        worker = FakeAgentNode(id=uuid.uuid4(), name="Worker", agent_type="worker")
         canvas = FakeCanvas(agent_nodes=[worker])
 
         repo = ConversationRepo(test_session)
@@ -332,9 +318,7 @@ class TestRunnerWithConversation:
         # conversation history works correctly across messages.
         assert fetched.status == "active"
 
-    async def test_runner_injects_history_into_router(
-        self, test_session, blank_canvas
-    ):
+    async def test_runner_injects_history_into_router(self, test_session, blank_canvas):
         master = FakeAgentNode(
             id=uuid.uuid4(), name="Master", role="Router", agent_type="router"
         )
@@ -366,9 +350,7 @@ class TestRunnerWithConversation:
         async def collect(event):
             pass
 
-        runner = CanvasRunner(
-            canvas, conversation_repo=repo, conversation_id=conv_id
-        )
+        runner = CanvasRunner(canvas, conversation_repo=repo, conversation_id=conv_id)
         runner.setup = AsyncMock()
         runner.node_map = {master.id: master, worker.id: worker}
 
@@ -396,17 +378,13 @@ class TestRunnerWithConversation:
         test_session.expire_all()
 
         fetched = await repo.get(conv_id)
-        assistant_msgs = [
-            m for m in fetched.messages if m.role == "assistant"
-        ]
+        assistant_msgs = [m for m in fetched.messages if m.role == "assistant"]
         assert len(assistant_msgs) >= 1
 
     async def test_runner_worker_persists_final_answer(
         self, test_session, blank_canvas
     ):
-        worker = FakeAgentNode(
-            id=uuid.uuid4(), name="Worker", agent_type="worker"
-        )
+        worker = FakeAgentNode(id=uuid.uuid4(), name="Worker", agent_type="worker")
         canvas = FakeCanvas(agent_nodes=[worker])
 
         repo = ConversationRepo(test_session)
@@ -426,16 +404,12 @@ class TestRunnerWithConversation:
         test_session.expire_all()
 
         fetched = await repo.get(conv_id)
-        assistant_msgs = [
-            m for m in fetched.messages if m.role == "assistant"
-        ]
+        assistant_msgs = [m for m in fetched.messages if m.role == "assistant"]
         assert len(assistant_msgs) >= 1
         assert assistant_msgs[0].content == "Done!"
         assert assistant_msgs[0].agent_name == "Worker"
 
-    async def test_router_persists_final_answer(
-        self, test_session, blank_canvas
-    ):
+    async def test_router_persists_final_answer(self, test_session, blank_canvas):
         master = FakeAgentNode(
             id=uuid.uuid4(), name="Master", role="Router", agent_type="router"
         )
@@ -454,9 +428,7 @@ class TestRunnerWithConversation:
         async def collect(event):
             pass
 
-        runner = CanvasRunner(
-            canvas, conversation_repo=repo, conversation_id=conv_id
-        )
+        runner = CanvasRunner(canvas, conversation_repo=repo, conversation_id=conv_id)
         runner.setup = AsyncMock()
         runner.node_map = {master.id: master, worker.id: worker}
 
@@ -485,12 +457,8 @@ class TestRunnerWithConversation:
 
         fetched = await repo.get(conv_id)
         # The router's final answer should be persisted as an assistant message
-        assistant_msgs = [
-            m for m in fetched.messages if m.role == "assistant"
-        ]
-        router_msgs = [
-            m for m in assistant_msgs if m.agent_name == "Master"
-        ]
+        assistant_msgs = [m for m in fetched.messages if m.role == "assistant"]
+        router_msgs = [m for m in assistant_msgs if m.agent_name == "Master"]
         assert len(router_msgs) >= 1
         assert "42" in router_msgs[0].content
 
@@ -521,7 +489,9 @@ class TestRunnerWithConversation:
         await runner.run("do work", collect, target_agent_id=worker.id)
 
         agent_starts = [e for e in events if e["type"] == "agent_start"]
-        assert len(agent_starts) == 0  # attached events don't fire agent_start for workers
+        assert (
+            len(agent_starts) == 0
+        )  # attached events don't fire agent_start for workers
         assert "run_complete" in [e["type"] for e in events]
 
     async def test_runner_events_include_node_ids(self):
@@ -571,9 +541,7 @@ class TestRunnerWithConversation:
                 "run_complete",
             ):
                 continue
-            assert "node_id" in event, (
-                f"Event {event['type']} missing node_id"
-            )
+            assert "node_id" in event, f"Event {event['type']} missing node_id"
 
     async def test_history_excludes_system_prompts_and_intermediate_agents(
         self, test_session, blank_canvas
@@ -666,11 +634,13 @@ class TestRunnerWithConversation:
         await test_session.commit()
         test_session.expire_all()
 
-        runner = CanvasRunner(
-            canvas, conversation_repo=repo, conversation_id=conv_id
-        )
+        runner = CanvasRunner(canvas, conversation_repo=repo, conversation_id=conv_id)
         runner.setup = AsyncMock()
-        runner.node_map = {master_id: master, math_team_id: math_team, factorial_id: factorial}
+        runner.node_map = {
+            master_id: master,
+            math_team_id: math_team,
+            factorial_id: factorial,
+        }
 
         # Load history and format it
         history_messages = await runner._load_conversation_history()
@@ -760,9 +730,7 @@ class TestRunnerWithConversation:
         await test_session.commit()
         test_session.expire_all()
 
-        runner = CanvasRunner(
-            canvas, conversation_repo=repo, conversation_id=conv_id
-        )
+        runner = CanvasRunner(canvas, conversation_repo=repo, conversation_id=conv_id)
         runner.setup = AsyncMock()
         runner.node_map = {master_id: master, math_team_id: math_team}
 
@@ -778,9 +746,8 @@ class TestRunnerWithConversation:
                 continue
             elif msg.role == "user":
                 dspy_messages.append({"user_request": msg.content})
-            elif msg.role == "assistant":
-                if msg.node_id in history_enabled_ids:
-                    dspy_messages.append({"process_result": msg.content})
+            elif msg.role == "assistant" and msg.node_id in history_enabled_ids:
+                dspy_messages.append({"process_result": msg.content})
         dspy_history = dspy.History(messages=dspy_messages)
 
         # dspy.History should have exactly 2 entries: user request + master answer
@@ -817,9 +784,7 @@ class TestRunnerWithConversation:
         async def collect(event):
             pass
 
-        runner = CanvasRunner(
-            canvas, conversation_repo=repo, conversation_id=conv_id
-        )
+        runner = CanvasRunner(canvas, conversation_repo=repo, conversation_id=conv_id)
         runner.setup = AsyncMock()
         runner.node_map = {master.id: master, worker.id: worker}
 
@@ -856,9 +821,7 @@ class TestRunnerWithConversation:
         )
         conv_id = create_resp.json()["id"]
 
-        del_resp = await test_client.delete(
-            f"/api/canvases/{blank_canvas.id}"
-        )
+        del_resp = await test_client.delete(f"/api/canvases/{blank_canvas.id}")
         assert del_resp.status_code == 204
 
         get_resp = await test_client.get(
