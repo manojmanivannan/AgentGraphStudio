@@ -1,8 +1,22 @@
-# Canvas — Visual AI Agent Workflow Builder
+# Agent Builder — Visual AI Workflow Canvas
 
 ![Canvas](./canvas_screen.png)
 
-Visual canvas for composing and executing AI agent workflows. Drag agent and tool nodes, wire them with edges, and run multi-agent teams powered by [DSPy](https://dspy.ai/).
+Visual canvas for composing and executing AI agent workflows. Drag agent and tool
+nodes, wire them with edges, and run multi-agent teams powered by
+[DSPy](https://dspy.ai/).
+
+---
+
+## Documentation
+
+| Document | Description |
+|---|---|
+| **[CLAUDE.md](./CLAUDE.md)** | Developer context — where things live, data flow, change recipes, TDD requirements |
+| **[docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md)** | Full architecture — tech stack, database schema, execution engine, frontend, testing |
+| **[CONTEXT.md](./CONTEXT.md)** | Canonical glossary of domain terms |
+
+---
 
 ## Quick Start
 
@@ -10,56 +24,80 @@ Visual canvas for composing and executing AI agent workflows. Drag agent and too
 docker compose up
 ```
 
-Launches PostgreSQL (pgvector), backend (port 8000), frontend (port 5173), and MLflow (port 5000). Open `http://localhost:5173`.
+Launches PostgreSQL (pgvector), backend (port 8000), frontend (port 5173), and
+MLflow (port 5000). Open `http://localhost:5173`.
 
-## Architecture
+> **Requires an LLM backend.** Defaults to Ollama on the host machine (`http://192.168.1.120:11434`).
+> Configure via `backend/.env`. See [Configuration](#configuration) below.
 
-- **Frontend:** React 19 + TypeScript + Vite, ReactFlow canvas, Tailwind CSS, zustand state
-- **Backend:** Python 3.12+ / FastAPI, DSPy for agent execution, WebSocket streaming
-- **Database:** PostgreSQL 17 + pgvector (asyncpg)
-- **LLM:** Configurable per agent — defaults to Ollama (`ollama_chat/gemma4:31b`)
-- **Memory:** mem0 with Qdrant vector store, per-agent memory instances
-- **Observability:** MLflow DSPy autolog for tracing
+---
 
-### Layout & UX
+## What This Is
 
-The workspace has four zones:
+This is an **agent builder** — a visual IDE for creating multi-agent AI workflows:
 
-| Zone | Description |
-|---|---|
-| **CanvasToolbar** (top) | Add agents/tools, clear, import/export workflows |
-| **CanvasView** (center) | Drag-and-drop agent/tool nodes, wire edges |
-| **PropertiesSidebar** (collapsible, w-12/w-64) | Edit agent role, instructions, model, or tool code |
-| **ChatPanel** (right, w-96) | Per-conversation chat, streaming, node highlighting |
+1. **Drag agents** onto a canvas — each with a role, instructions, and model
+2. **Wire tools** — write Python functions agents can call
+3. **Connect agents** — handoffs let one agent delegate to another
+4. **Run** — watch agents reason, call tools, and collaborate in real-time
 
-Agent and tool nodes glow green when active during execution.
+**Two agent types:**
+- **Workers** — execute tasks by reasoning and calling tools (DSPy ReAct loop)
+- **Routers** — orchestrate by handing off tasks to other agents
 
-### Conversations
+---
 
-Each canvas has persistent conversations (chat threads). Full conversation history is injected as context for follow-up messages. Messages are stored with role, agent name, node ID, and event type.
+## Quick Start (Without Docker)
 
-### Agent Execution Model
+### Backend
 
-- **Worker agents** are DSPy `ReAct` modules — they reason through tool calls iteratively
-- **Router agents** orchestrate — they delegate tasks to worker sub-agents via handoff tools (plain async callables)
-- Execution starts from the first agent node, or a specific agent (`target_agent_id`)
-- All events stream over WebSocket with `node_id` for real-time canvas highlighting
-- Sub-agent outputs appear as tool results; the final answer comes from the router agent
-- Thoughts are collapsed by default (click to expand)
+```bash
+cd backend
+python -m venv .venv && source .venv/bin/activate
+pip install uv && uv sync
+uv run alembic upgrade head
+uv run uvicorn canvas_server.main:app --reload
+```
 
-### Memory
+### Frontend
 
-Agents can optionally enable per-agent memory powered by mem0. When enabled, three memory tools are automatically attached:
+```bash
+cd frontend
+npm install
+npm run dev
+```
 
-| Tool | Description |
-|---|---|
-| `memory_search` | Search stored memories by query |
-| `memory_store` | Store a new memory |
-| `memory_get_all` | Retrieve all stored memories |
+### Database
 
-### Observability
+Requires PostgreSQL 17 with pgvector running on localhost:5432:
+```
+createdb canvas_db
+```
 
-MLflow DSPy autolog captures all agent calls, tool invocations, and LLM interactions. The built-in ObservabilityView embeds the MLflow UI directly in the canvas.
+Or use SQLite for development (set `DATABASE_URL=sqlite+aiosqlite:///dev.db`).
+
+---
+
+## Architecture Overview
+
+- **Frontend:** React 19 + TypeScript + Vite, ReactFlow canvas, Tailwind CSS, zustand
+- **Backend:** Python 3.12+ / FastAPI, **DSPy** for agent execution, WebSocket streaming
+- **Database:** PostgreSQL 17 + pgvector (asyncpg), SQLite for tests
+- **LLM:** Configurable per agent — defaults to Ollama
+- **Memory:** mem0 + Qdrant vector store, per-agent via `user_id` scoping
+- **Observability:** MLflow DSPy autolog
+
+### Layout
+
+| Zone | Size | Description |
+|---|---|---|
+| **TopBar** | top, h=40 | Canvas name, save status, observability/chat toggles |
+| **SidebarRail** | left, w=48 | Add agent/tool, clear, export/import, theme |
+| **CanvasView** | center w/h | ReactFlow: drag agents, tools, edges |
+| **PropertiesOverlay** | right, w=320 | Edits selected agent/tool properties |
+| **ChatOverlay** | right, w=400 | Conversations, streaming output |
+
+---
 
 ## Configuration
 
@@ -70,6 +108,40 @@ MLflow DSPy autolog captures all agent calls, tool invocations, and LLM interact
 | `LLM_BASE_URL` | `http://192.168.1.120:11434` | LLM server URL |
 | `LLM_MODEL` | `ollama_chat/gemma4:31b` | Default model for agents |
 | `MLFLOW_TRACKING_URI` | `http://mlflow:5000` | MLflow server URL |
+| `MLFLOW_ENABLED` | `true` | Set `false` to skip MLflow init (CI) |
 | `MEM0_LLM_MODEL` | `gemma4:31b` | Model used by mem0 |
 | `MEM0_EMBEDDER_MODEL` | `nomic-embed-text` | Embedding model for mem0 |
+| `DATABASE_URL` | `postgresql+asyncpg://...` | Override for SQLite testing |
+| `CORS_ORIGINS` | `["http://localhost:5173"]` | Allowed origins |
+
+---
+
+## Development
+
+### Backend Tests
+```bash
+cd backend
+uv run pytest -v
+```
+
+### Frontend Tests
+```bash
+cd frontend
+npx vitest run
+npx vitest run --coverage    # Coverage report
+npx tsc --noEmit             # Type checking
+```
+
+### E2E Tests
+```bash
+cd frontend
+npm run test:e2e
+```
+
+### Migrations
+```bash
+cd backend
+uv run alembic revision --autogenerate -m "description"
+uv run alembic upgrade head
+```
 
