@@ -357,7 +357,7 @@ class TestRunnerWithConversation:
         worker_mock = self._make_agent_mock("21")
         runner.agents[worker.id] = worker_mock
 
-        with patch.object(runner, "_build_router_agent") as mock_builder:
+        with patch.object(runner._agent_factory, "build_router") as mock_builder:
             router_mock = self._make_router_mock(
                 "21",
                 trajectory={
@@ -435,7 +435,7 @@ class TestRunnerWithConversation:
         worker_mock = self._make_agent_mock("42")
         runner.agents[worker.id] = worker_mock
 
-        with patch.object(runner, "_build_router_agent") as mock_builder:
+        with patch.object(runner._agent_factory, "build_router") as mock_builder:
             router_mock = self._make_router_mock(
                 "The answer is 42",
                 trajectory={
@@ -450,7 +450,7 @@ class TestRunnerWithConversation:
             )
             mock_builder.return_value = router_mock
 
-            await runner.run("what is 6*7?", collect)
+            await runner.run("what is 6*7?", collect, target_agent_id=master.id)
 
         await test_session.commit()
         test_session.expire_all()
@@ -518,7 +518,7 @@ class TestRunnerWithConversation:
         worker_mock = self._make_agent_mock("4")
         runner.agents[worker.id] = worker_mock
 
-        with patch.object(runner, "_build_router_agent") as mock_builder:
+        with patch.object(runner._agent_factory, "build_router") as mock_builder:
             router_mock = self._make_router_mock(
                 "4",
                 trajectory={
@@ -643,11 +643,11 @@ class TestRunnerWithConversation:
         }
 
         # Load history and format it
-        history_messages = await runner._load_conversation_history()
+        history_messages = await runner._conversation.load_messages()
         history_enabled_ids = {
             n.id for n in canvas.agent_nodes if n.enable_conversation_history
         }
-        history_text = runner._format_history(
+        history_text = runner._conversation.format_history(
             history_messages, history_enabled_node_ids=history_enabled_ids
         )
 
@@ -734,7 +734,7 @@ class TestRunnerWithConversation:
         runner.setup = AsyncMock()
         runner.node_map = {master_id: master, math_team_id: math_team}
 
-        history_messages = await runner._load_conversation_history()
+        history_messages = await runner._conversation.load_messages()
         history_enabled_ids = {
             n.id for n in canvas.agent_nodes if n.enable_conversation_history
         }
@@ -791,7 +791,7 @@ class TestRunnerWithConversation:
         worker_mock = self._make_agent_mock("720")
         runner.agents[worker.id] = worker_mock
 
-        with patch.object(runner, "_build_router_agent") as mock_builder:
+        with patch.object(runner._agent_factory, "build_router") as mock_builder:
             router_mock = self._make_router_mock(
                 "The factorial of 6 is 720",
                 trajectory={

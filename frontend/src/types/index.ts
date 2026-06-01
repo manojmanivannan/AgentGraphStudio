@@ -19,7 +19,7 @@ export type ExecutionEvent =
   | { type: "run_start"; canvas_id: string; node_id?: string }
   | { type: "agent_start"; agent: string; agentType?: string; node_id?: string }
   | { type: "thought"; agent: string; content: string; node_id?: string }
-  | { type: "tool_call"; agent: string; tool: string; input: Record<string, unknown>; node_id?: string }
+  | { type: "tool_start"; agent: string; tool: string; input?: Record<string, unknown>; node_id?: string }
   | { type: "tool_result"; agent: string; tool: string; output: string; node_id?: string }
   | { type: "handoff"; from: string; to: string; node_id?: string }
   | { type: "final_answer"; agent?: string; content: string; node_id?: string }
