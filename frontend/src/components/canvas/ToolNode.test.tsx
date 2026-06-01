@@ -53,12 +53,12 @@ describe("ToolNode", () => {
   it("applies active pulse style when node is the active execution node", () => {
     useCanvasStore.getState().setActiveNodeId("tool-1");
     const { container } = render(<ToolNode {...makeProps({ id: "tool-1" })} />);
-    expect(container.firstChild).toHaveClass("animate-pulse");
+    expect(container.firstChild).toHaveClass("glow-active-pulse");
   });
 
   it("does not apply active pulse when node is not the active execution node", () => {
     useCanvasStore.getState().setActiveNodeId("other-node");
     const { container } = render(<ToolNode {...makeProps({ id: "tool-1" })} />);
-    expect(container.firstChild).not.toHaveClass("animate-pulse");
+    expect(container.firstChild).not.toHaveClass("glow-active-pulse");
   });
 });
