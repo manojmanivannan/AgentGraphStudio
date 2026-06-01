@@ -475,11 +475,17 @@ html[data-theme="light"] .rail-popover {
 @keyframes pulseGlow {
   0%,
   100% {
-    box-shadow: 0 0 8px -2px rgba(20, 184, 166, 0.2);
+    box-shadow: 0 0 0 1px rgba(239, 68, 68, 1),
+      0 0 24px -2px rgba(239, 68, 68, 0.25);
   }
   50% {
-    box-shadow: 0 0 16px -2px rgba(20, 184, 166, 0.4);
+    box-shadow: 0 0 0 1px rgba(239, 68, 68, 1),
+      0 0 48px 0px rgba(239, 68, 68, 0.5);
   }
+}
+
+.glow-active-pulse {
+  animation: pulseGlow 1.8s ease-in-out infinite;
 }
 
 @keyframes shimmer {
