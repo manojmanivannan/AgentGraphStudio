@@ -211,7 +211,7 @@ class TestCanvasRunner:
         #     },
         # )
 
-        with patch.object(runner, "_build_router_agent") as mock_builder:
+        with patch.object(runner._agent_factory, "build_router") as mock_builder:
             router_mock = _make_router_mock(
                 "The answer is 5",
                 trajectory={
@@ -226,7 +226,8 @@ class TestCanvasRunner:
             )
             mock_builder.return_value = router_mock
 
-            await runner.run("what is 2+3", collect)
+            # Use target_agent_id so RouterExecution is selected (not ChainExecution)
+            await runner.run("what is 2+3", collect, target_agent_id=master.id)
 
         event_types = [e["type"] for e in events]
         assert "run_start" in event_types
@@ -292,7 +293,7 @@ class TestCanvasRunner:
         runner.setup = AsyncMock()
         runner.node_map = {master.id: master}
 
-        with patch.object(runner, "_build_router_agent") as mock_builder:
+        with patch.object(runner._agent_factory, "build_router") as mock_builder:
             router_mock = _make_router_mock(
                 "The answer is 42",
                 trajectory={
@@ -303,7 +304,7 @@ class TestCanvasRunner:
             )
             mock_builder.return_value = router_mock
 
-            await runner.run("what is the answer?", collect)
+            await runner.run("what is the answer?", collect, target_agent_id=master.id)
 
         final_answers = [e for e in events if e["type"] == "final_answer"]
         assert len(final_answers) >= 1
