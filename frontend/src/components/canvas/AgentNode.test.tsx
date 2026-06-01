@@ -71,12 +71,12 @@ describe("AgentNode", () => {
   it("applies active pulse style when node is the active execution node", () => {
     useCanvasStore.getState().setActiveNodeId("node-1");
     const { container } = render(<AgentNode {...makeProps({ id: "node-1" })} />);
-    expect(container.firstChild).toHaveClass("animate-pulse");
+    expect(container.firstChild).toHaveClass("glow-active-pulse");
   });
 
   it("does not apply active pulse when node is not the active execution node", () => {
     useCanvasStore.getState().setActiveNodeId("other-node");
     const { container } = render(<AgentNode {...makeProps({ id: "node-1" })} />);
-    expect(container.firstChild).not.toHaveClass("animate-pulse");
+    expect(container.firstChild).not.toHaveClass("glow-active-pulse");
   });
 });
