@@ -55,7 +55,7 @@ test.describe("Canvas Nodes — static rendering", () => {
     await expect(toolNode.getByText(/def run/)).toBeVisible();
   });
 
-  test("clicking an agent node selects it (blue ring visible)", async ({
+  test("clicking an agent node selects it (accent ring visible)", async ({
     page,
     canvasWithWorkflow: { researcherId },
   }) => {
@@ -64,8 +64,8 @@ test.describe("Canvas Nodes — static rendering", () => {
     );
     await node.click();
 
-    // Selected node has border-blue-500 class applied
-    await expect(node).toHaveClass(/border-blue-500/, { timeout: 3000 });
+    // Selected node gets the accent border via the `selected` prop
+    await expect(node).toHaveClass(/border-\[var\(--color-accent\)\]/, { timeout: 3000 });
   });
 });
 
