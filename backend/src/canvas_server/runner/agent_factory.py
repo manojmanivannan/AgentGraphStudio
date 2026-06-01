@@ -66,13 +66,16 @@ class AgentFactory:
             )
 
         if getattr(agent_node, "enable_conversation_history", False):
+
             class _AgentSig(dspy.Signature):
                 user_request: str = dspy.InputField()
                 history: dspy.History = dspy.InputField()
                 process_result: str = dspy.OutputField(
                     desc="Final answer summarizing the result and information the user needs"
                 )
+
         else:
+
             class _AgentSig(dspy.Signature):
                 user_request: str = dspy.InputField()
                 process_result: str = dspy.OutputField(
@@ -107,17 +110,21 @@ class AgentFactory:
 
         memory_provider = self._memory_manager.build_provider(agent_node)
         if memory_provider:
-            tools.extend([
-                memory_provider.search_memories,
-                memory_provider.store_memory,
-                memory_provider.get_all_memories,
-            ])
+            tools.extend(
+                [
+                    memory_provider.search_memories,
+                    memory_provider.store_memory,
+                    memory_provider.get_all_memories,
+                ]
+            )
 
         signature = self.build_signature(agent_node)
         agent = StreamingReAct(signature, tools=tools)
         logger.debug(
             "  built worker: id=%s name=%s tools=%d",
-            agent_node.id, agent_node.name, len(tools),
+            agent_node.id,
+            agent_node.name,
+            len(tools),
         )
         return agent
 
@@ -146,11 +153,13 @@ class AgentFactory:
 
         memory_provider = self._memory_manager.build_provider(agent_node)
         if memory_provider:
-            tools.extend([
-                memory_provider.search_memories,
-                memory_provider.store_memory,
-                memory_provider.get_all_memories,
-            ])
+            tools.extend(
+                [
+                    memory_provider.search_memories,
+                    memory_provider.store_memory,
+                    memory_provider.get_all_memories,
+                ]
+            )
 
         handoff_targets = await self._get_handoff_target_ids(agent_node.id)
         handoff_tools = [

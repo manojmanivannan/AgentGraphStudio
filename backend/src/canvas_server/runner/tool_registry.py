@@ -30,9 +30,7 @@ class ToolRegistry:
         Failed compilations are logged and skipped — one bad tool doesn't
         prevent the rest from being compiled.
         """
-        logger.debug(
-            "Building tools from %d tool nodes", len(tool_nodes)
-        )
+        logger.debug("Building tools from %d tool nodes", len(tool_nodes))
         for tool_node in tool_nodes:
             try:
                 fn = await compile_tool_from_code(tool_node.name, tool_node.code)

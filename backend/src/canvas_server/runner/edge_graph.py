@@ -32,6 +32,8 @@ class EdgeGraph:
         targets = self.get_handoff_targets(agent_id)
         return targets[0] if targets else None
 
-    def build_handoff_map(self, agent_ids: list[uuid.UUID]) -> dict[uuid.UUID, list[uuid.UUID]]:
+    def build_handoff_map(
+        self, agent_ids: list[uuid.UUID]
+    ) -> dict[uuid.UUID, list[uuid.UUID]]:
         """Return ``{agent_id: [handoff_target_ids]}`` for every agent in *agent_ids*."""
         return {aid: self.get_handoff_targets(aid) for aid in agent_ids}
