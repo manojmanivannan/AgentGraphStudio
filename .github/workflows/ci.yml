@@ -9,6 +9,9 @@ on:
 jobs:
   lint-and-test:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      checks: write
     steps:
       - uses: actions/checkout@v4
 
@@ -36,6 +39,7 @@ jobs:
           name: Backend Tests (pytest)
           path: backend/junit/test-results.xml
           reporter: java-junit
+          fail-on-error: false
 
       - name: Upload test results artifact
         if: always()
@@ -46,6 +50,9 @@ jobs:
 
   frontend-unit:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      checks: write
     steps:
       - uses: actions/checkout@v4
 
@@ -70,6 +77,7 @@ jobs:
           name: Frontend Unit Tests (vitest)
           path: frontend/junit/vitest-results.xml
           reporter: java-junit
+          fail-on-error: false
 
       - name: Upload test results artifact
         if: always()
@@ -80,6 +88,9 @@ jobs:
 
   frontend-e2e:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      checks: write
     steps:
       - uses: actions/checkout@v4
 
@@ -119,6 +130,7 @@ jobs:
           name: Frontend E2E Tests (Playwright)
           path: frontend/junit/e2e-results.xml
           reporter: java-junit
+          fail-on-error: false
 
       - name: Upload test results artifact
         if: always()
