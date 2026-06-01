@@ -75,8 +75,13 @@ test.describe("Properties Overlay", () => {
 
     await expect(page.getByTestId("properties-overlay")).toBeVisible();
 
-    // Click empty canvas area
-    await page.locator(".react-flow__pane").click();
+    // Wait for layout transition to complete before clicking
+    await page.waitForTimeout(500);
+
+    // Click an empty area of the canvas pane (top-left corner avoids nodes)
+    const pane = page.locator(".react-flow__pane");
+    const box = await pane.boundingBox();
+    await page.mouse.click(box!.x + 15, box!.y + 15);
 
     await expect(page.getByTestId("properties-overlay")).not.toBeVisible();
   });

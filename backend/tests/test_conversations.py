@@ -8,7 +8,11 @@ from canvas_server.runner import CanvasRunner
 
 
 def _make_prediction(process_result="", trajectory=None):
-    trajectory = trajectory or {"thought_0": "", "tool_name_0": "finish", "tool_args_0": {}}
+    trajectory = trajectory or {
+        "thought_0": "",
+        "tool_name_0": "finish",
+        "tool_args_0": {},
+    }
     return dspy.Prediction(process_result=process_result, trajectory=trajectory)
 
 
@@ -29,6 +33,8 @@ class FakeAgentNode:
         instructions="",
         model_name="ollama:llama3.1",
         agent_type="worker",
+        enable_conversation_history=False,
+        enable_memory=False,
     ):
         self.id = id or uuid.uuid4()
         self.name = name
@@ -36,6 +42,8 @@ class FakeAgentNode:
         self.instructions = instructions
         self.model_name = model_name
         self.agent_type = agent_type
+        self.enable_conversation_history = enable_conversation_history
+        self.enable_memory = enable_memory
         self.position_x = 0
         self.position_y = 0
 
@@ -85,21 +93,15 @@ class TestConversationAPI:
             f"/api/canvases/{blank_canvas.id}/conversations", json={"name": "C2"}
         )
 
-        resp = await test_client.get(
-            f"/api/canvases/{blank_canvas.id}/conversations"
-        )
+        resp = await test_client.get(f"/api/canvases/{blank_canvas.id}/conversations")
         assert resp.status_code == 200
         data = resp.json()
         assert len(data) == 2
         names = {c["name"] for c in data}
         assert names == {"C1", "C2"}
 
-    async def test_list_conversations_empty(
-        self, test_client, fresh_db, blank_canvas
-    ):
-        resp = await test_client.get(
-            f"/api/canvases/{blank_canvas.id}/conversations"
-        )
+    async def test_list_conversations_empty(self, test_client, fresh_db, blank_canvas):
+        resp = await test_client.get(f"/api/canvases/{blank_canvas.id}/conversations")
         assert resp.status_code == 200
         assert resp.json() == []
 
@@ -168,9 +170,7 @@ class TestConversationAPI:
 
 
 class TestConversationRepo:
-    async def test_complete_conversation_sets_status(
-        self, test_session, blank_canvas
-    ):
+    async def test_complete_conversation_sets_status(self, test_session, blank_canvas):
         repo = ConversationRepo(test_session)
         conv = await repo.create(canvas_id=blank_canvas.id, name="Test Conv")
         conv_id = conv.id
@@ -182,9 +182,7 @@ class TestConversationRepo:
         fetched = await repo.get(conv_id)
         assert fetched.status == "completed"
 
-    async def test_get_conversation_includes_messages(
-        self, test_session, blank_canvas
-    ):
+    async def test_get_conversation_includes_messages(self, test_session, blank_canvas):
         repo = ConversationRepo(test_session)
         conv = await repo.create(canvas_id=blank_canvas.id, name="Test Conv")
         conv_id = conv.id
@@ -270,12 +268,8 @@ class TestRunnerWithConversation:
         runner.agents[worker.id] = self._make_agent_mock(text)
         return runner
 
-    async def test_runner_persists_user_message(
-        self, test_session, blank_canvas
-    ):
-        worker = FakeAgentNode(
-            id=uuid.uuid4(), name="Worker", agent_type="worker"
-        )
+    async def test_runner_persists_user_message(self, test_session, blank_canvas):
+        worker = FakeAgentNode(id=uuid.uuid4(), name="Worker", agent_type="worker")
         canvas = FakeCanvas(agent_nodes=[worker])
 
         repo = ConversationRepo(test_session)
@@ -299,12 +293,8 @@ class TestRunnerWithConversation:
         assert len(user_msgs) == 1
         assert user_msgs[0].content == "Hello world"
 
-    async def test_runner_completes_conversation(
-        self, test_session, blank_canvas
-    ):
-        worker = FakeAgentNode(
-            id=uuid.uuid4(), name="Worker", agent_type="worker"
-        )
+    async def test_runner_keeps_conversation_active(self, test_session, blank_canvas):
+        worker = FakeAgentNode(id=uuid.uuid4(), name="Worker", agent_type="worker")
         canvas = FakeCanvas(agent_nodes=[worker])
 
         repo = ConversationRepo(test_session)
@@ -324,11 +314,11 @@ class TestRunnerWithConversation:
         test_session.expire_all()
 
         fetched = await repo.get(conv_id)
-        assert fetched.status == "completed"
+        # Conversations should stay "active" so that multi-turn
+        # conversation history works correctly across messages.
+        assert fetched.status == "active"
 
-    async def test_runner_injects_history_into_router(
-        self, test_session, blank_canvas
-    ):
+    async def test_runner_injects_history_into_router(self, test_session, blank_canvas):
         master = FakeAgentNode(
             id=uuid.uuid4(), name="Master", role="Router", agent_type="router"
         )
@@ -360,9 +350,7 @@ class TestRunnerWithConversation:
         async def collect(event):
             pass
 
-        runner = CanvasRunner(
-            canvas, conversation_repo=repo, conversation_id=conv_id
-        )
+        runner = CanvasRunner(canvas, conversation_repo=repo, conversation_id=conv_id)
         runner.setup = AsyncMock()
         runner.node_map = {master.id: master, worker.id: worker}
 
@@ -390,17 +378,13 @@ class TestRunnerWithConversation:
         test_session.expire_all()
 
         fetched = await repo.get(conv_id)
-        assistant_msgs = [
-            m for m in fetched.messages if m.role == "assistant"
-        ]
+        assistant_msgs = [m for m in fetched.messages if m.role == "assistant"]
         assert len(assistant_msgs) >= 1
 
     async def test_runner_worker_persists_final_answer(
         self, test_session, blank_canvas
     ):
-        worker = FakeAgentNode(
-            id=uuid.uuid4(), name="Worker", agent_type="worker"
-        )
+        worker = FakeAgentNode(id=uuid.uuid4(), name="Worker", agent_type="worker")
         canvas = FakeCanvas(agent_nodes=[worker])
 
         repo = ConversationRepo(test_session)
@@ -420,12 +404,63 @@ class TestRunnerWithConversation:
         test_session.expire_all()
 
         fetched = await repo.get(conv_id)
-        assistant_msgs = [
-            m for m in fetched.messages if m.role == "assistant"
-        ]
+        assistant_msgs = [m for m in fetched.messages if m.role == "assistant"]
         assert len(assistant_msgs) >= 1
         assert assistant_msgs[0].content == "Done!"
         assert assistant_msgs[0].agent_name == "Worker"
+
+    async def test_router_persists_final_answer(self, test_session, blank_canvas):
+        master = FakeAgentNode(
+            id=uuid.uuid4(), name="Master", role="Router", agent_type="router"
+        )
+        worker = FakeAgentNode(
+            id=uuid.uuid4(), name="MathAgent", role="Math expert", agent_type="worker"
+        )
+        canvas = FakeCanvas(
+            agent_nodes=[master, worker],
+            edges=[FakeEdge(master.id, worker.id, "handoff")],
+        )
+
+        repo = ConversationRepo(test_session)
+        conv = await repo.create(canvas_id=blank_canvas.id, name="Test")
+        conv_id = conv.id
+
+        async def collect(event):
+            pass
+
+        runner = CanvasRunner(canvas, conversation_repo=repo, conversation_id=conv_id)
+        runner.setup = AsyncMock()
+        runner.node_map = {master.id: master, worker.id: worker}
+
+        worker_mock = self._make_agent_mock("42")
+        runner.agents[worker.id] = worker_mock
+
+        with patch.object(runner, "_build_router_agent") as mock_builder:
+            router_mock = self._make_router_mock(
+                "The answer is 42",
+                trajectory={
+                    "thought_0": "Math question, routing to MathAgent",
+                    "tool_name_0": "transfer_to_MathAgent",
+                    "tool_args_0": {"task": "what is 6*7?"},
+                    "observation_0": "42",
+                    "thought_1": "Got answer from MathAgent",
+                    "tool_name_1": "finish",
+                    "tool_args_1": {},
+                },
+            )
+            mock_builder.return_value = router_mock
+
+            await runner.run("what is 6*7?", collect)
+
+        await test_session.commit()
+        test_session.expire_all()
+
+        fetched = await repo.get(conv_id)
+        # The router's final answer should be persisted as an assistant message
+        assistant_msgs = [m for m in fetched.messages if m.role == "assistant"]
+        router_msgs = [m for m in assistant_msgs if m.agent_name == "Master"]
+        assert len(router_msgs) >= 1
+        assert "42" in router_msgs[0].content
 
     async def test_runner_with_target_agent_id_uses_specific_agent(self):
         master = FakeAgentNode(
@@ -454,7 +489,9 @@ class TestRunnerWithConversation:
         await runner.run("do work", collect, target_agent_id=worker.id)
 
         agent_starts = [e for e in events if e["type"] == "agent_start"]
-        assert len(agent_starts) == 0  # attached events don't fire agent_start for workers
+        assert (
+            len(agent_starts) == 0
+        )  # attached events don't fire agent_start for workers
         assert "run_complete" in [e["type"] for e in events]
 
     async def test_runner_events_include_node_ids(self):
@@ -504,9 +541,276 @@ class TestRunnerWithConversation:
                 "run_complete",
             ):
                 continue
-            assert "node_id" in event, (
-                f"Event {event['type']} missing node_id"
+            assert "node_id" in event, f"Event {event['type']} missing node_id"
+
+    async def test_history_excludes_system_prompts_and_intermediate_agents(
+        self, test_session, blank_canvas
+    ):
+        """Conversation history should only include user messages and final
+        answers from history-enabled agents.  System prompts and intermediate
+        sub-agent responses must be excluded."""
+        master_id = uuid.uuid4()
+        math_team_id = uuid.uuid4()
+        factorial_id = uuid.uuid4()
+
+        master = FakeAgentNode(
+            id=master_id,
+            name="MasterAgent",
+            role="Routing Expert",
+            instructions="You route questions.",
+            agent_type="router",
+            enable_conversation_history=True,
+        )
+        math_team = FakeAgentNode(
+            id=math_team_id,
+            name="MathTeam",
+            role="Math expert team",
+            agent_type="router",
+            enable_conversation_history=False,
+        )
+        factorial = FakeAgentNode(
+            id=factorial_id,
+            name="FactorialAgent",
+            role="FactorialExpert",
+            agent_type="worker",
+            enable_conversation_history=False,
+        )
+        canvas = FakeCanvas(
+            agent_nodes=[master, math_team, factorial],
+            edges=[
+                FakeEdge(master_id, math_team_id, "handoff"),
+                FakeEdge(math_team_id, factorial_id, "handoff"),
+            ],
+        )
+
+        repo = ConversationRepo(test_session)
+        conv = await repo.create(canvas_id=blank_canvas.id, name="Test")
+        conv_id = conv.id
+
+        # Pre-populate messages mimicking a real multi-agent run:
+        # - A system prompt (should be excluded from history)
+        # - A user message
+        # - FactorialAgent intermediate answer (excluded — no history)
+        # - MathTeam intermediate answer (excluded — no history)
+        # - MasterAgent final answer (included — has history)
+        await repo.add_message(
+            conversation_id=conv_id,
+            role="system",
+            content="Routing Expert\n\nYou route questions.",
+            agent_name="MasterAgent",
+            node_id=master_id,
+            event_type="system_prompt",
+        )
+        await repo.add_message(
+            conversation_id=conv_id,
+            role="user",
+            content="what is the factorial of 8",
+            event_type="run_start",
+        )
+        await repo.add_message(
+            conversation_id=conv_id,
+            role="assistant",
+            content="40320",
+            agent_name="FactorialAgent",
+            node_id=factorial_id,
+            event_type="final_answer",
+        )
+        await repo.add_message(
+            conversation_id=conv_id,
+            role="assistant",
+            content="The factorial of 8 (8!) is 40,320.",
+            agent_name="MathTeam",
+            node_id=math_team_id,
+            event_type="final_answer",
+        )
+        await repo.add_message(
+            conversation_id=conv_id,
+            role="assistant",
+            content="The factorial of 8 is 40,320.",
+            agent_name="MasterAgent",
+            node_id=master_id,
+            event_type="final_answer",
+        )
+        await test_session.commit()
+        test_session.expire_all()
+
+        runner = CanvasRunner(canvas, conversation_repo=repo, conversation_id=conv_id)
+        runner.setup = AsyncMock()
+        runner.node_map = {
+            master_id: master,
+            math_team_id: math_team,
+            factorial_id: factorial,
+        }
+
+        # Load history and format it
+        history_messages = await runner._load_conversation_history()
+        history_enabled_ids = {
+            n.id for n in canvas.agent_nodes if n.enable_conversation_history
+        }
+        history_text = runner._format_history(
+            history_messages, history_enabled_node_ids=history_enabled_ids
+        )
+
+        # History should contain user + MasterAgent answer only
+        assert "User: what is the factorial of 8" in history_text
+        assert "Assistant [MasterAgent]" in history_text
+        assert "The factorial of 8 is 40,320" in history_text
+
+        # History should NOT contain system prompt or intermediate agents
+        assert "Routing Expert" not in history_text
+        assert "FactorialAgent" not in history_text
+        assert "40320" not in history_text
+        assert "MathTeam" not in history_text
+        assert "8!) is" not in history_text
+
+    async def test_dspy_history_excludes_intermediate_agents(
+        self, test_session, blank_canvas
+    ):
+        """dspy.History should only contain user/assistant pairs from
+        history-enabled agents — not system messages or sub-agent responses."""
+        import dspy
+
+        master_id = uuid.uuid4()
+        math_team_id = uuid.uuid4()
+
+        master = FakeAgentNode(
+            id=master_id,
+            name="MasterAgent",
+            role="Router",
+            agent_type="router",
+            enable_conversation_history=True,
+        )
+        math_team = FakeAgentNode(
+            id=math_team_id,
+            name="MathTeam",
+            role="Math expert",
+            agent_type="worker",
+            enable_conversation_history=False,
+        )
+        canvas = FakeCanvas(
+            agent_nodes=[master, math_team],
+            edges=[FakeEdge(master_id, math_team_id, "handoff")],
+        )
+
+        repo = ConversationRepo(test_session)
+        conv = await repo.create(canvas_id=blank_canvas.id, name="Test")
+        conv_id = conv.id
+
+        # Pre-populate: user asks, sub-agent answers, master summarizes
+        await repo.add_message(
+            conversation_id=conv_id,
+            role="system",
+            content="Router\n\nYou are a router.",
+            agent_name="MasterAgent",
+            node_id=master_id,
+            event_type="system_prompt",
+        )
+        await repo.add_message(
+            conversation_id=conv_id,
+            role="user",
+            content="what is 2+2?",
+            event_type="run_start",
+        )
+        await repo.add_message(
+            conversation_id=conv_id,
+            role="assistant",
+            content="4",
+            agent_name="MathTeam",
+            node_id=math_team_id,
+            event_type="final_answer",
+        )
+        await repo.add_message(
+            conversation_id=conv_id,
+            role="assistant",
+            content="The answer is 4.",
+            agent_name="MasterAgent",
+            node_id=master_id,
+            event_type="final_answer",
+        )
+        await test_session.commit()
+        test_session.expire_all()
+
+        runner = CanvasRunner(canvas, conversation_repo=repo, conversation_id=conv_id)
+        runner.setup = AsyncMock()
+        runner.node_map = {master_id: master, math_team_id: math_team}
+
+        history_messages = await runner._load_conversation_history()
+        history_enabled_ids = {
+            n.id for n in canvas.agent_nodes if n.enable_conversation_history
+        }
+
+        # Build dspy.History the same way run() does
+        dspy_messages = []
+        for msg in history_messages:
+            if msg.role == "system":
+                continue
+            elif msg.role == "user":
+                dspy_messages.append({"user_request": msg.content})
+            elif msg.role == "assistant" and msg.node_id in history_enabled_ids:
+                dspy_messages.append({"process_result": msg.content})
+        dspy_history = dspy.History(messages=dspy_messages)
+
+        # dspy.History should have exactly 2 entries: user request + master answer
+        assert len(dspy_history.messages) == 2
+        assert dspy_history.messages[0]["user_request"] == "what is 2+2?"
+        assert dspy_history.messages[1]["process_result"] == "The answer is 4."
+
+    async def test_no_system_prompt_persisted_when_history_enabled(
+        self, test_session, blank_canvas
+    ):
+        """System prompts should NOT be persisted as messages when
+        enable_conversation_history is true — they're already in the
+        DSPy signature instructions."""
+        master = FakeAgentNode(
+            id=uuid.uuid4(),
+            name="MasterAgent",
+            role="Routing Expert",
+            instructions="You route the questions to the sub agent.",
+            agent_type="router",
+            enable_conversation_history=True,
+        )
+        worker = FakeAgentNode(
+            id=uuid.uuid4(), name="MathAgent", role="Math expert", agent_type="worker"
+        )
+        canvas = FakeCanvas(
+            agent_nodes=[master, worker],
+            edges=[FakeEdge(master.id, worker.id, "handoff")],
+        )
+
+        repo = ConversationRepo(test_session)
+        conv = await repo.create(canvas_id=blank_canvas.id, name="Test")
+        conv_id = conv.id
+
+        async def collect(event):
+            pass
+
+        runner = CanvasRunner(canvas, conversation_repo=repo, conversation_id=conv_id)
+        runner.setup = AsyncMock()
+        runner.node_map = {master.id: master, worker.id: worker}
+
+        worker_mock = self._make_agent_mock("720")
+        runner.agents[worker.id] = worker_mock
+
+        with patch.object(runner, "_build_router_agent") as mock_builder:
+            router_mock = self._make_router_mock(
+                "The factorial of 6 is 720",
+                trajectory={
+                    "thought_0": "Math question",
+                    "tool_name_0": "finish",
+                    "tool_args_0": {},
+                },
             )
+            mock_builder.return_value = router_mock
+
+            await runner.run("what is the factorial of 6?", collect)
+
+        await test_session.commit()
+        test_session.expire_all()
+
+        fetched = await repo.get(conv_id)
+        system_msgs = [m for m in fetched.messages if m.role == "system"]
+        # No system prompt messages should be persisted
+        assert len(system_msgs) == 0
 
     async def test_conversation_delete_cascades_from_canvas_delete(
         self, test_client, fresh_db, blank_canvas
@@ -517,9 +821,7 @@ class TestRunnerWithConversation:
         )
         conv_id = create_resp.json()["id"]
 
-        del_resp = await test_client.delete(
-            f"/api/canvases/{blank_canvas.id}"
-        )
+        del_resp = await test_client.delete(f"/api/canvases/{blank_canvas.id}")
         assert del_resp.status_code == 204
 
         get_resp = await test_client.get(
