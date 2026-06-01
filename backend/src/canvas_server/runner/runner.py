@@ -126,13 +126,12 @@ class CanvasRunner:
         )
 
         # Build worker agents (routers are built lazily at run time)
-        self.agents = await self._agent_factory.build_workers(
-            self.canvas.agent_nodes
-        )
+        self.agents = await self._agent_factory.build_workers(self.canvas.agent_nodes)
 
         logger.info(
             "Setup complete: %d tools, %d agents",
-            len(self.tools), len(self.agents),
+            len(self.tools),
+            len(self.agents),
         )
 
     # ------------------------------------------------------------------
@@ -206,18 +205,22 @@ class CanvasRunner:
 
             target_agent = self.agents[target_id]
 
-            await send_event({
-                "type": "handoff",
-                "from": router_name,
-                "to": target_name,
-                "node_id": str(target_id),
-            })
-            await send_event({
-                "type": "agent_start",
-                "agent": target_name,
-                "agentType": target_node.agent_type,
-                "node_id": str(target_id),
-            })
+            await send_event(
+                {
+                    "type": "handoff",
+                    "from": router_name,
+                    "to": target_name,
+                    "node_id": str(target_id),
+                }
+            )
+            await send_event(
+                {
+                    "type": "agent_start",
+                    "agent": target_name,
+                    "agentType": target_node.agent_type,
+                    "node_id": str(target_id),
+                }
+            )
 
             self._attach_events(target_id, send_event)
             prompt = self._agent_factory.build_worker_prompt(task, history)
@@ -326,7 +329,8 @@ class CanvasRunner:
         )
 
         history_enabled_node_ids = {
-            n.id for n in self.canvas.agent_nodes
+            n.id
+            for n in self.canvas.agent_nodes
             if self._agent_factory.needs_history(n)
         }
 
@@ -336,8 +340,10 @@ class CanvasRunner:
             event_type="run_start",
         )
 
-        history_text, dspy_history = self._conversation.build_conversation_history_context(
-            history_messages, history_enabled_node_ids
+        history_text, dspy_history = (
+            self._conversation.build_conversation_history_context(
+                history_messages, history_enabled_node_ids
+            )
         )
 
         ctx = RunContext(
@@ -370,7 +376,11 @@ class CanvasRunner:
 
         # ---- Auto-store memory for the primary agent ----
         if final_text:
-            primary_id = target_agent_id if target_agent_id else (agent_ids[0] if agent_ids else None)
+            primary_id = (
+                target_agent_id
+                if target_agent_id
+                else (agent_ids[0] if agent_ids else None)
+            )
             primary_node = self.node_map.get(primary_id) if primary_id else None
             if primary_node and self._memory_manager.needs_memory(primary_node):
                 mp = self._memory_manager.get_provider(primary_id)

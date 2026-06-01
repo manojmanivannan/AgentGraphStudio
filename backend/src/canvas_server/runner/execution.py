@@ -14,7 +14,7 @@ from __future__ import annotations
 import logging
 import uuid
 from abc import ABC, abstractmethod
-from collections.abc import Awaitable, Callable
+from collections.abc import Callable
 
 from canvas_server.runner.config import RunContext
 
@@ -58,8 +58,7 @@ class ExecutionStrategy(ABC):
         self._services = services
 
     @abstractmethod
-    async def execute(self, agent_id: uuid.UUID, ctx: RunContext) -> str | None:
-        ...
+    async def execute(self, agent_id: uuid.UUID, ctx: RunContext) -> str | None: ...
 
     # ------------------------------------------------------------------
     # Shared helpers
@@ -83,7 +82,9 @@ class ExecutionStrategy(ABC):
             logger.warning("Agent not found: id=%s", agent_id)
             return None
 
-        logger.info("Running agent: %s (type=%s)", agent_node.name, agent_node.agent_type)
+        logger.info(
+            "Running agent: %s (type=%s)", agent_node.name, agent_node.agent_type
+        )
 
         needs_history = self._services.agent_factory.needs_history(agent_node)
         prompt = self._services.agent_factory.build_worker_prompt(user_prompt)
@@ -197,7 +198,9 @@ class RouterExecution(ExecutionStrategy):
             )
             return final_text
         except Exception as e:
-            logger.error("Router agent %s failed: %s", agent_node.name, e, exc_info=True)
+            logger.error(
+                "Router agent %s failed: %s", agent_node.name, e, exc_info=True
+            )
             return None
 
 
