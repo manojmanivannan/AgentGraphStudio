@@ -17,27 +17,31 @@ test.describe("Canvas landing page", () => {
   });
 
   test("lists existing canvases on load", async ({ page }) => {
-    // Create a canvas first via the API directly
+    // Create a canvas first via the API directly with a unique name
+    const uniqueName = `E2E Test Canvas ${Date.now()}`;
     const res = await page.request.post("http://localhost:8000/api/canvases", {
-      data: { name: "E2E Test Canvas" },
+      data: { name: uniqueName },
     });
     expect(res.ok()).toBeTruthy();
 
     await page.goto("/");
     // Scroll to top — the landing page is centered and may overflow with many canvases
     await page.evaluate(() => window.scrollTo(0, 0));
-    await expect(page.getByText("E2E Test Canvas")).toBeVisible();
+    await expect(page.getByText(uniqueName)).toBeVisible();
   });
 
   test("opens an existing canvas", async ({ page }) => {
     // Create a canvas and then open it from the list
-    await page.request.post("http://localhost:8000/api/canvases", {
-      data: { name: "Canvas To Open" },
+    const uniqueName = `Canvas To Open ${Date.now()}`;
+    const res = await page.request.post("http://localhost:8000/api/canvases", {
+      data: { name: uniqueName },
     });
+    const { id } = await res.json();
 
     await page.goto("/");
     await page.evaluate(() => window.scrollTo(0, 0));
-    await page.getByText("Canvas To Open").click();
+    // Use a more specific selector to avoid matching multiple elements
+    await page.getByRole("button", { name: uniqueName }).click();
 
     await expect(page.locator(".react-flow")).toBeVisible({ timeout: 10_000 });
   });

@@ -204,7 +204,7 @@ export function SidebarRail() {
   return (
     <div
       data-testid="sidebar-rail"
-      className="absolute left-0 top-0 bottom-0 w-12 chrome-glass border-r border-[var(--color-border-subtle)] flex flex-col items-center py-3 gap-1 z-30"
+      className="absolute left-0 top-0 bottom-0 w-12 chrome-glass border-r border-[var(--color-border-subtle)] flex flex-col items-center py-3 gap-1 z-40"
     >
       {/* Create section */}
       <div className="relative">
