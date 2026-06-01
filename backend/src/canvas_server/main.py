@@ -28,15 +28,25 @@ async def lifespan(app: FastAPI):
     logger.debug("Config: llm_model=%s", settings.llm_model)
     logger.debug(f"Config: cors_origins={settings.cors_origins}")
 
-    # Initialize MLflow tracing for DSPy
-    mlflow.set_tracking_uri(settings.mlflow_tracking_uri)
-    mlflow.set_experiment(settings.mlflow_experiment_name)
-    mlflow.dspy.autolog()
-    logger.info(
-        "MLflow tracing enabled: tracking_uri=%s experiment=%s",
-        settings.mlflow_tracking_uri,
-        settings.mlflow_experiment_name,
-    )
+    # Initialize MLflow tracing for DSPy — skip gracefully when unavailable
+    if settings.mlflow_enabled:
+        try:
+            mlflow.set_tracking_uri(settings.mlflow_tracking_uri)
+            mlflow.set_experiment(settings.mlflow_experiment_name)
+            mlflow.dspy.autolog()
+            logger.info(
+                "MLflow tracing enabled: tracking_uri=%s experiment=%s",
+                settings.mlflow_tracking_uri,
+                settings.mlflow_experiment_name,
+            )
+        except Exception as exc:
+            logger.warning(
+                "MLflow tracing disabled — could not connect to %s: %s",
+                settings.mlflow_tracking_uri,
+                exc,
+            )
+    else:
+        logger.info("MLflow tracing disabled via configuration")
 
     yield
     logger.info("Canvas server shutting down")

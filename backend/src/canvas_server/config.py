@@ -13,7 +13,8 @@ class Settings(BaseSettings):
     mem0_embedder_provider: str = "ollama"
     mem0_embedder_model: str = "nomic-embed-text"
 
-    # MLflow tracing
+    # MLflow tracing — set MLFLOW_ENABLED=false to skip initialization (e.g. in CI)
+    mlflow_enabled: bool = True
     mlflow_tracking_uri: str = "http://mlflow:5000"
     mlflow_experiment_name: str = "canvas-agents"
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}

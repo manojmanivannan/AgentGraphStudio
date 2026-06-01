@@ -64,6 +64,13 @@ async def run_conversation(websocket: WebSocket, conversation_id: uuid.UUID):
             except asyncio.CancelledError:
                 pass
 
+            # Commit all persisted messages so they survive across turns.
+            # Without this, add_message()'s flush() writes to the DB within the
+            # current transaction, but the session context manager rolls back
+            # on close — making conversation history vanish between WebSocket
+            # connections.
+            await session.commit()
+
     except TimeoutError:
         try:
             await websocket.send_text(

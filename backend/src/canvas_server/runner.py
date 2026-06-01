@@ -1,4 +1,3 @@
-import contextlib
 import logging
 import uuid
 
@@ -84,6 +83,7 @@ class CanvasRunner:
         """Create a single shared mem0 Memory instance to avoid local-qdrant file locking."""
         if self._shared_memory is None:
             from mem0 import Memory
+
             config = build_mem0_config()
             self._shared_memory = Memory.from_config(config)
         return self._shared_memory
@@ -96,10 +96,14 @@ class CanvasRunner:
             user_id = f"agent_{agent_node.id}"
             return MemoryProvider(user_id=user_id, memory=memory)
         except ImportError:
-            logger.warning("mem0 not installed; memory disabled for agent %s", agent_node.name)
+            logger.warning(
+                "mem0 not installed; memory disabled for agent %s", agent_node.name
+            )
             return None
         except Exception as e:
-            logger.warning("Failed to initialize mem0 for agent %s: %s", agent_node.name, e)
+            logger.warning(
+                "Failed to initialize mem0 for agent %s: %s", agent_node.name, e
+            )
             return None
 
     def _build_agent_signature(self, agent_node):
@@ -122,13 +126,16 @@ class CanvasRunner:
             )
 
         if self._needs_history(agent_node):
+
             class _AgentSig(dspy.Signature):
                 user_request: str = dspy.InputField()
                 history: dspy.History = dspy.InputField()
                 process_result: str = dspy.OutputField(
                     desc="Final answer summarizing the result and information the user needs"
                 )
+
         else:
+
             class _AgentSig(dspy.Signature):
                 user_request: str = dspy.InputField()
                 process_result: str = dspy.OutputField(
@@ -155,20 +162,20 @@ class CanvasRunner:
             if agent_node.agent_type == "worker":
                 await self._build_single_worker(agent_node)
 
-        logger.info(
-            "Built %d agents successfully", len(self.agents)
-        )
+        logger.info("Built %d agents successfully", len(self.agents))
 
     async def _build_single_worker(self, agent_node):
         tools = self._get_agent_tools(agent_node.id)
 
         memory_provider = self._build_memory_provider(agent_node)
         if memory_provider:
-            tools.extend([
-                memory_provider.search_memories,
-                memory_provider.store_memory,
-                memory_provider.get_all_memories,
-            ])
+            tools.extend(
+                [
+                    memory_provider.search_memories,
+                    memory_provider.store_memory,
+                    memory_provider.get_all_memories,
+                ]
+            )
             self._memory_providers[agent_node.id] = memory_provider
 
         signature = self._build_agent_signature(agent_node)
@@ -192,20 +199,29 @@ class CanvasRunner:
             tool_name_to_id = self._tool_name_to_id
 
             async def callback(event, aid=agent_id, aname=agent_node.name):
-                await send_event(
-                    {"agent": aname, "node_id": str(aid), **event}
-                )
+                await send_event({"agent": aname, "node_id": str(aid), **event})
                 if event.get("type") == "tool_start":
                     tool_name = event.get("tool", "")
                     tool_node_id = tool_name_to_id.get(tool_name)
                     if tool_node_id:
                         await send_event(
-                            {"type": "tool_start", "tool": tool_name, "node_id": str(tool_node_id)}
+                            {
+                                "type": "tool_start",
+                                "tool": tool_name,
+                                "node_id": str(tool_node_id),
+                            }
                         )
 
             agent.on_event(callback)
 
-    def _make_handoff_tool(self, target_id: uuid.UUID, router_name: str, send_event, history: str, dspy_history=None):
+    def _make_handoff_tool(
+        self,
+        target_id: uuid.UUID,
+        router_name: str,
+        send_event,
+        history: str,
+        dspy_history=None,
+    ):
         """Create a DSPy tool function that delegates to a sub-agent.
 
         The target agent lookup is deferred to call time so that router→router
@@ -220,7 +236,9 @@ class CanvasRunner:
             # (e.g. a router that wasn't pre-built during setup)
             if target_id not in self.agents:
                 if target_node.agent_type == "router":
-                    self._build_router_agent(target_node, send_event, history, dspy_history)
+                    self._build_router_agent(
+                        target_node, send_event, history, dspy_history
+                    )
                 else:
                     raise RuntimeError(
                         f"Worker agent '{target_name}' (id={target_id}) not found in agents dict"
@@ -249,15 +267,15 @@ class CanvasRunner:
             prompt = self._build_worker_prompt(task, history)
             try:
                 if dspy_history is not None and self._needs_history(target_node):
-                    result = await target_agent.aforward(user_request=prompt, history=dspy_history)
+                    result = await target_agent.aforward(
+                        user_request=prompt, history=dspy_history
+                    )
                 else:
                     result = await target_agent.aforward(user_request=prompt)
                 answer = result.process_result
             except Exception as e:
                 answer = f"Error: {e}"
-                logger.error(
-                    "Sub-agent %s failed: %s", target_name, e, exc_info=True
-                )
+                logger.error("Sub-agent %s failed: %s", target_name, e, exc_info=True)
 
             await self._persist_message(
                 role="assistant",
@@ -269,26 +287,30 @@ class CanvasRunner:
             return answer
 
         transfer.__name__ = f"transfer_to_{target_name}"
-        transfer.__doc__ = (
-            f"Route the user request to {target_name}, who handles: {target_node.role or target_name}"
-        )
+        transfer.__doc__ = f"Route the user request to {target_name}, who handles: {target_node.role or target_name}"
         return transfer
 
-    def _build_router_agent(self, agent_node, send_event, history: str, dspy_history=None):
+    def _build_router_agent(
+        self, agent_node, send_event, history: str, dspy_history=None
+    ):
         """Create a fresh StreamingReAct for a router with handoff tools baked in."""
         tools = self._get_agent_tools(agent_node.id)
 
         memory_provider = self._build_memory_provider(agent_node)
         if memory_provider:
-            tools.extend([
-                memory_provider.search_memories,
-                memory_provider.store_memory,
-                memory_provider.get_all_memories,
-            ])
+            tools.extend(
+                [
+                    memory_provider.search_memories,
+                    memory_provider.store_memory,
+                    memory_provider.get_all_memories,
+                ]
+            )
             self._memory_providers[agent_node.id] = memory_provider
 
         handoff_tool_fns = [
-            self._make_handoff_tool(tid, agent_node.name, send_event, history, dspy_history)
+            self._make_handoff_tool(
+                tid, agent_node.name, send_event, history, dspy_history
+            )
             for tid in self._get_handoff_targets(agent_node.id)
         ]
         all_tools = tools + handoff_tool_fns
@@ -303,15 +325,29 @@ class CanvasRunner:
         node = self.node_map.get(agent_id)
         return node.name if node else "Unknown"
 
-    def _format_history(self, messages: list) -> str:
+    def _format_history(
+        self, messages: list, history_enabled_node_ids: set | None = None
+    ) -> str:
         if not messages:
             return ""
         lines = ["## Conversation History"]
         for msg in messages:
-            role_label = msg.role.capitalize()
+            # System prompts are already in the DSPy signature — skip them
+            if msg.role == "system":
+                continue
+            # Only include assistant messages from agents with history enabled;
+            # intermediate sub-agent responses are internal implementation details.
+            if (
+                msg.role == "assistant"
+                and history_enabled_node_ids is not None
+                and msg.node_id not in history_enabled_node_ids
+            ):
+                continue
             if msg.agent_name and msg.role == "assistant":
-                role_label = f"Assistant [{msg.agent_name}]"
-            lines.append(f"{role_label}: {msg.content}")
+                label = f"Assistant [{msg.agent_name}]"
+            else:
+                label = msg.role.capitalize()
+            lines.append(f"{label}: {msg.content}")
             lines.append("---")
         return "\n".join(lines)
 
@@ -375,9 +411,7 @@ class CanvasRunner:
             else:
                 result = await agent.aforward(user_request=prompt)
             text = result.process_result
-            logger.info(
-                "Agent %s completed: result=%s", agent_node.name, text[:200]
-            )
+            logger.info("Agent %s completed: result=%s", agent_node.name, text[:200])
             await self._persist_message(
                 role="assistant",
                 content=text,
@@ -387,9 +421,7 @@ class CanvasRunner:
             )
             return text
         except Exception as e:
-            logger.error(
-                "Agent %s failed: %s", agent_node.name, e, exc_info=True
-            )
+            logger.error("Agent %s failed: %s", agent_node.name, e, exc_info=True)
             await self._persist_message(
                 role="system",
                 content=f"Error: {e}",
@@ -399,7 +431,9 @@ class CanvasRunner:
             )
             return None
 
-    @mlflow.trace(name="canvas_run", span_type="CHAIN", attributes={"component": "agent"})
+    @mlflow.trace(
+        name="canvas_run", span_type="CHAIN", attributes={"component": "agent"}
+    )
     async def run(
         self,
         user_prompt: str,
@@ -423,30 +457,53 @@ class CanvasRunner:
 
         await send_event(self._event("run_start", canvas_id=str(self.canvas.id)))
 
+        history_messages = await self._load_conversation_history()
+
+        agent_ids = [n.id for n in self.canvas.agent_nodes]
+
+        # Determine if the target agent has conversation history enabled
+        first_agent_id = (
+            target_agent_id
+            if target_agent_id
+            else (agent_ids[0] if agent_ids else None)
+        )
+        target_node = self.node_map.get(first_agent_id) if first_agent_id else None
+        conv_history_enabled = target_node and self._needs_history(target_node)
+
+        # Compute which agents have history enabled — used to filter intermediate
+        # sub-agent responses from conversation history.  Only messages from
+        # history-enabled agents should appear; sub-agent responses are internal
+        # details that don't belong in the agent's conversation context.
+        history_enabled_node_ids = {
+            n.id for n in self.canvas.agent_nodes if self._needs_history(n)
+        }
+
         await self._persist_message(
             role="user",
             content=user_prompt,
             event_type="run_start",
         )
 
-        history_messages = await self._load_conversation_history()
-        history_text = self._format_history(history_messages)
+        history_text = self._format_history(
+            history_messages, history_enabled_node_ids=history_enabled_node_ids
+        )
 
-        agent_ids = [n.id for n in self.canvas.agent_nodes]
-
-        # Determine if the target agent has conversation history enabled
-        first_agent_id = target_agent_id if target_agent_id else (agent_ids[0] if agent_ids else None)
-        target_node = self.node_map.get(first_agent_id) if first_agent_id else None
-        conv_history_enabled = target_node and self._needs_history(target_node)
-
-        # Build dspy.History from stored conversation messages when enabled
+        # Build dspy.History from stored conversation messages when enabled.
+        # Only include user messages and assistant messages from history-enabled
+        # agents.  System prompts are excluded — they're already in the DSPy
+        # signature instructions.  Intermediate sub-agent responses are excluded
+        # — only the final answers from history-enabled agents matter.
         dspy_history = None
         if conv_history_enabled:
             dspy_messages = []
             for msg in history_messages:
-                if msg.role == "user":
+                if msg.role == "system":
+                    continue
+                elif msg.role == "user":
                     dspy_messages.append({"user_request": msg.content})
-                elif msg.role == "assistant":
+                elif (
+                    msg.role == "assistant" and msg.node_id in history_enabled_node_ids
+                ):
                     dspy_messages.append({"process_result": msg.content})
             dspy_history = dspy.History(messages=dspy_messages)
 
@@ -463,10 +520,19 @@ class CanvasRunner:
                     )
                     prompt = self._build_worker_prompt(user_prompt, history_text)
                     if dspy_history is not None:
-                        result = await agent.aforward(user_request=prompt, history=dspy_history)
+                        result = await agent.aforward(
+                            user_request=prompt, history=dspy_history
+                        )
                     else:
                         result = await agent.aforward(user_request=prompt)
                     final_text = result.process_result
+                    await self._persist_message(
+                        role="assistant",
+                        content=final_text,
+                        agent_name=agent_node.name,
+                        node_id=target_agent_id,
+                        event_type="final_answer",
+                    )
                     await send_event(
                         self._event(
                             "final_answer",
@@ -499,10 +565,19 @@ class CanvasRunner:
                     )
                     prompt = self._build_worker_prompt(user_prompt, history_text)
                     if dspy_history is not None:
-                        result = await agent.aforward(user_request=prompt, history=dspy_history)
+                        result = await agent.aforward(
+                            user_request=prompt, history=dspy_history
+                        )
                     else:
                         result = await agent.aforward(user_request=prompt)
                     final_text = result.process_result
+                    await self._persist_message(
+                        role="assistant",
+                        content=final_text,
+                        agent_name=first_node.name,
+                        node_id=first_node.id,
+                        event_type="final_answer",
+                    )
                     await send_event(
                         self._event(
                             "final_answer",
@@ -522,7 +597,9 @@ class CanvasRunner:
                     visited = set()
                     final_text = None
 
-                    while current_agent_id is not None and current_agent_id not in visited:
+                    while (
+                        current_agent_id is not None and current_agent_id not in visited
+                    ):
                         visited.add(current_agent_id)
                         self._attach_events(current_agent_id, send_event)
 
@@ -585,15 +662,12 @@ class CanvasRunner:
                         except Exception as e:
                             logger.warning("Failed to auto-store memory: %s", e)
 
-        if self.conversation_repo and self.conversation_id:
-            with contextlib.suppress(Exception):
-                await self.conversation_repo.complete_conversation(
-                    self.conversation_id
-                )
+        # Do NOT mark the conversation as "completed" here — the user
+        # may send more messages in the same conversation.  Conversations
+        # should stay "active" across multiple turns so that
+        # enable_conversation_history works correctly.
 
-        logger.info(
-            "Canvas execution completed: canvas_id=%s", self.canvas.id
-        )
+        logger.info("Canvas execution completed: canvas_id=%s", self.canvas.id)
         await send_event(
             self._event("run_complete", result="Workflow execution completed.")
         )
