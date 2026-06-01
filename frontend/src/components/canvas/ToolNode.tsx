@@ -28,7 +28,7 @@ function ToolNodeComponent({ id, data, selected }: NodeProps) {
           ? "border-[var(--color-secondary)] shadow-[0_0_0_1px_var(--color-secondary),0_4px_24px_-4px_rgba(245,158,11,0.2)]"
           : "border-[var(--color-border-default)]"
         }
-        ${isActive ? "border-[var(--color-success)] shadow-[0_0_0_1px_var(--color-success),0_0_20px_-4px_rgba(16,185,129,0.3)] animate-pulse" : ""}
+        ${isActive ? "border-[var(--color-danger)] glow-active-pulse" : ""}
       `}
     >
       <Handle
