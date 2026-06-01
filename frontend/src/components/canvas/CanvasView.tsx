@@ -124,6 +124,14 @@ export function CanvasView() {
     [nodes, edges, setEdges]
   );
 
+  const onNodeClick = useCallback(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (_event: any, node: any) => {
+      selectNode(node.id);
+    },
+    [selectNode],
+  );
+
   const onPaneClick = useCallback(() => {
     selectNode(null);
   }, [selectNode]);
@@ -156,6 +164,7 @@ export function CanvasView() {
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
         onPaneClick={onPaneClick}
+        onNodeClick={onNodeClick}
         onMoveEnd={onMoveEnd}
         onInit={onInit}
         nodeTypes={nodeTypes}
