@@ -9,6 +9,10 @@ on:
 jobs:
   lint-and-test:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      checks: write
+      pull-requests: write
     steps:
       - uses: actions/checkout@v4
 
@@ -27,10 +31,29 @@ jobs:
 
       - name: Test
         working-directory: backend
-        run: uv run pytest tests/ -v
+        run: uv run pytest tests/ -v --junitxml=junit/test-results.xml
+
+      - name: Publish test results
+        if: always()
+        uses: EnricoMi/publish-unit-test-result-action@v2
+        with:
+          files: backend/junit/test-results.xml
+          comment_title: Backend Tests (pytest)
+          check_name: Backend Tests (pytest)
+
+      - name: Upload test results artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-test-results
+          path: backend/junit/
 
   frontend-unit:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      checks: write
+      pull-requests: write
     steps:
       - uses: actions/checkout@v4
 
@@ -48,8 +71,27 @@ jobs:
         working-directory: frontend
         run: npm run test:coverage
 
+      - name: Publish test results
+        if: always()
+        uses: EnricoMi/publish-unit-test-result-action@v2
+        with:
+          files: frontend/junit/vitest-results.xml
+          comment_title: Frontend Unit Tests (vitest)
+          check_name: Frontend Unit Tests (vitest)
+
+      - name: Upload test results artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-unit-test-results
+          path: frontend/junit/
+
   frontend-e2e:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      checks: write
+      pull-requests: write
     steps:
       - uses: actions/checkout@v4
 
@@ -81,3 +123,18 @@ jobs:
           DATABASE_URL: sqlite+aiosqlite:///./e2e_test.db
           MLFLOW_ENABLED: "false"
         run: npm run test:e2e
+
+      - name: Publish test results
+        if: always()
+        uses: EnricoMi/publish-unit-test-result-action@v2
+        with:
+          files: frontend/junit/e2e-results.xml
+          comment_title: Frontend E2E Tests (Playwright)
+          check_name: Frontend E2E Tests (Playwright)
+
+      - name: Upload test results artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-e2e-test-results
+          path: frontend/junit/
