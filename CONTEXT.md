@@ -9,7 +9,7 @@ A named, persisted workspace containing a graph of nodes and edges. A user works
 _Avoid_: Board, diagram, flow, graph, workspace
 
 **Agent Node**:
-A visual block on the Canvas representing an AI agent with a name, role, instructions, and LLM model.
+A visual block on the Canvas representing an AI agent with a name, role, instructions, LLM model, and agent type (worker or router).
 _Avoid_: Agent, block, step
 
 **Tool Node**:
@@ -24,24 +24,38 @@ _Avoid_: Connection, link, arrow
 An Agent→Agent Edge. At runtime the source agent can delegate execution to the target agent.
 _Avoid_: Delegation, routing
 
-**Implicit Orchestrator**:
-A hidden top-level agent created at runtime that routes the user's prompt to the appropriate Agent Node via handoff. It is never visible on the Canvas.
-_Avoid_: Root agent, top-level agent, coordinator
+**Worker**:
+An agent type that executes tasks by reasoning through DSPy ReAct (thought → tool call → observation loops). Workers can call tools but cannot hand off to other agents.
+_Avoid_: Sub-agent, leaf agent
+
+**Router**:
+An agent type that orchestrates by handing off tasks to other agents (workers or other routers). Routers are built lazily at run time when first invoked.
+_Avoid_: Orchestrator, coordinator, manager
+
+**StreamingReAct**:
+A DSPy ReAct subclass (in `streaming_react.py`) that emits events at each ReAct iteration (thought, tool_start, tool_result). Note: there is no `agent_start` event emitted here — that comes from the runner.
+_Avoid_: Custom agent, React agent
+
+**Conversation**:
+A persisted chat thread scoped to a Canvas. Tracks multi-turn user↔assistant exchanges. Messages include role, agent name, node_id, and event_type.
+_Avoid_: Thread, chat session
+
+**Turn**:
+A single user message + the resulting assistant messages (steps + final answer) within a Conversation.
+_Avoid_: Exchange, round
 
 **Workflow**:
-A Canvas at the moment of execution — the resolved combination of Agent Nodes, Tool Nodes, and Edges that the backend compiles into live agent instances.
+A Canvas at the moment of execution — the resolved combination of Agent Nodes, Tool Nodes, and Edges that the backend compiles into live DSPy agent instances.
 _Avoid_: Pipeline, graph, run
 
-**Execution Log**:
-The streaming output panel that shows thoughts, tool calls, and results produced during a Workflow run.
+**Execution Event**:
+A JSON message streamed over WebSocket during a Workflow run. Types: run_start, agent_start, thought, tool_start, tool_result, handoff, final_answer, run_complete, error.
 _Avoid_: Console, output, log, terminal
 
-## Example dialogue
+**Memory**:
+Per-agent long-term storage backed by mem0 + Qdrant vector store. Each agent optionally gets three memory tools: `memory_search`, `memory_store`, `memory_get_all`.
+_Avoid_: Long-term memory, storage
 
-> **Dev**: "Should I call it a 'flow' when the user clicks Run?"
->
-> **Domain expert**: "No — the Canvas is what they built. What gets executed is a Workflow. The Canvas is always there; a Workflow only exists during a run."
-
-> **Dev**: "The Agent Node that routes to other agents — is that the Orchestrator?"
->
-> **Domain expert**: "No, the Orchestrator is implicit — the user never places it on the Canvas. What they place are Agent Nodes. Routing between them is done via Handoff Edges."
+**Observability**:
+An embedded MLflow UI iframe for tracing DSPy agent calls, tool invocations, and LLM interactions via `mlflow.dspy.autolog()`.
+_Avoid_: Tracing, monitoring, dashboard
