@@ -91,12 +91,12 @@ test.describe("Canvas Nodes — active pulse during execution", () => {
     wsFixture.triggerRun(canvasWithWorkflow);
 
     // The agent_start for Researcher (event 4 of 9) should trigger the pulse
-    await expect(researcherNode).toHaveClass(/animate-pulse/, {
+    await expect(researcherNode).toHaveClass(/glow-active-pulse/, {
       timeout: 10_000,
     });
   });
 
-  test("no node has animate-pulse after run_complete", async ({
+  test("no node has glow-active-pulse after run_complete", async ({
     page,
     canvasWithWorkflow,
     wsFixture,
@@ -114,6 +114,6 @@ test.describe("Canvas Nodes — active pulse during execution", () => {
     });
 
     // No node should still be pulsing
-    await expect(page.locator(".animate-pulse")).toHaveCount(0);
+    await expect(page.locator(".glow-active-pulse")).toHaveCount(0);
   });
 });
