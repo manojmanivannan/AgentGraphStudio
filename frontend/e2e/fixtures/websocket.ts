@@ -26,7 +26,7 @@ export const test = canvasTest.extend<WsFixture>({
           { type: "handoff", from: "Orchestrator", to: "Researcher", node_id: nodeIds.routerId },
           { type: "agent_start", agent: "Researcher", node_id: nodeIds.researcherId },
           { type: "thought", agent: "Researcher", content: "I should search for this topic.", node_id: nodeIds.researcherId },
-          { type: "tool_call", agent: "Researcher", tool: "WebSearch", input: { query: "test query" }, node_id: nodeIds.researcherId },
+          { type: "tool_start", agent: "Researcher", tool: "WebSearch", node_id: nodeIds.researcherId },
           { type: "tool_result", agent: "Researcher", tool: "WebSearch", output: "Results for: test query", node_id: nodeIds.researcherId },
           { type: "final_answer", agent: "Researcher", content: "Test answer", node_id: nodeIds.researcherId },
           { type: "run_complete", result: "Test answer" },
