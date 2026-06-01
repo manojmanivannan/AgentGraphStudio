@@ -12,6 +12,7 @@ jobs:
     permissions:
       contents: read
       checks: write
+      pull-requests: write
     steps:
       - uses: actions/checkout@v4
 
@@ -34,12 +35,11 @@ jobs:
 
       - name: Publish test results
         if: always()
-        uses: dorny/test-reporter@v1
+        uses: EnricoMi/publish-unit-test-result-action@v2
         with:
-          name: Backend Tests (pytest)
-          path: backend/junit/test-results.xml
-          reporter: java-junit
-          fail-on-error: false
+          files: backend/junit/test-results.xml
+          comment_title: Backend Tests (pytest)
+          check_name: Backend Tests (pytest)
 
       - name: Upload test results artifact
         if: always()
@@ -53,6 +53,7 @@ jobs:
     permissions:
       contents: read
       checks: write
+      pull-requests: write
     steps:
       - uses: actions/checkout@v4
 
@@ -72,12 +73,11 @@ jobs:
 
       - name: Publish test results
         if: always()
-        uses: dorny/test-reporter@v1
+        uses: EnricoMi/publish-unit-test-result-action@v2
         with:
-          name: Frontend Unit Tests (vitest)
-          path: frontend/junit/vitest-results.xml
-          reporter: java-junit
-          fail-on-error: false
+          files: frontend/junit/vitest-results.xml
+          comment_title: Frontend Unit Tests (vitest)
+          check_name: Frontend Unit Tests (vitest)
 
       - name: Upload test results artifact
         if: always()
@@ -91,6 +91,7 @@ jobs:
     permissions:
       contents: read
       checks: write
+      pull-requests: write
     steps:
       - uses: actions/checkout@v4
 
@@ -125,12 +126,11 @@ jobs:
 
       - name: Publish test results
         if: always()
-        uses: dorny/test-reporter@v1
+        uses: EnricoMi/publish-unit-test-result-action@v2
         with:
-          name: Frontend E2E Tests (Playwright)
-          path: frontend/junit/e2e-results.xml
-          reporter: java-junit
-          fail-on-error: false
+          files: frontend/junit/e2e-results.xml
+          comment_title: Frontend E2E Tests (Playwright)
+          check_name: Frontend E2E Tests (Playwright)
 
       - name: Upload test results artifact
         if: always()
