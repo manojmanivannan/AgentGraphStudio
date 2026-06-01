@@ -278,7 +278,15 @@ class CanvasRunner:
                 return RouterExecution(services)
             return WorkerExecution(services)
 
-        # No target agent: use the legacy chain strategy
+        # No target agent: inspect the first agent's type
+        # Routers aren't built during setup() — they're built lazily by
+        # RouterExecution, so we must pick the right strategy here.
+        agent_ids = [n.id for n in self.canvas.agent_nodes]
+        first_node = self.node_map.get(agent_ids[0]) if agent_ids else None
+        if first_node and first_node.agent_type == "router":
+            return RouterExecution(services)
+
+        # Legacy chain strategy for worker-only canvases
         return ChainExecution(services)
 
     @mlflow.trace(
