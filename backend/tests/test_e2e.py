@@ -165,7 +165,7 @@ class TestE2ERouterMath:
         runner.agents[math_agent.id] = _make_agent_mock("2 + 3 = 5")
         runner.agents[weather_agent.id] = _make_agent_mock("Sunny 20C")
 
-        with patch.object(runner, "_build_router_agent") as mock_builder:
+        with patch.object(runner._agent_factory, "build_router") as mock_builder:
             mock_builder.return_value = _make_router_mock(
                 "2 + 3 = 5",
                 trajectory={
@@ -178,7 +178,7 @@ class TestE2ERouterMath:
                     "tool_args_1": {},
                 },
             )
-            await runner.run("what is 2+3", collect)
+            await runner.run("what is 2+3", collect, target_agent_id=canvas.agent_nodes[0].id)
 
         event_types = [e["type"] for e in events]
         assert "run_start" in event_types
@@ -205,7 +205,7 @@ class TestE2ERouterMath:
         runner.agents[math_agent.id] = _make_agent_mock("2 + 3 = 5")
         runner.agents[weather_agent.id] = _make_agent_mock("Sunny 20C")
 
-        with patch.object(runner, "_build_router_agent") as mock_builder:
+        with patch.object(runner._agent_factory, "build_router") as mock_builder:
             mock_builder.return_value = _make_router_mock(
                 "Sunny 20C",
                 trajectory={
@@ -218,7 +218,7 @@ class TestE2ERouterMath:
                     "tool_args_1": {},
                 },
             )
-            await runner.run("what is the weather in Paris?", collect)
+            await runner.run("what is the weather in Paris?", collect, target_agent_id=canvas.agent_nodes[0].id)
 
         event_types = [e["type"] for e in events]
         assert "run_start" in event_types
@@ -245,7 +245,7 @@ class TestE2ERouterMath:
         runner.agents[math_agent.id] = _make_agent_mock("4")
         runner.agents[weather_agent.id] = _make_agent_mock("")
 
-        with patch.object(runner, "_build_router_agent") as mock_builder:
+        with patch.object(runner._agent_factory, "build_router") as mock_builder:
             mock_builder.return_value = _make_router_mock(
                 "4",
                 trajectory={
@@ -259,7 +259,7 @@ class TestE2ERouterMath:
                 },
             )
 
-            await runner.run("what is 2+2", collect)
+            await runner.run("what is 2+2", collect, target_agent_id=canvas.agent_nodes[0].id)
 
         final_answers = [e for e in events if e["type"] == "final_answer"]
         assert len(final_answers) >= 1
@@ -368,7 +368,7 @@ class TestE2EFullFlow:
         runner.agents[math_agent.id] = _make_agent_mock("4")
         runner.agents[weather_agent.id] = _make_agent_mock("")
 
-        with patch.object(runner, "_build_router_agent") as mock_builder:
+        with patch.object(runner._agent_factory, "build_router") as mock_builder:
             mock_builder.return_value = _make_router_mock(
                 "4",
                 trajectory={
@@ -381,7 +381,7 @@ class TestE2EFullFlow:
                     "tool_args_1": {},
                 },
             )
-            await runner.run("what is 2+2", collect)
+            await runner.run("what is 2+2", collect, target_agent_id=canvas.agent_nodes[0].id)
 
         event_types = [e["type"] for e in events]
         assert "run_start" in event_types
@@ -414,7 +414,7 @@ class TestE2EFullFlow:
         runner.agents[math_agent.id] = _make_agent_mock("")
         runner.agents[weather_agent.id] = _make_agent_mock("It is sunny today")
 
-        with patch.object(runner, "_build_router_agent") as mock_builder:
+        with patch.object(runner._agent_factory, "build_router") as mock_builder:
             mock_builder.return_value = _make_router_mock(
                 "It is sunny today",
                 trajectory={
@@ -427,7 +427,7 @@ class TestE2EFullFlow:
                     "tool_args_1": {},
                 },
             )
-            await runner.run("what is the weather in London?", collect)
+            await runner.run("what is the weather in London?", collect, target_agent_id=canvas.agent_nodes[0].id)
 
         final_answers = [e for e in events if e["type"] == "final_answer"]
         all_texts = " ".join(str(e.get("content", "")) for e in final_answers).lower()
@@ -454,7 +454,7 @@ class TestE2EFullFlow:
         runner.agents[math_agent.id] = _make_agent_mock("15")
         runner.agents[weather_agent.id] = _make_agent_mock("")
 
-        with patch.object(runner, "_build_router_agent") as mock_builder:
+        with patch.object(runner._agent_factory, "build_router") as mock_builder:
             mock_builder.return_value = _make_router_mock(
                 "15",
                 trajectory={
@@ -467,7 +467,7 @@ class TestE2EFullFlow:
                     "tool_args_1": {},
                 },
             )
-            await runner.run("what is 10 + 5?", collect)
+            await runner.run("what is 10 + 5?", collect, target_agent_id=canvas.agent_nodes[0].id)
 
         event_types = [e["type"] for e in events]
         assert "run_start" in event_types

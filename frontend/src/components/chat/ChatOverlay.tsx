@@ -279,12 +279,30 @@ export function ChatOverlay() {
       };
 
       ws.onerror = () => {
+        addMessageLocal({
+          id: crypto.randomUUID(),
+          conversation_id: convId,
+          role: "system",
+          content: "WebSocket connection failed. Is the backend running?",
+          event_type: "error",
+          created_at: new Date().toISOString(),
+        });
         setRunning(false);
         setActiveNodeId(null);
       };
 
-      ws.onclose = () => {
+      ws.onclose = (ev) => {
         if (wsRef.current === ws) wsRef.current = null;
+        if (ev.code !== 1000 && ev.code !== 1005) {
+          addMessageLocal({
+            id: crypto.randomUUID(),
+            conversation_id: convId,
+            role: "system",
+            content: `Connection closed unexpectedly (code ${ev.code}).`,
+            event_type: "error",
+            created_at: new Date().toISOString(),
+          });
+        }
         setRunning(false);
         setActiveNodeId(null);
       };
