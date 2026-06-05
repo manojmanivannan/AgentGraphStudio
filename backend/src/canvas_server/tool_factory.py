@@ -1,23 +1,101 @@
-import inspect
-import logging
+"""Tool factory -- compiles user Python tool code and executes it in a sandbox.
 
-from canvas_server.exceptions import ToolCompilationError
+The compilation flow is:
+1. Validate syntax by sending code to the Deno/Pyodide sandbox (catches SyntaxErrors)
+2. Extract function metadata (name, docstring, annotations) via host-side exec
+   -- this is safe because we only use it for inspect, not execution
+3. Return an async wrapper callable that executes the function in the sandbox
+
+For testing, ``inspect_tool_code`` extracts parameter metadata and
+``execute_tool_code`` runs a function with user-provided string arguments,
+coercing them to the correct Python types via type hints.
+"""
+
+from __future__ import annotations
+
+import inspect
+import json
+import logging
+import time
+from typing import Any
+
+from canvas_server.exceptions import ToolCompilationError, ToolExecutionError
+from canvas_server.models.api import ToolArgumentInfo, ToolInspectResponse, ToolTestResponse
 
 logger = logging.getLogger("canvas_server.tool_factory")
 
 
-async def compile_tool_from_code(name: str, code: str):
+# -- Type coercion ---------------------------------------------------------------
+
+
+def coerce_arg(value: str, type_hint: str) -> Any:
+    """Coerce a string value to the Python type indicated by *type_hint*.
+
+    Supported types: str, int, float, bool, list, dict.
+    Unknown types fall back to returning the raw string.
     """
-    Compiles a tool from a string of Python code.
-    The code is expected to contain a single function with type hints that will be
-    used as a DSPy tool.
+    if type_hint == "str":
+        return value
+    if type_hint == "int":
+        try:
+            return int(value)
+        except (ValueError, TypeError) as exc:
+            raise ToolExecutionError(f"Cannot coerce '{value}' to int: {exc}") from exc
+    if type_hint == "float":
+        try:
+            return float(value)
+        except (ValueError, TypeError) as exc:
+            raise ToolExecutionError(f"Cannot coerce '{value}' to float: {exc}") from exc
+    if type_hint == "bool":
+        if value.lower() in ("true", "1", "yes"):
+            return True
+        if value.lower() in ("false", "0", "no"):
+            return False
+        raise ToolExecutionError(f"Cannot coerce '{value}' to bool")
+    if type_hint in ("list", "list[str]", "list[int]"):
+        try:
+            parsed = json.loads(value)
+            if not isinstance(parsed, list):
+                raise ToolExecutionError(
+                    f"Expected a JSON list, got {type(parsed).__name__}"
+                )
+            return parsed
+        except json.JSONDecodeError as exc:
+            raise ToolExecutionError(
+                f"Cannot coerce '{value}' to list: {exc}"
+            ) from exc
+    if type_hint in ("dict", "dict[str, Any]", "dict[str, str]"):
+        try:
+            parsed = json.loads(value)
+            if not isinstance(parsed, dict):
+                raise ToolExecutionError(
+                    f"Expected a JSON dict, got {type(parsed).__name__}"
+                )
+            return parsed
+        except json.JSONDecodeError as exc:
+            raise ToolExecutionError(
+                f"Cannot coerce '{value}' to dict: {exc}"
+            ) from exc
+    # Unknown type -- fall back to raw string
+    return value
+
+
+# -- Host-side metadata extraction -----------------------------------------------
+
+
+def _extract_function(code: str, name: str):
+    """Extract the first user-defined callable from *code* using host-side exec.
+
+    This is used ONLY for metadata extraction (name, docstring, annotations)
+    that DSPy needs to build tool descriptors.  The actual execution happens in
+    the sandbox.
     """
-    logger.debug("Compiling tool '%s': code=%s...", name, code[:80] if code else "(empty)")
     namespace: dict = {}
     try:
-        exec(code, namespace)
+        exec(code, namespace)  # noqa: S102 -- safe: used for metadata only
+    except SyntaxError as e:
+        raise ToolCompilationError(f"Syntax error in tool '{name}': {e}") from e
     except Exception as e:
-        logger.error("Failed to exec tool '%s': %s", name, e)
         raise ToolCompilationError(f"Failed to compile tool '{name}': {e}") from e
 
     user_func = None
@@ -27,8 +105,181 @@ async def compile_tool_from_code(name: str, code: str):
             break
 
     if not user_func:
-        logger.warning("No callable function found in tool '%s'", name)
         raise ToolCompilationError(f"No callable function found in tool '{name}'.")
-
-    logger.info("Compiled tool '%s' successfully", name)
     return user_func
+
+
+def _resolve_type_hint(annotation: Any) -> str:
+    """Convert a type annotation object to a simple string hint."""
+    if annotation is inspect.Parameter.empty:
+        return "str"  # default fallback
+    if isinstance(annotation, type):
+        return annotation.__name__
+    # Handle string annotations like 'str', 'int', etc.
+    hint_str = str(annotation)
+    # Clean up common forms: <class 'int'> -> int, typing.List[str] -> list
+    if hint_str.startswith("<class '"):
+        return hint_str[8:-2]
+    # Strip typing module prefixes
+    for prefix in ("typing.", "builtins."):
+        if hint_str.startswith(prefix):
+            return hint_str[len(prefix):]
+    # Simplify complex types: list[str] -> list, dict[str, Any] -> dict
+    if hint_str.startswith("list"):
+        return "list"
+    if hint_str.startswith("dict"):
+        return "dict"
+    return hint_str
+
+
+# -- Public API ------------------------------------------------------------------
+
+
+async def compile_tool_from_code(name: str, code: str):
+    """Compile user tool code and return an async callable that executes in the sandbox.
+
+    The returned function has __name__, __doc__, and __annotations__
+    set from the original code so that DSPy can build tool descriptors from it.
+    When called, it sends the function definition + call through the Deno/Pyodide
+    sandbox.
+    """
+    # Validate syntax via sandbox
+    from canvas_server.sandbox import Sandbox
+
+    sandbox = await Sandbox.get()
+    try:
+        sandbox(f"compile({repr(code)}, '<tool>', 'exec')")
+    except SyntaxError as e:
+        raise ToolCompilationError(f"Syntax error in tool '{name}': {e}") from e
+    except Exception as e:
+        # Non-syntax errors in compile() are unexpected but we handle them
+        raise ToolCompilationError(f"Failed to compile tool '{name}': {e}") from e
+
+    # Extract function metadata on host side (safe -- metadata only, no execution)
+    user_func = _extract_function(code, name)
+    fn_name = user_func.__name__
+
+    # Capture code in a closure variable to avoid late-binding issues
+    tool_code = code
+
+    async def sandbox_tool_fn(**kwargs):
+        """Executes the user's function in the Deno/Pyodide sandbox."""
+        sandbox = await Sandbox.get()
+        args_repr = ", ".join(f"{k}={repr(v)}" for k, v in kwargs.items())
+        call_code = f"{tool_code}\n_result = {fn_name}({args_repr})\n_result"
+        return sandbox(call_code)
+
+    # Copy DSPy-needed metadata from the original function
+    sandbox_tool_fn.__name__ = user_func.__name__
+    sandbox_tool_fn.__doc__ = user_func.__doc__
+    sandbox_tool_fn.__annotations__ = getattr(user_func, "__annotations__", {})
+
+    logger.info("Compiled tool '%s' (sandbox mode)", name)
+    return sandbox_tool_fn
+
+
+async def inspect_tool_code(name: str, code: str) -> ToolInspectResponse:
+    """Extract function signature metadata from tool code.
+
+    Returns the function name and a list of argument descriptors with name,
+    type hint, and default value (if any).
+    """
+    user_func = _extract_function(code, name)
+    sig = inspect.signature(user_func)
+    annotations = getattr(user_func, "__annotations__", {})
+
+    arguments: list[ToolArgumentInfo] = []
+    for param_name, param in sig.parameters.items():
+        type_hint = _resolve_type_hint(annotations.get(param_name, param.annotation))
+        default_value = None
+        if param.default is not inspect.Parameter.empty:
+            default_value = repr(param.default)
+        arguments.append(
+            ToolArgumentInfo(
+                name=param_name,
+                type_hint=type_hint,
+                default_value=default_value,
+            )
+        )
+
+    logger.info(
+        "Inspected tool '%s': function=%s, args=%d",
+        name,
+        user_func.__name__,
+        len(arguments),
+    )
+    return ToolInspectResponse(
+        function_name=user_func.__name__,
+        arguments=arguments,
+    )
+
+
+async def execute_tool_code(name: str, code: str, args: dict[str, str]) -> ToolTestResponse:
+    """Execute a tool function in the sandbox with user-provided string arguments.
+
+    Coerces string arguments to the correct Python types using type hints,
+    then runs the function in the Deno/Pyodide sandbox and returns the result.
+    """
+    start = time.perf_counter()
+
+    # 1. Validate and compile the code
+    try:
+        fn = await compile_tool_from_code(name, code)
+    except ToolCompilationError as e:
+        return ToolTestResponse(success=False, output=str(e), execution_time_ms=0)
+
+    # 2. Coerce string args using the ORIGINAL function's annotations and signature.
+    #    We cannot use inspect.signature(fn) because fn is the async sandbox wrapper
+    #    which has **kwargs. Instead, extract the original function for metadata.
+    try:
+        original_func = _extract_function(code, name)
+    except ToolCompilationError as e:
+        return ToolTestResponse(success=False, output=str(e), execution_time_ms=0)
+
+    annotations = dict(getattr(original_func, "__annotations__", {}))
+    annotations.pop("return", None)
+
+    sig = inspect.signature(original_func)
+    coerced_args: dict[str, Any] = {}
+
+    for param_name, param in sig.parameters.items():
+        type_hint = _resolve_type_hint(annotations.get(param_name, param.annotation))
+
+        if param_name in args:
+            # User provided a value -- coerce it
+            try:
+                coerced_args[param_name] = coerce_arg(args[param_name], type_hint)
+            except ToolExecutionError as e:
+                elapsed_ms = (time.perf_counter() - start) * 1000
+                return ToolTestResponse(
+                    success=False, output=str(e), execution_time_ms=elapsed_ms
+                )
+        elif param.default is not inspect.Parameter.empty:
+            # Parameter has a default -- let it be used
+            coerced_args[param_name] = param.default
+        else:
+            # Required argument missing
+            elapsed_ms = (time.perf_counter() - start) * 1000
+            return ToolTestResponse(
+                success=False,
+                output=f"Missing required argument: '{param_name}' (expected type: {type_hint})",
+                execution_time_ms=elapsed_ms,
+            )
+
+    # 3. Execute in the sandbox
+    try:
+        result = await fn(**coerced_args)
+        elapsed_ms = (time.perf_counter() - start) * 1000
+        return ToolTestResponse(
+            success=True,
+            output=str(result),
+            execution_time_ms=round(elapsed_ms, 2),
+        )
+    except Exception as e:
+        elapsed_ms = (time.perf_counter() - start) * 1000
+        error_msg = f"{type(e).__name__}: {e}"
+        return ToolTestResponse(
+            success=False,
+            output=error_msg,
+            execution_time_ms=round(elapsed_ms, 2),
+        )

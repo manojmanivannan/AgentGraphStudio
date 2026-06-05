@@ -35,7 +35,26 @@ When the backend needs to communicate a new state or action to the frontend duri
 
 ---
 
-### 3. Adding a New API Endpoint
+### 3. Adding a New Tool Test Feature
+
+When extending the tool testing capabilities (e.g., adding timeout configuration, supporting async functions, adding output format options):
+
+**Backend (The Sandbox)**
+- [ ] **Sandbox**: Update `backend/src/canvas_server/sandbox.py` if sandbox configuration changes.
+- [ ] **Tool Factory**: Update `backend/src/canvas_server/tool_factory.py` — `execute_tool_code()`, `coerce_arg()`, or `inspect_tool_code()`.
+- [ ] **API Schemas**: Update `backend/src/canvas_server/models/api.py` if request/response fields change.
+- [ ] **Routes**: Update `backend/src/canvas_server/routes/tools.py` if endpoint signatures change.
+- [ ] **Tests**: Add tests to `backend/tests/test_tool_factory.py` and `backend/tests/test_routes_tools.py`. Use `@requires_deno` for sandbox tests.
+
+**Frontend (The UI)**
+- [ ] **Types**: Update `frontend/src/types/index.ts` if API response shapes change.
+- [ ] **API**: Update `frontend/src/lib/api.ts` if endpoint signatures change.
+- [ ] **ToolEditor**: Update `frontend/src/components/sidebar/ToolEditor.tsx` — the Test Tool panel state machine.
+- [ ] **Tests**: Update `frontend/src/components/sidebar/ToolEditor.test.tsx` with new test cases.
+
+---
+
+### 4. Adding a New API Endpoint
 When adding a new REST capability (e.g., "Clone Canvas" or "Get Agent Stats"):
 
 **Backend (The Implementation)**

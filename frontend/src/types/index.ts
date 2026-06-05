@@ -139,3 +139,18 @@ export interface Conversation {
   updated_at: string;
   messages: Message[];
 }
+
+export interface ToolInspectResponse {
+  function_name: string;
+  arguments: Array<{
+    name: string;
+    type_hint: string;
+    default_value: string | null;
+  }>;
+}
+
+export interface ToolTestResponse {
+  success: boolean;
+  output: string;
+  execution_time_ms: number;
+}

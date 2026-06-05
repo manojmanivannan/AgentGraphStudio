@@ -10,6 +10,7 @@ from fastapi.responses import JSONResponse
 from canvas_server.config import settings
 from canvas_server.routes.canvas import canvas_router
 from canvas_server.routes.execute import execute_router
+from canvas_server.routes.tools import tools_router
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -27,6 +28,15 @@ async def lifespan(app: FastAPI):
     logger.debug("Config: database_url=%s", url_part)
     logger.debug("Config: llm_model=%s", settings.llm_model)
     logger.debug(f"Config: cors_origins={settings.cors_origins}")
+
+    # Pre-warm the Deno/Pyodide sandbox for tool execution
+    try:
+        from canvas_server.sandbox import Sandbox
+
+        await Sandbox.get()
+        logger.info("Sandbox (Deno/Pyodide) initialized")
+    except Exception as exc:
+        logger.warning("Sandbox initialization failed (tools will not work): %s", exc)
 
     # Initialize MLflow tracing for DSPy — skip gracefully when unavailable
     if settings.mlflow_enabled:
@@ -50,6 +60,15 @@ async def lifespan(app: FastAPI):
 
     yield
     logger.info("Canvas server shutting down")
+
+    # Shut down the sandbox process
+    try:
+        from canvas_server.sandbox import Sandbox
+
+        await Sandbox.shutdown()
+        logger.info("Sandbox shut down")
+    except Exception as exc:
+        logger.warning("Sandbox shutdown failed: %s", exc)
 
 
 app = FastAPI(title="Canvas Server", version="0.1.0", lifespan=lifespan)
@@ -91,6 +110,7 @@ async def global_exception_handler(request: Request, exc: Exception):
 
 app.include_router(canvas_router)
 app.include_router(execute_router)
+app.include_router(tools_router)
 
 
 @app.get("/health")

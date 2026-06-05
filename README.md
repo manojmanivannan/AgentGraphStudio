@@ -37,7 +37,7 @@ MLflow (port 5000). Open `http://localhost:5173`.
 This is an **agent builder** — a visual IDE for creating multi-agent AI workflows:
 
 1. **Drag agents** onto a canvas — each with a role, instructions, and model
-2. **Wire tools** — write Python functions agents can call
+2. **Wire tools** — write Python functions agents can call; test them instantly in the UI
 3. **Connect agents** — handoffs let one agent delegate to another
 4. **Run** — watch agents reason, call tools, and collaborate in real-time
 
@@ -82,6 +82,7 @@ Or use SQLite for development (set `DATABASE_URL=sqlite+aiosqlite:///dev.db`).
 
 - **Frontend:** React 19 + TypeScript + Vite, ReactFlow canvas, Tailwind CSS, zustand
 - **Backend:** Python 3.12+ / FastAPI, **DSPy** for agent execution, WebSocket streaming
+- **Tool Sandbox:** Deno + Pyodide (WASM Python via DSPy PythonInterpreter)
 - **Database:** PostgreSQL 17 + pgvector (asyncpg), SQLite for tests
 - **LLM:** Configurable per agent — defaults to Ollama
 - **Memory:** mem0 + Qdrant vector store, per-agent via `user_id` scoping

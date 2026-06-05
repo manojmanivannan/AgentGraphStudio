@@ -59,3 +59,15 @@ _Avoid_: Long-term memory, storage
 **Observability**:
 An embedded MLflow UI iframe for tracing DSPy agent calls, tool invocations, and LLM interactions via `mlflow.dspy.autolog()`.
 _Avoid_: Tracing, monitoring, dashboard
+
+**Sandbox**:
+A Deno/Pyodide subprocess (via DSPy `PythonInterpreter`) that executes all tool code in an isolated WASM-based Python runtime. No access to host filesystem, network, or environment variables by default. Managed as a singleton by `canvas_server.sandbox.Sandbox`.
+_Avoid_: Container, VM, isolation layer
+
+**Tool Inspection**:
+Extracting function metadata (name, parameter names, type hints, default values) from user-written Python code. Used by the Test Tool UI to generate argument input fields. Provided by `POST /api/tools/inspect`.
+_Avoid_: Reflection, introspection, parsing
+
+**Tool Test**:
+Running a tool function in the sandbox with user-provided argument values and returning the result (output or error) to the UI. Provided by `POST /api/tools/test`.
+_Avoid_: Playground, REPL, runner

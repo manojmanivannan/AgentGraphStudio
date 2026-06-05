@@ -4,6 +4,8 @@ import type {
   CanvasSavePayload,
   Conversation,
   ConversationSummary,
+  ToolInspectResponse,
+  ToolTestResponse,
 } from "@/types";
 
 const API_BASE = `http://${import.meta.env.VITE_API_HOST || "localhost:8000"}/api`;
@@ -114,4 +116,35 @@ export async function deleteConversation(
     { method: "DELETE" }
   );
   if (!res.ok) throw new Error("Failed to delete conversation");
+}
+
+export async function inspectTool(
+  code: string
+): Promise<ToolInspectResponse> {
+  const res = await fetch(`${API_BASE}/tools/inspect`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ code }),
+  });
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({ detail: "Failed to inspect tool" }));
+    throw new Error(error.detail || "Failed to inspect tool");
+  }
+  return res.json();
+}
+
+export async function testTool(
+  code: string,
+  args: Record<string, string>
+): Promise<ToolTestResponse> {
+  const res = await fetch(`${API_BASE}/tools/test`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ code, args }),
+  });
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({ detail: "Failed to test tool" }));
+    throw new Error(error.detail || "Failed to test tool");
+  }
+  return res.json();
 }
