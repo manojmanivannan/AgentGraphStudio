@@ -13,6 +13,7 @@ export interface ToolNodeData {
   id: string;
   name: string;
   code: string;
+  packages?: string;
 }
 
 export type ExecutionEvent =

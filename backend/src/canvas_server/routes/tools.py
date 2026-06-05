@@ -30,9 +30,9 @@ async def inspect_tool(body: ToolInspectRequest):
     Returns the function name and a list of arguments with type hints and
     default values.
     """
-    logger.info("Inspecting tool code: %s chars", len(body.code))
+    logger.info("Inspecting tool code: %s chars, deps=%s", len(body.code), body.dependencies)
     try:
-        return await inspect_tool_code("test_tool", body.code)
+        return await inspect_tool_code("test_tool", body.code, dependencies=body.dependencies)
     except ToolCompilationError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
 
@@ -46,5 +46,5 @@ async def test_tool(body: ToolTestRequest):
     function's type hints, then executes the function in the sandbox and
     returns the result.
     """
-    logger.info("Testing tool code: %s chars, %d args", len(body.code), len(body.args))
-    return await execute_tool_code("test_tool", body.code, body.args)
+    logger.info("Testing tool code: %s chars, %d args, deps=%s", len(body.code), len(body.args), body.dependencies)
+    return await execute_tool_code("test_tool", body.code, body.args, dependencies=body.dependencies)

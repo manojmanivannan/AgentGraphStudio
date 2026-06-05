@@ -17,6 +17,7 @@ export function ToolEditor() {
   const selectedNode = nodes.find((n) => n.id === selectedNodeId && n.type === "tool");
 
   const [localName, setLocalName] = useState("");
+  const [localPackages, setLocalPackages] = useState("");
   const [localCode, setLocalCode] = useState("");
 
   // Test tool state
@@ -29,6 +30,7 @@ export function ToolEditor() {
   useEffect(() => {
     if (selectedNode) {
       setLocalName((selectedNode.data as any)?.name ?? "");
+      setLocalPackages((selectedNode.data as any)?.packages ?? "");
       setLocalCode((selectedNode.data as any)?.code ?? "");
     }
   }, [selectedNodeId]);
@@ -75,6 +77,12 @@ export function ToolEditor() {
     setNodes(newNodes);
   };
 
+  const parsePackages = (packages: string): string[] =>
+    packages
+      .split(",")
+      .map((p) => p.trim())
+      .filter((p) => p.length > 0);
+
   const handleInspect = async () => {
     if (!localCode.trim()) {
       setTestError("Write some Python code first");
@@ -84,7 +92,8 @@ export function ToolEditor() {
     setTestState("inspecting");
     setTestError(null);
     try {
-      const result = await inspectTool(localCode);
+      const pkgs = parsePackages(localPackages);
+      const result = await inspectTool(localCode, pkgs);
       setArgumentInfo(result.arguments);
       // Initialize test args with default values
       const initialArgs: Record<string, string> = {};
@@ -106,7 +115,8 @@ export function ToolEditor() {
     setTestState("testing");
     setTestError(null);
     try {
-      const result = await testTool(localCode, testArgs);
+      const pkgs = parsePackages(localPackages);
+      const result = await testTool(localCode, testArgs, pkgs);
       setTestResult(result);
       setTestState(result.success ? "success" : "error");
     } catch (e: any) {
@@ -172,6 +182,21 @@ export function ToolEditor() {
           data-testid="tool-name-input"
           className="input-base w-full"
           placeholder="Tool name"
+        />
+      </div>
+
+      <div>
+        <label className="block text-[11px] font-semibold text-[var(--color-text-tertiary)] mb-1.5 uppercase tracking-[0.06em]">Python Packages</label>
+        <input
+          type="text"
+          value={localPackages}
+          onChange={(e) => {
+            setLocalPackages(e.target.value);
+            updateStore("packages", e.target.value);
+          }}
+          data-testid="tool-packages-input"
+          className="input-base w-full"
+          placeholder="e.g. pandas, requests"
         />
       </div>
 

@@ -60,6 +60,8 @@ def _canvas_to_response(canvas) -> CanvasResponse:
                     canvas_id=n.canvas_id,
                     name=n.name,
                     code=n.code,
+                    dependencies=n.dependencies,
+                    args=n.args,
                     position_x=n.position_x,
                     position_y=n.position_y,
                 )

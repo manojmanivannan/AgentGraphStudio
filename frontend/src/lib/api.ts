@@ -119,12 +119,13 @@ export async function deleteConversation(
 }
 
 export async function inspectTool(
-  code: string
+  code: string,
+  dependencies?: string[]
 ): Promise<ToolInspectResponse> {
   const res = await fetch(`${API_BASE}/tools/inspect`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ code }),
+    body: JSON.stringify({ code, dependencies: dependencies ?? [] }),
   });
   if (!res.ok) {
     const error = await res.json().catch(() => ({ detail: "Failed to inspect tool" }));
@@ -135,12 +136,13 @@ export async function inspectTool(
 
 export async function testTool(
   code: string,
-  args: Record<string, string>
+  args: Record<string, string>,
+  dependencies?: string[]
 ): Promise<ToolTestResponse> {
   const res = await fetch(`${API_BASE}/tools/test`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ code, args }),
+    body: JSON.stringify({ code, args, dependencies: dependencies ?? [] }),
   });
   if (!res.ok) {
     const error = await res.json().catch(() => ({ detail: "Failed to test tool" }));
