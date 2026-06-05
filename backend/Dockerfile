@@ -1,5 +1,13 @@
 FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim
 
+# install curl
+RUN apt-get update && apt-get install -y curl unzip && rm -rf /var/lib/apt/lists/*
+
+# Install Deno for sandboxed Python execution (Pyodide/WASM via DSPy PythonInterpreter)
+RUN curl -fsSL https://deno.land/install.sh | sh && \
+    mv /root/.deno/bin/deno /usr/local/bin/deno && \
+    chmod +x /usr/local/bin/deno
+
 WORKDIR /app
 
 ENV UV_COMPILE_BYTECODE=1

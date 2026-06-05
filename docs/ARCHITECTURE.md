@@ -42,6 +42,7 @@ them with edges, and execute multi-agent teams powered by [DSPy](https://dspy.ai
 | Icons              | lucide-react                                                         |
 | Backend            | Python 3.12+ / FastAPI / async                                       |
 | Agent Framework    | DSPy v3.1+ (StreamingReAct — custom ReAct subclass)                  |
+| Tool Sandbox       | Deno + Pyodide (via DSPy PythonInterpreter)                          |
 | LLM Default        | Ollama (configurable: OpenAI, Anthropic, Groq via DSPy LM)           |
 | Database           | PostgreSQL 17 + pgvector (async SQLAlchemy 2.0 + Alembic)            |
 | Migrations         | Alembic (auto-generated, in `backend/alembic/versions/`)             |
@@ -99,9 +100,18 @@ them with edges, and execute multi-agent teams powered by [DSPy](https://dspy.ai
 │  │            │ │              │ │   ...until "finish"       │       │
 │  │            │ │  MemoryProv.  │ └──────────────────────────┘       │
 │  └────────────┘ └───────────────┘                                    │
+│                      │                                                 │
+│                      ▼                                                 │
+│  ┌──────────────────────────┐                                          │
+│  │ Sandbox (Deno/Pyodide)   │  ← All tool execution goes here           │
+│  │  PythonInterpreter       │                                          │
+│  │  singleton process       │                                          │
+│  └──────────────────────────┘                                          │
 │                                                                        │
 │  Routes:                                      │
 │  /api/canvases/**     — REST CRUD             │
+│  /api/tools/inspect   — Tool metadata        │
+│  /api/tools/test      — Tool test execution  │
 │  /ws/conversations/{id}/run — WebSocket       │
 └──────────────────────────────────────────────────────────────────────┘
                                     │
@@ -165,10 +175,11 @@ mj-agent-framework/
 │   ├── src/
 │   │   └── canvas_server/
 │   │       ├── __init__.py
-│   │       ├── main.py            # FastAPI app, CORS, lifespan (MLflow init)
+│   │       ├── main.py            # FastAPI app, CORS, lifespan (MLflow + sandbox init)
 │   │       ├── config.py          # pydantic-settings: DB, LLM, mem0, MLflow
 │   │       ├── database.py        # Async engine, session factory, Base
-│   │       ├── exceptions.py      # CanvasNotFoundError, ToolCompilationError, etc.
+│   │       ├── exceptions.py      # CanvasNotFoundError, ToolCompilationError, ToolExecutionError
+│   │       ├── sandbox.py         # Singleton Deno/Pyodide sandbox (via DSPy PythonInterpreter)
 │   │       ├── models/
 │   │       │   ├── canvas.py      # SQLAlchemy ORM: Canvas, AgentNode, ToolNode, Edge, Conversation, Message
 │   │       │   └── api.py         # Pydantic: request/response schemas
@@ -177,10 +188,11 @@ mj-agent-framework/
 │   │       │   └── conversation_repo.py   # Async CRUD for conversations + messages
 │   │       ├── routes/
 │   │       │   ├── canvas.py      # REST: /api/canvases/**
-│   │       │   └── execute.py     # WebSocket: /ws/conversations/{id}/run
+│   │       │   ├── execute.py     # WebSocket: /ws/conversations/{id}/run
+│   │       │   └── tools.py       # REST: /api/tools/inspect, /api/tools/test
 │   │       ├── runner.py          # Core: CanvasRunner — setup, build agents, run workflow
 │   │       ├── streaming_react.py # StreamingReAct — DSPy ReAct subclass with event emission
-│   │       ├── tool_factory.py    # exec()-based Python string → DSPy tool compilation
+│   │       ├── tool_factory.py    # Sandbox-based Python string → DSPy tool compilation + test execution
 │   │       ├── memory_config.py   # mem0 config builder from settings
 │   │       └── memory_provider.py # MemoryProvider — mem0 wrapper as DSPy tool functions
 │   └── tests/
@@ -191,7 +203,9 @@ mj-agent-framework/
 │       ├── test_models_api.py
 │       ├── test_repos.py
 │       ├── test_routes_canvas.py
-│       ├── test_tool_factory.py
+│       ├── test_routes_tools.py # Tool inspect + test API endpoints
+│       ├── test_tool_factory.py # Tool compilation, inspection, execution, type coercion
+│       ├── test_sandbox.py      # Sandbox singleton lifecycle + code execution
 │       └── test_e2e.py          # Full-stack E2E (canvas CRUD via test client)
 │
 ├── frontend/
@@ -367,6 +381,13 @@ messages
 | Method | Path | Description |
 |---|---|---|
 | `WS` | `/ws/conversations/{conversation_id}/run` | WebSocket: send `{"prompt":"..."}`, receive events |
+
+### Tool Testing (stateless — no DB session required)
+
+| Method | Path | Description |
+|---|---|---|
+| `POST` | `/api/tools/inspect` | Extract function name, arguments, type hints, defaults from Python code |
+| `POST` | `/api/tools/test` | Execute tool function in sandbox with user-provided string args |
 
 ### PUT `/api/canvases/{id}` — Request Body
 
@@ -581,19 +602,36 @@ run(user_prompt, send_event, target_agent_id=None)
   └── run_complete event
 ```
 
-### tool_factory.py — Dynamic Tool Compilation
+### tool_factory.py — Sandbox-Based Tool Compilation & Execution
 
 ```python
 async def compile_tool_from_code(name: str, code: str) -> callable:
-    # 1. exec(code) in isolated namespace
-    # 2. Find first non-builtin callable
-    # 3. Return raw function (not wrapped in DSPy @tool decorator)
-    #    — tools are registered with StreamingReAct directly
+    # 1. Validate syntax via sandbox (Deno/Pyodide)
+    # 2. Extract function metadata on host side (exec for metadata only)
+    # 3. Return async wrapper that calls the function in the sandbox
+    #    — wrapper preserves __name__, __doc__, __annotations__ for DSPy
+
+async def inspect_tool_code(name, code) -> ToolInspectResponse:
+    # Extract function name, parameter names, type hints, default values
+    # Uses host-side exec for inspect.signature (no execution)
+
+async def execute_tool_code(name, code, args) -> ToolTestResponse:
+    # Compile code, coerce string args to Python types, execute in sandbox
+    # Returns {success, output, execution_time_ms}
+
+def coerce_arg(value: str, type_hint: str) -> Any:
+    # Coerce string → int, float, bool, list, dict (via type hints)
 ```
 
-This is simpler than the original beeai `@tool` approach. The compiled function
-is passed to `dspy.ReAct` as a plain async callable. The function's type hints
-and docstring are used by DSPy's tool discovery.
+**Sandbox model:** All tool execution (both agent runs and interactive testing)
+goes through the Deno/Pyodide sandbox (`canvas_server.sandbox.Sandbox`). The
+sandbox is a long-lived Deno subprocess running Pyodide (WASM Python), started
+at app startup and kept warm. Host-side `exec()` is used **only** for extracting
+function metadata (name, docstring, annotations) that DSPy needs — never for
+execution.
+
+**Security:** The sandbox has no access to the host filesystem, network, or
+environment variables by default (Deno permission model). See ADR-0002.
 
 ### streaming_react.py — StreamingReAct
 
@@ -956,12 +994,27 @@ Four services connect to a shared `agent_network`:
 ### backend/Dockerfile
 
 ```dockerfile
-FROM python:3.12-slim
+FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim
+
+# Install curl and Deno for sandboxed Python execution (Pyodide/WASM via DSPy PythonInterpreter)
+RUN apt-get update && apt-get install -y curl unzip && rm -rf /var/lib/apt/lists/*
+RUN curl -fsSL https://deno.land/install.sh | sh && \
+    mv /root/.deno/bin/deno /usr/local/bin/deno && \
+    chmod +x /usr/local/bin/deno
+
 WORKDIR /app
-COPY pyproject.toml uv.lock ./
-RUN pip install uv && uv sync
-COPY . .
-CMD ["sh", "-c", "alembic upgrade head && uvicorn canvas_server.main:app --host 0.0.0.0 --port 8000 --reload"]
+ENV UV_COMPILE_BYTECODE=1
+ENV UV_LINK_MODE=copy
+RUN --mount=type=cache,target=/root/.cache/uv \
+    --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
+    --mount=type=bind,source=uv.lock,target=uv.lock \
+    uv sync --frozen --no-install-project --no-dev
+COPY alembic.ini .
+COPY alembic/ alembic/
+COPY src/ src/
+ENV PYTHONPATH=/app/src
+EXPOSE 8000
+CMD ["sh", "-c", "uv run alembic upgrade head && uv run uvicorn canvas_server.main:app --host 0.0.0.0 --port 8000 --reload"]
 ```
 
 ### frontend/Dockerfile
@@ -1035,7 +1088,9 @@ span grouping.
 | `test_runner.py` | `CanvasRunner` with mocked DSPy agents — event emission, setup, router→worker flow |
 | `test_conversations.py` | Conversation CRUD API, repo operations, runner+conversation integration |
 | `test_routes_canvas.py` | Canvas CRUD API endpoints |
-| `test_tool_factory.py` | Dynamic Python code compilation |
+| `test_routes_tools.py` | Tool inspect + test API endpoints (`@requires_deno`) |
+| `test_tool_factory.py` | Tool compilation, inspection, execution, type coercion; sandbox integration tests (`@requires_deno`) |
+| `test_sandbox.py` | Sandbox singleton lifecycle + code execution (`@requires_deno`) |
 | `test_config.py` | Settings loading |
 | `test_models_api.py` | Pydantic model serialization |
 | `test_repos.py` | CanvasRepo operations (create, save, delete) |
@@ -1046,6 +1101,8 @@ span grouping.
 - Each test gets a fresh database via `fresh_db` fixture (drop_all → create_all)
 - Agent execution is mocked — no real LLM calls in tests
 - `FakeCanvas`, `FakeAgentNode`, `FakeEdge` classes simplify test setup
+- Sandbox tests use `@requires_deno` marker (`pytest.mark.skipif(not shutil.which("deno"))`)
+  — tests skip gracefully in CI environments without Deno
 
 ### Frontend Tests (`frontend/src/`)
 

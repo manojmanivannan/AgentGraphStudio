@@ -1,7 +1,11 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useCallback } from "react";
 import Editor from "@monaco-editor/react";
 import { useCanvasStore } from "@/store/canvasStore";
 import { useThemeStore } from "@/store/themeStore";
+import { inspectTool, testTool } from "@/lib/api";
+import type { ToolInspectResponse, ToolTestResponse } from "@/types";
+
+type TestState = "idle" | "inspecting" | "ready" | "testing" | "success" | "error";
 
 export function ToolEditor() {
   const selectedNodeId = useCanvasStore((s) => s.selectedNodeId);
@@ -15,12 +19,31 @@ export function ToolEditor() {
   const [localName, setLocalName] = useState("");
   const [localCode, setLocalCode] = useState("");
 
+  // Test tool state
+  const [testState, setTestState] = useState<TestState>("idle");
+  const [argumentInfo, setArgumentInfo] = useState<ToolInspectResponse["arguments"]>([]);
+  const [testArgs, setTestArgs] = useState<Record<string, string>>({});
+  const [testResult, setTestResult] = useState<ToolTestResponse | null>(null);
+  const [testError, setTestError] = useState<string | null>(null);
+
   useEffect(() => {
     if (selectedNode) {
       setLocalName((selectedNode.data as any)?.name ?? "");
       setLocalCode((selectedNode.data as any)?.code ?? "");
     }
   }, [selectedNodeId]);
+
+  // Reset test state when code changes
+  useEffect(() => {
+    if (testState !== "idle") {
+      setTestState("idle");
+      setArgumentInfo([]);
+      setTestArgs({});
+      setTestResult(null);
+      setTestError(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [localCode]);
 
   if (!selectedNode) {
     return (
@@ -51,6 +74,63 @@ export function ToolEditor() {
     );
     setNodes(newNodes);
   };
+
+  const handleInspect = async () => {
+    if (!localCode.trim()) {
+      setTestError("Write some Python code first");
+      setTestState("error");
+      return;
+    }
+    setTestState("inspecting");
+    setTestError(null);
+    try {
+      const result = await inspectTool(localCode);
+      setArgumentInfo(result.arguments);
+      // Initialize test args with default values
+      const initialArgs: Record<string, string> = {};
+      for (const arg of result.arguments) {
+        initialArgs[arg.name] = arg.default_value
+          ? arg.default_value.replace(/^['"]|['"]$/g, "") // strip quotes from default
+          : "";
+      }
+      setTestArgs(initialArgs);
+      setTestState("ready");
+      setTestResult(null);
+    } catch (e: any) {
+      setTestError(e.message || "Failed to inspect tool");
+      setTestState("error");
+    }
+  };
+
+  const handleRunTest = async () => {
+    setTestState("testing");
+    setTestError(null);
+    try {
+      const result = await testTool(localCode, testArgs);
+      setTestResult(result);
+      setTestState(result.success ? "success" : "error");
+    } catch (e: any) {
+      setTestError(e.message || "Failed to test tool");
+      setTestState("error");
+    }
+  };
+
+  const handleResetTest = () => {
+    setTestState("idle");
+    setArgumentInfo([]);
+    setTestArgs({});
+    setTestResult(null);
+    setTestError(null);
+  };
+
+  const getInputTypeForHint = (typeHint: string): string => {
+    if (typeHint === "int" || typeHint === "float") return "number";
+    if (typeHint === "bool") return "checkbox";
+    if (typeHint === "list" || typeHint === "dict") return "textarea";
+    return "text";
+  };
+
+  const isTesting = testState === "inspecting" || testState === "testing";
 
   return (
     <div className="space-y-3">
@@ -122,6 +202,173 @@ export function ToolEditor() {
             }}
           />
         </div>
+      </div>
+
+      {/* ── Test Tool Section ────────────────────────────────────────── */}
+      <div className="pt-3 border-t border-[var(--color-border-subtle)]">
+        <div className="flex items-center gap-2 mb-2">
+          <svg className="w-3.5 h-3.5 text-[var(--color-secondary)]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M9 12l2 2 4-4"/>
+            <circle cx="12" cy="12" r="10"/>
+          </svg>
+          <h4 className="text-[11px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-[0.06em]">
+            Test Tool
+          </h4>
+        </div>
+
+        {testState === "idle" && (
+          <button
+            onClick={handleInspect}
+            data-testid="tool-test-button"
+            className="btn-secondary w-full text-[12px]"
+            disabled={!localCode.trim()}
+          >
+            Inspect &amp; Test
+          </button>
+        )}
+
+        {(testState === "inspecting" || testState === "testing") && (
+          <div className="flex items-center justify-center py-3 gap-2 text-[var(--color-text-tertiary)]">
+            <svg className="w-3.5 h-3.5 animate-spin" viewBox="0 0 24 24" fill="none">
+              <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" opacity="0.25"/>
+              <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round"/>
+            </svg>
+            <span className="text-[12px]">
+              {testState === "inspecting" ? "Inspecting..." : "Running..."}
+            </span>
+          </div>
+        )}
+
+        {(testState === "ready" || testState === "success" || testState === "error") && (
+          <div className="space-y-2">
+            {/* Argument inputs */}
+            {argumentInfo.length > 0 && (
+              <div className="space-y-1.5">
+                <span className="text-[10px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-[0.06em]">
+                  Arguments
+                </span>
+                {argumentInfo.map((arg) => {
+                  const inputType = getInputTypeForHint(arg.type_hint);
+                  return (
+                    <div key={arg.name} className="flex items-center gap-2">
+                      <label className="text-[11px] text-[var(--color-text-secondary)] font-medium min-w-[60px]">
+                        {arg.name}
+                        <span className="text-[var(--color-text-tertiary)] ml-1 text-[10px]">
+                          {arg.type_hint}
+                        </span>
+                      </label>
+                      {inputType === "checkbox" ? (
+                        <input
+                          type="checkbox"
+                          checked={testArgs[arg.name] === "true"}
+                          onChange={(e) =>
+                            setTestArgs({ ...testArgs, [arg.name]: e.target.checked ? "true" : "false" })
+                          }
+                          data-testid={`tool-test-arg-${arg.name}`}
+                          className="rounded border-[var(--color-border-default)] text-[var(--color-secondary)] focus:ring-[var(--color-secondary)] bg-[var(--color-base)]"
+                        />
+                      ) : inputType === "textarea" ? (
+                        <textarea
+                          value={testArgs[arg.name] || ""}
+                          onChange={(e) =>
+                            setTestArgs({ ...testArgs, [arg.name]: e.target.value })
+                          }
+                          data-testid={`tool-test-arg-${arg.name}`}
+                          className="input-base w-full text-[12px] font-[var(--font-mono)] resize-none"
+                          rows={2}
+                          placeholder={arg.default_value?.replace(/^['"]|['"]$/g, "") || arg.type_hint}
+                        />
+                      ) : (
+                        <input
+                          type={inputType}
+                          value={testArgs[arg.name] || ""}
+                          onChange={(e) =>
+                            setTestArgs({ ...testArgs, [arg.name]: e.target.value })
+                          }
+                          data-testid={`tool-test-arg-${arg.name}`}
+                          className="input-base w-full text-[12px] font-[var(--font-mono)]"
+                          placeholder={arg.default_value?.replace(/^['"]|['"]$/g, "") || arg.type_hint}
+                          step={arg.type_hint === "int" ? "1" : "any"}
+                        />
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* No-args message */}
+            {argumentInfo.length === 0 && (
+              <p className="text-[11px] text-[var(--color-text-tertiary)] italic">
+                No arguments required
+              </p>
+            )}
+
+            {/* Action buttons */}
+            <div className="flex gap-2">
+              <button
+                onClick={handleRunTest}
+                data-testid="tool-test-run-button"
+                className="btn-secondary flex-1 text-[12px]"
+                disabled={isTesting}
+              >
+                Run Test
+              </button>
+              <button
+                onClick={handleResetTest}
+                className="btn-ghost text-[11px] px-2 py-1"
+              >
+                Reset
+              </button>
+            </div>
+
+            {/* Result panel */}
+            {testResult && (
+              <div
+                className={`rounded-lg p-3 text-[12px] font-[var(--font-mono)] whitespace-pre-wrap break-all max-h-[200px] overflow-auto ${
+                  testResult.success
+                    ? "bg-[var(--color-success-subtle)] border border-[var(--color-success)]/20 text-[var(--color-text-primary)]"
+                    : "bg-[var(--color-danger-subtle)] border border-[var(--color-danger)]/20 text-[var(--color-text-primary)]"
+                }`}
+                data-testid="tool-test-result"
+              >
+                <div className="flex items-center justify-between mb-1">
+                  <span className={`text-[10px] font-semibold uppercase tracking-[0.06em] ${
+                    testResult.success ? "text-[var(--color-success)]" : "text-[var(--color-danger)]"
+                  }`}>
+                    {testResult.success ? "Output" : "Error"}
+                  </span>
+                  <span className="text-[10px] text-[var(--color-text-tertiary)]">
+                    {testResult.execution_time_ms.toFixed(1)}ms
+                  </span>
+                </div>
+                {testResult.output}
+              </div>
+            )}
+
+            {/* Error message (non-result errors) */}
+            {testError && !testResult && (
+              <div className="rounded-lg p-3 text-[12px] bg-[var(--color-danger-subtle)] border border-[var(--color-danger)]/20 text-[var(--color-danger)]" data-testid="tool-test-error">
+                {testError}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Error state with retry */}
+        {testState === "error" && !testResult && !testError && (
+          <div className="space-y-2">
+            <div className="rounded-lg p-3 text-[12px] bg-[var(--color-danger-subtle)] border border-[var(--color-danger)]/20 text-[var(--color-danger)]">
+              Something went wrong. Try again.
+            </div>
+            <button
+              onClick={handleResetTest}
+              className="btn-ghost w-full text-[12px]"
+            >
+              Reset
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

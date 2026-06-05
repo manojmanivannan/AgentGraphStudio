@@ -25,7 +25,7 @@ and edges on a ReactFlow canvas, then run workflows against a FastAPI + DSPy bac
 
 | What | Where | Why |
 |---|---|---|
-| FastAPI app | `backend/src/canvas_server/main.py` | CORS, lifespan, MLflow init, routers |
+| FastAPI app | `backend/src/canvas_server/main.py` | CORS, lifespan, MLflow init, sandbox init, routers |
 | Settings | `backend/src/canvas_server/config.py` | All env vars |
 | DB engine | `backend/src/canvas_server/database.py` | Singleton async engine, session factory |
 | ORM models | `backend/src/canvas_server/models/canvas.py` | Canvas, AgentNode, ToolNode, Edge, Conversation, Message |
@@ -33,13 +33,15 @@ and edges on a ReactFlow canvas, then run workflows against a FastAPI + DSPy bac
 | Canvas CRUD | `backend/src/canvas_server/repos/canvas_repo.py` | CanvasRepo class |
 | Conversation CRUD | `backend/src/canvas_server/repos/conversation_repo.py` | ConversationRepo class |
 | REST routes | `backend/src/canvas_server/routes/canvas.py` | `/api/canvases/**` |
+| Tool test routes | `backend/src/canvas_server/routes/tools.py` | `/api/tools/inspect` + `/api/tools/test` |
 | WebSocket route | `backend/src/canvas_server/routes/execute.py` | `/ws/conversations/{id}/run` |
-| **Execution engine** | `backend/src/canvas_server/runner.py` | **CanvasRunner** — the core orchestrator |
+| **Execution engine** | `backend/src/canvas_server/runner/runner.py` | **CanvasRunner** — the core orchestrator |
 | Custom DSPy agent | `backend/src/canvas_server/streaming_react.py` | **StreamingReAct** — emits events per iteration |
-| Tool compiler | `backend/src/canvas_server/tool_factory.py` | `exec()` Python string → callable function |
+| Tool compiler | `backend/src/canvas_server/tool_factory.py` | Sandbox-based compilation + inspect + test execution |
+| **Sandbox** | `backend/src/canvas_server/sandbox.py` | Singleton Deno/Pyodide sandbox (DSPy PythonInterpreter) |
 | Memory config | `backend/src/canvas_server/memory_config.py` | mem0 config builder |
 | Memory provider | `backend/src/canvas_server/memory_provider.py` | mem0 wrapper as DSPy tool functions |
-| Error types | `backend/src/canvas_server/exceptions.py` | CanvasNotFoundError, etc. |
+| Error types | `backend/src/canvas_server/exceptions.py` | CanvasNotFoundError, ToolCompilationError, ToolExecutionError |
 | App root | `frontend/src/App.tsx` | Landing page or AppShell |
 | Zustand store | `frontend/src/store/canvasStore.ts` | All UI state |
 | Theme store | `frontend/src/store/themeStore.ts` | Dark/light + localStorage persistence |
@@ -50,7 +52,7 @@ and edges on a ReactFlow canvas, then run workflows against a FastAPI + DSPy bac
 | Tool node | `frontend/src/components/canvas/ToolNode.tsx` | Visual node with code preview |
 | Custom edge | `frontend/src/components/canvas/CustomEdge.tsx` | Bezier path, hover delete, handoff style |
 | Agent editor | `frontend/src/components/sidebar/AgentEditor.tsx` | Type, name, role, model, memory toggle |
-| Tool editor | `frontend/src/components/sidebar/ToolEditor.tsx` | Monaco Python editor |
+| Tool editor | `frontend/src/components/sidebar/ToolEditor.tsx` | Monaco Python editor + Test Tool panel |
 | Chat overlay | `frontend/src/components/chat/ChatOverlay.tsx` | Conversations, WebSocket, streaming UI |
 | Observability | `frontend/src/components/observability/ObservabilityView.tsx` | MLflow iframe |
 | CSS design system | `frontend/src/styles/globals.css` | All CSS variables, utility classes, animations |
@@ -196,9 +198,21 @@ and edges on a ReactFlow canvas, then run workflows against a FastAPI + DSPy bac
    plain UUIDs without foreign key constraints because they can reference either
    `agent_nodes` or `tool_nodes`.
 
-8. **Tool compilation** — User Python code is compiled via `exec()` in an isolated
-   namespace. The first non-builtin callable is returned as a plain function.
-   DSPy handles type hint and docstring discovery from the function signature.
+8. **Deno/Pyodide sandbox for tool execution** — All tool code (both agent runs
+   and interactive testing) executes in a Deno subprocess running Pyodide (WASM
+   Python) via DSPy's `PythonInterpreter`. Host-side `exec()` is used only for
+   extracting function metadata (`__name__`, `__doc__`, `__annotations__`) that
+   DSPy needs to build tool descriptors — never for execution. The sandbox has
+   no access to host filesystem, network, or env vars by default. See
+   [ADR-0002](./docs/adr/0002-deno-sandbox-tool-execution.md).
+
+9. **Sandbox singleton** — The Deno/Pyodide process is expensive to start (~2s).
+   It's pre-warmed during FastAPI lifespan startup and kept alive across requests.
+   Managed by `canvas_server.sandbox.Sandbox`.
+
+10. **`@requires_deno` test marker** — Sandbox integration tests skip gracefully
+    in CI environments without Deno installed (`pytest.mark.skipif(not shutil.which("deno"))`).
+    Unit tests (inspect, coerce) don't need Deno.
 
 ---
 

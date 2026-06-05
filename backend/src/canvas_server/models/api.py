@@ -121,3 +121,29 @@ class ConversationListResponse(BaseModel):
 class SendMessageRequest(BaseModel):
     prompt: str
     target_agent_id: uuid.UUID | None = None
+
+
+class ToolInspectRequest(BaseModel):
+    code: str
+
+
+class ToolArgumentInfo(BaseModel):
+    name: str
+    type_hint: str = "str"
+    default_value: str | None = None
+
+
+class ToolInspectResponse(BaseModel):
+    function_name: str
+    arguments: list[ToolArgumentInfo]
+
+
+class ToolTestRequest(BaseModel):
+    code: str
+    args: dict[str, str] = Field(default_factory=dict)
+
+
+class ToolTestResponse(BaseModel):
+    success: bool
+    output: str
+    execution_time_ms: float

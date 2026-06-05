@@ -16,3 +16,8 @@ class InvalidEdgeError(Exception):
 
 class ExecutionError(Exception):
     pass
+
+
+class ToolExecutionError(Exception):
+    """Raised when a tool fails during test execution (e.g. type coercion failure)."""
+    pass
