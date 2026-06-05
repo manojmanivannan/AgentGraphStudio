@@ -119,6 +119,7 @@ export function SidebarRail() {
             id: n.id,
             name: (n.data as any).name as string,
             code: ((n.data as any).code as string) || "",
+            packages: ((n.data as any).packages as string) || "",
             args: ((n.data as any).args as []) || [],
             position_x: n.position.x,
             position_y: n.position.y,
@@ -180,7 +181,7 @@ export function SidebarRail() {
         type: "tool" as const,
         position: { x: t.position_x, y: t.position_y },
         style: { width: 220 },
-        data: { id: t.id, name: t.name, code: t.code },
+        data: { id: t.id, name: t.name, code: t.code, packages: t.packages },
       }));
 
       setNodes([...agentNodes, ...toolNodes]);

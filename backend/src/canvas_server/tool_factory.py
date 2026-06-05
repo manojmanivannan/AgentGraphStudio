@@ -13,6 +13,7 @@ coercing them to the correct Python types via type hints.
 
 from __future__ import annotations
 
+import ast
 import inspect
 import json
 import logging
@@ -21,6 +22,7 @@ from typing import Any
 
 from canvas_server.exceptions import ToolCompilationError, ToolExecutionError
 from canvas_server.models.api import ToolArgumentInfo, ToolInspectResponse, ToolTestResponse
+from canvas_server.package_manager import PackageManager
 
 logger = logging.getLogger("canvas_server.tool_factory")
 
@@ -132,6 +134,132 @@ def _resolve_type_hint(annotation: Any) -> str:
     return hint_str
 
 
+# -- AST-based function extraction (no host-side exec of imports) ----------------
+
+
+def _extract_function_ast(code: str, name: str):
+    """Extract the first user-defined function from *code* using AST parsing.
+
+    Parses the code into a syntax tree (safe — no execution), finds the first
+    ``FunctionDef``, then builds a minimal function *stub* (``def …: pass``)
+    with the same name, parameters, type annotations, and default values.
+
+    Because the stub body is simply ``pass``, import statements in the original
+    code are irrelevant — this never triggers ``ImportError`` on the host side.
+    The returned function object is compatible with ``inspect.signature()``.
+    """
+    try:
+        tree = ast.parse(code)
+    except SyntaxError as e:
+        raise ToolCompilationError(f"Syntax error in tool '{name}': {e}") from e
+
+    for node in tree.body:
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+
+        func_name = node.name
+        docstring = ast.get_docstring(node) or ""
+
+        # ---- Build annotations dict from AST -----------------------------------
+        annotations: dict[str, str] = {}
+        for arg in node.args.args:
+            if arg.annotation:
+                annotations[arg.arg] = _ast_node_to_type_str(arg.annotation)
+        for arg in node.args.kwonlyargs:
+            if arg.annotation:
+                annotations[arg.arg] = _ast_node_to_type_str(arg.annotation)
+        if node.returns:
+            annotations["return"] = _ast_node_to_type_str(node.returns)
+
+        # ---- Build default values map -------------------------------------------
+        default_values: dict[str, object] = {}
+        num_pos = len(node.args.args)
+        num_plain_defaults = len(node.args.defaults)
+        for i, d in enumerate(node.args.defaults):
+            try:
+                val = ast.literal_eval(d)
+            except (ValueError, TypeError):
+                val = None
+            default_values[node.args.args[num_pos - num_plain_defaults + i].arg] = val
+        for i, d in enumerate(node.args.kw_defaults):
+            if d is not None:
+                try:
+                    val = ast.literal_eval(d)
+                except (ValueError, TypeError):
+                    val = None
+                default_values[node.args.kwonlyargs[i].arg] = val
+
+        # ---- Build minimal stub function string ---------------------------------
+        parts: list[str] = []
+        for arg_node in node.args.args:
+            s = arg_node.arg
+            if arg_node.annotation:
+                s += f": {_ast_node_to_type_str(arg_node.annotation)}"
+            if arg_node.arg in default_values:
+                s += f"={repr(default_values[arg_node.arg])}"
+            parts.append(s)
+
+        if node.args.vararg:
+            parts.append(f"*{node.args.vararg.arg}")
+        elif node.args.kwonlyargs:
+            parts.append("*")
+
+        for arg_node in node.args.kwonlyargs:
+            s = arg_node.arg
+            if arg_node.annotation:
+                s += f": {_ast_node_to_type_str(arg_node.annotation)}"
+            if arg_node.arg in default_values:
+                s += f"={repr(default_values[arg_node.arg])}"
+            parts.append(s)
+
+        if node.args.kwarg:
+            parts.append(f"**{node.args.kwarg.arg}")
+
+        ret_ann = ""
+        if node.returns:
+            ret_ann = f" -> {_ast_node_to_type_str(node.returns)}"
+
+        async_prefix = "async " if isinstance(node, ast.AsyncFunctionDef) else ""
+        stub = f"{async_prefix}def {func_name}({', '.join(parts)}){ret_ann}: pass"
+
+        namespace: dict = {}
+        try:
+            exec(stub, namespace)  # noqa: S102 — safe: minimal function stub
+        except Exception as e:
+            raise ToolCompilationError(
+                f"Failed to build metadata stub for tool '{name}': {e}"
+            ) from e
+
+        user_func = namespace[func_name]
+        user_func.__doc__ = docstring
+        return user_func
+
+    raise ToolCompilationError(f"No callable function found in tool '{name}'.")
+
+
+def _ast_node_to_type_str(node: ast.expr) -> str:
+    """Convert an AST annotation node to a simple type string.
+
+    Handles: ``ast.Name`` → ``"int"``, ``ast.Constant`` → ``"str"`` (a forward
+    reference), and ``ast.Subscript`` → ``"list"`` / ``"dict"`` (strips generic
+    parameters to keep things simple for coerce_arg).
+    """
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Constant):
+        if isinstance(node.value, str):
+            return node.value
+        return str(node.value)
+    if isinstance(node, ast.Subscript):
+        # list[...] -> "list", dict[...] -> "dict"
+        if isinstance(node.value, ast.Name):
+            return node.value.id
+        return "str"
+    if isinstance(node, ast.Attribute):
+        return node.attr
+    return "str"
+
+
 # -- Public API ------------------------------------------------------------------
 
 
@@ -155,8 +283,8 @@ async def compile_tool_from_code(name: str, code: str):
         # Non-syntax errors in compile() are unexpected but we handle them
         raise ToolCompilationError(f"Failed to compile tool '{name}': {e}") from e
 
-    # Extract function metadata on host side (safe -- metadata only, no execution)
-    user_func = _extract_function(code, name)
+    # Extract function metadata using AST (safe -- no exec of imports on host)
+    user_func = _extract_function_ast(code, name)
     fn_name = user_func.__name__
 
     # Capture code in a closure variable to avoid late-binding issues
@@ -178,13 +306,28 @@ async def compile_tool_from_code(name: str, code: str):
     return sandbox_tool_fn
 
 
-async def inspect_tool_code(name: str, code: str) -> ToolInspectResponse:
+async def inspect_tool_code(
+    name: str, code: str, dependencies: list[str] | None = None
+) -> ToolInspectResponse:
     """Extract function signature metadata from tool code.
+
+    Uses AST parsing so that import statements for packages not installed on
+    the host do not cause errors.  If *dependencies* are provided they are
+    pre-installed in the sandbox so that the code can be compiled there
+    (for subsequent execution), but inspection itself does not require them.
 
     Returns the function name and a list of argument descriptors with name,
     type hint, and default value (if any).
     """
-    user_func = _extract_function(code, name)
+    if dependencies:
+        pm = PackageManager()
+        try:
+            await pm.install_packages(dependencies)
+            logger.info("Pre-installed dependencies for inspect: %s", dependencies)
+        except Exception as e:
+            logger.warning("Failed to pre-install deps during inspect: %s", e)
+
+    user_func = _extract_function_ast(code, name)
     sig = inspect.signature(user_func)
     annotations = getattr(user_func, "__annotations__", {})
 
@@ -214,13 +357,32 @@ async def inspect_tool_code(name: str, code: str) -> ToolInspectResponse:
     )
 
 
-async def execute_tool_code(name: str, code: str, args: dict[str, str]) -> ToolTestResponse:
+async def execute_tool_code(
+    name: str, code: str, args: dict[str, str], dependencies: list[str] | None = None
+) -> ToolTestResponse:
     """Execute a tool function in the sandbox with user-provided string arguments.
 
     Coerces string arguments to the correct Python types using type hints,
     then runs the function in the Deno/Pyodide sandbox and returns the result.
+
+    If *dependencies* are provided they are pre-installed in the sandbox via
+    ``micropip`` before compilation and execution.
     """
     start = time.perf_counter()
+
+    # 0. Install dependencies in the sandbox before anything else
+    if dependencies:
+        pm = PackageManager()
+        try:
+            await pm.install_packages(dependencies)
+            logger.info("Pre-installed dependencies for test: %s", dependencies)
+        except Exception as e:
+            elapsed_ms = (time.perf_counter() - start) * 1000
+            return ToolTestResponse(
+                success=False,
+                output=f"Failed to install dependencies: {e}",
+                execution_time_ms=round(elapsed_ms, 2),
+            )
 
     # 1. Validate and compile the code
     try:
@@ -232,7 +394,7 @@ async def execute_tool_code(name: str, code: str, args: dict[str, str]) -> ToolT
     #    We cannot use inspect.signature(fn) because fn is the async sandbox wrapper
     #    which has **kwargs. Instead, extract the original function for metadata.
     try:
-        original_func = _extract_function(code, name)
+        original_func = _extract_function_ast(code, name)
     except ToolCompilationError as e:
         return ToolTestResponse(success=False, output=str(e), execution_time_ms=0)
 

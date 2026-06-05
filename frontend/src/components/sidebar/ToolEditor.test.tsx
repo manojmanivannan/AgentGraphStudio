@@ -124,7 +124,7 @@ describe("ToolEditor", () => {
     await userEvent.setup().click(testButton);
 
     await waitFor(() => {
-      expect(inspectTool).toHaveBeenCalledWith("def search(q):\n    return q");
+      expect(inspectTool).toHaveBeenCalledWith("def search(q):\n    return q", []);
     });
   });
 

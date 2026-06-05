@@ -33,6 +33,7 @@ from canvas_server.runner.execution import (
 )
 from canvas_server.runner.memory import MemoryManager
 from canvas_server.runner.tool_registry import ToolRegistry
+from canvas_server.package_manager import PackageManager
 
 logger = logging.getLogger("canvas_server.runner")
 
@@ -110,6 +111,9 @@ class CanvasRunner:
         for node in self.canvas.agent_nodes:
             self.node_map[node.id] = node
 
+        # Install tool dependencies in the sandbox before compiling tools
+        await self._install_dependencies(self.canvas.tool_nodes)
+
         self._tool_registry = ToolRegistry()
         await self._tool_registry.compile_all(self.canvas.tool_nodes)
         # Sync tool state up to the runner for backward-compat access
@@ -133,6 +137,29 @@ class CanvasRunner:
             len(self.tools),
             len(self.agents),
         )
+
+    async def _install_dependencies(self, tool_nodes):
+        """Collect and install all unique package dependencies from tool nodes."""
+        all_packages = set()
+        for tool_node in tool_nodes:
+            if hasattr(tool_node, 'dependencies') and tool_node.dependencies:
+                for pkg in tool_node.dependencies:
+                    pkg = pkg.strip()
+                    if pkg:
+                        all_packages.add(pkg)
+
+        if all_packages:
+            pm = PackageManager()
+            logger.info(
+                "Installing tool dependencies: %s",
+                sorted(all_packages),
+            )
+            try:
+                await pm.install_packages(sorted(all_packages))
+                logger.info("Tool dependencies installed successfully")
+            except Exception as e:
+                logger.error("Failed to install tool dependencies: %s", e)
+                raise
 
     # ------------------------------------------------------------------
     # Event wiring

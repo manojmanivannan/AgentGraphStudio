@@ -25,6 +25,7 @@ class ToolNodeInput(BaseModel):
     id: uuid.UUID
     name: str = "Tool"
     code: str = ""
+    dependencies: list[str] = Field(default_factory=list)
     args: list[dict] = Field(default_factory=list)
     position_x: float = 0
     position_y: float = 0
@@ -125,6 +126,7 @@ class SendMessageRequest(BaseModel):
 
 class ToolInspectRequest(BaseModel):
     code: str
+    dependencies: list[str] = Field(default_factory=list)
 
 
 class ToolArgumentInfo(BaseModel):
@@ -141,6 +143,7 @@ class ToolInspectResponse(BaseModel):
 class ToolTestRequest(BaseModel):
     code: str
     args: dict[str, str] = Field(default_factory=dict)
+    dependencies: list[str] = Field(default_factory=list)
 
 
 class ToolTestResponse(BaseModel):

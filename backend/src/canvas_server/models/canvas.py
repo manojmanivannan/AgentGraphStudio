@@ -101,6 +101,7 @@ class ToolNode(Base):
     )
     name: Mapped[str] = mapped_column(String(255), default="Tool")
     code: Mapped[str] = mapped_column(Text, default="")
+    dependencies: Mapped[list] = mapped_column(JSON, default=[])
     args: Mapped[list] = mapped_column(JSON, default=[])
     position_x: Mapped[float] = mapped_column(Double, default=0)
     position_y: Mapped[float] = mapped_column(Double, default=0)
