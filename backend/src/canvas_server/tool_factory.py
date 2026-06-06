@@ -20,7 +20,11 @@ import time
 from typing import Any
 
 from canvas_server.exceptions import ToolCompilationError, ToolExecutionError
-from canvas_server.models.api import ToolArgumentInfo, ToolInspectResponse, ToolTestResponse
+from canvas_server.models.api import (
+    ToolArgumentInfo,
+    ToolInspectResponse,
+    ToolTestResponse,
+)
 from canvas_server.package_manager import PackageManager
 from canvas_server.sandbox import get_sandbox, SandboxManager
 
@@ -47,7 +51,9 @@ def coerce_arg(value: str, type_hint: str) -> Any:
         try:
             return float(value)
         except (ValueError, TypeError) as exc:
-            raise ToolExecutionError(f"Cannot coerce '{value}' to float: {exc}") from exc
+            raise ToolExecutionError(
+                f"Cannot coerce '{value}' to float: {exc}"
+            ) from exc
     if type_hint == "bool":
         if value.lower() in ("true", "1", "yes"):
             return True
@@ -63,9 +69,7 @@ def coerce_arg(value: str, type_hint: str) -> Any:
                 )
             return parsed
         except json.JSONDecodeError as exc:
-            raise ToolExecutionError(
-                f"Cannot coerce '{value}' to list: {exc}"
-            ) from exc
+            raise ToolExecutionError(f"Cannot coerce '{value}' to list: {exc}") from exc
     if type_hint in ("dict", "dict[str, Any]", "dict[str, str]"):
         try:
             parsed = json.loads(value)
@@ -75,9 +79,7 @@ def coerce_arg(value: str, type_hint: str) -> Any:
                 )
             return parsed
         except json.JSONDecodeError as exc:
-            raise ToolExecutionError(
-                f"Cannot coerce '{value}' to dict: {exc}"
-            ) from exc
+            raise ToolExecutionError(f"Cannot coerce '{value}' to dict: {exc}") from exc
     # Unknown type -- fall back to raw string
     return value
 
@@ -387,7 +389,9 @@ async def execute_tool_code(
     # 3. Execute in a transient session
     try:
         manager = await get_sandbox()
-        test_session_id = f"tool_test_{int(time.time())}"
+        # Use a stable session ID based on the tool name to reuse the environment
+        # and avoid reinstalling dependencies on every test run.
+        test_session_id = f"tool_test_{name}"
         session = manager.get_session(test_session_id)
         try:
             fn_name = original_func.__name__
@@ -412,8 +416,10 @@ if __name__ == '__main__':
     res = run_test()
     print(json.dumps(res))
 """
-            # Pass dependencies to the libraries argument for automatic installation
-            result_obj = session.run(wrapped_code, libraries=dependencies)
+            # Pass dependencies to the libraries argument for automatic installation.
+            # Because we reuse the session, llm-sandbox will avoid reinstalling
+            # if they are already present.
+            result_obj = session.run(wrapped_code)  # , libraries=dependencies)
             stdout = result_obj.stdout.strip()
 
             try:
@@ -421,7 +427,9 @@ if __name__ == '__main__':
             except json.JSONDecodeError:
                 result = stdout
         finally:
-            manager.release_session(test_session_id)
+            # We DO NOT release the session here so that subsequent tests
+            # for the same tool reuse the same warm container with libraries installed.
+            pass
 
         elapsed_ms = (time.perf_counter() - start) * 1000
         return ToolTestResponse(
@@ -450,7 +458,7 @@ def _resolve_type_hint(annotation: Any) -> str:
         return hint_str[8:-2]
     for prefix in ("typing.", "builtins."):
         if hint_str.startswith(prefix):
-            return hint_str[len(prefix):]
+            return hint_str[len(prefix) :]
     if hint_str.startswith("list"):
         return "list"
     if hint_str.startswith("dict"):

@@ -13,19 +13,20 @@ from __future__ import annotations
 import logging
 from typing import Dict, Optional
 
-from llm_sandbox import InteractiveSandboxSession
+from llm_sandbox import SandboxSession
 from llm_sandbox.pool import create_pool_manager, PoolConfig
 
 logger = logging.getLogger("canvas_server.sandbox")
 
 # Configuration constants
-POOL_SIZE_MAX = 10
-POOL_SIZE_MIN = 3
+POOL_SIZE_MAX = 2
+POOL_SIZE_MIN = 1
 DEFAULT_LANG = "python"
 
 
 class SandboxError(Exception):
     """Base exception for sandbox operations."""
+
     pass
 
 
@@ -39,7 +40,7 @@ class SandboxManager:
 
     def __init__(self):
         self._pool_manager = None
-        self._active_sessions: Dict[str, InteractiveSandboxSession] = {}
+        self._active_sessions: Dict[str, SandboxSession] = {}
         self._initialized = False
 
     @classmethod
@@ -53,14 +54,14 @@ class SandboxManager:
         if self._initialized:
             return
 
-        logger.info(f"Initializing llm-sandbox pool (max={POOL_SIZE_MAX}, min={POOL_SIZE_MIN})...")
+        logger.info(
+            f"Initializing llm-sandbox pool (max={POOL_SIZE_MAX}, min={POOL_SIZE_MIN})..."
+        )
         try:
             self._pool_manager = create_pool_manager(
                 backend="docker",
                 config=PoolConfig(
-                    max_pool_size=POOL_SIZE_MAX,
-                    min_pool_size=POOL_SIZE_MIN,
-                    enable_prewarming=True,
+                    max_pool_size=POOL_SIZE_MAX, min_pool_size=POOL_SIZE_MIN
                 ),
                 lang=DEFAULT_LANG,
             )
@@ -70,7 +71,7 @@ class SandboxManager:
             logger.error(f"Failed to initialize sandbox pool: {e}")
             raise SandboxError(f"Sandbox initialization failed: {e}")
 
-    def get_session(self, conversation_id: str) -> InteractiveSandboxSession:
+    def get_session(self, conversation_id: str) -> SandboxSession:
         """
         Get an existing interactive session for the conversation,
         or create a new one from the pool.
@@ -79,11 +80,15 @@ class SandboxManager:
             return self._active_sessions[conversation_id]
 
         if not self._pool_manager:
-            raise SandboxError("SandboxManager not initialized. Call initialize_pool() first.")
+            raise SandboxError(
+                "SandboxManager not initialized. Call initialize_pool() first."
+            )
 
-        logger.info(f"Creating new interactive session for conversation: {conversation_id}")
+        logger.info(
+            f"Creating new interactive session for conversation: {conversation_id}"
+        )
         # InteractiveSandboxSession maintains state across multiple .run() calls
-        session = InteractiveSandboxSession(pool=self._pool_manager, lang=DEFAULT_LANG)
+        session = SandboxSession(pool=self._pool_manager, lang=DEFAULT_LANG)
 
         try:
             session.open()
