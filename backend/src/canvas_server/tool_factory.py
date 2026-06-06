@@ -220,9 +220,12 @@ async def compile_tool_from_code(name: str, code: str):
     """
     # Validate syntax via sandbox
     manager = await get_sandbox()
-    # Create a transient session for syntax check
-    # We use a unique ID to avoid collision with active conversations
-    syntax_session_id = f"syntax_check_{int(time.time())}"
+
+    # Instead of creating a new session every time we compile,
+    # we can use a dedicated "syntax_check" session that is reused.
+    # However, to keep it simple and avoid state contamination,
+    # we just ensure we use the manager.
+    syntax_session_id = "syntax_check_global"
     session = manager.get_session(syntax_session_id)
     try:
         # Run simple compilation check
@@ -230,7 +233,8 @@ async def compile_tool_from_code(name: str, code: str):
     except Exception as e:
         raise ToolCompilationError(f"Syntax error in tool '{name}': {e}") from e
     finally:
-        manager.release_session(syntax_session_id)
+        # We don't release the global syntax session as it's shared
+        pass
 
     # Extract function metadata using AST (safe -- no exec of imports on host)
     user_func = _extract_function_ast(code, name)
@@ -241,20 +245,20 @@ async def compile_tool_from_code(name: str, code: str):
 
     async def sandbox_tool_fn(**kwargs):
         """Executes the user's function in the Docker sandbox."""
-        # The CanvasRunner will provide a conversation_id to the manager.
-        # For now, we use "global" as a fallback if we are not in a specific context.
-        # In the final integrated version, the conversation_id is passed through.
         manager = await get_sandbox()
 
-        # Note: In a real run, the CanvasRunner handles the session lifecycle.
-        # We assume the session is already managed and associated with the conversation.
-        # We'll use "global" for standalone calls, but the Runner will override this.
+        # IMPORTANT: The conversation_id should be passed here.
+        # Since this wrapper is created during setup(), we don't have the conversation_id yet.
+        # We rely on the fact that the CanvasRunner/ExecutionStrategy handles
+        # the session for the current conversation.
+
+        # For backward compatibility or standalone calls, we use "global".
+        # In production, the system should be refactored to pass the conversation_id.
         session = manager.get_session("global")
         try:
             args_repr = ", ".join(f"{k}={repr(v)}" for k, v in kwargs.items())
 
             # JSON harness to capture the return value of the function
-            # llm-sandbox.run() returns a result object with .stdout
             wrapped_code = f"""
 import json
 import sys
@@ -282,8 +286,6 @@ if __name__ == '__main__':
             except json.JSONDecodeError:
                 return stdout
         finally:
-            # We don't release "global" session as it's a fallback.
-            # Conversation-specific sessions are released by the Runner.
             pass
 
     # Copy DSPy-needed metadata from the original function
