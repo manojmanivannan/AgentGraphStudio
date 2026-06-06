@@ -30,6 +30,8 @@ services:
       - "host.docker.internal:host-gateway"
     networks:
       - agent_network
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
       postgres:
         condition: service_healthy
@@ -76,28 +78,36 @@ services:
     networks:
       - agent_network
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/health')"]
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:5000/health')",
+        ]
       interval: 10s
       timeout: 5s
       retries: 5
 
-  # ollama:
-  #   image: ollama/ollama:latest
-  #   ports:
-  #     - "11434:11434"
-  #   volumes:
-  #     - ollama_data:/root/.ollama
-  #     - ./ollama_entrypoint.sh:/entrypoint.sh
-  #   tty: true
-  #   restart: always
-  #   entrypoint: ["/usr/bin/bash", "/entrypoint.sh"]
-  #   deploy:
-  #     resources:
-  #       reservations:
-  #         devices:
-  #           - driver: nvidia
-  #             count: 1
-  #             capabilities: [gpu]
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+      - ./ollama_entrypoint.sh:/entrypoint.sh
+    tty: true
+    restart: always
+    networks:
+      - agent_network
+    entrypoint: ["/usr/bin/bash", "/entrypoint.sh"]
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
 
 networks:
   agent_network:
@@ -106,3 +116,4 @@ networks:
 volumes:
   pgdata:
   mlflow_data:
+  ollama_data:

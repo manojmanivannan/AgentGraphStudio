@@ -267,6 +267,7 @@ dependencies = [
     { name = "dspy" },
     { name = "fastapi" },
     { name = "fastembed" },
+    { name = "llm-sandbox", extra = ["docker"] },
     { name = "mem0ai" },
     { name = "mlflow" },
     { name = "ollama" },
@@ -298,6 +299,7 @@ requires-dist = [
     { name = "dspy", specifier = ">=3.1.0" },
     { name = "fastapi", specifier = ">=0.115.0" },
     { name = "fastembed", specifier = ">=0.8.0" },
+    { name = "llm-sandbox", extras = ["docker"], specifier = ">=0.3.39" },
     { name = "mem0ai", specifier = ">=2.0.4" },
     { name = "mlflow", specifier = ">=2.20.0" },
     { name = "ollama", specifier = ">=0.4" },
@@ -1673,6 +1675,23 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/8d/7c/c095649380adc96c8630273c1768c2ad1e74aa2ee1dd8dd05d218a60569f/litellm-1.83.14.tar.gz", hash = "sha256:24aef9b47cdc424c833e32f3727f411741c690832cd1fe4405e0077144fe09c9", size = 14836599, upload-time = "2026-04-26T03:16:10.176Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/7f/5c/1b5691575420135e90578543b2bf219497caa33cfd0af64cb38f30288450/litellm-1.83.14-py3-none-any.whl", hash = "sha256:92b11ba2a32cf80707ddf388d18526696c7999a21b418c5e3b6eda1243d2cfdb", size = 16457054, upload-time = "2026-04-26T03:16:05.72Z" },
+]
+
+[[package]]
+name = "llm-sandbox"
+version = "0.3.39"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pydantic" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/fb/f1/30b41350f105dbd794639565a1f6e4ab28f95940fc2907cb721471dca105/llm_sandbox-0.3.39.tar.gz", hash = "sha256:7452317a054df3ac20fb652a2e100b5697624886282874fecfb738bac21b27bb", size = 611034, upload-time = "2026-04-20T16:59:45.133Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/35/cf/c0419980643daca64173cadda2edad6addc8965b0e694ab0e18a8f77a2c6/llm_sandbox-0.3.39-py3-none-any.whl", hash = "sha256:4fd22a4ae175695de8d9e151f6b12e270859d65208f946b8abec8d5ae2e29b66", size = 108859, upload-time = "2026-04-20T16:59:44.02Z" },
+]
+
+[package.optional-dependencies]
+docker = [
+    { name = "docker" },
 ]
 
 [[package]]

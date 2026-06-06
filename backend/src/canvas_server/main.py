@@ -29,12 +29,13 @@ async def lifespan(app: FastAPI):
     logger.debug("Config: llm_model=%s", settings.llm_model)
     logger.debug(f"Config: cors_origins={settings.cors_origins}")
 
-    # Pre-warm the Deno/Pyodide sandbox for tool execution
+    # Pre-warm the llm-sandbox pool for tool execution
     try:
-        from canvas_server.sandbox import Sandbox
+        from canvas_server.sandbox import get_sandbox
 
-        await Sandbox.get()
-        logger.info("Sandbox (Deno/Pyodide) initialized")
+        manager = await get_sandbox()
+        await manager.initialize_pool()
+        logger.info("llm-sandbox pool initialized")
     except Exception as exc:
         logger.warning("Sandbox initialization failed (tools will not work): %s", exc)
 
@@ -47,7 +48,7 @@ async def lifespan(app: FastAPI):
             logger.info(
                 "MLflow tracing enabled: tracking_uri=%s experiment=%s",
                 settings.mlflow_tracking_uri,
-                settings.mlflow_experiment_name,
+                settings.mlflow_tracking_uri,
             )
         except Exception as exc:
             logger.warning(
@@ -61,12 +62,13 @@ async def lifespan(app: FastAPI):
     yield
     logger.info("Canvas server shutting down")
 
-    # Shut down the sandbox process
+    # Shut down the sandbox manager
     try:
-        from canvas_server.sandbox import Sandbox
+        from canvas_server.sandbox import get_sandbox
 
-        await Sandbox.shutdown()
-        logger.info("Sandbox shut down")
+        manager = await get_sandbox()
+        await manager.shutdown()
+        logger.info("SandboxManager shut down")
     except Exception as exc:
         logger.warning("Sandbox shutdown failed: %s", exc)
 

@@ -21,6 +21,7 @@ dependencies = [
     "ollama>=0.4",
     "fastembed>=0.8.0",
     "mlflow>=2.20.0",
+    "llm-sandbox[docker]>=0.3.39",
 ]
 
 [dependency-groups]
