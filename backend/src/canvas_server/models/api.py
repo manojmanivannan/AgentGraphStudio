@@ -25,6 +25,7 @@ class ToolNodeInput(BaseModel):
     id: uuid.UUID
     name: str = "Tool"
     code: str = ""
+    packages: str = ""
     dependencies: list[str] = Field(default_factory=list)
     args: list[dict] = Field(default_factory=list)
     position_x: float = 0

@@ -76,7 +76,7 @@ class CanvasRepo:
                 canvas_id=canvas_id,
                 name=t.name,
                 code=t.code,
-                dependencies=t.dependencies,
+                dependencies=t.dependencies if t.dependencies else (t.packages.split(",") if t.packages else []),
                 position_x=t.position_x,
                 position_y=t.position_y,
             )
@@ -173,7 +173,7 @@ class CanvasRepo:
                 canvas_id=canvas_id,
                 name=t.name,
                 code=t.code,
-                dependencies=t.dependencies,
+                dependencies=t.dependencies if t.dependencies else (t.packages.split(",") if t.packages else []),
                 position_x=t.position_x,
                 position_y=t.position_y,
             )

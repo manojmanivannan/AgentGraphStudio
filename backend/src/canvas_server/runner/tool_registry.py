@@ -33,7 +33,9 @@ class ToolRegistry:
         logger.debug("Building tools from %d tool nodes", len(tool_nodes))
         for tool_node in tool_nodes:
             try:
-                fn = await compile_tool_from_code(tool_node.name, tool_node.code)
+                fn = await compile_tool_from_code(
+                    tool_node.name, tool_node.code, dependencies=tool_node.dependencies
+                )
                 self.tools[tool_node.id] = fn
                 self._tool_name_to_id[tool_node.name] = tool_node.id
                 logger.debug(

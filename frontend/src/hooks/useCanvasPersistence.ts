@@ -38,6 +38,7 @@ export function useCanvasPersistence() {
             id: n.id,
             name: (n.data?.name as string) || "Tool",
             code: (n.data?.code as string) || "",
+            packages: (n.data?.packages as string) || "",
             args: (n.data?.args as []) || [],
             position_x: n.position.x,
             position_y: n.position.y,
