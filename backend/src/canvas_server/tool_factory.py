@@ -213,7 +213,7 @@ def _ast_node_to_type_str(node: ast.expr) -> str:
 # -- Public API ------------------------------------------------------------------
 
 
-async def compile_tool_from_code(name: str, code: str):
+async def compile_tool_from_code(name: str, code: str, dependencies: list[str] | None = None):
     """Compile user tool code and return an async callable that executes in the sandbox.
 
     The returned function has __name__, __doc__, and __annotations__
@@ -231,7 +231,8 @@ async def compile_tool_from_code(name: str, code: str):
     session = manager.get_session(syntax_session_id)
     try:
         # Run simple compilation check
-        session.run(f"compile({repr(code)}, '<tool>', 'exec')")
+        with session:
+            session.run(f"compile({repr(code)}, '<tool>', 'exec')")
     except Exception as e:
         raise ToolCompilationError(f"Syntax error in tool '{name}': {e}") from e
     finally:
@@ -280,6 +281,9 @@ if __name__ == '__main__':
     res = run_tool()
     print(json.dumps(res))
 """
+        with session:
+            if dependencies:
+                session.execute_command("pip install " + " ".join(dependencies))
             result_obj = session.run(wrapped_code)
             stdout = result_obj.stdout.strip()
 
@@ -349,7 +353,7 @@ async def execute_tool_code(
 
     # 1. Validate and compile the code (checks syntax)
     try:
-        await compile_tool_from_code(name, code)
+        await compile_tool_from_code(name, code, dependencies=dependencies)
     except ToolCompilationError as e:
         return ToolTestResponse(success=False, output=str(e), execution_time_ms=0)
 
@@ -420,6 +424,8 @@ if __name__ == '__main__':
             # Because we reuse the session, llm-sandbox will avoid reinstalling
             # if they are already present.
             with session:
+                if dependencies:
+                    session.execute_command("pip install " + " ".join(dependencies))
                 result_obj = session.run(wrapped_code)  # , libraries=dependencies)
                 stdout = result_obj.stdout.strip()
 

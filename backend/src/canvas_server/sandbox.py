@@ -88,7 +88,11 @@ class SandboxManager:
             f"Creating new interactive session for conversation: {conversation_id}"
         )
         # InteractiveSandboxSession maintains state across multiple .run() calls
-        session = SandboxSession(pool=self._pool_manager, lang=DEFAULT_LANG)
+        session = SandboxSession(
+            lang=DEFAULT_LANG,
+            pool=self._pool_manager,
+            verbose=True,
+        )
 
         # try:
         #     session.open()

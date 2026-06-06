@@ -53,6 +53,7 @@ export interface CanvasSavePayload {
       id:string;
       name: string;
       code: string;
+      packages?: string;
       args: ToolArgument[];
       position_x: number;
       position_y: number;
@@ -90,6 +91,7 @@ export interface CanvasResponse {
       canvas_id: string;
       name: string;
       code: string;
+      packages?: string;
       args: ToolArgument[];
       position_x: number;
       position_y: number;
