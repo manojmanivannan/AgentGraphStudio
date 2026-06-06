@@ -419,8 +419,9 @@ if __name__ == '__main__':
             # Pass dependencies to the libraries argument for automatic installation.
             # Because we reuse the session, llm-sandbox will avoid reinstalling
             # if they are already present.
-            result_obj = session.run(wrapped_code)  # , libraries=dependencies)
-            stdout = result_obj.stdout.strip()
+            with session:
+                result_obj = session.run(wrapped_code)  # , libraries=dependencies)
+                stdout = result_obj.stdout.strip()
 
             try:
                 result = json.loads(stdout)
