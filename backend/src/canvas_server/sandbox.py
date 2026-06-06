@@ -90,11 +90,11 @@ class SandboxManager:
         # InteractiveSandboxSession maintains state across multiple .run() calls
         session = SandboxSession(pool=self._pool_manager, lang=DEFAULT_LANG)
 
-        try:
-            session.open()
-        except Exception as e:
-            logger.error(f"Failed to open sandbox session for {conversation_id}: {e}")
-            raise SandboxError(f"Could not open sandbox session: {e}")
+        # try:
+        #     session.open()
+        # except Exception as e:
+        #     logger.error(f"Failed to open sandbox session for {conversation_id}: {e}")
+        #     raise SandboxError(f"Could not open sandbox session: {e}")
 
         self._active_sessions[conversation_id] = session
         return session
