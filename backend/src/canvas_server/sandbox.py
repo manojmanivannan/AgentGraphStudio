@@ -1,171 +1,132 @@
-"""Sandbox — managed singleton for dspy.PythonInterpreter (Deno/Pyodide).
+"""Docker-based Sandbox — managed session pool for isolated Python execution.
 
-Wraps the Deno-based PythonInterpreter into a process-wide singleton that is
-started once at app startup and kept warm across requests.  This avoids the
-~2s cold-start cost of launching a Deno subprocess on every call.
+This module uses the `llm-sandbox` library to provide OS-level isolation, native Python performance,
+and session-based state persistence.
 
-The sandbox provides secure Python execution: no filesystem, network, or
-environment access by default (Deno permission model).
-
-**Stdout noise resilience:** Pyodide's ``loadPackagesFromImports`` emits
-progress messages ("Loading numpy", "Package ... loaded from CDN") through
-Emscripten's WASM ``fd_write``, which is NOT interceptable from JavaScript.
-These messages land on Deno stdout intermixed with our JSON responses, so we
-handle this at the Python level by reading multiple lines from the subprocess
-and skipping content that doesn't parse as valid response JSON.
+Architecture:
+- SandboxManager: A singleton managing an `llm_sandbox` PoolManager and
+  mapping conversations to InteractiveSandboxSessions.
 """
 
 from __future__ import annotations
 
-import json as json_mod
 import logging
-import os
-from typing import Any, ClassVar
+from typing import Dict, Optional
 
-from dspy import PythonInterpreter
-from dspy.primitives.python_interpreter import InterpreterError
+from llm_sandbox import InteractiveSandboxSession
+from llm_sandbox.pool import create_pool_manager, PoolConfig
 
 logger = logging.getLogger("canvas_server.sandbox")
 
-# Path to our custom runner which suppresses console.log during
-# loadPackagesFromImports so that package-loading messages do not
-# leak into the JSON response stream on Deno stdout.
-_RUNNER_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "runner.js")
+# Configuration constants
+POOL_SIZE_MAX = 10
+POOL_SIZE_MIN = 3
+DEFAULT_LANG = "python"
 
 
-class Sandbox:
-    """Manages a long-lived Deno/Pyodide sandbox process for executing Python code.
+class SandboxError(Exception):
+    """Base exception for sandbox operations."""
+    pass
 
-    Usage::
 
-        sandbox = await Sandbox.get()      # get or create the singleton
-        result = sandbox("1 + 2")           # execute Python code
-        await Sandbox.shutdown()            # graceful shutdown
-
-    The sandbox is pre-warmed during FastAPI app startup (see main.py lifespan).
+class SandboxManager:
+    """
+    Singleton that manages a pool of warm Docker containers
+    and maps conversations to specific interactive sessions.
     """
 
-    _instance: ClassVar[PythonInterpreter | None] = None
-    _has_patch: ClassVar[bool] = False
+    _instance: Optional[SandboxManager] = None
+
+    def __init__(self):
+        self._pool_manager = None
+        self._active_sessions: Dict[str, InteractiveSandboxSession] = {}
+        self._initialized = False
 
     @classmethod
-    async def get(cls) -> PythonInterpreter:
-        """Get or create the singleton sandbox instance.
-
-        Returns the PythonInterpreter, starting the Deno subprocess on first call.
-        Network access is granted to ``cdn.jsdelivr.net`` so that Pyodide can
-        auto-download packages (``loadPackagesFromImports``, ``micropip``).
-        """
+    def get(cls) -> SandboxManager:
         if cls._instance is None:
-            logger.info("Starting Deno/Pyodide sandbox (with CDN network access)...")
-            cls._instance = PythonInterpreter(
-                enable_network_access=["cdn.jsdelivr.net"],
-            )
-            # Replace the DSPy-built-in runner.js with our custom version
-            # that suppresses console.log during loadPackagesFromImports.
-            for i, arg in enumerate(cls._instance.deno_command):
-                if arg.endswith("runner.js"):
-                    cls._instance.deno_command[i] = _RUNNER_PATH
-                    break
-            cls._instance.__enter__()
-            # Force the subprocess to start
-            cls._instance._ensure_deno_process()
-            logger.info("Sandbox started successfully")
-
-        # Apply our noise-resilient execute wrapper once
-        if not cls._has_patch and cls._instance.deno_process is not None:
-            cls._patch_execute()
-            cls._has_patch = True
-
+            cls._instance = cls()
         return cls._instance
 
-    @classmethod
-    def _patch_execute(cls) -> None:
-        """Replace the instance's ``execute`` with a noise-resilient version.
+    async def initialize_pool(self) -> None:
+        """Pre-warm the container pool using llm-sandbox."""
+        if self._initialized:
+            return
 
-        The standard DSPy ``PythonInterpreter.execute`` reads exactly one line
-        from Deno stdout and tries to parse it as JSON.  Pyodide's package
-        loader emits progress messages (via WASM ``fd_write``) onto Deno stdout
-        that cannot be suppressed from JavaScript, so the first line read may
-        be ``"Loading numpy"`` instead of the actual JSON response.
+        logger.info(f"Initializing llm-sandbox pool (max={POOL_SIZE_MAX}, min={POOL_SIZE_MIN})...")
+        try:
+            self._pool_manager = create_pool_manager(
+                backend="docker",
+                config=PoolConfig(
+                    max_pool_size=POOL_SIZE_MAX,
+                    min_pool_size=POOL_SIZE_MIN,
+                    enable_prewarming=True,
+                ),
+                lang=DEFAULT_LANG,
+            )
+            self._initialized = True
+            logger.info("Sandbox pool initialized successfully")
+        except Exception as e:
+            logger.error(f"Failed to initialize sandbox pool: {e}")
+            raise SandboxError(f"Sandbox initialization failed: {e}")
 
-        Our patched version reads lines from the subprocess until it encounters
-        one that parses as a valid response JSON object (containing ``"output"``
-        or ``"error"`` keys), discarding noise lines.
+    def get_session(self, conversation_id: str) -> InteractiveSandboxSession:
         """
-        interp = cls._instance
-        original_execute = interp.execute
+        Get an existing interactive session for the conversation,
+        or create a new one from the pool.
+        """
+        if conversation_id in self._active_sessions:
+            return self._active_sessions[conversation_id]
 
-        def noise_resilient_execute(
-            code: str,
-            variables: dict[str, Any] | None = None,
-        ) -> Any:
-            variables = variables or {}
-            code = interp._inject_variables(code, variables)
+        if not self._pool_manager:
+            raise SandboxError("SandboxManager not initialized. Call initialize_pool() first.")
 
-            if interp.deno_process is None or interp.deno_process.poll() is not None:
-                interp._ensure_deno_process()
-            interp._mount_files()
+        logger.info(f"Creating new interactive session for conversation: {conversation_id}")
+        # InteractiveSandboxSession maintains state across multiple .run() calls
+        session = InteractiveSandboxSession(pool=self._pool_manager, lang=DEFAULT_LANG)
 
-            input_data = json_mod.dumps({"code": code})
+        try:
+            session.open()
+        except Exception as e:
+            logger.error(f"Failed to open sandbox session for {conversation_id}: {e}")
+            raise SandboxError(f"Could not open sandbox session: {e}")
+
+        self._active_sessions[conversation_id] = session
+        return session
+
+    def release_session(self, conversation_id: str) -> None:
+        """
+        Release a session and return the container to the pool.
+        """
+        session = self._active_sessions.pop(conversation_id, None)
+        if session:
             try:
-                interp.deno_process.stdin.write(input_data + "\n")
-                interp.deno_process.stdin.flush()
-            except BrokenPipeError:
-                interp._ensure_deno_process()
-                interp.deno_process.stdin.write(input_data + "\n")
-                interp.deno_process.stdin.flush()
+                session.close()
+                logger.info(f"Session for conversation {conversation_id} released")
+            except Exception as e:
+                logger.warning(f"Error releasing session {conversation_id}: {e}")
 
-            # Read lines until we find a valid JSON response with our shape
-            result: dict | None = None
-            while True:
-                output_line = interp.deno_process.stdout.readline()
-                if not output_line:
-                    err_output = interp.deno_process.stderr.read()
-                    raise InterpreterError(
-                        f"No output from Deno subprocess. Stderr: {err_output}"
-                    )
-                output_line = output_line.strip()
-                if not output_line:
-                    continue
-                try:
-                    candidate = json_mod.loads(output_line)
-                except json_mod.JSONDecodeError:
-                    # Skip noise lines like "Loading numpy"
-                    continue
-                # Accept any JSON that has our expected response keys
-                if "output" in candidate or "error" in candidate:
-                    result = candidate
-                    break
+    async def shutdown(self) -> None:
+        """Cleanup all active sessions and the pool manager."""
+        logger.info("Shutting down SandboxManager...")
 
-            # Handle errors and special responses (same logic as original)
-            if "error" in result:
-                error_msg = result["error"]
-                error_type = result.get("errorType", "Sandbox Error")
-                if error_type == "FinalAnswer":
-                    result["output"] = result.get("errorArgs", None)
-                elif error_type == "SyntaxError":
-                    raise SyntaxError(f"Invalid Python syntax. message: {error_msg}")
-                else:
-                    raise InterpreterError(
-                        f"{error_type}: {result.get('errorArgs') or error_msg}"
-                    )
+        # Close active sessions
+        if self._active_sessions:
+            logger.info(f"Closing {len(self._active_sessions)} active sessions...")
+            for conversation_id in list(self._active_sessions.keys()):
+                self.release_session(conversation_id)
 
-            interp._sync_files()
-            return result.get("output", None)
+        if self._pool_manager:
+            try:
+                logger.info("Closing pool manager...")
+                self._pool_manager.close()
+                logger.info("Pool manager closed successfully")
+            except Exception as e:
+                logger.error(f"Error closing pool manager: {e}")
 
-        # Bind as an instance method
-        interp.execute = noise_resilient_execute
+        self._initialized = False
 
-    @classmethod
-    async def shutdown(cls) -> None:
-        """Gracefully shut down the sandbox process.
 
-        Idempotent — safe to call multiple times or when no instance exists.
-        """
-        if cls._instance is not None:
-            logger.info("Shutting down Deno/Pyodide sandbox...")
-            cls._instance.shutdown()
-            cls._instance = None
-            cls._has_patch = False
-            logger.info("Sandbox shut down")
+async def get_sandbox() -> SandboxManager:
+    """Helper to get the SandboxManager singleton."""
+    return SandboxManager.get()

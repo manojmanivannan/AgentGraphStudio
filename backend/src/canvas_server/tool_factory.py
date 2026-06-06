@@ -1,10 +1,9 @@
 """Tool factory -- compiles user Python tool code and executes it in a sandbox.
 
 The compilation flow is:
-1. Validate syntax by sending code to the Deno/Pyodide sandbox (catches SyntaxErrors)
-2. Extract function metadata (name, docstring, annotations) via host-side exec
-   -- this is safe because we only use it for inspect, not execution
-3. Return an async wrapper callable that executes the function in the sandbox
+1. Validate syntax by sending code to the Docker sandbox (catches SyntaxErrors)
+2. Extract function metadata (name, docstring, annotations) via AST parsing
+3. Return an async wrapper callable that executes the function in the sandbox using llm-sandbox.
 
 For testing, ``inspect_tool_code`` extracts parameter metadata and
 ``execute_tool_code`` runs a function with user-provided string arguments,
@@ -23,6 +22,7 @@ from typing import Any
 from canvas_server.exceptions import ToolCompilationError, ToolExecutionError
 from canvas_server.models.api import ToolArgumentInfo, ToolInspectResponse, ToolTestResponse
 from canvas_server.package_manager import PackageManager
+from canvas_server.sandbox import get_sandbox, SandboxManager
 
 logger = logging.getLogger("canvas_server.tool_factory")
 
@@ -83,58 +83,6 @@ def coerce_arg(value: str, type_hint: str) -> Any:
 
 
 # -- Host-side metadata extraction -----------------------------------------------
-
-
-def _extract_function(code: str, name: str):
-    """Extract the first user-defined callable from *code* using host-side exec.
-
-    This is used ONLY for metadata extraction (name, docstring, annotations)
-    that DSPy needs to build tool descriptors.  The actual execution happens in
-    the sandbox.
-    """
-    namespace: dict = {}
-    try:
-        exec(code, namespace)  # noqa: S102 -- safe: used for metadata only
-    except SyntaxError as e:
-        raise ToolCompilationError(f"Syntax error in tool '{name}': {e}") from e
-    except Exception as e:
-        raise ToolCompilationError(f"Failed to compile tool '{name}': {e}") from e
-
-    user_func = None
-    for val in namespace.values():
-        if callable(val) and not inspect.isbuiltin(val) and getattr(val, "__module__", "") != "builtins":
-            user_func = val
-            break
-
-    if not user_func:
-        raise ToolCompilationError(f"No callable function found in tool '{name}'.")
-    return user_func
-
-
-def _resolve_type_hint(annotation: Any) -> str:
-    """Convert a type annotation object to a simple string hint."""
-    if annotation is inspect.Parameter.empty:
-        return "str"  # default fallback
-    if isinstance(annotation, type):
-        return annotation.__name__
-    # Handle string annotations like 'str', 'int', etc.
-    hint_str = str(annotation)
-    # Clean up common forms: <class 'int'> -> int, typing.List[str] -> list
-    if hint_str.startswith("<class '"):
-        return hint_str[8:-2]
-    # Strip typing module prefixes
-    for prefix in ("typing.", "builtins."):
-        if hint_str.startswith(prefix):
-            return hint_str[len(prefix):]
-    # Simplify complex types: list[str] -> list, dict[str, Any] -> dict
-    if hint_str.startswith("list"):
-        return "list"
-    if hint_str.startswith("dict"):
-        return "dict"
-    return hint_str
-
-
-# -- AST-based function extraction (no host-side exec of imports) ----------------
 
 
 def _extract_function_ast(code: str, name: str):
@@ -242,7 +190,7 @@ def _ast_node_to_type_str(node: ast.expr) -> str:
 
     Handles: ``ast.Name`` → ``"int"``, ``ast.Constant`` → ``"str"`` (a forward
     reference), and ``ast.Subscript`` → ``"list"`` / ``"dict"`` (strips generic
-    parameters to keep things simple for coerce_arg).
+    parameters to keep simple for coerce_arg).
     """
     if isinstance(node, ast.Name):
         return node.id
@@ -268,41 +216,82 @@ async def compile_tool_from_code(name: str, code: str):
 
     The returned function has __name__, __doc__, and __annotations__
     set from the original code so that DSPy can build tool descriptors from it.
-    When called, it sends the function definition + call through the Deno/Pyodide
-    sandbox.
+    When called, it executes the function in a Docker sandbox.
     """
     # Validate syntax via sandbox
-    from canvas_server.sandbox import Sandbox
-
-    sandbox = await Sandbox.get()
+    manager = await get_sandbox()
+    # Create a transient session for syntax check
+    # We use a unique ID to avoid collision with active conversations
+    syntax_session_id = f"syntax_check_{int(time.time())}"
+    session = manager.get_session(syntax_session_id)
     try:
-        sandbox(f"compile({repr(code)}, '<tool>', 'exec')")
-    except SyntaxError as e:
-        raise ToolCompilationError(f"Syntax error in tool '{name}': {e}") from e
+        # Run simple compilation check
+        session.run(f"compile({repr(code)}, '<tool>', 'exec')")
     except Exception as e:
-        # Non-syntax errors in compile() are unexpected but we handle them
-        raise ToolCompilationError(f"Failed to compile tool '{name}': {e}") from e
+        raise ToolCompilationError(f"Syntax error in tool '{name}': {e}") from e
+    finally:
+        manager.release_session(syntax_session_id)
 
     # Extract function metadata using AST (safe -- no exec of imports on host)
     user_func = _extract_function_ast(code, name)
     fn_name = user_func.__name__
 
-    # Capture code in a closure variable to avoid late-binding issues
+    # Capture code in the closure
     tool_code = code
 
     async def sandbox_tool_fn(**kwargs):
-        """Executes the user's function in the Deno/Pyodide sandbox."""
-        sandbox = await Sandbox.get()
-        args_repr = ", ".join(f"{k}={repr(v)}" for k, v in kwargs.items())
-        call_code = f"{tool_code}\n_result = {fn_name}({args_repr})\n_result"
-        return sandbox(call_code)
+        """Executes the user's function in the Docker sandbox."""
+        # The CanvasRunner will provide a conversation_id to the manager.
+        # For now, we use "global" as a fallback if we are not in a specific context.
+        # In the final integrated version, the conversation_id is passed through.
+        manager = await get_sandbox()
+
+        # Note: In a real run, the CanvasRunner handles the session lifecycle.
+        # We assume the session is already managed and associated with the conversation.
+        # We'll use "global" for standalone calls, but the Runner will override this.
+        session = manager.get_session("global")
+        try:
+            args_repr = ", ".join(f"{k}={repr(v)}" for k, v in kwargs.items())
+
+            # JSON harness to capture the return value of the function
+            # llm-sandbox.run() returns a result object with .stdout
+            wrapped_code = f"""
+import json
+import sys
+
+def run_tool():
+    try:
+        local_vars = {{}}
+        exec({repr(tool_code)}, {{}}, local_vars)
+        # Execute the specific function
+        result = local_vars['{fn_name}']({args_repr})
+        return result
+    except Exception as e:
+        print(f"PYTHON_ERROR: {{e}}", file=sys.stderr)
+        sys.exit(1)
+
+if __name__ == '__main__':
+    res = run_tool()
+    print(json.dumps(res))
+"""
+            result_obj = session.run(wrapped_code)
+            stdout = result_obj.stdout.strip()
+
+            try:
+                return json.loads(stdout)
+            except json.JSONDecodeError:
+                return stdout
+        finally:
+            # We don't release "global" session as it's a fallback.
+            # Conversation-specific sessions are released by the Runner.
+            pass
 
     # Copy DSPy-needed metadata from the original function
     sandbox_tool_fn.__name__ = user_func.__name__
     sandbox_tool_fn.__doc__ = user_func.__doc__
     sandbox_tool_fn.__annotations__ = getattr(user_func, "__annotations__", {})
 
-    logger.info("Compiled tool '%s' (sandbox mode)", name)
+    logger.info("Compiled tool '%s' (llm-sandbox mode)", name)
     return sandbox_tool_fn
 
 
@@ -312,21 +301,8 @@ async def inspect_tool_code(
     """Extract function signature metadata from tool code.
 
     Uses AST parsing so that import statements for packages not installed on
-    the host do not cause errors.  If *dependencies* are provided they are
-    pre-installed in the sandbox so that the code can be compiled there
-    (for subsequent execution), but inspection itself does not require them.
-
-    Returns the function name and a list of argument descriptors with name,
-    type hint, and default value (if any).
+    the host do not cause errors.
     """
-    if dependencies:
-        pm = PackageManager()
-        try:
-            await pm.install_packages(dependencies)
-            logger.info("Pre-installed dependencies for inspect: %s", dependencies)
-        except Exception as e:
-            logger.warning("Failed to pre-install deps during inspect: %s", e)
-
     user_func = _extract_function_ast(code, name)
     sig = inspect.signature(user_func)
     annotations = getattr(user_func, "__annotations__", {})
@@ -363,36 +339,17 @@ async def execute_tool_code(
     """Execute a tool function in the sandbox with user-provided string arguments.
 
     Coerces string arguments to the correct Python types using type hints,
-    then runs the function in the Deno/Pyodide sandbox and returns the result.
-
-    If *dependencies* are provided they are pre-installed in the sandbox via
-    ``micropip`` before compilation and execution.
+    then runs the function in the Docker sandbox and returns the result.
     """
     start = time.perf_counter()
 
-    # 0. Install dependencies in the sandbox before anything else
-    if dependencies:
-        pm = PackageManager()
-        try:
-            await pm.install_packages(dependencies)
-            logger.info("Pre-installed dependencies for test: %s", dependencies)
-        except Exception as e:
-            elapsed_ms = (time.perf_counter() - start) * 1000
-            return ToolTestResponse(
-                success=False,
-                output=f"Failed to install dependencies: {e}",
-                execution_time_ms=round(elapsed_ms, 2),
-            )
-
-    # 1. Validate and compile the code
+    # 1. Validate and compile the code (checks syntax)
     try:
-        fn = await compile_tool_from_code(name, code)
+        await compile_tool_from_code(name, code)
     except ToolCompilationError as e:
         return ToolTestResponse(success=False, output=str(e), execution_time_ms=0)
 
-    # 2. Coerce string args using the ORIGINAL function's annotations and signature.
-    #    We cannot use inspect.signature(fn) because fn is the async sandbox wrapper
-    #    which has **kwargs. Instead, extract the original function for metadata.
+    # 2. Coerce string args using AST metadata
     try:
         original_func = _extract_function_ast(code, name)
     except ToolCompilationError as e:
@@ -408,7 +365,6 @@ async def execute_tool_code(
         type_hint = _resolve_type_hint(annotations.get(param_name, param.annotation))
 
         if param_name in args:
-            # User provided a value -- coerce it
             try:
                 coerced_args[param_name] = coerce_arg(args[param_name], type_hint)
             except ToolExecutionError as e:
@@ -417,10 +373,8 @@ async def execute_tool_code(
                     success=False, output=str(e), execution_time_ms=elapsed_ms
                 )
         elif param.default is not inspect.Parameter.empty:
-            # Parameter has a default -- let it be used
             coerced_args[param_name] = param.default
         else:
-            # Required argument missing
             elapsed_ms = (time.perf_counter() - start) * 1000
             return ToolTestResponse(
                 success=False,
@@ -428,9 +382,45 @@ async def execute_tool_code(
                 execution_time_ms=elapsed_ms,
             )
 
-    # 3. Execute in the sandbox
+    # 3. Execute in a transient session
     try:
-        result = await fn(**coerced_args)
+        manager = await get_sandbox()
+        test_session_id = f"tool_test_{int(time.time())}"
+        session = manager.get_session(test_session_id)
+        try:
+            fn_name = original_func.__name__
+            args_repr = ", ".join(f"{k}={repr(v)}" for k, v in coerced_args.items())
+
+            # Use the JSON harness for consistent result capture
+            wrapped_code = f"""
+import json
+import sys
+
+def run_test():
+    try:
+        local_vars = {{}}
+        exec({repr(code)}, {{}}, local_vars)
+        result = local_vars['{fn_name}']({args_repr})
+        return result
+    except Exception as e:
+        print(f"PYTHON_ERROR: {{e}}", file=sys.stderr)
+        sys.exit(1)
+
+if __name__ == '__main__':
+    res = run_test()
+    print(json.dumps(res))
+"""
+            # Pass dependencies to the libraries argument for automatic installation
+            result_obj = session.run(wrapped_code, libraries=dependencies)
+            stdout = result_obj.stdout.strip()
+
+            try:
+                result = json.loads(stdout)
+            except json.JSONDecodeError:
+                result = stdout
+        finally:
+            manager.release_session(test_session_id)
+
         elapsed_ms = (time.perf_counter() - start) * 1000
         return ToolTestResponse(
             success=True,
@@ -445,3 +435,22 @@ async def execute_tool_code(
             output=error_msg,
             execution_time_ms=round(elapsed_ms, 2),
         )
+
+
+def _resolve_type_hint(annotation: Any) -> str:
+    """Convert a type annotation object to a simple string hint."""
+    if annotation is inspect.Parameter.empty:
+        return "str"  # default fallback
+    if isinstance(annotation, type):
+        return annotation.__name__
+    hint_str = str(annotation)
+    if hint_str.startswith("<class '"):
+        return hint_str[8:-2]
+    for prefix in ("typing.", "builtins."):
+        if hint_str.startswith(prefix):
+            return hint_str[len(prefix):]
+    if hint_str.startswith("list"):
+        return "list"
+    if hint_str.startswith("dict"):
+        return "dict"
+    return hint_str
