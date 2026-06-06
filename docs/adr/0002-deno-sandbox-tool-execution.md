@@ -57,6 +57,7 @@ Host-side `exec()` is retained **only** for extracting function metadata (`__nam
 - **Deno must be installed** in the backend container (added to Dockerfile).
 - **Sandbox singleton** managed via `canvas_server.sandbox.Sandbox` — started in FastAPI lifespan, shut down on teardown.
 - **Pyodide limitations:** Tool code cannot use C extensions (e.g., numpy, pandas). Pure Python and most stdlib modules work. `os.listdir()` works but against a virtual filesystem, not the host.
+- **Dependency Management:** Tools can specify a list of Python packages to be installed via `pip` inside the sandbox session. These are installed before the tool code is executed, both during agent runs and interactive UI testing.
 - **Test marker:** Sandbox integration tests use `@requires_deno` (skip if `deno` not in PATH), so CI without Deno still passes unit tests.
 - **New API endpoints:** `POST /api/tools/inspect` (arg metadata) and `POST /api/tools/test` (execute with args) — both stateless, no DB required.
 - **New frontend feature:** ToolEditor "Test Tool" panel with argument inputs and result display.

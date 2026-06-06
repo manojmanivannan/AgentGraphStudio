@@ -115,3 +115,27 @@ async def canvas_with_nodes(test_session):
         edges=edges,
     )
     return canvas
+
+
+@pytest_asyncio.fixture(scope="session", autouse=True)
+async def autouse_sandbox():
+    import shutil
+    import logging
+    from canvas_server.sandbox import SandboxManager
+
+    if shutil.which("docker"):
+        manager = SandboxManager.get()
+        try:
+            await manager.initialize_pool()
+        except Exception as e:
+            logging.getLogger("canvas_server.tests").warning(
+                f"Failed to initialize sandbox pool in tests: {e}"
+            )
+        yield manager
+        try:
+            await manager.shutdown()
+        except Exception:
+            pass
+    else:
+        yield None
+

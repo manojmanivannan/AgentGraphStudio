@@ -213,7 +213,9 @@ def _ast_node_to_type_str(node: ast.expr) -> str:
 # -- Public API ------------------------------------------------------------------
 
 
-async def compile_tool_from_code(name: str, code: str, dependencies: list[str] | None = None):
+async def compile_tool_from_code(
+    name: str, code: str, dependencies: list[str] | None = None
+):
     """Compile user tool code and return an async callable that executes in the sandbox.
 
     The returned function has __name__, __doc__, and __annotations__
@@ -232,7 +234,9 @@ async def compile_tool_from_code(name: str, code: str, dependencies: list[str] |
     try:
         # Run simple compilation check
         with session:
-            session.run(f"compile({repr(code)}, '<tool>', 'exec')")
+            result_obj = session.run(f"compile({repr(code)}, '<tool>', 'exec')")
+            if result_obj.exit_code != 0:
+                raise ToolCompilationError(result_obj.stderr or result_obj.stdout)
     except Exception as e:
         raise ToolCompilationError(f"Syntax error in tool '{name}': {e}") from e
     finally:
@@ -257,12 +261,11 @@ async def compile_tool_from_code(name: str, code: str, dependencies: list[str] |
 
         # For backward compatibility or standalone calls, we use "global".
         # In production, the system should be refactored to pass the conversation_id.
-        session = manager.get_session("global")
-        try:
-            args_repr = ", ".join(f"{k}={repr(v)}" for k, v in kwargs.items())
+        session = manager.get_session("syntax_check_global")
+        args_repr = ", ".join(f"{k}={repr(v)}" for k, v in kwargs.items())
 
-            # JSON harness to capture the return value of the function
-            wrapped_code = f"""
+        # JSON harness to capture the return value of the function
+        wrapped_code = f"""
 import json
 import sys
 
@@ -285,14 +288,18 @@ if __name__ == '__main__':
             if dependencies:
                 session.execute_command("pip install " + " ".join(dependencies))
             result_obj = session.run(wrapped_code)
-            stdout = result_obj.stdout.strip()
+        
+        if result_obj.exit_code != 0:
+            raise ToolExecutionError(
+                result_obj.stderr or f"Tool execution failed with exit code {result_obj.exit_code}"
+            )
 
-            try:
-                return json.loads(stdout)
-            except json.JSONDecodeError:
-                return stdout
-        finally:
-            pass
+        stdout = result_obj.stdout.strip()
+
+        try:
+            return json.loads(stdout)
+        except json.JSONDecodeError:
+            return stdout
 
     # Copy DSPy-needed metadata from the original function
     sandbox_tool_fn.__name__ = user_func.__name__
@@ -428,6 +435,14 @@ if __name__ == '__main__':
                     session.execute_command("pip install " + " ".join(dependencies))
                 result_obj = session.run(wrapped_code)  # , libraries=dependencies)
                 stdout = result_obj.stdout.strip()
+
+            if result_obj.exit_code != 0:
+                elapsed_ms = (time.perf_counter() - start) * 1000
+                return ToolTestResponse(
+                    success=False,
+                    output=result_obj.stderr or f"Execution failed with exit code {result_obj.exit_code}",
+                    execution_time_ms=round(elapsed_ms, 2),
+                )
 
             try:
                 result = json.loads(stdout)
