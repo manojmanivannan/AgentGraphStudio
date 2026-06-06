@@ -205,7 +205,7 @@ mj-agent-framework/
 │       ├── test_routes_canvas.py
 │       ├── test_routes_tools.py # Tool inspect + test API endpoints
 │       ├── test_tool_factory.py # Tool compilation, inspection, execution, type coercion
-│       ├── test_sandbox.py      # Sandbox singleton lifecycle + code execution
+│       ├── test_sandbox_docker.py # Sandbox manager lifecycle + session execution
 │       └── test_e2e.py          # Full-stack E2E (canvas CRUD via test client)
 │
 ├── frontend/
@@ -605,11 +605,13 @@ run(user_prompt, send_event, target_agent_id=None)
 ### tool_factory.py — Sandbox-Based Tool Compilation & Execution
 
 ```python
-async def compile_tool_from_code(name: str, code: str) -> callable:
+async def compile_tool_from_code(name: str, code: str, dependencies: list[str] | None = None) -> callable:
     # 1. Validate syntax via sandbox (Deno/Pyodide)
     # 2. Extract function metadata on host side (exec for metadata only)
     # 3. Return async wrapper that calls the function in the sandbox
     #    — wrapper preserves __name__, __doc__, __annotations__ for DSPy
+    #    — wrapper handles `pip install` for specified dependencies
+
 
 async def inspect_tool_code(name, code) -> ToolInspectResponse:
     # Extract function name, parameter names, type hints, default values
@@ -1088,9 +1090,9 @@ span grouping.
 | `test_runner.py` | `CanvasRunner` with mocked DSPy agents — event emission, setup, router→worker flow |
 | `test_conversations.py` | Conversation CRUD API, repo operations, runner+conversation integration |
 | `test_routes_canvas.py` | Canvas CRUD API endpoints |
-| `test_routes_tools.py` | Tool inspect + test API endpoints (`@requires_deno`) |
-| `test_tool_factory.py` | Tool compilation, inspection, execution, type coercion; sandbox integration tests (`@requires_deno`) |
-| `test_sandbox.py` | Sandbox singleton lifecycle + code execution (`@requires_deno`) |
+| `test_routes_tools.py` | Tool inspect + test API endpoints (`@requires_docker`) |
+| `test_tool_factory.py` | Tool compilation, inspection, execution, type coercion; sandbox integration tests (`@requires_docker`) |
+| `test_sandbox_docker.py` | Sandbox manager lifecycle + session execution (`@requires_docker`) |
 | `test_config.py` | Settings loading |
 | `test_models_api.py` | Pydantic model serialization |
 | `test_repos.py` | CanvasRepo operations (create, save, delete) |
@@ -1101,8 +1103,8 @@ span grouping.
 - Each test gets a fresh database via `fresh_db` fixture (drop_all → create_all)
 - Agent execution is mocked — no real LLM calls in tests
 - `FakeCanvas`, `FakeAgentNode`, `FakeEdge` classes simplify test setup
-- Sandbox tests use `@requires_deno` marker (`pytest.mark.skipif(not shutil.which("deno"))`)
-  — tests skip gracefully in CI environments without Deno
+- Sandbox tests use `@requires_docker` marker (`pytest.mark.skipif(not shutil.which("docker"))`)
+  — tests skip gracefully in CI environments without Docker
 
 ### Frontend Tests (`frontend/src/`)
 

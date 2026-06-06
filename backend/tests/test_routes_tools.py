@@ -9,8 +9,8 @@ from httpx import ASGITransport, AsyncClient
 from canvas_server.main import app
 from canvas_server.database import get_session
 
-requires_deno = pytest.mark.skipif(
-    not shutil.which("deno"), reason="Deno not installed"
+requires_docker = pytest.mark.skipif(
+    not shutil.which("docker"), reason="Docker not installed"
 )
 
 
@@ -40,7 +40,7 @@ async def tools_client(fresh_db):
 class TestInspectEndpoint:
     """Tests for POST /api/tools/inspect."""
 
-    @requires_deno
+    @requires_docker
     async def test_inspect_simple_function(self, tools_client):
         code = "def greet(name: str) -> str:\n    return f'Hello {name}'"
         response = await tools_client.post(
@@ -54,7 +54,7 @@ class TestInspectEndpoint:
         assert data["arguments"][0]["name"] == "name"
         assert data["arguments"][0]["type_hint"] == "str"
 
-    @requires_deno
+    @requires_docker
     async def test_inspect_multiple_args(self, tools_client):
         code = "def add(a: int, b: int) -> int:\n    return a + b"
         response = await tools_client.post(
@@ -85,7 +85,7 @@ class TestInspectEndpoint:
 class TestTestEndpoint:
     """Tests for POST /api/tools/test."""
 
-    @requires_deno
+    @requires_docker
     async def test_test_simple_function(self, tools_client):
         code = "def add(a: int, b: int) -> int:\n    return a + b"
         response = await tools_client.post(
@@ -98,7 +98,7 @@ class TestTestEndpoint:
         assert data["output"] == "7"
         assert data["execution_time_ms"] > 0
 
-    @requires_deno
+    @requires_docker
     async def test_test_string_args(self, tools_client):
         code = "def greet(name: str) -> str:\n    return f'Hello {name}'"
         response = await tools_client.post(
@@ -120,7 +120,7 @@ class TestTestEndpoint:
         assert data["success"] is False
         assert "syntax" in data["output"].lower() or "SyntaxError" in data["output"]
 
-    @requires_deno
+    @requires_docker
     async def test_test_runtime_error(self, tools_client):
         code = "def boom():\n    raise ValueError('kaboom')"
         response = await tools_client.post(
@@ -132,7 +132,7 @@ class TestTestEndpoint:
         assert data["success"] is False
         assert "kaboom" in data["output"]
 
-    @requires_deno
+    @requires_docker
     async def test_test_missing_required_arg(self, tools_client):
         code = "def add(a: int, b: int) -> int:\n    return a + b"
         response = await tools_client.post(
@@ -144,7 +144,7 @@ class TestTestEndpoint:
         assert data["success"] is False
         assert "missing" in data["output"].lower() or "b" in data["output"]
 
-    @requires_deno
+    @requires_docker
     async def test_test_default_args(self, tools_client):
         code = 'def greet(name: str = "world") -> str:\n    return f"Hello {name}"'
         response = await tools_client.post(
@@ -156,7 +156,7 @@ class TestTestEndpoint:
         assert data["success"] is True
         assert data["output"] == "Hello world"
 
-    @requires_deno
+    @requires_docker
     async def test_test_no_args_needed(self, tools_client):
         code = "def answer() -> int:\n    return 42"
         response = await tools_client.post(

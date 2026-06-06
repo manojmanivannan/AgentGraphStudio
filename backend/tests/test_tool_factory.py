@@ -10,8 +10,8 @@ from canvas_server.tool_factory import (
     inspect_tool_code,
 )
 
-requires_deno = pytest.mark.skipif(
-    not shutil.which("deno"), reason="Deno not installed"
+requires_docker = pytest.mark.skipif(
+    not shutil.which("docker"), reason="Docker not installed"
 )
 
 
@@ -58,47 +58,29 @@ class TestCompileToolFromCode:
         fn = await compile_tool_from_code("calc", code)
         assert fn.__name__ == "calc"
 
-    @requires_deno
+    @requires_docker
     async def test_sandbox_execution_simple(self):
         """Compiled function should execute in the sandbox."""
-        from canvas_server.sandbox import Sandbox
+        code = "def multiply(a: int, b: int) -> int:\n    return a * b"
+        fn = await compile_tool_from_code("mult", code)
+        result = await fn(a=3, b=4)
+        assert result == 12
 
-        await Sandbox.get()
-        try:
-            code = "def multiply(a: int, b: int) -> int:\n    return a * b"
-            fn = await compile_tool_from_code("mult", code)
-            result = await fn(a=3, b=4)
-            assert result == 12
-        finally:
-            await Sandbox.shutdown()
-
-    @requires_deno
+    @requires_docker
     async def test_sandbox_execution_string(self):
         """Compiled function should handle string arguments."""
-        from canvas_server.sandbox import Sandbox
+        code = "def greet(name: str) -> str:\n    return f'Hello {name}'"
+        fn = await compile_tool_from_code("greeter", code)
+        result = await fn(name="world")
+        assert result == "Hello world"
 
-        await Sandbox.get()
-        try:
-            code = "def greet(name: str) -> str:\n    return f'Hello {name}'"
-            fn = await compile_tool_from_code("greeter", code)
-            result = await fn(name="world")
-            assert result == "Hello world"
-        finally:
-            await Sandbox.shutdown()
-
-    @requires_deno
+    @requires_docker
     async def test_sandbox_runtime_error(self):
         """Runtime errors in sandbox should propagate."""
-        from canvas_server.sandbox import Sandbox
-
-        await Sandbox.get()
-        try:
-            code = "def boom():\n    return 1 / 0"
-            fn = await compile_tool_from_code("boom", code)
-            with pytest.raises(Exception):
-                await fn()
-        finally:
-            await Sandbox.shutdown()
+        code = "def boom():\n    return 1 / 0"
+        fn = await compile_tool_from_code("boom", code)
+        with pytest.raises(Exception):
+            await fn()
 
 
 # ── inspect_tool_code ───────────────────────────────────────────────────────
@@ -165,32 +147,20 @@ class TestInspectToolCode:
 class TestExecuteToolCode:
     """Tests for the test execution endpoint."""
 
-    @requires_deno
+    @requires_docker
     async def test_execute_simple(self):
-        from canvas_server.sandbox import Sandbox
+        code = "def add(a: int, b: int) -> int:\n    return a + b"
+        result = await execute_tool_code("adder", code, {"a": "3", "b": "4"})
+        assert result.success is True
+        assert result.output == "7"
+        assert result.execution_time_ms > 0
 
-        await Sandbox.get()
-        try:
-            code = "def add(a: int, b: int) -> int:\n    return a + b"
-            result = await execute_tool_code("adder", code, {"a": "3", "b": "4"})
-            assert result.success is True
-            assert result.output == "7"
-            assert result.execution_time_ms > 0
-        finally:
-            await Sandbox.shutdown()
-
-    @requires_deno
+    @requires_docker
     async def test_execute_string_args(self):
-        from canvas_server.sandbox import Sandbox
-
-        await Sandbox.get()
-        try:
-            code = "def greet(name: str) -> str:\n    return f'Hello {name}'"
-            result = await execute_tool_code("greeter", code, {"name": "world"})
-            assert result.success is True
-            assert result.output == "Hello world"
-        finally:
-            await Sandbox.shutdown()
+        code = "def greet(name: str) -> str:\n    return f'Hello {name}'"
+        result = await execute_tool_code("greeter", code, {"name": "world"})
+        assert result.success is True
+        assert result.output == "Hello world"
 
     async def test_execute_compilation_error(self):
         """Compilation errors should return success=False with error message."""
@@ -204,94 +174,52 @@ class TestExecuteToolCode:
         result = await execute_tool_code("noval", "x = 42", {})
         assert result.success is False
 
-    @requires_deno
+    @requires_docker
     async def test_execute_runtime_error(self):
-        from canvas_server.sandbox import Sandbox
+        code = "def boom():\n    raise ValueError('kaboom')"
+        result = await execute_tool_code("boom", code, {})
+        assert result.success is False
+        assert "kaboom" in result.output
 
-        await Sandbox.get()
-        try:
-            code = "def boom():\n    raise ValueError('kaboom')"
-            result = await execute_tool_code("boom", code, {})
-            assert result.success is False
-            assert "kaboom" in result.output
-        finally:
-            await Sandbox.shutdown()
-
-    @requires_deno
+    @requires_docker
     async def test_execute_type_coercion_int(self):
-        from canvas_server.sandbox import Sandbox
+        code = "def double(x: int) -> int:\n    return x * 2"
+        result = await execute_tool_code("double", code, {"x": "5"})
+        assert result.success is True
+        assert result.output == "10"
 
-        await Sandbox.get()
-        try:
-            code = "def double(x: int) -> int:\n    return x * 2"
-            result = await execute_tool_code("double", code, {"x": "5"})
-            assert result.success is True
-            assert result.output == "10"
-        finally:
-            await Sandbox.shutdown()
-
-    @requires_deno
+    @requires_docker
     async def test_execute_type_coercion_float(self):
-        from canvas_server.sandbox import Sandbox
+        code = "def half(x: float) -> float:\n    return x / 2"
+        result = await execute_tool_code("half", code, {"x": "3.14"})
+        assert result.success is True
 
-        await Sandbox.get()
-        try:
-            code = "def half(x: float) -> float:\n    return x / 2"
-            result = await execute_tool_code("half", code, {"x": "3.14"})
-            assert result.success is True
-        finally:
-            await Sandbox.shutdown()
-
-    @requires_deno
+    @requires_docker
     async def test_execute_type_coercion_bool(self):
-        from canvas_server.sandbox import Sandbox
+        code = "def negate(x: bool) -> bool:\n    return not x"
+        result = await execute_tool_code("negate", code, {"x": "true"})
+        assert result.success is True
 
-        await Sandbox.get()
-        try:
-            code = "def negate(x: bool) -> bool:\n    return not x"
-            result = await execute_tool_code("negate", code, {"x": "true"})
-            assert result.success is True
-        finally:
-            await Sandbox.shutdown()
-
-    @requires_deno
+    @requires_docker
     async def test_execute_missing_required_arg(self):
-        from canvas_server.sandbox import Sandbox
+        code = "def add(a: int, b: int) -> int:\n    return a + b"
+        result = await execute_tool_code("adder", code, {"a": "1"})  # missing b
+        assert result.success is False
+        assert "missing" in result.output.lower() or "b" in result.output
 
-        await Sandbox.get()
-        try:
-            code = "def add(a: int, b: int) -> int:\n    return a + b"
-            result = await execute_tool_code("adder", code, {"a": "1"})  # missing b
-            assert result.success is False
-            assert "missing" in result.output.lower() or "b" in result.output
-        finally:
-            await Sandbox.shutdown()
-
-    @requires_deno
+    @requires_docker
     async def test_execute_default_args_used(self):
-        from canvas_server.sandbox import Sandbox
+        code = 'def greet(name: str = "world") -> str:\n    return f"Hello {name}"'
+        result = await execute_tool_code("greeter", code, {})
+        assert result.success is True
+        assert result.output == "Hello world"
 
-        await Sandbox.get()
-        try:
-            code = 'def greet(name: str = "world") -> str:\n    return f"Hello {name}"'
-            result = await execute_tool_code("greeter", code, {})
-            assert result.success is True
-            assert result.output == "Hello world"
-        finally:
-            await Sandbox.shutdown()
-
-    @requires_deno
+    @requires_docker
     async def test_execution_time_reported(self):
-        from canvas_server.sandbox import Sandbox
-
-        await Sandbox.get()
-        try:
-            code = "def fast() -> str:\n    return 'done'"
-            result = await execute_tool_code("fast", code, {})
-            assert result.success is True
-            assert result.execution_time_ms >= 0
-        finally:
-            await Sandbox.shutdown()
+        code = "def fast() -> str:\n    return 'done'"
+        result = await execute_tool_code("fast", code, {})
+        assert result.success is True
+        assert result.execution_time_ms >= 0
 
 
 # ── coerce_arg (unit tests — no Deno needed) ─────────────────────────────────
