@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import os
 import uuid
 
@@ -119,8 +120,9 @@ async def canvas_with_nodes(test_session):
 
 @pytest_asyncio.fixture(scope="session", autouse=True)
 async def autouse_sandbox():
-    import shutil
     import logging
+    import shutil
+
     from canvas_server.sandbox import SandboxManager
 
     if shutil.which("docker"):
@@ -132,10 +134,8 @@ async def autouse_sandbox():
                 f"Failed to initialize sandbox pool in tests: {e}"
             )
         yield manager
-        try:
+        with contextlib.suppress(Exception):
             await manager.shutdown()
-        except Exception:
-            pass
     else:
         yield None
 

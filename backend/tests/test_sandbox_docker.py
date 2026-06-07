@@ -1,8 +1,9 @@
-import pytest
-import pytest_asyncio
 from unittest.mock import MagicMock, patch
-from canvas_server.sandbox import SandboxManager, SandboxError
-from llm_sandbox import InteractiveSandboxSession
+
+import pytest
+
+from canvas_server.sandbox import SandboxError, SandboxManager
+
 
 class MockDockerPoolManager(MagicMock):
     pass
