@@ -4,27 +4,42 @@ from canvas_server.config import settings
 
 
 def build_mem0_config() -> dict:
+    llm_provider = settings.mem0_llm_provider
+    llm_config = {
+        "model": settings.mem0_llm_model,
+        "api_key": settings.llm_api_key,
+        "temperature": 0.1,
+    }
+    if llm_provider == "ollama":
+        llm_config["ollama_base_url"] = settings.llm_base_url
+    elif llm_provider == "openai":
+        llm_config["openai_base_url"] = settings.llm_base_url
+
+    embedder_provider = settings.mem0_embedder_provider
+    embedder_config = {
+        "model": settings.mem0_embedder_model,
+        "api_key": settings.llm_api_key,
+    }
+    if embedder_provider == "ollama":
+        embedder_config["ollama_base_url"] = settings.llm_base_url
+    elif embedder_provider == "openai":
+        embedder_config["openai_base_url"] = settings.llm_base_url
+
     return {
         "llm": {
-            "provider": settings.mem0_llm_provider,
-            "config": {
-                "model": settings.mem0_llm_model,
-                "ollama_base_url": settings.llm_base_url,
-                "temperature": 0.1,
-            },
+            "provider": llm_provider,
+            "config": llm_config,
         },
         "embedder": {
-            "provider": settings.mem0_embedder_provider,
-            "config": {
-                "model": settings.mem0_embedder_model,
-                "ollama_base_url": settings.llm_base_url,
-            },
+            "provider": embedder_provider,
+            "config": embedder_config,
         },
         "vector_store": {
             "provider": "qdrant",
             "config": {
-                "embedding_model_dims": 768,
+                "embedding_model_dims": settings.mem0_embedder_dimensions,
             },
         },
         "version": "v1.1",
     }
+
