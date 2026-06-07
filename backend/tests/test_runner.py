@@ -1,5 +1,5 @@
 import uuid
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, patch, MagicMock
 
 import dspy
 
@@ -308,3 +308,35 @@ class TestCanvasRunner:
 
         final_answers = [e for e in events if e["type"] == "final_answer"]
         assert len(final_answers) >= 1
+
+    async def test_setup_installs_tool_dependencies(self):
+        class FakeToolNode:
+            def __init__(self, name, code, dependencies=None):
+                self.id = uuid.uuid4()
+                self.name = name
+                self.code = code
+                self.dependencies = dependencies or []
+
+        tool = FakeToolNode(
+            name="dummy_tool",
+            code="def dummy_tool():\n    pass",
+            dependencies=["pandas", "numpy", "numpy"]
+        )
+        canvas = FakeCanvas(tool_nodes=[tool])
+        runner = CanvasRunner(canvas)
+
+        # Mock compile_tool_from_code to avoid actually calling the sandbox during compilation
+        # and mock AgentFactory.build_workers to avoid building workers
+        with patch("canvas_server.runner.tool_registry.compile_tool_from_code") as mock_compile, \
+             patch.object(runner._agent_factory, "build_workers") as mock_build_workers, \
+             patch("canvas_server.runner.runner.PackageManager") as mock_pm_class:
+            
+            mock_pm = MagicMock()
+            mock_pm.install_packages = AsyncMock()
+            mock_pm_class.return_value = mock_pm
+            
+            await runner.setup()
+            
+            # Verify that install_packages was called with the sorted list of unique dependencies
+            mock_pm.install_packages.assert_called_once_with(["numpy", "pandas"])
+
