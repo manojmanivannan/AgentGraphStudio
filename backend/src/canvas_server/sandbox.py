@@ -11,10 +11,9 @@ Architecture:
 from __future__ import annotations
 
 import logging
-from typing import Dict, Optional
 
 from llm_sandbox import SandboxSession
-from llm_sandbox.pool import create_pool_manager, PoolConfig
+from llm_sandbox.pool import PoolConfig, create_pool_manager
 
 logger = logging.getLogger("canvas_server.sandbox")
 
@@ -36,11 +35,11 @@ class SandboxManager:
     and maps conversations to specific interactive sessions.
     """
 
-    _instance: Optional[SandboxManager] = None
+    _instance: SandboxManager | None = None
 
     def __init__(self):
         self._pool_manager = None
-        self._active_sessions: Dict[str, SandboxSession] = {}
+        self._active_sessions: dict[str, SandboxSession] = {}
         self._initialized = False
 
     @classmethod
@@ -69,7 +68,7 @@ class SandboxManager:
             logger.info("Sandbox pool initialized successfully")
         except Exception as e:
             logger.error(f"Failed to initialize sandbox pool: {e}")
-            raise SandboxError(f"Sandbox initialization failed: {e}")
+            raise SandboxError(f"Sandbox initialization failed: {e}") from e
 
     def get_session(self, conversation_id: str) -> SandboxSession:
         """

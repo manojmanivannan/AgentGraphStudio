@@ -25,8 +25,7 @@ from canvas_server.models.api import (
     ToolInspectResponse,
     ToolTestResponse,
 )
-from canvas_server.package_manager import PackageManager
-from canvas_server.sandbox import get_sandbox, SandboxManager
+from canvas_server.sandbox import get_sandbox
 
 logger = logging.getLogger("canvas_server.tool_factory")
 
@@ -288,7 +287,7 @@ if __name__ == '__main__':
             if dependencies:
                 session.execute_command("pip install " + " ".join(dependencies))
             result_obj = session.run(wrapped_code)
-        
+
         if result_obj.exit_code != 0:
             raise ToolExecutionError(
                 result_obj.stderr or f"Tool execution failed with exit code {result_obj.exit_code}"

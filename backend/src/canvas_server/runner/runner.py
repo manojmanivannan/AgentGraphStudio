@@ -20,6 +20,7 @@ import dspy
 import mlflow
 
 from canvas_server.config import settings
+from canvas_server.package_manager import PackageManager
 from canvas_server.runner.agent_factory import AgentFactory
 from canvas_server.runner.config import RunContext
 from canvas_server.runner.conversation import ConversationService
@@ -33,7 +34,6 @@ from canvas_server.runner.execution import (
 )
 from canvas_server.runner.memory import MemoryManager
 from canvas_server.runner.tool_registry import ToolRegistry
-from canvas_server.package_manager import PackageManager
 
 logger = logging.getLogger("canvas_server.runner")
 

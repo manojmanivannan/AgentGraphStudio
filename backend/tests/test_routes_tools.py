@@ -6,8 +6,8 @@ import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
-from canvas_server.main import app
 from canvas_server.database import get_session
+from canvas_server.main import app
 
 requires_docker = pytest.mark.skipif(
     not shutil.which("docker"), reason="Docker not installed"

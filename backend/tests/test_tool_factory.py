@@ -27,7 +27,7 @@ class TestCompileToolFromCode:
         fn = await compile_tool_from_code("greeter", code)
         assert callable(fn)
         assert fn.__name__ == "greet"
-        assert fn.__doc__ is not None or True  # docstring is optional
+        assert fn.__doc__ == ''  # docstring is optional
 
     async def test_function_with_docstring(self):
         code = 'def add(a: int, b: int) -> int:\n    """Adds two numbers."""\n    return a + b'
@@ -79,7 +79,7 @@ class TestCompileToolFromCode:
         """Runtime errors in sandbox should propagate."""
         code = "def boom():\n    return 1 / 0"
         fn = await compile_tool_from_code("boom", code)
-        with pytest.raises(Exception):
+        with pytest.raises(ToolExecutionError):
             await fn()
 
 
