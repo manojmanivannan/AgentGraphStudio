@@ -1,5 +1,5 @@
 import uuid
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import dspy
 
@@ -327,16 +327,14 @@ class TestCanvasRunner:
 
         # Mock compile_tool_from_code to avoid actually calling the sandbox during compilation
         # and mock AgentFactory.build_workers to avoid building workers
-        with patch("canvas_server.runner.tool_registry.compile_tool_from_code") as mock_compile, \
-             patch.object(runner._agent_factory, "build_workers") as mock_build_workers, \
-             patch("canvas_server.runner.runner.PackageManager") as mock_pm_class:
-            
+        with patch("canvas_server.runner.runner.PackageManager") as mock_pm_class:
+
             mock_pm = MagicMock()
             mock_pm.install_packages = AsyncMock()
             mock_pm_class.return_value = mock_pm
-            
+
             await runner.setup()
-            
+
             # Verify that install_packages was called with the sorted list of unique dependencies
             mock_pm.install_packages.assert_called_once_with(["numpy", "pandas"])
 
