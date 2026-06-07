@@ -58,7 +58,9 @@ class CanvasRunner:
 
         # ---- LM (cheap to construct, needs no I/O) ----
         self._lm = dspy.LM(
-            settings.llm_model, api_base=settings.llm_base_url, api_key=""
+            settings.llm_model,
+            api_base=settings.llm_base_url,
+            api_key=settings.llm_api_key,
         )
 
         # ---- services ----
@@ -142,7 +144,7 @@ class CanvasRunner:
         """Collect and install all unique package dependencies from tool nodes."""
         all_packages = set()
         for tool_node in tool_nodes:
-            if hasattr(tool_node, 'dependencies') and tool_node.dependencies:
+            if hasattr(tool_node, "dependencies") and tool_node.dependencies:
                 for pkg in tool_node.dependencies:
                     pkg = pkg.strip()
                     if pkg:
