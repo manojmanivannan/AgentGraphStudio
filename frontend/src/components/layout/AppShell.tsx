@@ -10,11 +10,14 @@ export function AppShell() {
   const observabilityOpen = useCanvasStore((s) => s.observabilityOpen);
   const chatOpen = useCanvasStore((s) => s.chatOpen);
   const selectedNodeId = useCanvasStore((s) => s.selectedNodeId);
+  const chatWidth = useCanvasStore((s) => s.chatWidth);
+  const propertiesWidth = useCanvasStore((s) => s.propertiesWidth);
+  const isDraggingPanel = useCanvasStore((s) => s.isDraggingPanel);
 
   const propertiesOpen = selectedNodeId !== null;
   // Total right-side panel width so the canvas container shrinks and fitView
   // accounts for the area covered by overlay panels.
-  const canvasRightOffset = (chatOpen ? 400 : 0) + (propertiesOpen ? 320 : 0);
+  const canvasRightOffset = (chatOpen ? chatWidth : 0) + (propertiesOpen ? propertiesWidth : 0);
 
   return (
     <div className="h-screen w-screen relative overflow-hidden bg-[var(--color-base)]">
@@ -23,7 +26,9 @@ export function AppShell() {
       ) : (
         <>
           <div
-            className="absolute bottom-0 z-0 transition-[right] duration-300 ease-out"
+            className={`absolute bottom-0 z-0 ${
+              isDraggingPanel ? "" : "transition-[right] duration-300 ease-out"
+            }`}
             style={{ top: 40, left: 48, right: canvasRightOffset }}
           >
             <CanvasView />

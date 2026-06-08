@@ -71,6 +71,8 @@ export function ChatOverlay() {
   const setActiveNodeId = useCanvasStore((s) => s.setActiveNodeId);
   const chatOpen = useCanvasStore((s) => s.chatOpen);
   const toggleChat = useCanvasStore((s) => s.toggleChat);
+  const chatWidth = useCanvasStore((s) => s.chatWidth);
+  const setChatWidth = useCanvasStore((s) => s.setChatWidth);
 
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [activeConvId, setActiveConvId] = useState<string | null>(null);
@@ -337,9 +339,13 @@ export function ChatOverlay() {
   return (
     <OverlayPanel
       open={chatOpen}
-      width={400}
+      width={chatWidth}
       offsetRight={offsetRight}
       onClose={toggleChat}
+      resizable={true}
+      onWidthChange={setChatWidth}
+      minWidth={280}
+      maxWidth={800}
       data-testid="chat-panel"
     >
       {/* Header */}

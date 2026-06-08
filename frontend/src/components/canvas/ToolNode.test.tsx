@@ -12,7 +12,7 @@ vi.mock("@xyflow/react", async () => {
   };
 });
 
-const makeProps = (data: Partial<ToolNodeData> = {}) => ({
+const makeProps = (data: Partial<ToolNodeData> = {}): any => ({
   id: data.id ?? "tool-1",
   type: "tool" as const,
   selected: false,
