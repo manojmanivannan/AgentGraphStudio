@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import math
+import re
 import uuid
 
 import dspy
@@ -14,43 +15,69 @@ from canvas_server.models.canvas import AgentDocument, AgentDocumentChunk, Agent
 logger = logging.getLogger("canvas_server.runner.rag_helper")
 
 
+_SENTENCE_RE = re.compile(r'[^.!?]+(?:[.!?]+["”\']*)?', flags=re.MULTILINE)
+_TOKEN_RE = re.compile(r"\w+", flags=re.UNICODE)
+
+
+def _token_count(text: str) -> int:
+    return len(_TOKEN_RE.findall(text))
+
+
+def _split_sentence_tokens(sentence: str, max_tokens: int) -> list[str]:
+    tokens = sentence.split()
+    if not tokens:
+        return []
+
+    chunks = []
+    for i in range(0, len(tokens), max_tokens):
+        chunks.append(" ".join(tokens[i : i + max_tokens]))
+    return chunks
+
+
+def _split_into_sentences(paragraph: str) -> list[str]:
+    paragraph = paragraph.replace("\n", " ").strip()
+    return [s.strip() for s in _SENTENCE_RE.findall(paragraph) if s.strip()]
+
+
 def chunk_text(text: str, max_chars: int) -> list[str]:
-    """Split text into paragraph-aligned chunks of at most max_chars."""
+    """Split text into sentence-aligned chunks using a simple regex token count."""
     if not text:
         return []
 
-    paragraphs = text.split("\n\n")
-    chunks = []
-    current_chunk = []
-    current_len = 0
+    max_tokens = max(1, max_chars)
+    paragraphs = [p.strip() for p in re.split(r"\n\s*\n+", text) if p.strip()]
+    chunks: list[str] = []
 
-    for p in paragraphs:
-        p = p.strip()
-        if not p:
-            continue
-        p_len = len(p)
-        if current_len + p_len > max_chars:
-            if current_chunk:
-                chunks.append("\n\n".join(current_chunk))
-            current_chunk = [p]
-            current_len = p_len
-        else:
-            current_chunk.append(p)
-            current_len += p_len + 2  # +2 for \n\n
+    current_sentences: list[str] = []
+    current_tokens = 0
 
-    if current_chunk:
-        chunks.append("\n\n".join(current_chunk))
+    for paragraph in paragraphs:
+        if current_sentences:
+            current_sentences.append("\n\n")
 
-    # Fallback split for any block that is still longer than max_chars
-    final_chunks = []
-    for chunk in chunks:
-        if len(chunk) > max_chars:
-            for i in range(0, len(chunk), max_chars):
-                final_chunks.append(chunk[i : i + max_chars])
-        else:
-            final_chunks.append(chunk)
+        sentences = _split_into_sentences(paragraph)
+        for sentence in sentences:
+            sentence_tokens = _token_count(sentence)
+            if sentence_tokens > max_tokens:
+                if current_sentences:
+                    chunks.append(" ".join(current_sentences).strip())
+                    current_sentences = []
+                    current_tokens = 0
+                chunks.extend(_split_sentence_tokens(sentence, max_tokens))
+                continue
 
-    return final_chunks
+            if current_tokens and current_tokens + sentence_tokens > max_tokens:
+                chunks.append(" ".join(current_sentences).strip())
+                current_sentences = []
+                current_tokens = 0
+
+            current_sentences.append(sentence)
+            current_tokens += sentence_tokens
+
+    if current_sentences:
+        chunks.append(" ".join(current_sentences).strip())
+
+    return chunks
 
 
 def get_embedder() -> dspy.Embedder:
