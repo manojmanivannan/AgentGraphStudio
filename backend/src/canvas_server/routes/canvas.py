@@ -1,6 +1,8 @@
+import io
 import json
 import logging
 import uuid
+import zipfile
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import Response
@@ -9,7 +11,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from canvas_server.database import get_session
 from canvas_server.exceptions import CanvasNotFoundError, ConversationNotFoundError
 from canvas_server.models.api import (
+    AgentDocumentInput,
     AgentDocumentResponse,
+    CanvasImportRequest,
     CanvasListResponse,
     CanvasResponse,
     CanvasSaveRequest,
@@ -114,7 +118,9 @@ async def list_canvases(session: AsyncSession = Depends(get_session)):
 
 
 @canvas_router.get("/{canvas_id}", response_model=CanvasResponse)
-async def get_canvas(canvas_id: uuid.UUID, session: AsyncSession = Depends(get_session)):
+async def get_canvas(
+    canvas_id: uuid.UUID, session: AsyncSession = Depends(get_session)
+):
     logger.debug(f"Getting canvas: id={canvas_id}")
     repo = CanvasRepo(session)
     try:
@@ -122,8 +128,10 @@ async def get_canvas(canvas_id: uuid.UUID, session: AsyncSession = Depends(get_s
     except CanvasNotFoundError:
         logger.warning(f"Canvas not found: id={canvas_id}")
         raise HTTPException(status_code=404, detail="Canvas not found") from None
-    logger.debug(f"Canvas fetched: id={canvas_id}, agents={len(canvas.agent_nodes)}, "
-                 f"tools={len(canvas.tool_nodes)}, edges={len(canvas.edges)}")
+    logger.debug(
+        f"Canvas fetched: id={canvas_id}, agents={len(canvas.agent_nodes)}, "
+        f"tools={len(canvas.tool_nodes)}, edges={len(canvas.edges)}"
+    )
     return _canvas_to_response(canvas)
 
 
@@ -143,7 +151,9 @@ async def save_canvas(
     for t in body.nodes.tools:
         logger.debug(f"  tool: id={t.id}, name={t.name}")
     for e in body.edges:
-        logger.debug(f"  edge: id={e.id}, {e.source_node_id} -> {e.target_node_id} [{e.edge_type}]")
+        logger.debug(
+            f"  edge: id={e.id}, {e.source_node_id} -> {e.target_node_id} [{e.edge_type}]"
+        )
     repo = CanvasRepo(session)
     try:
         canvas = await repo.save_nodes_and_edges(
@@ -161,7 +171,9 @@ async def save_canvas(
 
 
 @canvas_router.delete("/{canvas_id}", status_code=204)
-async def delete_canvas(canvas_id: uuid.UUID, session: AsyncSession = Depends(get_session)):
+async def delete_canvas(
+    canvas_id: uuid.UUID, session: AsyncSession = Depends(get_session)
+):
     logger.info(f"Deleting canvas: id={canvas_id}")
     repo = CanvasRepo(session)
     deleted = await repo.delete(canvas_id)
@@ -169,6 +181,67 @@ async def delete_canvas(canvas_id: uuid.UUID, session: AsyncSession = Depends(ge
         logger.warning(f"Canvas not found for delete: id={canvas_id}")
         raise HTTPException(status_code=404, detail="Canvas not found") from None
     logger.info(f"Canvas deleted: id={canvas_id}")
+
+
+def _canvas_to_import_payload(canvas) -> dict:
+    documents = []
+    for agent in canvas.agent_nodes:
+        for doc in agent.documents:
+            documents.append(
+                {
+                    "id": doc.id,
+                    "agent_node_id": doc.agent_node_id,
+                    "name": doc.name,
+                    "created_at": doc.created_at,
+                    "path": f"documents/{doc.agent_node_id}/{doc.id}.txt",
+                }
+            )
+
+    return {
+        "name": canvas.name,
+        "nodes": {
+            "agents": [
+                {
+                    "id": n.id,
+                    "name": n.name,
+                    "role": n.role,
+                    "instructions": n.instructions,
+                    "model_name": n.model_name,
+                    "agent_type": n.agent_type,
+                    "enable_memory": n.enable_memory,
+                    "enable_conversation_history": n.enable_conversation_history,
+                    "enable_rag": n.enable_rag,
+                    "rag_chunk_size": n.rag_chunk_size,
+                    "position_x": n.position_x,
+                    "position_y": n.position_y,
+                }
+                for n in canvas.agent_nodes
+            ],
+            "tools": [
+                {
+                    "id": n.id,
+                    "name": n.name,
+                    "code": n.code,
+                    "packages": ",".join(n.dependencies),
+                    "dependencies": n.dependencies,
+                    "args": n.args,
+                    "position_x": n.position_x,
+                    "position_y": n.position_y,
+                }
+                for n in canvas.tool_nodes
+            ],
+        },
+        "edges": [
+            {
+                "id": e.id,
+                "source_node_id": e.source_node_id,
+                "target_node_id": e.target_node_id,
+                "edge_type": e.edge_type,
+            }
+            for e in canvas.edges
+        ],
+        "documents": documents,
+    }
 
 
 @canvas_router.get("/{canvas_id}/export")
@@ -195,14 +268,47 @@ async def export_canvas(
     )
 
 
+@canvas_router.get("/{canvas_id}/export-zip")
+async def export_canvas_zip(
+    canvas_id: uuid.UUID, session: AsyncSession = Depends(get_session)
+):
+    logger.info(f"Exporting canvas ZIP: id={canvas_id}")
+    repo = CanvasRepo(session)
+    try:
+        canvas = await repo.get_or_404(canvas_id)
+    except CanvasNotFoundError:
+        logger.warning(f"Canvas not found for export: id={canvas_id}")
+        raise HTTPException(status_code=404, detail="Canvas not found") from None
+
+    payload = _canvas_to_import_payload(canvas)
+    manifest = json.dumps(payload, indent=2, default=str)
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("manifest.json", manifest)
+        for agent in canvas.agent_nodes:
+            for doc in agent.documents:
+                path = f"documents/{doc.agent_node_id}/{doc.id}.txt"
+                zf.writestr(path, doc.content)
+    buffer.seek(0)
+
+    safe_name = canvas.name.replace(" ", "_").replace("/", "_")
+    return Response(
+        content=buffer.read(),
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f'attachment; filename="canvas-{safe_name}.zip"'
+        },
+    )
+
+
 @canvas_router.post("/import", response_model=CanvasResponse)
 async def import_canvas(
-    body: CanvasSaveRequest, session: AsyncSession = Depends(get_session)
+    body: CanvasImportRequest, session: AsyncSession = Depends(get_session)
 ):
     logger.info(
         f"Importing canvas: name={body.name}, "
         f"agents={len(body.nodes.agents)}, "
-        f"tools={len(body.nodes.tools)}, edges={len(body.edges)}"
+        f"tools={len(body.nodes.tools)}, edges={len(body.edges)}, documents={len(body.documents)}"
     )
     repo = CanvasRepo(session)
     canvas = await repo.create_full(
@@ -210,22 +316,84 @@ async def import_canvas(
         agents=body.nodes.agents,
         tools=body.nodes.tools,
         edges=body.edges,
+        documents=body.documents,
     )
     logger.info(f"Canvas imported: id={canvas.id}")
     return _canvas_to_response(canvas)
 
 
-@canvas_router.post(
-    "/{canvas_id}/conversations", response_model=ConversationResponse
-)
+@canvas_router.post("/import-zip", response_model=CanvasResponse)
+async def import_canvas_zip(
+    file: UploadFile = File(...), session: AsyncSession = Depends(get_session)
+):
+    logger.info("Importing canvas ZIP file")
+    content_bytes = await file.read()
+    try:
+        archive = zipfile.ZipFile(io.BytesIO(content_bytes))
+    except zipfile.BadZipFile:
+        raise HTTPException(status_code=400, detail="Invalid ZIP archive") from None
+
+    if "manifest.json" not in archive.namelist():
+        raise HTTPException(status_code=400, detail="ZIP archive missing manifest.json")
+
+    manifest_bytes = archive.read("manifest.json")
+    try:
+        manifest = json.loads(manifest_bytes.decode("utf-8"))
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid manifest.json") from None
+
+    documents = []
+    for item in manifest.get("documents", []):
+        path = item.get("path")
+        if not path:
+            raise HTTPException(
+                status_code=400, detail="Document metadata must include path"
+            )
+        try:
+            doc_bytes = archive.read(path)
+        except KeyError:
+            raise HTTPException(
+                status_code=400, detail=f"Missing document file: {path}"
+            ) from None
+        try:
+            content_text = doc_bytes.decode("utf-8")
+        except UnicodeDecodeError:
+            content_text = doc_bytes.decode("latin-1")
+        documents.append(
+            {
+                "id": item.get("id"),
+                "agent_node_id": item.get("agent_node_id"),
+                "name": item.get("name"),
+                "content": content_text,
+                "created_at": item.get("created_at"),
+            }
+        )
+
+    try:
+        body = CanvasImportRequest.model_validate(manifest)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="Invalid manifest payload") from exc
+
+    body.documents = [AgentDocumentInput(**doc) for doc in documents]
+    repo = CanvasRepo(session)
+    canvas = await repo.create_full(
+        name=body.name,
+        agents=body.nodes.agents,
+        tools=body.nodes.tools,
+        edges=body.edges,
+        documents=body.documents,
+    )
+    logger.info(f"Canvas imported from ZIP: id={canvas.id}")
+    return _canvas_to_response(canvas)
+
+
+@canvas_router.post("/{canvas_id}/conversations", response_model=ConversationResponse)
 async def create_conversation(
     canvas_id: uuid.UUID,
     body: CreateConversationRequest = CreateConversationRequest(),
     session: AsyncSession = Depends(get_session),
 ):
-    logger.info(
-        "Creating conversation for canvas=%s name=%s", canvas_id, body.name
-    )
+    logger.info("Creating conversation for canvas=%s name=%s", canvas_id, body.name)
     canvas_repo = CanvasRepo(session)
     try:
         await canvas_repo.get_or_404(canvas_id)
@@ -260,20 +428,14 @@ async def get_conversation(
     conversation_id: uuid.UUID,
     session: AsyncSession = Depends(get_session),
 ):
-    logger.debug(
-        "Getting conversation: canvas=%s conv=%s", canvas_id, conversation_id
-    )
+    logger.debug("Getting conversation: canvas=%s conv=%s", canvas_id, conversation_id)
     repo = ConversationRepo(session)
     try:
         conv = await repo.get_or_404(conversation_id)
     except ConversationNotFoundError:
-        raise HTTPException(
-            status_code=404, detail="Conversation not found"
-        ) from None
+        raise HTTPException(status_code=404, detail="Conversation not found") from None
     if conv.canvas_id != canvas_id:
-        raise HTTPException(
-            status_code=404, detail="Conversation not found"
-        ) from None
+        raise HTTPException(status_code=404, detail="Conversation not found") from None
     return conv
 
 
@@ -283,20 +445,19 @@ async def delete_conversation(
     conversation_id: uuid.UUID,
     session: AsyncSession = Depends(get_session),
 ):
-    logger.info(
-        "Deleting conversation: canvas=%s conv=%s", canvas_id, conversation_id
-    )
+    logger.info("Deleting conversation: canvas=%s conv=%s", canvas_id, conversation_id)
     repo = ConversationRepo(session)
     conv = await repo.get(conversation_id)
     if not conv or conv.canvas_id != canvas_id:
-        raise HTTPException(
-            status_code=404, detail="Conversation not found"
-        ) from None
+        raise HTTPException(status_code=404, detail="Conversation not found") from None
     await repo.delete(conversation_id)
     logger.info("Conversation deleted: id=%s", conversation_id)
 
 
-@canvas_router.get("/{canvas_id}/agents/{agent_id}/documents", response_model=list[AgentDocumentResponse])
+@canvas_router.get(
+    "/{canvas_id}/agents/{agent_id}/documents",
+    response_model=list[AgentDocumentResponse],
+)
 async def list_agent_documents(
     canvas_id: uuid.UUID,
     agent_id: uuid.UUID,
@@ -307,7 +468,9 @@ async def list_agent_documents(
     from canvas_server.models.canvas import AgentDocument, AgentNode
 
     logger.info("Listing documents for canvas=%s agent=%s", canvas_id, agent_id)
-    stmt = select(AgentNode).where(AgentNode.id == agent_id, AgentNode.canvas_id == canvas_id)
+    stmt = select(AgentNode).where(
+        AgentNode.id == agent_id, AgentNode.canvas_id == canvas_id
+    )
     res = await session.execute(stmt)
     agent = res.scalar_one_or_none()
     if not agent:
@@ -326,7 +489,9 @@ async def list_agent_documents(
     return docs
 
 
-@canvas_router.post("/{canvas_id}/agents/{agent_id}/documents", response_model=AgentDocumentResponse)
+@canvas_router.post(
+    "/{canvas_id}/agents/{agent_id}/documents", response_model=AgentDocumentResponse
+)
 async def upload_agent_document(
     canvas_id: uuid.UUID,
     agent_id: uuid.UUID,
@@ -337,8 +502,15 @@ async def upload_agent_document(
 
     from canvas_server.models.canvas import AgentDocument, AgentNode
 
-    logger.info("Uploading document for canvas=%s agent=%s name=%s", canvas_id, agent_id, file.filename)
-    stmt = select(AgentNode).where(AgentNode.id == agent_id, AgentNode.canvas_id == canvas_id)
+    logger.info(
+        "Uploading document for canvas=%s agent=%s name=%s",
+        canvas_id,
+        agent_id,
+        file.filename,
+    )
+    stmt = select(AgentNode).where(
+        AgentNode.id == agent_id, AgentNode.canvas_id == canvas_id
+    )
     res = await session.execute(stmt)
     agent = res.scalar_one_or_none()
     if not agent:
@@ -362,12 +534,15 @@ async def upload_agent_document(
     logger.info("Document saved: id=%s", doc.id)
 
     from canvas_server.runner.rag_helper import RAGIndexManager
+
     await RAGIndexManager.trigger_reindex(agent_id)
 
     return doc
 
 
-@canvas_router.delete("/{canvas_id}/agents/{agent_id}/documents/{document_id}", status_code=204)
+@canvas_router.delete(
+    "/{canvas_id}/agents/{agent_id}/documents/{document_id}", status_code=204
+)
 async def delete_agent_document(
     canvas_id: uuid.UUID,
     agent_id: uuid.UUID,
@@ -378,7 +553,9 @@ async def delete_agent_document(
 
     from canvas_server.models.canvas import AgentDocument
 
-    logger.info("Deleting document canvas=%s agent=%s doc=%s", canvas_id, agent_id, document_id)
+    logger.info(
+        "Deleting document canvas=%s agent=%s doc=%s", canvas_id, agent_id, document_id
+    )
     stmt = select(AgentDocument).where(
         AgentDocument.id == document_id,
         AgentDocument.agent_node_id == agent_id,
@@ -394,5 +571,5 @@ async def delete_agent_document(
     logger.info("Document deleted: id=%s", document_id)
 
     from canvas_server.runner.rag_helper import RAGIndexManager
-    await RAGIndexManager.trigger_reindex(agent_id)
 
+    await RAGIndexManager.trigger_reindex(agent_id)

@@ -19,6 +19,9 @@ def get_engine(database_url: str | None = None):
     global _engine, _configured_url
     url = database_url or settings.database_url
     if _engine is None or url != _configured_url:
+        # Ensure ORM table mappings are imported before metadata is used.
+        import canvas_server.models.canvas  # noqa: F401
+
         _engine = create_async_engine(url, echo=False)
         _configured_url = url
     return _engine
@@ -28,7 +31,9 @@ def get_session_factory(database_url: str | None = None):
     global _session_factory
     engine = get_engine(database_url)
     if _session_factory is None:
-        _session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+        _session_factory = async_sessionmaker(
+            engine, class_=AsyncSession, expire_on_commit=False
+        )
     return _session_factory
 
 

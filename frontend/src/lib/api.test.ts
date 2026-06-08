@@ -8,7 +8,9 @@ import {
   saveCanvas,
   deleteCanvas,
   exportCanvas,
+  exportCanvasZip,
   importCanvas,
+  importCanvasZip,
   createConversation,
   listConversations,
   getConversation,
@@ -134,6 +136,30 @@ describe("api", () => {
     });
   });
 
+  describe("exportCanvasZip", () => {
+    it("should export canvas zip", async () => {
+      server.use(
+        http.get(`${API}/canvases/:id/export-zip`, () => {
+          return new HttpResponse("ZIPDATA", {
+            status: 200,
+            headers: { "Content-Type": "application/zip" },
+          });
+        })
+      );
+      const blob = await exportCanvasZip("canvas-1");
+      expect(await blob.text()).toBe("ZIPDATA");
+    });
+
+    it("should throw error when zip export fails", async () => {
+      server.use(
+        http.get(`${API}/canvases/:id/export-zip`, () => {
+          return new HttpResponse(null, { status: 500 });
+        })
+      );
+      await expect(exportCanvasZip("canvas-1")).rejects.toThrow("Failed to export canvas ZIP");
+    });
+  });
+
   describe("importCanvas", () => {
     it("should import canvas", async () => {
       const payload = { name: "Imported Canvas", nodes: { agents: [], tools: [] }, edges: [] };
@@ -149,6 +175,29 @@ describe("api", () => {
       );
       const payload = { name: "Imported Canvas", nodes: { agents: [], tools: [] }, edges: [] };
       await expect(importCanvas(payload)).rejects.toThrow("Failed to import canvas");
+    });
+  });
+
+  describe("importCanvasZip", () => {
+    it("should import canvas zip", async () => {
+      server.use(
+        http.post(`${API}/canvases/import-zip`, () => {
+          return HttpResponse.json({ id: "canvas-zip", name: "Imported Zip Canvas" });
+        })
+      );
+      const file = new File(["zipdata"], "canvas.zip", { type: "application/zip" });
+      const res = await importCanvasZip(file);
+      expect(res.name).toBe("Imported Zip Canvas");
+    });
+
+    it("should throw error when zip import fails", async () => {
+      server.use(
+        http.post(`${API}/canvases/import-zip`, () => {
+          return new HttpResponse(null, { status: 500 });
+        })
+      );
+      const file = new File(["zipdata"], "canvas.zip", { type: "application/zip" });
+      await expect(importCanvasZip(file)).rejects.toThrow("Failed to import canvas ZIP");
     });
   });
 

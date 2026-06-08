@@ -7,8 +7,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from canvas_server.exceptions import CanvasNotFoundError
-from canvas_server.models.api import AgentNodeInput, EdgeInput, ToolNodeInput
-from canvas_server.models.canvas import AgentNode, Canvas, Edge, ToolNode
+from canvas_server.models.api import (
+    AgentDocumentInput,
+    AgentNodeInput,
+    EdgeInput,
+    ToolNodeInput,
+)
+from canvas_server.models.canvas import AgentDocument, AgentNode, Canvas, Edge, ToolNode
 
 logger = logging.getLogger("canvas_server.repo")
 
@@ -18,13 +23,10 @@ class CanvasRepo:
         self.session = session
 
     def _eager_query(self):
-        return (
-            select(Canvas)
-            .options(
-                selectinload(Canvas.agent_nodes).selectinload(AgentNode.documents),
-                selectinload(Canvas.tool_nodes),
-                selectinload(Canvas.edges),
-            )
+        return select(Canvas).options(
+            selectinload(Canvas.agent_nodes).selectinload(AgentNode.documents),
+            selectinload(Canvas.tool_nodes),
+            selectinload(Canvas.edges),
         )
 
     async def create(self, name: str = "Untitled Canvas") -> Canvas:
@@ -42,6 +44,7 @@ class CanvasRepo:
         agents: list[AgentNodeInput],
         tools: list[ToolNodeInput],
         edges: list[EdgeInput],
+        documents: list[AgentDocumentInput] | None = None,
     ) -> Canvas:
         canvas = Canvas(name=name)
         self.session.add(canvas)
@@ -78,7 +81,11 @@ class CanvasRepo:
                 canvas_id=canvas_id,
                 name=t.name,
                 code=t.code,
-                dependencies=t.dependencies if t.dependencies else (t.packages.split(",") if t.packages else []),
+                dependencies=(
+                    t.dependencies
+                    if t.dependencies
+                    else (t.packages.split(",") if t.packages else [])
+                ),
                 position_x=t.position_x,
                 position_y=t.position_y,
             )
@@ -97,6 +104,23 @@ class CanvasRepo:
                 edge_type=e.edge_type,
             )
             self.session.add(edge)
+
+        for d in documents or []:
+            target_agent_id = id_map.get(d.agent_node_id)
+            if target_agent_id is None:
+                continue
+            if d.content is None:
+                raise ValueError("Document content is required for import")
+            doc = AgentDocument(
+                id=uuid.uuid4(),
+                canvas_id=canvas_id,
+                agent_node_id=target_agent_id,
+                name=d.name,
+                content=d.content,
+            )
+            if d.created_at is not None:
+                doc.created_at = d.created_at
+            self.session.add(doc)
 
         await self.session.commit()
 
@@ -143,9 +167,7 @@ class CanvasRepo:
         canvas.name = name
         canvas.updated_at = datetime.now(UTC)
 
-        await self.session.execute(
-            delete(Edge).where(Edge.canvas_id == canvas_id)
-        )
+        await self.session.execute(delete(Edge).where(Edge.canvas_id == canvas_id))
         await self.session.execute(
             delete(ToolNode).where(ToolNode.canvas_id == canvas_id)
         )
@@ -205,7 +227,11 @@ class CanvasRepo:
                 canvas_id=canvas_id,
                 name=t.name,
                 code=t.code,
-                dependencies=t.dependencies if t.dependencies else (t.packages.split(",") if t.packages else []),
+                dependencies=(
+                    t.dependencies
+                    if t.dependencies
+                    else (t.packages.split(",") if t.packages else [])
+                ),
                 position_x=t.position_x,
                 position_y=t.position_y,
             )
@@ -225,6 +251,7 @@ class CanvasRepo:
 
         if agents_to_reindex:
             from canvas_server.runner.rag_helper import RAGIndexManager
+
             for aid in agents_to_reindex:
                 await RAGIndexManager.trigger_reindex(aid)
 

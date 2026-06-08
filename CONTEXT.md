@@ -60,6 +60,10 @@ _Avoid_: Long-term memory, storage
 Text documents uploaded by a user and attached to a specific agent node (usually a Worker) to provide domain-specific context. At execution time, relevant chunks from these documents are retrieved and templated.
 _Avoid_: Knowledge base, document store, uploaded files
 
+**Canvas ZIP package**:
+A ZIP archive export/import format for a Canvas. It contains a `manifest.json` plus agent-specific document files under `documents/{agent_id}/{doc_id}.txt`, allowing RAG documents to be preserved when moving teams between environments.
+_Avoid_: bundle, tarball, archive format
+
 **RAG Chunk Size**:
 The maximum length (in characters) used when splitting RAG documents into paragraph-aligned chunks for embedding and retrieval.
 _Avoid_: Split size, block length, character limit
