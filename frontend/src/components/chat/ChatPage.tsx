@@ -26,6 +26,7 @@ import type { ConversationSummary, Message, ExecutionEvent } from "@/types";
 
 const WS_BASE = `ws://${import.meta.env.VITE_API_HOST || "localhost:8000"}`;
 
+
 interface TurnGroup {
   id: string;
   userMessage: Message;
@@ -34,7 +35,7 @@ interface TurnGroup {
   isStreaming: boolean;
 }
 
-function groupMessagesIntoTurns(messages: Message[]): {
+export function groupMessagesIntoTurns(messages: Message[]): {
   preTurnMessages: Message[];
   turns: TurnGroup[];
 } {
@@ -54,9 +55,6 @@ function groupMessagesIntoTurns(messages: Message[]): {
       turns.push(currentTurn);
     } else if (currentTurn) {
       if (msg.event_type === "final_answer") {
-        if (currentTurn.finalAnswer) {
-          currentTurn.steps.push(currentTurn.finalAnswer);
-        }
         currentTurn.finalAnswer = msg;
         currentTurn.isStreaming = false;
       } else {
@@ -116,7 +114,12 @@ export default function ChatPage() {
       setError(null);
       try {
         const conv = await getConversationById(conversation_id);
-        setMessages(conv.messages ?? []);
+        const orderedMessages = [...(conv.messages ?? [])].sort(
+          (a, b) =>
+            new Date(a.created_at).getTime() -
+            new Date(b.created_at).getTime()
+        );
+        setMessages(orderedMessages);
         setCanvasId(conv.canvas_id);
 
         // Fetch canvas name
@@ -399,11 +402,10 @@ export default function ChatPage() {
             return (
               <div
                 key={c.id}
-                className={`group flex items-center justify-between px-2 py-1.5 rounded-lg cursor-pointer transition-all duration-150 ${
-                  isActive
-                    ? "bg-[var(--color-elevated)] border border-[var(--color-border-default)] text-[var(--color-text-primary)]"
-                    : "hover:bg-[var(--color-overlay)]/40 text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
-                }`}
+                className={`group flex items-center justify-between px-2 py-1.5 rounded-lg cursor-pointer transition-all duration-150 ${isActive
+                  ? "bg-[var(--color-elevated)] border border-[var(--color-border-default)] text-[var(--color-text-primary)]"
+                  : "hover:bg-[var(--color-overlay)]/40 text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
+                  }`}
                 onClick={() => navigate(`/chat/${c.id}`)}
               >
                 <div className="flex items-center gap-2 truncate flex-1">
@@ -592,19 +594,18 @@ export default function ChatPage() {
                                     </span>
                                   )}
                                   <div
-                                    className={`max-w-[85%] rounded-xl px-3 py-2 text-[12px] leading-relaxed shadow-sm ${
-                                      isHandoff
-                                        ? "bg-[var(--color-info-subtle)] text-[var(--color-info)] border border-[var(--color-info)]/20 rounded-bl-sm"
-                                        : isError
+                                    className={`max-w-[85%] rounded-xl px-3 py-2 text-[12px] leading-relaxed shadow-sm ${isHandoff
+                                      ? "bg-[var(--color-info-subtle)] text-[var(--color-info)] border border-[var(--color-info)]/20 rounded-bl-sm"
+                                      : isError
                                         ? "bg-[var(--color-danger-subtle)] text-[var(--color-danger)] border border-[var(--color-danger)]/20 rounded-bl-sm"
                                         : isThought
-                                        ? "bg-[var(--color-agent-subtle)] text-[var(--color-agent)] border border-[var(--color-agent)]/20 rounded-bl-sm font-mono whitespace-pre-wrap text-[11px]"
-                                        : isToolResult
-                                        ? "bg-[var(--color-success-subtle)] text-[var(--color-success)] border border-[var(--color-success)]/20 rounded-bl-sm font-mono"
-                                        : isSubAnswer
-                                        ? "bg-[var(--color-elevated)] text-[var(--color-text-secondary)] border border-[var(--color-border-subtle)] rounded-bl-sm"
-                                        : "bg-[var(--color-elevated)] text-[var(--color-text-primary)] border border-[var(--color-border-subtle)] rounded-bl-sm"
-                                    }`}
+                                          ? "bg-[var(--color-agent-subtle)] text-[var(--color-agent)] border border-[var(--color-agent)]/20 rounded-bl-sm font-mono whitespace-pre-wrap text-[11px]"
+                                          : isToolResult
+                                            ? "bg-[var(--color-success-subtle)] text-[var(--color-success)] border border-[var(--color-success)]/20 rounded-bl-sm font-mono"
+                                            : isSubAnswer
+                                              ? "bg-[var(--color-elevated)] text-[var(--color-text-secondary)] border border-[var(--color-border-subtle)] rounded-bl-sm"
+                                              : "bg-[var(--color-elevated)] text-[var(--color-text-primary)] border border-[var(--color-border-subtle)] rounded-bl-sm"
+                                      }`}
                                   >
                                     {stepMsg.content}
                                   </div>
@@ -680,11 +681,10 @@ export default function ChatPage() {
               <button
                 onClick={running ? stopRun : handleSend}
                 disabled={!running && (!input.trim() || loadingConv)}
-                className={`px-4 py-2.5 rounded-xl text-white text-sm font-semibold transition-all duration-200 disabled:opacity-40 flex items-center justify-center shadow ${
-                  running
-                    ? "bg-[var(--color-danger)] hover:bg-[var(--color-danger)]/90"
-                    : "bg-[var(--color-accent)] hover:bg-[var(--color-accent-bright)] shadow-[var(--color-accent-subtle)]"
-                }`}
+                className={`px-4 py-2.5 rounded-xl text-white text-sm font-semibold transition-all duration-200 disabled:opacity-40 flex items-center justify-center shadow ${running
+                  ? "bg-[var(--color-danger)] hover:bg-[var(--color-danger)]/90"
+                  : "bg-[var(--color-accent)] hover:bg-[var(--color-accent-bright)] shadow-[var(--color-accent-subtle)]"
+                  }`}
               >
                 {running ? (
                   <Square className="w-3.5 h-3.5" />

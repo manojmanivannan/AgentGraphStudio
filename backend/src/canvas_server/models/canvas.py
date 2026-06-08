@@ -4,7 +4,16 @@ import uuid
 from datetime import UTC, datetime
 
 import sqlalchemy as sa
-from sqlalchemy import DateTime, Double, ForeignKey, Index, String, Text, TypeDecorator, Uuid
+from sqlalchemy import (
+    DateTime,
+    Double,
+    ForeignKey,
+    Index,
+    String,
+    Text,
+    TypeDecorator,
+    Uuid,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import JSON
 
@@ -132,7 +141,9 @@ class AgentDocument(Base):
         default=_utcnow,
     )
 
-    agent_node: Mapped[AgentNode] = relationship("AgentNode", back_populates="documents")
+    agent_node: Mapped[AgentNode] = relationship(
+        "AgentNode", back_populates="documents"
+    )
     chunks: Mapped[list[AgentDocumentChunk]] = relationship(
         "AgentDocumentChunk",
         back_populates="document",
@@ -143,6 +154,7 @@ class AgentDocument(Base):
 
 try:
     from pgvector.sqlalchemy import Vector
+
     HAS_PGVECTOR = True
 except ImportError:
     HAS_PGVECTOR = False
@@ -163,6 +175,7 @@ class SafeVector(TypeDecorator):
             else:
                 from sqlalchemy import Float
                 from sqlalchemy.dialects.postgresql import ARRAY
+
                 return dialect.type_descriptor(ARRAY(Float))
         return dialect.type_descriptor(sa.JSON())
 
@@ -194,10 +207,14 @@ class AgentDocumentChunk(Base):
     )
     chunk_index: Mapped[int] = mapped_column(sa.Integer)
     content: Mapped[str] = mapped_column(Text)
-    embedding: Mapped[list[float]] = mapped_column(SafeVector(dimensions=settings.mem0_embedder_dimensions))
+    embedding: Mapped[list[float]] = mapped_column(
+        SafeVector(dimensions=settings.mem0_embedder_dimensions)
+    )
 
     agent_node: Mapped[AgentNode] = relationship("AgentNode", back_populates="chunks")
-    document: Mapped[AgentDocument] = relationship("AgentDocument", back_populates="chunks")
+    document: Mapped[AgentDocument] = relationship(
+        "AgentDocument", back_populates="chunks"
+    )
 
 
 class ToolNode(Base):
@@ -273,6 +290,7 @@ class Conversation(Base):
         "Message",
         back_populates="conversation",
         cascade="all, delete-orphan",
+        order_by="Message.created_at",
     )
 
 
