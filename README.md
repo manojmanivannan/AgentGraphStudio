@@ -43,6 +43,8 @@ This is an **agent builder** — a visual IDE for creating multi-agent AI workfl
 5. **Export/Import ZIP packages** — export a canvas as a ZIP archive containing a manifest and per-agent RAG documents, or import it back to preserve team structure and document artifacts.
 6. **Run** — watch agents reason, call tools, use memory, run RAG queries, and collaborate in real-time.
 
+7. **Automatic conversation naming** — When a user sends the first message in a newly-created conversation, the backend uses a DSPy LLM call to generate a concise conversation title and updates the conversation name immediately. If the model doesn't return a name, the system falls back to a short excerpt from the user's question. The UI refreshes the conversation list in-place so the new title appears in the left-hand Recent Chats pane.
+
 **Two agent types:**
 - **Workers** — execute tasks by reasoning and calling tools (DSPy ReAct loop). Can have RAG documents.
 - **Routers** — orchestrate by handing off tasks to other agents.

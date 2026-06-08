@@ -303,6 +303,16 @@ class TestConversationRepo:
         names = {c.name for c in result}
         assert names == {"A", "B"}
 
+    async def test_update_conversation_name(self, test_session, blank_canvas):
+        repo = ConversationRepo(test_session)
+        conv = await repo.create(canvas_id=blank_canvas.id, name="New Conversation")
+        await repo.update_name(conv.id, "Weather question")
+        await test_session.commit()
+
+        fetched = await repo.get(conv.id)
+        assert fetched is not None
+        assert fetched.name == "Weather question"
+
 
 class TestRunnerWithConversation:
     def _make_agent_mock(self, text="Done!"):
@@ -349,6 +359,24 @@ class TestRunnerWithConversation:
         user_msgs = [m for m in fetched.messages if m.role == "user"]
         assert len(user_msgs) == 1
         assert user_msgs[0].content == "Hello world"
+
+    async def test_generate_conversation_title(self, test_session, blank_canvas):
+        worker = FakeAgentNode(id=uuid.uuid4(), name="Worker", agent_type="worker")
+        canvas = FakeCanvas(agent_nodes=[worker])
+
+        repo = ConversationRepo(test_session)
+        conv = await repo.create(canvas_id=blank_canvas.id, name="New Conversation")
+        conv_id = conv.id
+
+        runner = await self._setup_worker_runner(worker, canvas)
+        runner.conversation_repo = repo
+        runner.conversation_id = conv_id
+        runner._lm.acall = AsyncMock(return_value=[{"content": "Weather question"}])
+
+        title = await runner.generate_conversation_title(
+            "What is the weather like today?"
+        )
+        assert title == "Weather question"
 
     async def test_runner_keeps_conversation_active(self, test_session, blank_canvas):
         worker = FakeAgentNode(id=uuid.uuid4(), name="Worker", agent_type="worker")

@@ -14,6 +14,7 @@ After the big modularisation, ``CanvasRunner`` is a thin orchestrator that:
 from __future__ import annotations
 
 import logging
+import re
 import uuid
 
 import dspy
@@ -95,6 +96,48 @@ class CanvasRunner:
     @conversation_id.setter
     def conversation_id(self, value):
         self._conversation.conversation_id = value
+
+    async def generate_conversation_title(self, user_prompt: str) -> str | None:
+        if not user_prompt or not user_prompt.strip():
+            return None
+
+        prompt = (
+            "Create a concise chat title from the user's first question below. "
+            "Reply with only the title in 3-8 words, with no explanation, quotes, or extra punctuation.\n\n"
+            f"User question: {user_prompt.strip()}"
+        )
+
+        try:
+            with dspy.context(lm=self._lm):
+                result = await self._lm.acall(prompt=prompt)
+        except Exception as exc:
+            logger.warning(
+                "Failed to generate conversation title: %s", exc, exc_info=True
+            )
+            return None
+
+        title = None
+        if isinstance(result, list) and result:
+            first = result[0]
+            title = (
+                first.get("content") or first.get("text")
+                if isinstance(first, dict)
+                else str(first)
+            )
+        else:
+            title = str(result)
+
+        if not title:
+            return None
+
+        title = title.splitlines()[0].strip()
+        title = title.strip(" \"'")
+        title = re.sub(r"[.?!]+$", "", title)
+        title = re.sub(r"\s+", " ", title)
+        if len(title) > 100:
+            title = title[:100].rstrip(" .?!")
+
+        return title or None
 
     # ------------------------------------------------------------------
     # Setup
@@ -201,7 +244,9 @@ class CanvasRunner:
                     )
                 elif event.get("type") == "tool_result":
                     tool_name = event.get("tool", "")
-                    clean_tool_name = tool_name.replace("transfer_to_", "") if tool_name else aname
+                    clean_tool_name = (
+                        tool_name.replace("transfer_to_", "") if tool_name else aname
+                    )
                     await self._conversation.persist_message(
                         role="assistant",
                         content=event.get("output", ""),
@@ -280,11 +325,11 @@ class CanvasRunner:
 
             if getattr(target_node, "enable_rag", False):
                 from canvas_server.runner.rag_helper import run_rag_search
-                passages = await run_rag_search(
-                    target_id,
-                    task
+
+                passages = await run_rag_search(target_id, task)
+                target_agent = await self._agent_factory.build_worker_with_rag_prompt(
+                    target_node, passages
                 )
-                target_agent = await self._agent_factory.build_worker_with_rag_prompt(target_node, passages)
                 self.agents[target_id] = target_agent
                 self._attach_events(target_id, send_event, force=True)
             else:
