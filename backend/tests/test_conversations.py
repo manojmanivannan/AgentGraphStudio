@@ -240,7 +240,7 @@ class TestConversationRepo:
     async def test_get_conversation_messages_are_ordered_by_created_at(
         self, test_session, blank_canvas
     ):
-        from datetime import datetime, UTC
+        from datetime import UTC, datetime
 
         from canvas_server.models.canvas import Message
 
