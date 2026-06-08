@@ -111,8 +111,8 @@ export function AgentEditor() {
       <div className="flex items-center gap-2 pb-3 border-b border-[var(--color-border-subtle)]">
         <div className="w-5 h-5 rounded-md bg-[var(--color-accent-subtle)] flex items-center justify-center">
           <svg className="w-3 h-3 text-[var(--color-accent)]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M12 2a4 4 0 0 1 4 4v1a4 4 0 0 1-8 0V6a4 4 0 0 1 4-4z"/>
-            <path d="M12 12c-4 0-7 2-7 5v2h14v-2c0-3-3-5-7-5z"/>
+            <path d="M12 2a4 4 0 0 1 4 4v1a4 4 0 0 1-8 0V6a4 4 0 0 1 4-4z" />
+            <path d="M12 12c-4 0-7 2-7 5v2h14v-2c0-3-3-5-7-5z" />
           </svg>
         </div>
         <h3 className="text-[13px] font-semibold text-[var(--color-text-primary)]">Agent Properties</h3>
@@ -239,7 +239,7 @@ export function AgentEditor() {
             {(data as any).enableRag && (
               <div className="mt-3 pl-7 space-y-3 border-l border-[var(--color-border-subtle)]">
                 <div>
-                  <label className="block text-[10px] font-semibold text-[var(--color-text-tertiary)] mb-1 uppercase tracking-[0.06em]">Chunk Size (chars)</label>
+                  <label className="block text-[10px] font-semibold text-[var(--color-text-tertiary)] mb-1 uppercase tracking-[0.06em]">Chunk Size (tokens)</label>
                   <input
                     type="number"
                     value={(data as any).ragChunkSize ?? 1000}
