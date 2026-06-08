@@ -92,15 +92,6 @@ describe("canvasStore", () => {
     });
   });
 
-  describe("toggleObservability", () => {
-    it("toggles the observability panel open/closed", () => {
-      expect(store().observabilityOpen).toBe(false);
-      store().toggleObservability();
-      expect(store().observabilityOpen).toBe(true);
-      store().toggleObservability();
-      expect(store().observabilityOpen).toBe(false);
-    });
-  });
 
   describe("setViewport", () => {
     it("updates the viewport zoom and coordinates", () => {
@@ -130,7 +121,6 @@ describe("canvasStore", () => {
       store().setNodes([{ id: "n1", type: "agent", position: { x: 0, y: 0 }, data: {} }] as any);
       store().selectNode("n1");
       store().setActiveNodeId("n1");
-      store().toggleObservability();
       store().setSaveStatus("saving");
       store().setViewport({ x: 10, y: 20, zoom: 1.5 });
       store().setPropertiesWidth(350);
@@ -144,7 +134,6 @@ describe("canvasStore", () => {
       expect(store().edges).toEqual([]);
       expect(store().selectedNodeId).toBeNull();
       expect(store().activeNodeId).toBeNull();
-      expect(store().observabilityOpen).toBe(false);
       expect(store().saveStatus).toBe("idle");
       expect(store().viewport).toEqual({ x: 0, y: 0, zoom: 1 });
       expect(store().propertiesWidth).toBe(320);

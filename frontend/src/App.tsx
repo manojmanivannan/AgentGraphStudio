@@ -2,6 +2,7 @@ import { useEffect, useState, useRef } from "react";
 import { Routes, Route, useNavigate, useParams, Link } from "react-router-dom";
 import { AppShell } from "@/components/layout/AppShell";
 import ChatPage from "@/components/chat/ChatPage";
+import ObservabilityPage from "@/components/observability/ObservabilityPage";
 import { useCanvasStore } from "@/store/canvasStore";
 import {
   createCanvas,
@@ -600,6 +601,7 @@ export default function App() {
         }
       />
       <Route path="/chat/:conversation_id" element={<ChatPage />} />
+      <Route path="/observability/:canvas_id" element={<ObservabilityPage />} />
     </Routes>
   );
 }

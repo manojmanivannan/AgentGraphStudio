@@ -8,8 +8,6 @@ export function TopBar() {
   const canvasName = useCanvasStore((s) => s.canvasName);
   const setName = useCanvasStore((s) => s.setName);
   const saveStatus = useCanvasStore((s) => s.saveStatus);
-  const observabilityOpen = useCanvasStore((s) => s.observabilityOpen);
-  const toggleObservability = useCanvasStore((s) => s.toggleObservability);
   const selectedNodeId = useCanvasStore((s) => s.selectedNodeId);
   const propertiesWidth = useCanvasStore((s) => s.propertiesWidth);
   const isDraggingPanel = useCanvasStore((s) => s.isDraggingPanel);
@@ -18,8 +16,7 @@ export function TopBar() {
 
   const propertiesOpen = selectedNodeId !== null;
 
-  // When observability is open, the sidebar rail is hidden so left offset resets to 0
-  const leftOffset = observabilityOpen ? "left-0" : "left-12";
+  const leftOffset = "left-12";
 
   // Shift right edge to avoid being covered by overlay panels
   const rightOffset = propertiesOpen ? propertiesWidth : 0;
@@ -103,27 +100,11 @@ export function TopBar() {
         )}
       </div>
 
-      {/* Back to Canvas button - only show when in observability mode */}
-      {observabilityOpen && (
-        <button
-          onClick={toggleObservability}
-          data-testid="back-to-canvas"
-          className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[12px] font-medium transition-colors text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-elevated)]"
-        >
-          <Layout className="w-3.5 h-3.5" />
-          Canvas
-        </button>
-      )}
-
-      {/* Observability toggle */}
+      {/* Observability button */}
       <button
-        onClick={toggleObservability}
+        onClick={() => canvasId && navigate(`/observability/${canvasId}`)}
         data-testid="observability-toggle"
-        className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[12px] font-medium transition-colors ${
-          observabilityOpen
-            ? "text-[var(--color-accent)] bg-[var(--color-accent-subtle)]"
-            : "text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)] hover:bg-[var(--color-elevated)]"
-        }`}
+        className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[12px] font-medium transition-colors text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)] hover:bg-[var(--color-elevated)]"
       >
         <Activity className="w-3.5 h-3.5" />
         Observability
