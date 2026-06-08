@@ -109,9 +109,8 @@ export async function createConversation(
 export async function listConversations(
   canvasId: string
 ): Promise<ConversationSummary[]> {
-  const res = await fetch(
-    `${API_BASE}/canvases/${canvasId}/conversations`
-  );
+  const url = `${API_BASE}/canvases/${canvasId}/conversations?_=${Date.now()}`;
+  const res = await fetch(url, { cache: "no-store" });
   if (!res.ok) throw new Error("Failed to list conversations");
   return res.json();
 }
@@ -120,9 +119,8 @@ export async function getConversation(
   canvasId: string,
   conversationId: string
 ): Promise<Conversation> {
-  const res = await fetch(
-    `${API_BASE}/canvases/${canvasId}/conversations/${conversationId}`
-  );
+  const url = `${API_BASE}/canvases/${canvasId}/conversations/${conversationId}?_=${Date.now()}`;
+  const res = await fetch(url, { cache: "no-store" });
   if (!res.ok) throw new Error("Failed to get conversation");
   return res.json();
 }
@@ -130,7 +128,8 @@ export async function getConversation(
 export async function getConversationById(
   conversationId: string
 ): Promise<Conversation> {
-  const res = await fetch(`${API_BASE}/canvases/conversations/${conversationId}`);
+  const url = `${API_BASE}/canvases/conversations/${conversationId}?_=${Date.now()}`;
+  const res = await fetch(url, { cache: "no-store" });
   if (!res.ok) throw new Error("Failed to get conversation");
   return res.json();
 }

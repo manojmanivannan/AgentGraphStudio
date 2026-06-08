@@ -76,6 +76,7 @@ export default function ChatPage() {
 
   const [canvasId, setCanvasId] = useState<string | null>(null);
   const [canvasName, setCanvasName] = useState<string>("Canvas");
+  const [conversationName, setConversationName] = useState<string>("Chat");
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
@@ -121,6 +122,7 @@ export default function ChatPage() {
         );
         setMessages(orderedMessages);
         setCanvasId(conv.canvas_id);
+        setConversationName(conv.name);
 
         // Fetch canvas name
         try {
@@ -221,13 +223,44 @@ export default function ChatPage() {
         ws.send(JSON.stringify({ prompt }));
       };
 
+      const refreshConversationName = async () => {
+        if (!conversation_id) return;
+        try {
+          const updated = await getConversationById(conversation_id);
+          setConversationName(updated.name);
+          setConversations((prev) =>
+            prev.map((c) =>
+              c.id === updated.id ? { ...c, name: updated.name } : c
+            )
+          );
+        } catch (err) {
+          console.error("Failed to refresh conversation name:", err);
+        }
+      };
+
       ws.onmessage = (evt) => {
         const event = JSON.parse(evt.data) as ExecutionEvent;
+
+        if (event.type === "conversation_renamed") {
+          setConversations((prev) =>
+            prev.map((c) =>
+              c.id === event.conversation_id
+                ? { ...c, name: event.name }
+                : c
+            )
+          );
+          if (convId === conversation_id) {
+            setConversationName(event.name);
+          }
+          loadSidebar();
+          return;
+        }
 
         if (event.type === "run_complete") {
           setRunning(false);
           setActiveNodeId(null);
           loadSidebar(); // Refresh sidebar order since conversation updated
+          refreshConversationName();
           return;
         }
 
@@ -450,7 +483,7 @@ export default function ChatPage() {
             </span>
             <span className="text-xs text-[var(--color-text-tertiary)]">•</span>
             <span className="text-[13px] font-semibold text-[var(--color-text-primary)]">
-              {canvasName}
+              {conversationName || canvasName}
             </span>
           </div>
 

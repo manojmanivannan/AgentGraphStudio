@@ -33,7 +33,8 @@ export type ExecutionEvent =
   | { type: "handoff"; from: string; to: string; node_id?: string }
   | { type: "final_answer"; agent?: string; content: string; node_id?: string }
   | { type: "run_complete"; result: string }
-  | { type: "error"; message: string; agent?: string; node_id?: string };
+  | { type: "error"; message: string; agent?: string; node_id?: string }
+  | { type: "conversation_renamed"; conversation_id: string; name: string };
 
 export type ExecutionStatus = "idle" | "running" | "done" | "error";
 
@@ -60,7 +61,7 @@ export interface CanvasSavePayload {
       position_y: number;
     }[];
     tools: {
-      id:string;
+      id: string;
       name: string;
       code: string;
       packages?: string;

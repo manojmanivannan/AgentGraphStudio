@@ -47,15 +47,38 @@ async def run_conversation(websocket: WebSocket, conversation_id: uuid.UUID):
 
             async def run_task():
                 try:
+                    if not conv.messages and conv.name == "New Conversation":
+                        new_name = await runner.generate_conversation_title(user_prompt)
+                        # If LLM didn't produce a title, fall back to a concise
+                        # excerpt of the user's question (first 6 words)
+                        if not new_name:
+                            try:
+                                first_line = (user_prompt or "").strip().splitlines()[0]
+                                tokens = first_line.split()
+                                fallback = " ".join(tokens[:6]) if tokens else "Chat"
+                                new_name = fallback[:100].strip(" .?!")
+                            except Exception:
+                                new_name = None
+
+                        if new_name:
+                            await conv_repo.update_name(conversation_id, new_name)
+                            await session.commit()
+                            await send_event(
+                                {
+                                    "type": "conversation_renamed",
+                                    "conversation_id": str(conversation_id),
+                                    "name": new_name,
+                                }
+                            )
+
                     await runner.run(
                         user_prompt,
                         send_event,
                         target_agent_id=target_agent_id,
                     )
+                    await session.commit()
                 except Exception as e:
-                    await send_event(
-                        {"type": "error", "message": str(e)}
-                    )
+                    await send_event({"type": "error", "message": str(e)})
 
             task = asyncio.create_task(run_task())
 
@@ -87,9 +110,7 @@ async def run_conversation(websocket: WebSocket, conversation_id: uuid.UUID):
         pass
     except Exception as e:
         try:
-            await websocket.send_text(
-                json.dumps({"type": "error", "message": str(e)})
-            )
+            await websocket.send_text(json.dumps({"type": "error", "message": str(e)}))
         except Exception:
             pass
     finally:

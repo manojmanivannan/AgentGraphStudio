@@ -864,6 +864,19 @@ Conversations are persisted across WebSocket connections:
 4. Session is committed explicitly in `routes/execute.py` — otherwise the context
    manager rolls back on close, losing all messages
 
+### Automatic Conversation Naming
+
+To improve usability, the system now attempts to rename fresh conversations automatically when the user sends the first message.
+
+- On the first `run()` for a conversation whose `name == "New Conversation"` and which has no persisted messages, the backend calls the configured DSPy `LM` (via `dspy.LM.acall`) with a short prompt that asks for a concise title (3–8 words).
+- If the LLM returns a title, the backend updates the `conversations.name` field and commits the DB transaction immediately. A WebSocket event of type `conversation_renamed` is emitted containing `conversation_id` and `name` so connected frontends can update the Recent Chats list without a full page reload.
+- If the LLM produces no usable title, the backend falls back to a short excerpt of the user's question (first ~6 words) and applies the same update/emit flow.
+- The frontend takes two defensive steps to ensure the left-pane reflects the persisted name:
+  1. `conversation_renamed` handler updates local state for the sidebar and header, and triggers a background `listConversations()` refresh.
+  2. On `run_complete`, the Chat page performs a cache-busting fetch of the current conversation (`GET /api/canvases/conversations/{id}?_={ts}`) and refreshes the sidebar entries if necessary.
+
+This flow prevents stale `New Conversation` entries appearing in the Recent Chats pane when clients rely on cached API responses or miss the rename event.
+
 ### Multi-Turn History
 
 When `enable_conversation_history` is enabled on an agent:
