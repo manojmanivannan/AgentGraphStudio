@@ -71,7 +71,7 @@ The maximum length (in characters) used when splitting RAG documents into paragr
 _Avoid_: Split size, block length, character limit
 
 **Observability**:
-An embedded MLflow UI iframe for tracing DSPy agent calls, tool invocations, and LLM interactions via `mlflow.dspy.autolog()`.
+A dedicated MLflow UI page route (`/observability/:canvas_id`) that embeds the MLflow dashboard for tracing DSPy agent calls, tool invocations, and LLM interactions via `mlflow.dspy.autolog()`.
 _Avoid_: Tracing, monitoring, dashboard
 
 **Sandbox**:
