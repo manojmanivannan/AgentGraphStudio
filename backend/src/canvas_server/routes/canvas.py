@@ -2,13 +2,14 @@ import json
 import logging
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from canvas_server.database import get_session
 from canvas_server.exceptions import CanvasNotFoundError, ConversationNotFoundError
 from canvas_server.models.api import (
+    AgentDocumentResponse,
     CanvasListResponse,
     CanvasResponse,
     CanvasSaveRequest,
@@ -16,7 +17,6 @@ from canvas_server.models.api import (
     ConversationResponse,
     CreateCanvasRequest,
     CreateConversationRequest,
-    AgentDocumentResponse,
 )
 from canvas_server.repos.canvas_repo import CanvasRepo
 from canvas_server.repos.conversation_repo import ConversationRepo
@@ -303,6 +303,7 @@ async def list_agent_documents(
     session: AsyncSession = Depends(get_session),
 ):
     from sqlalchemy import select
+
     from canvas_server.models.canvas import AgentDocument, AgentNode
 
     logger.info("Listing documents for canvas=%s agent=%s", canvas_id, agent_id)
@@ -312,7 +313,14 @@ async def list_agent_documents(
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
 
-    stmt = select(AgentDocument).where(AgentDocument.agent_node_id == agent_id, AgentDocument.canvas_id == canvas_id).order_by(AgentDocument.created_at.desc())
+    stmt = (
+        select(AgentDocument)
+        .where(
+            AgentDocument.agent_node_id == agent_id,
+            AgentDocument.canvas_id == canvas_id,
+        )
+        .order_by(AgentDocument.created_at.desc())
+    )
     res = await session.execute(stmt)
     docs = res.scalars().all()
     return docs
@@ -326,6 +334,7 @@ async def upload_agent_document(
     session: AsyncSession = Depends(get_session),
 ):
     from sqlalchemy import select
+
     from canvas_server.models.canvas import AgentDocument, AgentNode
 
     logger.info("Uploading document for canvas=%s agent=%s name=%s", canvas_id, agent_id, file.filename)
@@ -362,6 +371,7 @@ async def delete_agent_document(
     session: AsyncSession = Depends(get_session),
 ):
     from sqlalchemy import select
+
     from canvas_server.models.canvas import AgentDocument
 
     logger.info("Deleting document canvas=%s agent=%s doc=%s", canvas_id, agent_id, document_id)

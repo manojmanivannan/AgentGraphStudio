@@ -1,22 +1,23 @@
 import uuid
+
 import pytest
-from fastapi import UploadFile
-from canvas_server.models.canvas import AgentDocument, AgentNode
+
 from canvas_server.models.api import AgentNodeInput
+from canvas_server.models.canvas import AgentDocument
 from canvas_server.repos.canvas_repo import CanvasRepo
-from canvas_server.runner.rag_helper import chunk_text, run_rag_search
 from canvas_server.runner import CanvasRunner
+from canvas_server.runner.rag_helper import chunk_text, run_rag_search
 
 
 def test_chunk_text():
     text = "Paragraph 1\n\nParagraph 2\n\nParagraph 3 is very long and has lots of words."
-    
+
     # Large chunk size -> should group paragraphs
     chunks = chunk_text(text, 1000)
     assert len(chunks) == 1
     assert "Paragraph 1" in chunks[0]
     assert "Paragraph 3" in chunks[0]
-    
+
     # Small chunk size -> should split
     chunks_small = chunk_text(text, 15)
     assert len(chunks_small) >= 3
@@ -39,7 +40,7 @@ async def test_run_rag_search_fallback():
 @pytest.mark.asyncio
 async def test_rag_api_endpoints(test_client, blank_canvas):
     canvas_id = blank_canvas.id
-    
+
     # Create agent
     agent_id = uuid.uuid4()
     canvas_save_req = {
@@ -67,12 +68,12 @@ async def test_rag_api_endpoints(test_client, blank_canvas):
     }
     res = await test_client.put(f"/api/canvases/{canvas_id}", json=canvas_save_req)
     assert res.status_code == 200
-    
+
     # List documents (should be empty initially)
     res = await test_client.get(f"/api/canvases/{canvas_id}/agents/{agent_id}/documents")
     assert res.status_code == 200
     assert len(res.json()) == 0
-    
+
     # Upload document
     file_content = b"This is a sample document for testing RAG."
     res = await test_client.post(
@@ -83,18 +84,18 @@ async def test_rag_api_endpoints(test_client, blank_canvas):
     doc_data = res.json()
     assert doc_data["name"] == "test_doc.txt"
     doc_id = doc_data["id"]
-    
+
     # List documents again
     res = await test_client.get(f"/api/canvases/{canvas_id}/agents/{agent_id}/documents")
     assert res.status_code == 200
     docs = res.json()
     assert len(docs) == 1
     assert docs[0]["name"] == "test_doc.txt"
-    
+
     # Delete document
     res = await test_client.delete(f"/api/canvases/{canvas_id}/agents/{agent_id}/documents/{doc_id}")
     assert res.status_code == 204
-    
+
     # Verify deleted
     res = await test_client.get(f"/api/canvases/{canvas_id}/agents/{agent_id}/documents")
     assert len(res.json()) == 0
@@ -104,7 +105,7 @@ async def test_rag_api_endpoints(test_client, blank_canvas):
 async def test_runner_rag_replacement(test_session, blank_canvas):
     repo = CanvasRepo(test_session)
     agent_id = uuid.uuid4()
-    
+
     # Create canvas with a RAG enabled worker agent
     agents = [
         AgentNodeInput(
@@ -124,7 +125,7 @@ async def test_runner_rag_replacement(test_session, blank_canvas):
         tools=[],
         edges=[]
     )
-    
+
     # Add document to DB directly using the actual database node ID
     db_agent_node = canvas.agent_nodes[0]
     db_agent_id = db_agent_node.id
@@ -140,22 +141,22 @@ async def test_runner_rag_replacement(test_session, blank_canvas):
     test_session.add(doc)
     await test_session.commit()
     test_session.expire_all()
-    
+
     # Refresh canvas from database to load relationships
     canvas = await repo.get_or_404(canvas_db_id)
-    
+
     # Instantiate CanvasRunner
     runner = CanvasRunner(canvas)
-    
+
     # Verify that setup builds agent signature correctly (cleaning/ignoring the placeholder initially)
     await runner.setup()
-    worker_agent = runner.agents[db_agent_id]
-    
+    assert runner.agents[db_agent_id] is not None
+
     # Since we can't easily run real LLM queries without LLM backend,
     # let's verify that we can create the Dynamic RAG agent and it replaces instructions:
     passages = await run_rag_search(canvas.agent_nodes[0].documents, "test", 1000)
     assert "Secret Antigravity Research" in passages
-    
+
     # Build dynamic agent and check instructions
     rag_agent = await runner._agent_factory.build_worker_with_rag_prompt(canvas.agent_nodes[0], passages)
     assert "Secret Antigravity Research" in rag_agent.react.signature.instructions
