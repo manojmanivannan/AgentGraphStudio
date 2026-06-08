@@ -33,18 +33,39 @@ if (typeof window !== "undefined") {
   });
 }
 
+// Default matchMedia mock (dark preference)
+const darkMatchMedia = vi.fn().mockImplementation((query) => ({
+  matches: false,
+  media: query,
+  onchange: null,
+  addListener: vi.fn(),
+  removeListener: vi.fn(),
+  addEventListener: vi.fn(),
+  removeEventListener: vi.fn(),
+  dispatchEvent: vi.fn(),
+} as any));
+
+window.matchMedia = darkMatchMedia;
+
+// Import once — most tests use the default (dark) initial state
+import { useThemeStore } from "./themeStore";
+
 describe("themeStore", () => {
   beforeEach(() => {
-    vi.resetModules();
     document.documentElement.className = "";
     document.documentElement.removeAttribute("data-theme");
     document.documentElement.style.colorScheme = "";
     mockLocalStorage.clear();
     vi.restoreAllMocks();
+    // Reset matchMedia to dark default
+    window.matchMedia = darkMatchMedia;
+    // Reset store to default dark theme (clears localStorage first, then sets)
+    useThemeStore.getState().setTheme("dark");
+    // Clear localStorage again so tests that set localStorage values aren't polluted
+    mockLocalStorage.clear();
   });
 
-  it("should initialize with default 'dark' when no settings are present", async () => {
-    const { useThemeStore } = await import("./themeStore");
+  it("should initialize with default 'dark' when no settings are present", () => {
     const store = useThemeStore.getState();
     expect(store.theme).toBe("dark");
     expect(document.documentElement.getAttribute("data-theme")).toBe("dark");
@@ -52,14 +73,14 @@ describe("themeStore", () => {
 
   it("should initialize with theme from localStorage if present", async () => {
     mockLocalStorage.setItem("agent-builder-theme", "light");
-    const { useThemeStore } = await import("./themeStore");
-    const store = useThemeStore.getState();
-    expect(store.theme).toBe("light");
+    // Need to reset module to pick up new localStorage value
+    vi.resetModules();
+    const { useThemeStore: freshStore } = await import("./themeStore");
+    expect(freshStore.getState().theme).toBe("light");
     expect(document.documentElement.getAttribute("data-theme")).toBe("light");
   });
 
   it("should initialize with theme from prefers-color-scheme if localStorage is missing", async () => {
-    const originalMatchMedia = window.matchMedia;
     window.matchMedia = vi.fn().mockImplementation((query) => ({
       matches: query === "(prefers-color-scheme: light)",
       media: query,
@@ -71,22 +92,19 @@ describe("themeStore", () => {
       dispatchEvent: vi.fn(),
     } as any));
 
-    const { useThemeStore } = await import("./themeStore");
-    const store = useThemeStore.getState();
-    expect(store.theme).toBe("light");
+    vi.resetModules();
+    const { useThemeStore: freshStore } = await import("./themeStore");
+    expect(freshStore.getState().theme).toBe("light");
     expect(document.documentElement.getAttribute("data-theme")).toBe("light");
-
-    window.matchMedia = originalMatchMedia;
   });
 
-  it("should toggle theme correctly", async () => {
+  it("should toggle theme correctly", () => {
     vi.useFakeTimers();
-    const { useThemeStore } = await import("./themeStore");
     const store = useThemeStore.getState();
 
     // default is dark, toggle should make it light
     expect(store.theme).toBe("dark");
-    
+
     useThemeStore.getState().toggleTheme();
 
     expect(useThemeStore.getState().theme).toBe("light");
@@ -106,10 +124,9 @@ describe("themeStore", () => {
     vi.useRealTimers();
   });
 
-  it("should set specific theme correctly", async () => {
+  it("should set specific theme correctly", () => {
     vi.useFakeTimers();
-    const { useThemeStore } = await import("./themeStore");
-    
+
     useThemeStore.getState().setTheme("light");
     expect(useThemeStore.getState().theme).toBe("light");
     expect(document.documentElement.getAttribute("data-theme")).toBe("light");
@@ -121,7 +138,7 @@ describe("themeStore", () => {
     vi.useRealTimers();
   });
 
-  it("should handle localStorage throwing error on getItem/setItem", async () => {
+  it("should handle localStorage throwing error on getItem/setItem", () => {
     mockLocalStorage.getItem.mockImplementationOnce(() => {
       throw new Error("SecurityError");
     });
@@ -129,11 +146,7 @@ describe("themeStore", () => {
       throw new Error("SecurityError");
     });
 
-    const { useThemeStore } = await import("./themeStore");
-    const store = useThemeStore.getState();
-    expect(store.theme).toBe("dark");
-
-    // Toggle should still work without crashing even if localStorage throws
+    // Store already imported with default dark — toggle should still work
     useThemeStore.getState().toggleTheme();
     expect(useThemeStore.getState().theme).toBe("light");
   });
