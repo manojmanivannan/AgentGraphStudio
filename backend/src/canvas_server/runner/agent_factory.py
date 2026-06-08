@@ -49,7 +49,7 @@ class AgentFactory:
         """
         role = agent_node.role or ""
         instructions = agent_node.instructions or ""
-        
+
         if not getattr(agent_node, "enable_rag", False):
             role = role.replace("{{ rag_document }}", "")
             instructions = instructions.replace("{{ rag_document }}", "")
