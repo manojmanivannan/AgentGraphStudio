@@ -59,33 +59,30 @@ them with edges, and execute multi-agent teams powered by [DSPy](https://dspy.ai
 ## System Diagram
 
 ```
-┌──────────────────────────────────────────────────────────────────────────┐
-│  REACT FRONTEND (localhost:5173)                                          │
-│                                                                           │
-│  ┌──────┐ ┌─────────────── CanvasView (ReactFlow) ────────────────────┐  │
-│  │ Rail │ │                                                           │  │
-│  │  Add │ │  ┌─[Agent A: worker]─┐  edges: tool_access/handoff   ──┐ │  │
-│  │  Add │ │  │  name, role,      │──→  ┌─[Tool 1: Python code]──┐  │ │  │
-│  │  Exp │ │  │  instructions,    │     │  def search(q): ...     │  │ │  │
-│  │  Imp │ │  │  model            │     └─────────────────────────┘  │ │  │
-│  │  Thm │ │       │handoff                                         │ │  │
-│  │      │ │       ▼                                                │ │  │
-│  │      │ │  ┌─[Agent B: router]─┐──→  ┌─[Agent C: worker]───┐    │ │  │
-│  │      │ │  │  type=router      │     │                     │    │ │  │
-│  │      │ │  │  handoff→Agent C  │     └─────────────────────┘    │ │  │
-│  │      │ │  └───────────────────┘                                │ │  │
-│  │      │ └───────────────────────────────────────────────────────┘ │  │
-│  │      │                                                           │  │
-│  │      │  ┌── PropertiesOverlay ──┐  ┌── ChatOverlay ──────────┐  │  │
-│  │      │  │  AgentEditor          │  │  Conversation selector  │  │  │
-│  │      │  │  ToolEditor (Monaco)  │  │  Messages (grouped)     │  │  │
-│  │      │  └───────────────────────┘  │  Input + Send           │  │  │
-│  │      │                             └─────────────────────────┘  │  │
-│  │  ←───┤  TopBar (canvas name, save status, chat/obs toggle)      │  │
-│  └──────┘                                                          │  │
-│                                                                      │  │
-│  HTTP REST + WebSocket ◄─────────────────────────────────────────►│  │
-└──────────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│  REACT FRONTEND (localhost:5173)                                                                        │
+│                                                                                                         │
+│  ┌── Page Route: / ────────┐   ┌── Page Route: /canvas/:canvas_id ───────────────────────────────────┐  │
+│  │ LandingPage             │   │                                                                     │  │
+│  │  Canvases List & Search │   │  ┌──────┐ ┌─────────────── CanvasView ──────────────────────────┐  │ │  │
+│  │  Import / Export ZIP    │   │  │ Rail │ │  ┌─[Agent A: worker]─┐  edges: tool_access/handoff  │  │ │  │
+│  └─────────────────────────┘   │  │  Add │ │  │  name, role,      │──→  ┌─[Tool 1: Python]─┐   │  │ │  │
+│                                │  │  Thm │ │  └───────────────────┘     └──────────────────┘   │  │ │  │
+│  ┌── Page Route: /chat/:id ┐   │  │      │ └───────────────────────────────────────────────────┘  │ │  │
+│  │ ChatPage                │   │  │  ←───┤  TopBar (canvas name, save status, chat/obs links)     │ │  │
+│  │  Sidebar Convs List     │   │  └──────┘ ┌── PropertiesOverlay ──┐                              │ │  │
+│  │  Live Execution Steps   │   │           │  Agent/Tool Editors   │                              │ │  │
+│  │  Turn-Grouped Chat View │   │           └───────────────────────┘                              │ │  │
+│  └─────────────────────────┘   └─────────────────────────────────────────────────────────────────────┘  │
+│                                                                                                         │
+│  ┌── Page Route: /observability/:canvas_id ──────────────────────────────────────────────────────────┐  │
+│  │ ObservabilityPage                                                                                 │  │
+│  │  Sidebar Navigation (to Chat / Canvas)                                                           │  │
+│  │  MLflow dashboard iframe                                                                          │  │
+│  └───────────────────────────────────────────────────────────────────────────────────────────────────┘  │
+│                                                                                                         │
+│  HTTP REST + WebSocket ◄────────────────────────────────────────────────────────────────────────►│  │
+└─────────────────────────────────────────────────────────────────────────────────────────────────────────┘
                                     │
                                     ▼
 ┌──────────────────────────────────────────────────────────────────────┐
@@ -128,25 +125,25 @@ them with edges, and execute multi-agent teams powered by [DSPy](https://dspy.ai
 
 ## Layout & UX Zones
 
-The workspace is composed of these zones. All are positioned absolutely within a
-full-screen `AppShell`.
+The visual interface is split across dedicated routing pages, keeping each context focused and clean. The main Canvas Editor view is composed of absolutely positioned layout zones inside the `AppShell`.
 
-| Zone | Component | Position | Size | Description |
+| Zone/Page | Component | Route / Position | Size | Description |
 |---|---|---|---|---|
-| **TopBar** | `TopBar.tsx` | top, left=12 | h=40, spans canvas width | Canvas name, save status, observability/chat toggles |
-| **SidebarRail** | `SidebarRail.tsx` | left | w=48, full height | Add agent/tool, clear, export/import, theme toggle |
-| **CanvasView** | `CanvasView.tsx` | top=40, left=48 | fills remaining | ReactFlow canvas: agents, tools, edges |
-| **PropertiesOverlay** | `PropertiesOverlay.tsx` | right | w=320 | AgentEditor or ToolEditor based on selection |
-| **ChatOverlay** | `ChatOverlay.tsx` | right | w=400 | Conversation threads, message input, streaming output |
-| **ObservabilityView** | `ObservabilityView.tsx` | full canvas | full area | Embedded MLflow iframe, replaces canvas entirely |
+| **Landing Page** | `App` / `LandingPage` | `/` | full screen | Canvases grid overview, search, and ZIP package import/export management |
+| **Canvas Editor Page** | `AppShell.tsx` | `/canvas/:canvas_id` | full screen | Visual layout orchestrator shell |
+| **TopBar** | `TopBar.tsx` | top, left=12 | h=40 | Canvas name, save status, navigation buttons to Chat or Observability |
+| **SidebarRail** | `SidebarRail.tsx` | left | w=48, full height | Add agent/tool nodes, clear graph, export/import, and theme toggle |
+| **CanvasView** | `CanvasView.tsx` | top=40, left=48 | fills remaining | ReactFlow visual graph workspace |
+| **PropertiesOverlay** | `PropertiesOverlay.tsx` | right | w=320 | Drawer panel displaying the `AgentEditor` or `ToolEditor` |
+| **Agent Chat Page** | `ChatPage.tsx` | `/chat/:conversation_id` | full screen | Dual-pane conversation manager with list sidebar and collapsible step history |
+| **Observability Page** | `ObservabilityPage.tsx` | `/observability/:canvas_id` | full screen | Embedded MLflow trace viewer with navigation sidebar links |
 
 **Layout math** (`AppShell.tsx`):
 ```
-canvasRightOffset = (chatOpen ? 400 : 0) + (propertiesOpen ? 320 : 0)
+canvasRightOffset = propertiesOpen ? propertiesWidth : 0
 ```
 
-When overlays open, the canvas container shrinks and `fitView` re-centers nodes
-(delayed 350ms to match the transition).
+When the Properties overlay slides open, the canvas container shrinks and `fitView` automatically re-centers nodes to match the updated dimensions (delayed 350ms to match the transition duration).
 
 ---
 
@@ -261,9 +258,9 @@ mj-agent-framework/
 │       │   │   ├── ToolEditor.tsx     # Monaco Python editor, tool name, inferred args preview
 │       │   │   └── ...test.tsx       # Corresponding tests
 │       │   ├── chat/
-│       │   │   └── ChatOverlay.tsx    # Conversation list, messages, WebSocket connect, turn grouping
+│       │   │   └── ChatPage.tsx       # Dedicated Chat page: sidebar conversation list, message render
 │       │   ├── observability/
-│       │   │   └── ObservabilityView.tsx  # MLflow iframe
+│       │   │   └── ObservabilityPage.tsx # Dedicated Observability page: MLflow iframe, return nav sidebar
 │       │   ├── PropertiesOverlay.tsx  # Dispatches to AgentEditor or ToolEditor based on selection
 │       │   └── ThemeToggle.tsx
 │       ├── styles/
@@ -906,10 +903,10 @@ The UI has two main modes:
    - Recent canvases list (loaded from API)
    - Deep-link support: `?canvas=<id>` URL parameter
 
-2. **AppShell** (`App.tsx` when `canvasId !== null`):
-   - Absolute-positioned zones (see [Layout & UX Zones](#layout--ux-zones))
-   - CanvasView receives shrinking right edge when overlays open
-   - ObservabilityView replaces all canvas zones when toggled
+2. **AppShell** (`App.tsx` when navigating to `/canvas/:canvas_id`):
+   - Absolute-positioned editor zones (TopBar, SidebarRail, CanvasView, and PropertiesOverlay)
+   - CanvasView receives shrinking right edge only when the Properties overlay opens
+   - Dedicated routes are registered for `/chat/:conversation_id` and `/observability/:canvas_id`
 
 ### State Management (zustand)
 
@@ -922,8 +919,6 @@ interface CanvasStore {
   edges: Edge[];          // ReactFlow Edge array
   selectedNodeId: string | null;
   activeNodeId: string | null;  // Node highlighted during execution
-  chatOpen: boolean;
-  observabilityOpen: boolean;
   saveStatus: "idle" | "saving" | "saved" | "error";
   viewport: { x, y, zoom };
   // + setters for each field
@@ -980,19 +975,19 @@ interface ThemeState {
 - Enter animation: `overlaySlideIn` (250ms cubic-bezier)
 - Exit animation: `overlaySlideOut` (200ms cubic-bezier)
 - Closes on Escape key
-- Accepts `width` and `offsetRight` props (for stacking Properties + Chat)
+- Accepts `width` and `offsetRight` props
 
-**PropertiesOverlay.tsx** — Right panel (w-320):
-- Shows `AgentEditor` or `ToolEditor` based on selected node type
-- Sits to the left of ChatOverlay when both open
+**PropertiesOverlay.tsx** — Right drawer panel (w-320):
+- Shows `AgentEditor` or `ToolEditor` based on the selected node type.
 
-**ChatOverlay.tsx** — Right panel (w-400):
-- Conversation selector dropdown (create, switch, delete)
-- Message display grouped into "turns" per user message
-- Turn structure: user message → collapsible steps (thoughts, handoffs, tool results) → final answer
-- Streaming: incoming WebSocket events rendered as they arrive (steps shown live)
-- Input bar with send/stop button
-- WebSocket lifecycle: connect on send, close on complete/error
+**ChatPage.tsx** — Dedicated page route (`/chat/:conversation_id`):
+- Dual-panel workspace with a sidebar of past conversations (create, switch, delete options).
+- Message display grouped into "turns" per user prompt.
+- Turn structure: user message → collapsible execution steps (thoughts, handoffs, tool results) → final answer.
+- Streaming: incoming WebSocket events rendered as they arrive, and execution steps automatically collapse when the final answer is reached.
+- Input bar with message send/stop button.
+- WebSocket lifecycle: connects on submit, runs, and closes on complete/error.
+- Intermediate execution steps are persisted directly to the SQLite database and loaded upon conversation switch/navigation.
 
 ### Auto-Save
 
@@ -1004,11 +999,11 @@ interface ThemeState {
 - Maintains a serialized JSON ref to skip unchanged saves
 - Status auto-resets to idle after 3s
 
-### ObservabilityView
+### ObservabilityPage
 
-When toggled, the entire canvas area is replaced with an iframe loading:
-- URL: `/mlflow/` (Vite-proxied to `http://mlflow:5000`)
-- Proxied through Vite dev server so same-origin iframe works (no X-Frame-Options issue)
+Dedicated page route (`/observability/:canvas_id`) containing:
+- Sidebar panel with return navigation to Visual Canvas or Agent Chat, an MLflow trace information summary, and theme toggling.
+- Main area containing a full-screen iframe loading `/mlflow/` (Vite-proxied to `http://mlflow:5000` to bypass same-origin frame restrictions).
 
 ---
 
@@ -1163,7 +1158,7 @@ span grouping.
 **Configuration:**
 - Disable in CI: `MLFLOW_ENABLED=false`
 - Server startup tries gracefully and logs a warning if MLflow unreachable
-- Embedded in frontend via iframe proxied through Vite
+- Served in frontend via a dedicated page route with an iframe proxied through Vite
 
 ---
 
