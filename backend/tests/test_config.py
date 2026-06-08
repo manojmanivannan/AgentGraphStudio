@@ -61,6 +61,8 @@ class TestMemoryConfig:
         monkeypatch.setattr(settings, "llm_api_key", "sk-test-key")
         monkeypatch.setattr(settings, "mem0_llm_model", "test-openai-model")
         monkeypatch.setattr(settings, "mem0_embedder_model", "test-embed-model")
+        monkeypatch.setattr(settings, "mem0_qdrant_path", "/data/qdrant")
+        monkeypatch.setattr(settings, "mem0_qdrant_on_disk", True)
 
         config = build_mem0_config()
         assert config["llm"]["provider"] == "openai"
@@ -72,4 +74,6 @@ class TestMemoryConfig:
         assert config["embedder"]["config"]["model"] == "test-embed-model"
         assert config["embedder"]["config"]["openai_base_url"] == "https://openrouter.ai/api/v1"
         assert "ollama_base_url" not in config["embedder"]["config"]
+        assert config["vector_store"]["config"]["path"] == "/data/qdrant"
+        assert config["vector_store"]["config"]["on_disk"] is True
 
