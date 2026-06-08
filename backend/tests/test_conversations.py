@@ -240,7 +240,7 @@ class TestConversationRepo:
     async def test_get_conversation_messages_are_ordered_by_created_at(
         self, test_session, blank_canvas
     ):
-        from datetime import datetime, timezone
+        from datetime import datetime
 
         from canvas_server.models.canvas import Message
 
@@ -252,13 +252,13 @@ class TestConversationRepo:
             conversation_id=conv_id,
             role="user",
             content="First",
-            created_at=datetime(2020, 1, 1, 0, 0, tzinfo=timezone.utc),
+            created_at=datetime(2020, 1, 1, 0, 0, tzinfo=datetime.UTC),
         )
         second = Message(
             conversation_id=conv_id,
             role="assistant",
             content="Second",
-            created_at=datetime(2020, 1, 1, 0, 1, tzinfo=timezone.utc),
+            created_at=datetime(2020, 1, 1, 0, 1, tzinfo=datetime.UTC),
         )
         test_session.add_all([second, first])
         await test_session.commit()
