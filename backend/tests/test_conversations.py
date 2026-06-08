@@ -168,6 +168,37 @@ class TestConversationAPI:
         )
         assert resp.status_code == 404
 
+    async def test_get_conversation_by_id(self, test_client, fresh_db, blank_canvas):
+        create_resp = await test_client.post(
+            f"/api/canvases/{blank_canvas.id}/conversations",
+            json={"name": "Direct Chat"},
+        )
+        conv_id = create_resp.json()["id"]
+
+        resp = await test_client.get(
+            f"/api/canvases/conversations/{conv_id}"
+        )
+        assert resp.status_code == 200
+        assert resp.json()["id"] == conv_id
+        assert resp.json()["name"] == "Direct Chat"
+
+    async def test_delete_conversation_by_id(self, test_client, fresh_db, blank_canvas):
+        create_resp = await test_client.post(
+            f"/api/canvases/{blank_canvas.id}/conversations",
+            json={"name": "DirectToDelete"},
+        )
+        conv_id = create_resp.json()["id"]
+
+        del_resp = await test_client.delete(
+            f"/api/canvases/conversations/{conv_id}"
+        )
+        assert del_resp.status_code == 204
+
+        get_resp = await test_client.get(
+            f"/api/canvases/conversations/{conv_id}"
+        )
+        assert get_resp.status_code == 404
+
 
 class TestConversationRepo:
     async def test_complete_conversation_sets_status(self, test_session, blank_canvas):

@@ -6,6 +6,7 @@ import { server } from "@/test/mocks/server";
 import { mockCanvas, mockCanvasListItem } from "@/test/mocks/handlers";
 import { useCanvasStore } from "@/store/canvasStore";
 import App from "./App";
+import { MemoryRouter } from "react-router-dom";
 
 // AppShell contains the full ReactFlow canvas — keep App tests focused on the landing page
 vi.mock("@/components/layout/AppShell", () => ({
@@ -22,18 +23,28 @@ describe("App — landing page", () => {
   it("renders the landing page when no canvas is open", async () => {
     server.use(http.get("http://localhost:8000/api/canvases", () => HttpResponse.json([])));
 
-    render(<App />);
+    render(
+      <MemoryRouter initialEntries={["/"]}>
+        <App />
+      </MemoryRouter>
+    );
 
     expect(screen.getByText("AgentGraph Studio")).toBeInTheDocument();
     expect(screen.getByText("New Canvas")).toBeInTheDocument();
   });
 
-  it("renders AppShell when a canvas is already open in the store", () => {
+  it("renders AppShell when a canvas is already open in the store", async () => {
     useCanvasStore.getState().setCanvas("canvas-1", "My Canvas");
 
-    render(<App />);
+    render(
+      <MemoryRouter initialEntries={["/canvas/canvas-1"]}>
+        <App />
+      </MemoryRouter>
+    );
 
-    expect(screen.getByTestId("app-shell")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByTestId("app-shell")).toBeInTheDocument();
+    });
     expect(screen.queryByText("AgentGraph Studio")).not.toBeInTheDocument();
   });
 
@@ -47,7 +58,11 @@ describe("App — landing page", () => {
       )
     );
 
-    render(<App />);
+    render(
+      <MemoryRouter initialEntries={["/"]}>
+        <App />
+      </MemoryRouter>
+    );
 
     await waitFor(() => {
       expect(screen.getByText("First Canvas")).toBeInTheDocument();
@@ -58,7 +73,11 @@ describe("App — landing page", () => {
   it("shows empty state when API returns empty array", async () => {
     server.use(http.get("http://localhost:8000/api/canvases", () => HttpResponse.json([])));
 
-    render(<App />);
+    render(
+      <MemoryRouter initialEntries={["/"]}>
+        <App />
+      </MemoryRouter>
+    );
 
     await waitFor(() => {
       expect(screen.getByText(/No canvases created yet/)).toBeInTheDocument();
@@ -73,7 +92,11 @@ describe("App — landing page", () => {
       )
     );
 
-    render(<App />);
+    render(
+      <MemoryRouter initialEntries={["/"]}>
+        <App />
+      </MemoryRouter>
+    );
     await userEvent.click(screen.getByText("New Canvas"));
 
     await waitFor(() => {
@@ -94,7 +117,11 @@ describe("App — landing page", () => {
       )
     );
 
-    render(<App />);
+    render(
+      <MemoryRouter initialEntries={["/"]}>
+        <App />
+      </MemoryRouter>
+    );
     await waitFor(() => expect(screen.getByText("My Canvas")).toBeInTheDocument());
     await user.click(screen.getByText("My Canvas"));
 
@@ -114,7 +141,11 @@ describe("App — landing page", () => {
       )
     );
 
-    render(<App />);
+    render(
+      <MemoryRouter initialEntries={["/"]}>
+        <App />
+      </MemoryRouter>
+    );
     await userEvent.click(screen.getByText("New Canvas"));
 
     await waitFor(() => {
@@ -139,7 +170,11 @@ describe("App — landing page", () => {
       )
     );
 
-    render(<App />);
+    render(
+      <MemoryRouter initialEntries={["/"]}>
+        <App />
+      </MemoryRouter>
+    );
 
     await waitFor(() => {
       expect(screen.getByText("Alpha Canvas")).toBeInTheDocument();
@@ -167,7 +202,11 @@ describe("App — landing page", () => {
       })
     );
 
-    render(<App />);
+    render(
+      <MemoryRouter initialEntries={["/"]}>
+        <App />
+      </MemoryRouter>
+    );
 
     await waitFor(() => {
       expect(screen.getByText("Delete Me")).toBeInTheDocument();
@@ -201,7 +240,11 @@ describe("App — landing page", () => {
       )
     );
 
-    render(<App />);
+    render(
+      <MemoryRouter initialEntries={["/"]}>
+        <App />
+      </MemoryRouter>
+    );
 
     // Trigger input file change using the test id
     const file = new File(["dummy content"], "canvas.zip", { type: "application/zip" });

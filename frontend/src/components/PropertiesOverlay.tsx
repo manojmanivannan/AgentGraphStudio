@@ -8,17 +8,14 @@ export function PropertiesOverlay() {
   const selectedNodeId = useCanvasStore((s) => s.selectedNodeId);
   const selectNode = useCanvasStore((s) => s.selectNode);
   const nodes = useCanvasStore((s) => s.nodes);
-  const chatOpen = useCanvasStore((s) => s.chatOpen);
-  const chatWidth = useCanvasStore((s) => s.chatWidth);
   const propertiesWidth = useCanvasStore((s) => s.propertiesWidth);
   const setPropertiesWidth = useCanvasStore((s) => s.setPropertiesWidth);
 
   const selectedNode = nodes.find((n) => n.id === selectedNodeId);
   const isOpen = selectedNodeId !== null;
 
-  // Properties sits to the left of chat when both are open.
-  // Chat always anchors to the right edge.
-  const offsetRight = chatOpen ? chatWidth : 0;
+  // Since chat overlay is removed, properties overlay always sits at the right edge
+  const offsetRight = 0;
 
   const handleClose = () => {
     selectNode(null);

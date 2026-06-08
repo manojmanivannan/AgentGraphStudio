@@ -12,11 +12,9 @@ interface CanvasStore {
   edges: Edge[];
   selectedNodeId: string | null;
   activeNodeId: string | null;
-  chatOpen: boolean;
   observabilityOpen: boolean;
   saveStatus: SaveStatus;
   viewport: Viewport;
-  chatWidth: number;
   propertiesWidth: number;
   isDraggingPanel: boolean;
 
@@ -26,11 +24,9 @@ interface CanvasStore {
   setEdges: (edges: Edge[]) => void;
   selectNode: (id: string | null) => void;
   setActiveNodeId: (id: string | null) => void;
-  toggleChat: () => void;
   toggleObservability: () => void;
   setSaveStatus: (status: SaveStatus) => void;
   setViewport: (viewport: Viewport) => void;
-  setChatWidth: (width: number) => void;
   setPropertiesWidth: (width: number) => void;
   setIsDraggingPanel: (isDragging: boolean) => void;
   reset: () => void;
@@ -43,11 +39,9 @@ export const useCanvasStore = create<CanvasStore>((set) => ({
   edges: [],
   selectedNodeId: null,
   activeNodeId: null,
-  chatOpen: false,
   observabilityOpen: false,
   saveStatus: "idle",
   viewport: { x: 0, y: 0, zoom: 1 },
-  chatWidth: 400,
   propertiesWidth: 320,
   isDraggingPanel: false,
 
@@ -57,11 +51,9 @@ export const useCanvasStore = create<CanvasStore>((set) => ({
   setEdges: (edges) => set({ edges }),
   selectNode: (id) => set({ selectedNodeId: id }),
   setActiveNodeId: (id) => set({ activeNodeId: id }),
-  toggleChat: () => set((s) => ({ chatOpen: !s.chatOpen })),
   toggleObservability: () => set((s) => ({ observabilityOpen: !s.observabilityOpen })),
   setSaveStatus: (status) => set({ saveStatus: status }),
   setViewport: (viewport) => set({ viewport }),
-  setChatWidth: (chatWidth) => set({ chatWidth }),
   setPropertiesWidth: (propertiesWidth) => set({ propertiesWidth }),
   setIsDraggingPanel: (isDraggingPanel) => set({ isDraggingPanel }),
   reset: () =>
@@ -72,11 +64,9 @@ export const useCanvasStore = create<CanvasStore>((set) => ({
       edges: [],
       selectedNodeId: null,
       activeNodeId: null,
-      chatOpen: false,
       observabilityOpen: false,
       saveStatus: "idle",
       viewport: { x: 0, y: 0, zoom: 1 },
-      chatWidth: 400,
       propertiesWidth: 320,
       isDraggingPanel: false,
     }),

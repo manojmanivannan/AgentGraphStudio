@@ -1,18 +1,20 @@
 import { Check, Loader2, AlertCircle, MessageSquare, Activity, Layout, Home } from "lucide-react";
 import { useCanvasStore } from "@/store/canvasStore";
+import { useNavigate } from "react-router-dom";
+import { listConversations, createConversation } from "@/lib/api";
 
 export function TopBar() {
+  const canvasId = useCanvasStore((s) => s.canvasId);
   const canvasName = useCanvasStore((s) => s.canvasName);
   const setName = useCanvasStore((s) => s.setName);
   const saveStatus = useCanvasStore((s) => s.saveStatus);
-  const chatOpen = useCanvasStore((s) => s.chatOpen);
-  const toggleChat = useCanvasStore((s) => s.toggleChat);
   const observabilityOpen = useCanvasStore((s) => s.observabilityOpen);
   const toggleObservability = useCanvasStore((s) => s.toggleObservability);
   const selectedNodeId = useCanvasStore((s) => s.selectedNodeId);
-  const chatWidth = useCanvasStore((s) => s.chatWidth);
   const propertiesWidth = useCanvasStore((s) => s.propertiesWidth);
   const isDraggingPanel = useCanvasStore((s) => s.isDraggingPanel);
+
+  const navigate = useNavigate();
 
   const propertiesOpen = selectedNodeId !== null;
 
@@ -20,7 +22,28 @@ export function TopBar() {
   const leftOffset = observabilityOpen ? "left-0" : "left-12";
 
   // Shift right edge to avoid being covered by overlay panels
-  const rightOffset = (chatOpen ? chatWidth : 0) + (propertiesOpen ? propertiesWidth : 0);
+  const rightOffset = propertiesOpen ? propertiesWidth : 0;
+
+  const handleChatClick = async () => {
+    if (!canvasId) return;
+    try {
+      const convs = await listConversations(canvasId);
+      if (convs && convs.length > 0) {
+        navigate(`/chat/${convs[0].id}`);
+      } else {
+        const newConv = await createConversation(canvasId, "New Conversation");
+        navigate(`/chat/${newConv.id}`);
+      }
+    } catch (err) {
+      console.error("Failed to list/create conversations in TopBar:", err);
+      try {
+        const newConv = await createConversation(canvasId, "New Conversation");
+        navigate(`/chat/${newConv.id}`);
+      } catch (e) {
+        console.error("Fallback new conversation creation failed:", e);
+      }
+    }
+  };
 
   return (
     <div
@@ -32,7 +55,10 @@ export function TopBar() {
     >
       {/* Home button */}
       <button
-        onClick={() => useCanvasStore.getState().reset()}
+        onClick={() => {
+          useCanvasStore.getState().reset();
+          navigate("/");
+        }}
         data-testid="home-button"
         className="flex items-center justify-center p-1 rounded-md text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-elevated)] transition-all"
         title="Back to Landing Page"
@@ -103,15 +129,11 @@ export function TopBar() {
         Observability
       </button>
 
-      {/* Chat toggle */}
+      {/* Chat button */}
       <button
-        onClick={toggleChat}
+        onClick={handleChatClick}
         data-testid="chat-toggle"
-        className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[12px] font-medium transition-colors ${
-          chatOpen
-            ? "text-[var(--color-accent)] bg-[var(--color-accent-subtle)]"
-            : "text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)] hover:bg-[var(--color-elevated)]"
-        }`}
+        className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[12px] font-medium transition-colors text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)] hover:bg-[var(--color-elevated)]"
       >
         <MessageSquare className="w-3.5 h-3.5" />
         Chat
