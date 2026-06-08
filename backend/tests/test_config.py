@@ -48,7 +48,10 @@ class TestMemoryConfig:
 
         assert config["embedder"]["provider"] == "ollama"
         assert config["embedder"]["config"]["model"] == "test-embed-model"
-        assert config["embedder"]["config"]["ollama_base_url"] == "http://ollama-host:11434"
+        assert (
+            config["embedder"]["config"]["ollama_base_url"]
+            == "http://ollama-host:11434"
+        )
         assert "openai_base_url" not in config["embedder"]["config"]
 
     def test_build_mem0_config_openai(self, monkeypatch):
@@ -67,13 +70,17 @@ class TestMemoryConfig:
         config = build_mem0_config()
         assert config["llm"]["provider"] == "openai"
         assert config["llm"]["config"]["model"] == "test-openai-model"
-        assert config["llm"]["config"]["openai_base_url"] == "https://openrouter.ai/api/v1"
+        assert (
+            config["llm"]["config"]["openai_base_url"] == "https://openrouter.ai/api/v1"
+        )
         assert "ollama_base_url" not in config["llm"]["config"]
 
         assert config["embedder"]["provider"] == "openai"
         assert config["embedder"]["config"]["model"] == "test-embed-model"
-        assert config["embedder"]["config"]["openai_base_url"] == "https://openrouter.ai/api/v1"
+        assert (
+            config["embedder"]["config"]["openai_base_url"]
+            == "https://openrouter.ai/api/v1"
+        )
         assert "ollama_base_url" not in config["embedder"]["config"]
         assert config["vector_store"]["config"]["path"] == "/data/qdrant"
         assert config["vector_store"]["config"]["on_disk"] is True
-

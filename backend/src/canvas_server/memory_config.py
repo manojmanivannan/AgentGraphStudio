@@ -44,4 +44,3 @@ def build_mem0_config() -> dict:
         },
         "version": "v1.1",
     }
-
