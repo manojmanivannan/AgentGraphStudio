@@ -193,15 +193,26 @@ class RAGIndexManager:
                 texts = [c["content"] for c in all_chunks]
                 try:
                     embedder = get_embedder()
-                    embeddings_raw = embedder(texts)
-
-                    # Convert to standard Python float lists if they are numpy arrays or other wrappers
-                    embeddings = []
-                    for vec in embeddings_raw:
-                        if hasattr(vec, "tolist"):
-                            embeddings.append(vec.tolist())
-                        else:
-                            embeddings.append(list(vec))
+                    # Wrap embedding in timeout to prevent hanging in CI environments
+                    # where embedding services (e.g., Ollama) are unavailable
+                    try:
+                        embeddings_raw = await asyncio.wait_for(
+                            asyncio.to_thread(embedder, texts), timeout=5.0
+                        )
+                    except TimeoutError:
+                        logger.warning(
+                            "Embedding generation timed out after 5s. Using zero vector fallback."
+                        )
+                        dims = settings.mem0_embedder_dimensions
+                        embeddings = [[0.0] * dims for _ in range(len(all_chunks))]
+                    else:
+                        # Convert to standard Python float lists if they are numpy arrays or other wrappers
+                        embeddings = []
+                        for vec in embeddings_raw:
+                            if hasattr(vec, "tolist"):
+                                embeddings.append(vec.tolist())
+                            else:
+                                embeddings.append(list(vec))
                 except Exception as e:
                     logger.warning(
                         "Failed to generate embeddings during index: %s. Using zero vector fallback.",
@@ -258,7 +269,27 @@ async def _run_rag_search_impl(
     # 1. Embed query
     try:
         embedder = get_embedder()
-        query_embs = embedder([query])
+        # Wrap embedding in timeout to prevent hanging in CI environments
+        # where embedding services (e.g., Ollama) are unavailable
+        try:
+            query_embs = await asyncio.wait_for(
+                asyncio.to_thread(embedder, [query]), timeout=5.0
+            )
+        except TimeoutError:
+            logger.warning(
+                "Query embedding timed out after 5s. Falling back to first few corpus chunks."
+            )
+            # Fallback if embedding times out: fetch first 5 chunks by index
+            stmt = (
+                select(AgentDocumentChunk)
+                .where(AgentDocumentChunk.agent_node_id == agent_id)
+                .order_by(AgentDocumentChunk.chunk_index.asc())
+                .limit(5)
+            )
+            res = await session.execute(stmt)
+            chunks = res.scalars().all()
+            return "\n\n---\n\n".join([c.content for c in chunks])
+
         query_emb_raw = query_embs[0]
         query_embedding = (
             query_emb_raw.tolist()
