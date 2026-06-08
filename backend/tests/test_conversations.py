@@ -175,9 +175,7 @@ class TestConversationAPI:
         )
         conv_id = create_resp.json()["id"]
 
-        resp = await test_client.get(
-            f"/api/canvases/conversations/{conv_id}"
-        )
+        resp = await test_client.get(f"/api/canvases/conversations/{conv_id}")
         assert resp.status_code == 200
         assert resp.json()["id"] == conv_id
         assert resp.json()["name"] == "Direct Chat"
@@ -189,14 +187,10 @@ class TestConversationAPI:
         )
         conv_id = create_resp.json()["id"]
 
-        del_resp = await test_client.delete(
-            f"/api/canvases/conversations/{conv_id}"
-        )
+        del_resp = await test_client.delete(f"/api/canvases/conversations/{conv_id}")
         assert del_resp.status_code == 204
 
-        get_resp = await test_client.get(
-            f"/api/canvases/conversations/{conv_id}"
-        )
+        get_resp = await test_client.get(f"/api/canvases/conversations/{conv_id}")
         assert get_resp.status_code == 404
 
 
@@ -242,6 +236,38 @@ class TestConversationRepo:
         assert fetched.messages[0].content == "Hello"
         assert fetched.messages[1].role == "assistant"
         assert fetched.messages[1].agent_name == "MathAgent"
+
+    async def test_get_conversation_messages_are_ordered_by_created_at(
+        self, test_session, blank_canvas
+    ):
+        from datetime import datetime, timezone
+
+        from canvas_server.models.canvas import Message
+
+        repo = ConversationRepo(test_session)
+        conv = await repo.create(canvas_id=blank_canvas.id, name="Test Conv")
+        conv_id = conv.id
+
+        first = Message(
+            conversation_id=conv_id,
+            role="user",
+            content="First",
+            created_at=datetime(2020, 1, 1, 0, 0, tzinfo=timezone.utc),
+        )
+        second = Message(
+            conversation_id=conv_id,
+            role="assistant",
+            content="Second",
+            created_at=datetime(2020, 1, 1, 0, 1, tzinfo=timezone.utc),
+        )
+        test_session.add_all([second, first])
+        await test_session.commit()
+
+        test_session.expire_all()
+
+        fetched = await repo.get(conv_id)
+        assert fetched is not None
+        assert [msg.content for msg in fetched.messages] == ["First", "Second"]
 
     async def test_delete_conversation_cascades_messages(
         self, test_session, blank_canvas
