@@ -54,6 +54,8 @@ _Avoid_: Console, output, log, terminal
 
 **Memory**:
 Per-agent long-term storage backed by mem0 + Qdrant vector store. Each agent optionally gets three memory tools: `memory_search`, `memory_store`, `memory_get_all`.
+
+Memory uses a single shared in-process `mem0.Memory` instance to avoid local Qdrant folder locking. The local Qdrant store is not safe for concurrent access by separate backend processes or reload workers.
 _Avoid_: Long-term memory, storage
 
 **RAG Documents**:
