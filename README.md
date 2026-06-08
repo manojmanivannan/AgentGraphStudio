@@ -87,7 +87,7 @@ Or use SQLite for development (set `DATABASE_URL=sqlite+aiosqlite:///dev.db`).
 - **Tool Sandbox:** Deno + Pyodide (WASM Python via DSPy PythonInterpreter)
 - **Database:** PostgreSQL 17 + pgvector (asyncpg), SQLite for tests
 - **LLM:** Configurable per agent — defaults to Ollama
-- **Memory:** mem0 + Qdrant vector store, per-agent via `user_id` scoping
+- **Memory:** mem0 + local Qdrant vector store, per-agent via `user_id` scoping and a shared in-process mem0 singleton
 - **Observability:** MLflow DSPy autolog
 
 ### Layout
@@ -118,6 +118,8 @@ Or use SQLite for development (set `DATABASE_URL=sqlite+aiosqlite:///dev.db`).
 | `MEM0_EMBEDDER_DIMENSIONS` | `768` | Embedding dimensions used by mem0 & RAG |
 | `DATABASE_URL` | `postgresql+asyncpg://...` | Override for SQLite testing |
 | `CORS_ORIGINS` | `["http://localhost:5173"]` | Allowed origins |
+
+> Note: local Qdrant storage is not safe for concurrent access by multiple backend processes or reload/proxy workers. The backend shares a single in-process mem0 client to avoid repeated Qdrant folder conflicts.
 
 ---
 

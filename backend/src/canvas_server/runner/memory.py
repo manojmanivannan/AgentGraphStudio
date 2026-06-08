@@ -19,11 +19,12 @@ class MemoryManager:
 
     State owned by this service:
       ``_memory_providers`` — ``{agent_id: MemoryProvider}`` for agents with memory enabled
-      ``_shared_memory`` — the single ``mem0.Memory`` singleton (or ``None``)
+      ``_shared_memory`` — the single ``mem0.Memory`` singleton shared across all MemoryManager instances
     """
 
+    _shared_memory = None
+
     def __init__(self):
-        self._shared_memory = None
         self._memory_providers: dict[uuid.UUID, MemoryProvider] = {}
 
     @staticmethod
@@ -32,12 +33,12 @@ class MemoryManager:
 
     def _init_shared_memory(self):
         """Create (once) the shared mem0 Memory instance."""
-        if self._shared_memory is None:
+        if self.__class__._shared_memory is None:
             from mem0 import Memory
 
             config = build_mem0_config()
-            self._shared_memory = Memory.from_config(config)
-        return self._shared_memory
+            self.__class__._shared_memory = Memory.from_config(config)
+        return self.__class__._shared_memory
 
     def build_provider(self, agent_node) -> MemoryProvider | None:
         """Return a ``MemoryProvider`` for *agent_node*, or ``None`` if memory
