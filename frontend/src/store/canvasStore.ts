@@ -12,7 +12,6 @@ interface CanvasStore {
   edges: Edge[];
   selectedNodeId: string | null;
   activeNodeId: string | null;
-  observabilityOpen: boolean;
   saveStatus: SaveStatus;
   viewport: Viewport;
   propertiesWidth: number;
@@ -24,7 +23,6 @@ interface CanvasStore {
   setEdges: (edges: Edge[]) => void;
   selectNode: (id: string | null) => void;
   setActiveNodeId: (id: string | null) => void;
-  toggleObservability: () => void;
   setSaveStatus: (status: SaveStatus) => void;
   setViewport: (viewport: Viewport) => void;
   setPropertiesWidth: (width: number) => void;
@@ -39,7 +37,6 @@ export const useCanvasStore = create<CanvasStore>((set) => ({
   edges: [],
   selectedNodeId: null,
   activeNodeId: null,
-  observabilityOpen: false,
   saveStatus: "idle",
   viewport: { x: 0, y: 0, zoom: 1 },
   propertiesWidth: 320,
@@ -51,7 +48,6 @@ export const useCanvasStore = create<CanvasStore>((set) => ({
   setEdges: (edges) => set({ edges }),
   selectNode: (id) => set({ selectedNodeId: id }),
   setActiveNodeId: (id) => set({ activeNodeId: id }),
-  toggleObservability: () => set((s) => ({ observabilityOpen: !s.observabilityOpen })),
   setSaveStatus: (status) => set({ saveStatus: status }),
   setViewport: (viewport) => set({ viewport }),
   setPropertiesWidth: (propertiesWidth) => set({ propertiesWidth }),
@@ -64,7 +60,6 @@ export const useCanvasStore = create<CanvasStore>((set) => ({
       edges: [],
       selectedNodeId: null,
       activeNodeId: null,
-      observabilityOpen: false,
       saveStatus: "idle",
       viewport: { x: 0, y: 0, zoom: 1 },
       propertiesWidth: 320,
