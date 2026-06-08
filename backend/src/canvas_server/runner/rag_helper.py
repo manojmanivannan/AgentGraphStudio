@@ -63,6 +63,12 @@ async def run_rag_search(documents: list, query: str, chunk_size: int) -> str:
     logger.info("RAG search: using model=%s provider=%s k=%d", model_name, provider, min(5, len(corpus)))
     
     try:
+        try:
+            import litellm
+            litellm.drop_params = True
+        except ImportError:
+            pass
+
         kwargs = {}
         if provider == "ollama":
             embedder = dspy.Embedder(
