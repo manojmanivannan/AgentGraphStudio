@@ -42,7 +42,15 @@ class ConversationService:
         node_id: uuid.UUID | None = None,
         event_type: str | None = None,
     ):
-        logger.info("persist_message called: role=%s, event_type=%s, agent_name=%s, repo=%s, conv_id=%s", role, event_type, agent_name, self.conversation_repo is not None, self.conversation_id)
+        has_repo = self.conversation_repo is not None
+        logger.info(
+            "persist_message called: role=%s, event_type=%s, agent_name=%s, repo=%s, conv_id=%s",
+            role,
+            event_type,
+            agent_name,
+            has_repo,
+            self.conversation_id,
+        )
         if not self.conversation_repo or not self.conversation_id:
             return
         try:
