@@ -31,6 +31,21 @@ def _test_db_url():
     _reset_engine_and_factory()
 
 
+@pytest.fixture(autouse=True)
+def mock_embedder(monkeypatch):
+    class MockEmbedder:
+        def __call__(self, texts):
+            from canvas_server.config import settings
+            dims = settings.mem0_embedder_dimensions
+            return [[0.1] * dims for _ in texts]
+
+    monkeypatch.setattr(
+        "canvas_server.runner.rag_helper.get_embedder",
+        lambda: MockEmbedder(),
+    )
+
+
+
 @pytest_asyncio.fixture
 async def fresh_db():
     from canvas_server.database import Base, async_reset_session_factory, get_engine
