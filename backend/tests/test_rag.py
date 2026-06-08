@@ -1,4 +1,5 @@
 import asyncio
+import re
 import uuid
 
 import pytest
@@ -11,20 +12,32 @@ from canvas_server.runner.rag_helper import RAGIndexManager, chunk_text, run_rag
 
 
 def test_chunk_text():
-    text = (
-        "Paragraph 1\n\nParagraph 2\n\nParagraph 3 is very long and has lots of words."
-    )
+    text = "Paragraph 1. Paragraph 2 is short. Paragraph 3 is very long and has lots of words."
 
-    # Large chunk size -> should group paragraphs
+    # Large chunk size -> should preserve sentence grouping
     chunks = chunk_text(text, 1000)
     assert len(chunks) == 1
-    assert "Paragraph 1" in chunks[0]
-    assert "Paragraph 3" in chunks[0]
+    assert "Paragraph 1." in chunks[0]
+    assert "Paragraph 3 is very long" in chunks[0]
 
-    # Small chunk size -> should split
-    chunks_small = chunk_text(text, 15)
-    assert len(chunks_small) >= 3
-    assert any("Paragraph 1" in c for c in chunks_small)
+    # Small chunk size -> should split at sentence boundaries
+    chunks_small = chunk_text(text, 5)
+    assert len(chunks_small) >= 2
+    assert chunks_small[0].endswith("Paragraph 1.")
+    assert any("Paragraph 2 is short." in c for c in chunks_small)
+
+
+def test_chunk_text_preserves_sentence_boundaries():
+    text = "Sentence one. Sentence two. Sentence three."
+    chunks = chunk_text(text, 3)
+    assert chunks == ["Sentence one.", "Sentence two.", "Sentence three."]
+
+
+def test_chunk_text_splits_long_sentence_by_tokens():
+    sentence = "word " * 20
+    chunks = chunk_text(sentence.strip(), 5)
+    assert len(chunks) == 4
+    assert all(len(re.findall(r"\w+", chunk)) <= 5 for chunk in chunks)
 
 
 @pytest.mark.asyncio
@@ -89,9 +102,10 @@ async def test_run_rag_search_sqlite_similarity(test_session, blank_canvas):
 
 
 def test_pgvector_query_operator_compile():
-    from sqlalchemy.dialects.postgresql import dialect as pg_dialect
-    from sqlalchemy import select
     import uuid
+
+    from sqlalchemy import select
+    from sqlalchemy.dialects.postgresql import dialect as pg_dialect
 
     stmt = (
         select(AgentDocumentChunk)
@@ -247,7 +261,7 @@ async def test_rag_chunk_size_invalidation(test_session, blank_canvas):
     # With chunk size 1000, all three paragraphs fit in a single chunk
     assert len(chunks) == 1
 
-    # Now change chunk size to 30 via save_nodes_and_edges, which triggers re-indexing
+    # Now change chunk size to 3 via save_nodes_and_edges, which triggers re-indexing
     updated_agents = [
         AgentNodeInput(
             id=agent_id,
@@ -257,7 +271,7 @@ async def test_rag_chunk_size_invalidation(test_session, blank_canvas):
             agent_type="worker",
             model_name="ollama:llama3.1",
             enable_rag=True,
-            rag_chunk_size=30,
+            rag_chunk_size=3,
         )
     ]
     await repo.save_nodes_and_edges(
