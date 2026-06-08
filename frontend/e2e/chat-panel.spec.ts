@@ -86,17 +86,6 @@ test.describe("Chat Panel — message sending and streaming", () => {
     // Loading dots and stop button should appear
     await expect(page.getByTestId("stop-button")).toBeVisible({ timeout: 5000 });
   });
-
-  // TODO: Re-enable these streaming tests once the wsFixture mock is fixed.
-  // The WebSocket route mock does not properly deliver events to the ChatOverlay.
-  test.skip("streaming events render correctly in a real browser", async () => {});
-
-  test.skip("thought event appears as a step during streaming", async () => {});
-
-  test.skip("steps toggle collapses and expands step details", async () => {});
-
-  // TODO: Re-enable once wsFixture mock is fixed.
-  test.skip("after run_complete the send button is re-enabled", async () => {});
 });
 
 test.describe("Chat Panel — stop button", () => {
