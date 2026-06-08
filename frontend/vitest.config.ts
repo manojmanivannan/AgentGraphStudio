@@ -15,6 +15,10 @@ export default defineConfig({
     globals: true,
     setupFiles: ["./src/test/setup.ts"],
     exclude: ["e2e/**", "node_modules/**"],
+    // Speed: use worker_threads (lighter than child_process forks)
+    pool: "threads",
+    // Speed: skip CSS processing — not needed for unit tests
+    css: false,
     reporters: [
       "default",
       ["junit", { outputFile: "junit/vitest-results.xml" }],
