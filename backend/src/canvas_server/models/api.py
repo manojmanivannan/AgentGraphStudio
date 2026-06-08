@@ -13,8 +13,27 @@ class AgentNodeInput(BaseModel):
     agent_type: str = "worker"
     enable_memory: bool = False
     enable_conversation_history: bool = False
+    enable_rag: bool = False
+    rag_chunk_size: int = 1000
     position_x: float = 0
     position_y: float = 0
+
+
+class AgentDocumentInput(BaseModel):
+    id: uuid.UUID
+    agent_node_id: uuid.UUID
+    name: str
+    content: str | None = None
+    created_at: datetime | None = None
+    path: str | None = None
+
+
+class AgentDocumentResponse(BaseModel):
+    id: uuid.UUID
+    name: str
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
 
 
 class AgentNodeResponse(AgentNodeInput):
@@ -56,6 +75,10 @@ class CanvasSaveRequest(BaseModel):
     name: str = "Untitled Canvas"
     nodes: CanvasNodesInput = Field(default_factory=CanvasNodesInput)
     edges: list[EdgeInput] = Field(default_factory=list)
+
+
+class CanvasImportRequest(CanvasSaveRequest):
+    documents: list[AgentDocumentInput] = Field(default_factory=list)
 
 
 class CanvasResponse(BaseModel):

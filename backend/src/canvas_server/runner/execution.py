@@ -86,6 +86,18 @@ class ExecutionStrategy(ABC):
             "Running agent: %s (type=%s)", agent_node.name, agent_node.agent_type
         )
 
+        if getattr(agent_node, "enable_rag", False):
+            from canvas_server.runner.rag_helper import run_rag_search
+            passages = await run_rag_search(
+                agent_id,
+                user_prompt
+            )
+            agent = await self._services.agent_factory.build_worker_with_rag_prompt(agent_node, passages)
+            self._services.agents[agent_id] = agent
+            self._services.attach_events(agent_id, send_event, force=True)
+        else:
+            self._services.attach_events(agent_id, send_event)
+
         needs_history = self._services.agent_factory.needs_history(agent_node)
         prompt = self._services.agent_factory.build_worker_prompt(user_prompt)
 

@@ -38,8 +38,9 @@ def build_mem0_config() -> dict:
             "provider": "qdrant",
             "config": {
                 "embedding_model_dims": settings.mem0_embedder_dimensions,
+                "path": settings.mem0_qdrant_path,
+                "on_disk": settings.mem0_qdrant_on_disk,
             },
         },
         "version": "v1.1",
     }
-

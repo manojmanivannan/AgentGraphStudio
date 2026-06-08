@@ -49,6 +49,11 @@ class AgentFactory:
         """
         role = agent_node.role or ""
         instructions = agent_node.instructions or ""
+
+        if not getattr(agent_node, "enable_rag", False):
+            role = role.replace("{{ rag_document }}", "")
+            instructions = instructions.replace("{{ rag_document }}", "")
+
         if role and instructions:
             full_instructions = f"{role}\n\n{instructions}"
         elif role:
@@ -126,6 +131,63 @@ class AgentFactory:
             agent_node.name,
             len(tools),
         )
+        return agent
+
+    async def build_worker_with_rag_prompt(self, agent_node, passages: str) -> StreamingReAct:
+        """Build a single worker agent with RAG search results substituted into instructions."""
+        tools = list(
+            self._tool_registry.get_tools_for_agent(agent_node.id, self._edges)
+        )
+
+        memory_provider = self._memory_manager.build_provider(agent_node)
+        if memory_provider:
+            tools.extend(
+                [
+                    memory_provider.search_memories,
+                    memory_provider.store_memory,
+                    memory_provider.get_all_memories,
+                ]
+            )
+
+        role = agent_node.role or ""
+        instructions = agent_node.instructions or ""
+
+        # Substitute the template placeholder
+        role = role.replace("{{ rag_document }}", passages)
+        instructions = instructions.replace("{{ rag_document }}", passages)
+
+        if role and instructions:
+            full_instructions = f"{role}\n\n{instructions}"
+        elif role:
+            full_instructions = role
+        else:
+            full_instructions = instructions or "You are a helpful AI agent."
+
+        if self._memory_manager.needs_memory(agent_node):
+            full_instructions += (
+                "\n\nYou have memory tools available. After each interaction, "
+                "use store_memory to save important information the user shares "
+                "(facts, preferences, details from previous questions). "
+                "When the user asks about something from the past, use search_memories "
+                "to look up relevant information. Use get_all_memories to list everything stored."
+            )
+
+        if getattr(agent_node, "enable_conversation_history", False):
+            class _AgentSig(dspy.Signature):
+                user_request: str = dspy.InputField()
+                history: dspy.History = dspy.InputField()
+                process_result: str = dspy.OutputField(
+                    desc="Final answer summarizing the result and information the user needs"
+                )
+        else:
+            class _AgentSig(dspy.Signature):
+                user_request: str = dspy.InputField()
+                process_result: str = dspy.OutputField(
+                    desc="Final answer summarizing the result and information the user needs"
+                )
+
+        signature = _AgentSig.with_instructions(full_instructions)
+        agent = StreamingReAct(signature, tools=tools)
         return agent
 
     # ------------------------------------------------------------------

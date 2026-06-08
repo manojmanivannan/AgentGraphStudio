@@ -54,7 +54,21 @@ _Avoid_: Console, output, log, terminal
 
 **Memory**:
 Per-agent long-term storage backed by mem0 + Qdrant vector store. Each agent optionally gets three memory tools: `memory_search`, `memory_store`, `memory_get_all`.
+
+Memory uses a single shared in-process `mem0.Memory` instance to avoid local Qdrant folder locking. The local Qdrant store is not safe for concurrent access by separate backend processes or reload workers.
 _Avoid_: Long-term memory, storage
+
+**RAG Documents**:
+Text documents uploaded by a user and attached to a specific agent node (usually a Worker) to provide domain-specific context. At execution time, relevant chunks from these documents are retrieved and templated.
+_Avoid_: Knowledge base, document store, uploaded files
+
+**Canvas ZIP package**:
+A ZIP archive export/import format for a Canvas. It contains a `manifest.json` plus agent-specific document files under `documents/{agent_id}/{doc_id}.txt`, allowing RAG documents to be preserved when moving teams between environments.
+_Avoid_: bundle, tarball, archive format
+
+**RAG Chunk Size**:
+The maximum length (in characters) used when splitting RAG documents into paragraph-aligned chunks for embedding and retrieval.
+_Avoid_: Split size, block length, character limit
 
 **Observability**:
 An embedded MLflow UI iframe for tracing DSPy agent calls, tool invocations, and LLM interactions via `mlflow.dspy.autolog()`.

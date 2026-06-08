@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 import { useCanvasStore } from "@/store/canvasStore";
 import { useThemeStore } from "@/store/themeStore";
-import { importCanvas } from "@/lib/api";
+import { exportCanvasZip, importCanvas, importCanvasZip } from "@/lib/api";
 import type { CanvasSavePayload } from "@/types";
 import { RailItem } from "./RailItem";
 import { RailPopover } from "./RailPopover";
@@ -93,7 +93,22 @@ export function SidebarRail() {
     setClearOpen(false);
   };
 
-  const handleExport = () => {
+  const handleExport = async () => {
+    if (canvasId) {
+      try {
+        const blob = await exportCanvasZip(canvasId);
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `${canvasName.replace(/[^a-zA-Z0-9]/g, "_")}.zip`;
+        a.click();
+        URL.revokeObjectURL(url);
+        return;
+      } catch (err) {
+        console.error("ZIP export failed, falling back to JSON export:", err);
+      }
+    }
+
     const edges = useCanvasStore.getState().edges;
     const payload: CanvasSavePayload = {
       name: canvasName,
@@ -110,6 +125,8 @@ export function SidebarRail() {
             enable_memory: ((n.data as any).enableMemory as boolean) ?? false,
             enable_conversation_history:
               ((n.data as any).enableConversationHistory as boolean) ?? false,
+            enable_rag: ((n.data as any).enableRag as boolean) ?? false,
+            rag_chunk_size: ((n.data as any).ragChunkSize as number) ?? 1000,
             position_x: n.position.x,
             position_y: n.position.y,
           })),
@@ -153,9 +170,9 @@ export function SidebarRail() {
     if (!file) return;
 
     try {
-      const text = await file.text();
-      const data = JSON.parse(text) as CanvasSavePayload;
-      const imported = await importCanvas(data);
+      const imported = file.name.toLowerCase().endsWith(".zip")
+        ? await importCanvasZip(file)
+        : await importCanvas(JSON.parse(await file.text()) as CanvasSavePayload);
 
       setCanvas(imported.id, imported.name);
 
@@ -173,6 +190,8 @@ export function SidebarRail() {
           agentType: a.agent_type,
           enableMemory: a.enable_memory,
           enableConversationHistory: a.enable_conversation_history,
+          enableRag: a.enable_rag,
+          ragChunkSize: a.rag_chunk_size,
         },
       }));
 
@@ -287,14 +306,14 @@ export function SidebarRail() {
 
       <RailItem
         icon={Download}
-        label="Export"
+        label="Download"
         onClick={handleExport}
         data-testid="export-button"
       />
 
       <RailItem
         icon={Upload}
-        label="Import"
+        label="Upload"
         onClick={handleImport}
         data-testid="import-button"
       />
@@ -316,7 +335,7 @@ export function SidebarRail() {
       <input
         ref={fileInputRef}
         type="file"
-        accept=".json"
+        accept=".json,.zip"
         onChange={handleFileChange}
         className="hidden"
       />

@@ -32,6 +32,7 @@ services:
       - agent_network
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
+      - qdrant_data:/tmp/qdrant
     depends_on:
       postgres:
         condition: service_healthy
@@ -119,3 +120,4 @@ volumes:
   pgdata:
   mlflow_data:
   ollama_data:
+  qdrant_data:

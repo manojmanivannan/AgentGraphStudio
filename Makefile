@@ -9,7 +9,7 @@ help:
 	@echo "  make clean-sandbox  - Clean up sandbox containers running python3"
 
 up:
-	docker compose up --build -d
+	docker compose up --build
 
 up-gpu:
 	docker compose --profile gpu up --build -d
