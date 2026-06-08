@@ -89,9 +89,8 @@ class ExecutionStrategy(ABC):
         if getattr(agent_node, "enable_rag", False):
             from canvas_server.runner.rag_helper import run_rag_search
             passages = await run_rag_search(
-                getattr(agent_node, "documents", []),
-                user_prompt,
-                getattr(agent_node, "rag_chunk_size", 1000)
+                agent_id,
+                user_prompt
             )
             agent = await self._services.agent_factory.build_worker_with_rag_prompt(agent_node, passages)
             self._services.agents[agent_id] = agent

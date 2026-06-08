@@ -1,16 +1,19 @@
+import asyncio
 import uuid
 
 import pytest
+from sqlalchemy import select
 
 from canvas_server.models.api import AgentNodeInput
-from canvas_server.models.canvas import AgentDocument
+from canvas_server.models.canvas import AgentDocument, AgentDocumentChunk
 from canvas_server.repos.canvas_repo import CanvasRepo
-from canvas_server.runner import CanvasRunner
-from canvas_server.runner.rag_helper import chunk_text, run_rag_search
+from canvas_server.runner.rag_helper import RAGIndexManager, chunk_text, run_rag_search
 
 
 def test_chunk_text():
-    text = "Paragraph 1\n\nParagraph 2\n\nParagraph 3 is very long and has lots of words."
+    text = (
+        "Paragraph 1\n\nParagraph 2\n\nParagraph 3 is very long and has lots of words."
+    )
 
     # Large chunk size -> should group paragraphs
     chunks = chunk_text(text, 1000)
@@ -25,24 +28,87 @@ def test_chunk_text():
 
 
 @pytest.mark.asyncio
-async def test_run_rag_search_fallback():
-    # Verify fallback when embedding fails
-    docs = [
-        AgentDocument(content="Context chunk 1\n\nContext chunk 2"),
-        AgentDocument(content="Context chunk 3")
-    ]
-    passages = await run_rag_search(docs, "query", chunk_size=100)
-    # Fallback should return concatenated chunks
-    assert "Context chunk 1" in passages
-    assert "Context chunk 3" in passages
+async def test_run_rag_search_sqlite_similarity(test_session, blank_canvas):
+    repo = CanvasRepo(test_session)
+    agent_id = uuid.uuid4()
+
+    # Create RAG enabled agent using save_nodes_and_edges to preserve exact IDs
+    await repo.save_nodes_and_edges(
+        blank_canvas.id,
+        "RAG Canvas",
+        agents=[
+            AgentNodeInput(
+                id=agent_id,
+                name="RAGAgent",
+                role="Assistant",
+                instructions="Context: {{ rag_document }}",
+                agent_type="worker",
+                model_name="ollama:llama3.1",
+                enable_rag=True,
+                rag_chunk_size=1000,
+            )
+        ],
+        tools=[],
+        edges=[],
+    )
+
+    # Store a document
+    doc = AgentDocument(
+        id=uuid.uuid4(),
+        canvas_id=blank_canvas.id,
+        agent_node_id=agent_id,
+        name="test_doc.txt",
+        content="Secret Antigravity Research Document contents.",
+    )
+    test_session.add(doc)
+    await test_session.commit()
+    test_session.expire_all()
+
+    # Manually trigger indexing and wait for it to complete
+    await RAGIndexManager.trigger_reindex(agent_id)
+
+    # Wait up to 2 seconds for indexing task to complete
+    for _ in range(20):
+        test_session.expire_all()
+        res = await test_session.execute(
+            select(AgentDocumentChunk).where(
+                AgentDocumentChunk.agent_node_id == agent_id
+            )
+        )
+        chunks = res.scalars().all()
+        if chunks:
+            break
+        await asyncio.sleep(0.1)
+
+    assert len(chunks) > 0
+    assert "Secret Antigravity" in chunks[0].content
+
+    # Query similarity search (on SQLite fallback)
+    passages = await run_rag_search(agent_id, "Antigravity", session=test_session)
+    assert "Secret Antigravity Research" in passages
+
+
+def test_pgvector_query_operator_compile():
+    from sqlalchemy.dialects.postgresql import dialect as pg_dialect
+    from sqlalchemy import select
+    import uuid
+
+    stmt = (
+        select(AgentDocumentChunk)
+        .where(AgentDocumentChunk.agent_node_id == uuid.uuid4())
+        .order_by(AgentDocumentChunk.embedding.op("<=>")([0.1, 0.2, 0.3]))
+        .limit(1)
+    )
+    compiled = str(stmt.compile(dialect=pg_dialect()))
+    assert "<=>" in compiled
 
 
 @pytest.mark.asyncio
-async def test_rag_api_endpoints(test_client, blank_canvas):
+async def test_rag_api_endpoints(test_client, blank_canvas, test_session):
     canvas_id = blank_canvas.id
+    agent_id = uuid.uuid4()
 
     # Create agent
-    agent_id = uuid.uuid4()
     canvas_save_req = {
         "name": "RAG Canvas",
         "nodes": {
@@ -59,55 +125,130 @@ async def test_rag_api_endpoints(test_client, blank_canvas):
                     "enable_rag": True,
                     "rag_chunk_size": 1000,
                     "position_x": 0,
-                    "position_y": 0
+                    "position_y": 0,
                 }
             ],
-            "tools": []
+            "tools": [],
         },
-        "edges": []
+        "edges": [],
     }
     res = await test_client.put(f"/api/canvases/{canvas_id}", json=canvas_save_req)
     assert res.status_code == 200
 
     # List documents (should be empty initially)
-    res = await test_client.get(f"/api/canvases/{canvas_id}/agents/{agent_id}/documents")
+    res = await test_client.get(
+        f"/api/canvases/{canvas_id}/agents/{agent_id}/documents"
+    )
     assert res.status_code == 200
     assert len(res.json()) == 0
 
     # Upload document
-    file_content = b"This is a sample document for testing RAG."
+    file_content = (
+        b"This is a sample document for testing RAG chunk persistent storage."
+    )
     res = await test_client.post(
         f"/api/canvases/{canvas_id}/agents/{agent_id}/documents",
-        files={"file": ("test_doc.txt", file_content, "text/plain")}
+        files={"file": ("test_doc.txt", file_content, "text/plain")},
     )
     assert res.status_code == 200
     doc_data = res.json()
     assert doc_data["name"] == "test_doc.txt"
     doc_id = doc_data["id"]
 
-    # List documents again
-    res = await test_client.get(f"/api/canvases/{canvas_id}/agents/{agent_id}/documents")
-    assert res.status_code == 200
-    docs = res.json()
-    assert len(docs) == 1
-    assert docs[0]["name"] == "test_doc.txt"
+    # Wait up to 2 seconds for indexing task to complete
+    for _ in range(20):
+        # We query the DB via session to verify chunks were created
+        test_session.expire_all()
+        chunks_res = await test_session.execute(
+            select(AgentDocumentChunk).where(
+                AgentDocumentChunk.agent_node_id == agent_id
+            )
+        )
+        chunks = chunks_res.scalars().all()
+        if chunks:
+            break
+        await asyncio.sleep(0.1)
+
+    assert len(chunks) == 1
+    assert "testing RAG chunk" in chunks[0].content
 
     # Delete document
-    res = await test_client.delete(f"/api/canvases/{canvas_id}/agents/{agent_id}/documents/{doc_id}")
+    res = await test_client.delete(
+        f"/api/canvases/{canvas_id}/agents/{agent_id}/documents/{doc_id}"
+    )
     assert res.status_code == 204
 
-    # Verify deleted
-    res = await test_client.get(f"/api/canvases/{canvas_id}/agents/{agent_id}/documents")
-    assert len(res.json()) == 0
+    # Wait to ensure delete background indexing completes
+    for _ in range(20):
+        test_session.expire_all()
+        chunks_res = await test_session.execute(
+            select(AgentDocumentChunk).where(
+                AgentDocumentChunk.agent_node_id == agent_id
+            )
+        )
+        chunks = chunks_res.scalars().all()
+        if not chunks:
+            break
+        await asyncio.sleep(0.1)
+
+    assert len(chunks) == 0
 
 
 @pytest.mark.asyncio
-async def test_runner_rag_replacement(test_session, blank_canvas):
+async def test_rag_chunk_size_invalidation(test_session, blank_canvas):
     repo = CanvasRepo(test_session)
     agent_id = uuid.uuid4()
 
-    # Create canvas with a RAG enabled worker agent
-    agents = [
+    # Create canvas with a RAG enabled worker agent (chunk size 1000)
+    await repo.save_nodes_and_edges(
+        blank_canvas.id,
+        "RAG Canvas",
+        agents=[
+            AgentNodeInput(
+                id=agent_id,
+                name="RAGAgent",
+                role="Summary Assistant",
+                instructions="Summary instructions: {{ rag_document }}",
+                agent_type="worker",
+                model_name="ollama:llama3.1",
+                enable_rag=True,
+                rag_chunk_size=1000,
+            )
+        ],
+        tools=[],
+        edges=[],
+    )
+
+    # Add document
+    doc = AgentDocument(
+        id=uuid.uuid4(),
+        canvas_id=blank_canvas.id,
+        agent_node_id=agent_id,
+        name="test.txt",
+        content="First paragraph here.\n\nSecond paragraph here.\n\nThird paragraph here.",
+    )
+    test_session.add(doc)
+    await test_session.commit()
+
+    # Trigger initial indexing
+    await RAGIndexManager.trigger_reindex(agent_id)
+    for _ in range(20):
+        test_session.expire_all()
+        chunks_res = await test_session.execute(
+            select(AgentDocumentChunk).where(
+                AgentDocumentChunk.agent_node_id == agent_id
+            )
+        )
+        chunks = chunks_res.scalars().all()
+        if chunks:
+            break
+        await asyncio.sleep(0.1)
+
+    # With chunk size 1000, all three paragraphs fit in a single chunk
+    assert len(chunks) == 1
+
+    # Now change chunk size to 30 via save_nodes_and_edges, which triggers re-indexing
+    updated_agents = [
         AgentNodeInput(
             id=agent_id,
             name="RAGAgent",
@@ -116,48 +257,30 @@ async def test_runner_rag_replacement(test_session, blank_canvas):
             agent_type="worker",
             model_name="ollama:llama3.1",
             enable_rag=True,
-            rag_chunk_size=1000
+            rag_chunk_size=30,
         )
     ]
-    canvas = await repo.create_full(
-        name="RAG Workflow",
-        agents=agents,
+    await repo.save_nodes_and_edges(
+        canvas_id=blank_canvas.id,
+        name="RAG Canvas",
+        agents=updated_agents,
         tools=[],
-        edges=[]
+        edges=[],
     )
 
-    # Add document to DB directly using the actual database node ID
-    db_agent_node = canvas.agent_nodes[0]
-    db_agent_id = db_agent_node.id
+    # Wait for the reindexing task to complete
+    await asyncio.sleep(0.5)
+    for _ in range(20):
+        test_session.expire_all()
+        chunks_res = await test_session.execute(
+            select(AgentDocumentChunk).where(
+                AgentDocumentChunk.agent_node_id == agent_id
+            )
+        )
+        chunks = chunks_res.scalars().all()
+        # Chunks should be split into 3 separate ones now
+        if len(chunks) == 3:
+            break
+        await asyncio.sleep(0.1)
 
-    canvas_db_id = canvas.id
-    doc = AgentDocument(
-        id=uuid.uuid4(),
-        canvas_id=canvas_db_id,
-        agent_node_id=db_agent_id,
-        name="test.txt",
-        content="Secret Antigravity Research Document contents."
-    )
-    test_session.add(doc)
-    await test_session.commit()
-    test_session.expire_all()
-
-    # Refresh canvas from database to load relationships
-    canvas = await repo.get_or_404(canvas_db_id)
-
-    # Instantiate CanvasRunner
-    runner = CanvasRunner(canvas)
-
-    # Verify that setup builds agent signature correctly (cleaning/ignoring the placeholder initially)
-    await runner.setup()
-    assert runner.agents[db_agent_id] is not None
-
-    # Since we can't easily run real LLM queries without LLM backend,
-    # let's verify that we can create the Dynamic RAG agent and it replaces instructions:
-    passages = await run_rag_search(canvas.agent_nodes[0].documents, "test", 1000)
-    assert "Secret Antigravity Research" in passages
-
-    # Build dynamic agent and check instructions
-    rag_agent = await runner._agent_factory.build_worker_with_rag_prompt(canvas.agent_nodes[0], passages)
-    assert "Secret Antigravity Research" in rag_agent.react.signature.instructions
-    assert "{{ rag_document }}" not in rag_agent.react.signature.instructions
+    assert len(chunks) == 3

@@ -360,6 +360,10 @@ async def upload_agent_document(
     session.add(doc)
     await session.commit()
     logger.info("Document saved: id=%s", doc.id)
+
+    from canvas_server.runner.rag_helper import RAGIndexManager
+    await RAGIndexManager.trigger_reindex(agent_id)
+
     return doc
 
 
@@ -388,4 +392,7 @@ async def delete_agent_document(
     await session.delete(doc)
     await session.commit()
     logger.info("Document deleted: id=%s", document_id)
+
+    from canvas_server.runner.rag_helper import RAGIndexManager
+    await RAGIndexManager.trigger_reindex(agent_id)
 

@@ -159,9 +159,15 @@ class CanvasRepo:
                 await self.session.delete(node)
 
         # Delta sync (upsert) the rest of the agent nodes
+        agents_to_reindex = []
         for a in agents:
             if a.id in existing_agents:
                 node = existing_agents[a.id]
+                size_changed = node.rag_chunk_size != a.rag_chunk_size
+                rag_toggled_on = (not node.enable_rag) and a.enable_rag
+                if size_changed or rag_toggled_on:
+                    agents_to_reindex.append(a.id)
+
                 node.name = a.name
                 node.role = a.role
                 node.instructions = a.instructions
@@ -174,6 +180,8 @@ class CanvasRepo:
                 node.position_x = a.position_x
                 node.position_y = a.position_y
             else:
+                if a.enable_rag:
+                    agents_to_reindex.append(a.id)
                 node = AgentNode(
                     id=a.id,
                     canvas_id=canvas_id,
@@ -214,6 +222,11 @@ class CanvasRepo:
             self.session.add(edge)
 
         await self.session.commit()
+
+        if agents_to_reindex:
+            from canvas_server.runner.rag_helper import RAGIndexManager
+            for aid in agents_to_reindex:
+                await RAGIndexManager.trigger_reindex(aid)
 
         self.session.expunge_all()
 

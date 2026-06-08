@@ -256,9 +256,8 @@ class CanvasRunner:
             if getattr(target_node, "enable_rag", False):
                 from canvas_server.runner.rag_helper import run_rag_search
                 passages = await run_rag_search(
-                    getattr(target_node, "documents", []),
-                    task,
-                    getattr(target_node, "rag_chunk_size", 1000)
+                    target_id,
+                    task
                 )
                 target_agent = await self._agent_factory.build_worker_with_rag_prompt(target_node, passages)
                 self.agents[target_id] = target_agent
