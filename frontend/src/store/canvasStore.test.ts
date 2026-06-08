@@ -16,9 +16,7 @@ describe("canvasStore", () => {
       expect(store().edges).toEqual([]);
       expect(store().selectedNodeId).toBeNull();
       expect(store().activeNodeId).toBeNull();
-      expect(store().chatOpen).toBe(false);
       expect(store().saveStatus).toBe("idle");
-      expect(store().chatWidth).toBe(400);
       expect(store().propertiesWidth).toBe(320);
       expect(store().isDraggingPanel).toBe(false);
     });
@@ -83,16 +81,6 @@ describe("canvasStore", () => {
     });
   });
 
-  describe("toggleChat", () => {
-    it("toggles the chat panel open/closed", () => {
-      expect(store().chatOpen).toBe(false);
-      store().toggleChat();
-      expect(store().chatOpen).toBe(true);
-      store().toggleChat();
-      expect(store().chatOpen).toBe(false);
-    });
-  });
-
   describe("setSaveStatus", () => {
     it("updates the save status", () => {
       store().setSaveStatus("saving");
@@ -122,13 +110,6 @@ describe("canvasStore", () => {
     });
   });
 
-  describe("setChatWidth", () => {
-    it("updates chatWidth", () => {
-      store().setChatWidth(500);
-      expect(store().chatWidth).toBe(500);
-    });
-  });
-
   describe("setPropertiesWidth", () => {
     it("updates propertiesWidth", () => {
       store().setPropertiesWidth(350);
@@ -149,11 +130,9 @@ describe("canvasStore", () => {
       store().setNodes([{ id: "n1", type: "agent", position: { x: 0, y: 0 }, data: {} }] as any);
       store().selectNode("n1");
       store().setActiveNodeId("n1");
-      store().toggleChat();
       store().toggleObservability();
       store().setSaveStatus("saving");
       store().setViewport({ x: 10, y: 20, zoom: 1.5 });
-      store().setChatWidth(500);
       store().setPropertiesWidth(350);
       store().setIsDraggingPanel(true);
 
@@ -165,11 +144,9 @@ describe("canvasStore", () => {
       expect(store().edges).toEqual([]);
       expect(store().selectedNodeId).toBeNull();
       expect(store().activeNodeId).toBeNull();
-      expect(store().chatOpen).toBe(false);
       expect(store().observabilityOpen).toBe(false);
       expect(store().saveStatus).toBe("idle");
       expect(store().viewport).toEqual({ x: 0, y: 0, zoom: 1 });
-      expect(store().chatWidth).toBe(400);
       expect(store().propertiesWidth).toBe(320);
       expect(store().isDraggingPanel).toBe(false);
     });

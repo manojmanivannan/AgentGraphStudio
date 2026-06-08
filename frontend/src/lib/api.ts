@@ -127,12 +127,30 @@ export async function getConversation(
   return res.json();
 }
 
+export async function getConversationById(
+  conversationId: string
+): Promise<Conversation> {
+  const res = await fetch(`${API_BASE}/canvases/conversations/${conversationId}`);
+  if (!res.ok) throw new Error("Failed to get conversation");
+  return res.json();
+}
+
 export async function deleteConversation(
   canvasId: string,
   conversationId: string
 ): Promise<void> {
   const res = await fetch(
     `${API_BASE}/canvases/${canvasId}/conversations/${conversationId}`,
+    { method: "DELETE" }
+  );
+  if (!res.ok) throw new Error("Failed to delete conversation");
+}
+
+export async function deleteConversationById(
+  conversationId: string
+): Promise<void> {
+  const res = await fetch(
+    `${API_BASE}/canvases/conversations/${conversationId}`,
     { method: "DELETE" }
   );
   if (!res.ok) throw new Error("Failed to delete conversation");

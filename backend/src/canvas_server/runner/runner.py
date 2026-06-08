@@ -191,6 +191,24 @@ class CanvasRunner:
                                 "node_id": str(tool_node_id),
                             }
                         )
+                elif event.get("type") == "thought":
+                    await self._conversation.persist_message(
+                        role="assistant",
+                        content=event.get("content", ""),
+                        agent_name=aname,
+                        node_id=aid,
+                        event_type="thought",
+                    )
+                elif event.get("type") == "tool_result":
+                    tool_name = event.get("tool", "")
+                    clean_tool_name = tool_name.replace("transfer_to_", "") if tool_name else aname
+                    await self._conversation.persist_message(
+                        role="assistant",
+                        content=event.get("output", ""),
+                        agent_name=clean_tool_name,
+                        node_id=aid,
+                        event_type="tool_result",
+                    )
 
             agent.on_event(callback)
 
@@ -241,6 +259,13 @@ class CanvasRunner:
                     "to": target_name,
                     "node_id": str(target_id),
                 }
+            )
+            await self._conversation.persist_message(
+                role="system",
+                content=f"Delegating to {target_name}...",
+                agent_name=router_name,
+                node_id=target_id,
+                event_type="handoff",
             )
             await send_event(
                 {

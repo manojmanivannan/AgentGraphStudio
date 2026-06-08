@@ -1,5 +1,7 @@
 import { useEffect, useState, useRef } from "react";
+import { Routes, Route, useNavigate, useParams, Link } from "react-router-dom";
 import { AppShell } from "@/components/layout/AppShell";
+import ChatPage from "@/components/chat/ChatPage";
 import { useCanvasStore } from "@/store/canvasStore";
 import {
   createCanvas,
@@ -42,102 +44,24 @@ function getRelativeTimeString(dateStr: string): string {
   }
 }
 
-export default function App() {
+// Canvas Editor Wrapper
+function CanvasEditorPage({
+  loading,
+  setLoading,
+  error,
+  setError,
+}: {
+  loading: boolean;
+  setLoading: (l: boolean) => void;
+  error: string | null;
+  setError: (e: string | null) => void;
+}) {
+  const { canvas_id } = useParams<{ canvas_id: string }>();
   const canvasId = useCanvasStore((s) => s.canvasId);
   const setCanvas = useCanvasStore((s) => s.setCanvas);
   const setNodes = useCanvasStore((s) => s.setNodes);
   const setEdges = useCanvasStore((s) => s.setEdges);
-  const [canvases, setCanvases] = useState<CanvasListItem[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [dragActive, setDragActive] = useState(false);
-  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
-
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const loadCanvases = async () => {
-    try {
-      const list = await listCanvases();
-      setCanvases(list);
-    } catch {
-      setCanvases([]);
-    }
-  };
-
-  useEffect(() => {
-    loadCanvases();
-  }, [canvasId]);
-
-  // Support deep-linking via ?canvas=<id> (used by E2E tests and shareable URLs)
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const initialId = params.get("canvas");
-    if (initialId && !canvasId) {
-      handleOpenCanvas(initialId);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Synchronize canvasId to the URL query parameters
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const currentParamId = params.get("canvas");
-
-    if (canvasId) {
-      if (currentParamId !== canvasId) {
-        params.set("canvas", canvasId);
-        window.history.pushState({}, "", `?${params.toString()}`);
-      }
-    } else {
-      if (currentParamId) {
-        params.delete("canvas");
-        const newSearch = params.toString();
-        window.history.pushState(
-          {},
-          "",
-          newSearch ? `?${newSearch}` : window.location.pathname
-        );
-      }
-    }
-  }, [canvasId]);
-
-  // Support browser back/forward buttons (history popstate event)
-  useEffect(() => {
-    const handlePopState = () => {
-      const params = new URLSearchParams(window.location.search);
-      const urlCanvasId = params.get("canvas");
-
-      if (urlCanvasId) {
-        if (urlCanvasId !== canvasId) {
-          handleOpenCanvas(urlCanvasId);
-        }
-      } else {
-        if (canvasId) {
-          useCanvasStore.getState().reset();
-        }
-      }
-    };
-
-    window.addEventListener("popstate", handlePopState);
-    return () => window.removeEventListener("popstate", handlePopState);
-  }, [canvasId]);
-
-  const handleCreateCanvas = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const canvas = await createCanvas();
-      setCanvas(canvas.id, canvas.name);
-      setNodes([]);
-      setEdges([]);
-    } catch (err: any) {
-      setError(err?.message || "Failed to create canvas.");
-      console.error("Failed to create canvas:", err);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const navigate = useNavigate();
 
   const handleOpenCanvas = async (id: string) => {
     setLoading(true);
@@ -160,6 +84,8 @@ export default function App() {
           agentType: a.agent_type,
           enableMemory: a.enable_memory,
           enableConversationHistory: a.enable_conversation_history,
+          enableRag: a.enable_rag,
+          ragChunkSize: a.rag_chunk_size,
         } as any,
       }));
 
@@ -172,6 +98,7 @@ export default function App() {
           id: t.id,
           name: t.name,
           code: t.code,
+          packages: t.packages,
         } as any,
       }));
 
@@ -187,39 +114,81 @@ export default function App() {
     } catch (err: any) {
       setError(err?.message || "Failed to open canvas.");
       console.error("Failed to open canvas:", err);
+      navigate("/");
     } finally {
       setLoading(false);
     }
   };
 
-  const handleImportFile = async (file: File) => {
-    setLoading(true);
-    setError(null);
-    try {
-      const canvas = await importCanvasZip(file);
-      await handleOpenCanvas(canvas.id);
-    } catch (err: any) {
-      setError(err?.message || "Failed to import canvas ZIP package.");
-      console.error("ZIP import failure:", err);
-    } finally {
-      setLoading(false);
+  useEffect(() => {
+    if (canvas_id) {
+      handleOpenCanvas(canvas_id);
     }
-  };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canvas_id]);
 
-  const handleDeleteCanvas = async (id: string) => {
-    setLoading(true);
-    setError(null);
-    try {
-      await deleteCanvas(id);
-      setDeleteConfirmId(null);
-      await loadCanvases();
-    } catch (err: any) {
-      setError(err?.message || "Failed to delete canvas.");
-      console.error("Canvas deletion failure:", err);
-    } finally {
-      setLoading(false);
-    }
-  };
+  if (loading && !canvasId) {
+    return (
+      <div className="min-h-screen w-full bg-[var(--color-base)] flex items-center justify-center">
+        <div className="flex gap-1.5">
+          {[0, 1, 2].map((i) => (
+            <span
+              key={i}
+              className="w-1.5 h-1.5 rounded-full bg-[var(--color-accent)] animate-pulse"
+              style={{ animationDelay: `${i * 0.15}s` }}
+            />
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  return <AppShell />;
+}
+
+// Landing Page Wrapper
+function LandingPage({
+  canvases,
+  loadCanvases,
+  loading,
+  setLoading,
+  error,
+  setError,
+  searchQuery,
+  setSearchQuery,
+  deleteConfirmId,
+  setDeleteConfirmId,
+  dragActive,
+  setDragActive,
+  fileInputRef,
+  handleCreateCanvas,
+  handleImportFile,
+  handleDeleteCanvas,
+}: {
+  canvases: CanvasListItem[];
+  loadCanvases: () => Promise<void>;
+  loading: boolean;
+  setLoading: (l: boolean) => void;
+  error: string | null;
+  setError: (e: string | null) => void;
+  searchQuery: string;
+  setSearchQuery: (q: string) => void;
+  deleteConfirmId: string | null;
+  setDeleteConfirmId: (id: string | null) => void;
+  dragActive: boolean;
+  setDragActive: (active: boolean) => void;
+  fileInputRef: React.RefObject<HTMLInputElement | null>;
+  handleCreateCanvas: () => Promise<void>;
+  handleImportFile: (file: File) => Promise<void>;
+  handleDeleteCanvas: (id: string) => Promise<void>;
+}) {
+  const resetStore = useCanvasStore((s) => s.reset);
+
+  useEffect(() => {
+    resetStore();
+    loadCanvases();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleDrag = (e: React.DragEvent) => {
     e.preventDefault();
@@ -255,10 +224,6 @@ export default function App() {
   );
 
   const canvasToDelete = canvases.find((c) => c.id === deleteConfirmId);
-
-  if (canvasId) {
-    return <AppShell />;
-  }
 
   return (
     <div
@@ -387,8 +352,7 @@ export default function App() {
 
       {/* Recent Canvases Section */}
       <div
-        className="w-full max-w-4xl relative z-10"
-        style={{ animation: "fadeIn 0.6s ease-out 0.15s both" }}
+        className="w-full max-w-4xl relative z-10 animate-fade-in"
       >
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4 px-1">
           <h2 className="text-[11px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-[0.1em]">
@@ -430,10 +394,9 @@ export default function App() {
                 style={{ animation: `staggerFadeIn 0.4s ease-out ${0.05 * i}s both` }}
                 className="group relative flex items-center justify-between p-4 bg-gradient-to-r from-[var(--color-surface)] to-[var(--color-elevated)] border border-[var(--color-border-subtle)] hover:border-[var(--color-border-default)] rounded-xl transition-all duration-300 shadow-[0_4px_16px_rgba(0,0,0,0.25)] hover:shadow-[0_0_24px_-4px_rgba(116,116,139,0.18),0_0_8px_-2px_rgba(116,116,139,0.08),0_4px_12px_rgba(0,0,0,0.35)]"
               >
-                <button
-                  onClick={() => handleOpenCanvas(c.id)}
-                  disabled={loading}
-                  className="flex-1 flex items-center gap-3 text-left overflow-hidden disabled:opacity-40"
+                <Link
+                  to={`/canvas/${c.id}`}
+                  className="flex-1 flex items-center gap-3 text-left overflow-hidden"
                 >
                   <div className="w-9 h-9 rounded-lg bg-[var(--color-inset)] border border-[var(--color-border-subtle)] flex items-center justify-center text-[var(--color-text-secondary)] group-hover:text-[var(--color-accent)] group-hover:border-[var(--color-accent-subtle)] transition-all">
                     <FileText className="w-4 h-4" />
@@ -450,7 +413,7 @@ export default function App() {
                           : "Recent"}
                     </span>
                   </div>
-                </button>
+                </Link>
                 <button
                   onClick={() => setDeleteConfirmId(c.id)}
                   disabled={loading}
@@ -468,14 +431,13 @@ export default function App() {
       {/* Drag and Drop Overlay */}
       {dragActive && (
         <div
-          className="fixed inset-0 bg-[var(--color-base)]/80 backdrop-blur-md z-50 flex flex-col items-center justify-center border-4 border-dashed border-[var(--color-accent)] m-4 rounded-3xl"
+          className="fixed inset-0 bg-[var(--color-base)]/80 backdrop-blur-md z-50 flex flex-col items-center justify-center border-4 border-dashed border-[var(--color-accent)] m-4 rounded-3xl animate-fade-in"
           onDragEnter={handleDrag}
           onDragOver={handleDrag}
           onDragLeave={handleDrag}
           onDrop={handleDrop}
-          style={{ animation: "fadeInScale 0.2s ease-out" }}
         >
-          <div className="w-20 h-20 rounded-2xl bg-[var(--color-accent-subtle)] border border-[var(--color-accent)] flex items-center justify-center text-[var(--color-accent)] mb-4 animate-bounce">
+          <div className="w-20 h-20 rounded-2xl bg-[var(--color-accent-subtle)] border border-[var(--color-accent)]/50 flex items-center justify-center text-[var(--color-accent)] mb-4 animate-bounce">
             <Upload className="w-10 h-10" />
           </div>
           <h2 className="text-2xl font-bold text-[var(--color-text-primary)] mb-2">
@@ -491,8 +453,7 @@ export default function App() {
       {deleteConfirmId && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div
-            className="w-full max-w-sm p-6 rounded-2xl bg-[var(--color-surface)] border border-[var(--color-border-strong)] shadow-2xl"
-            style={{ animation: "fadeInScale 0.2s ease-out" }}
+            className="w-full max-w-sm p-6 rounded-2xl bg-[var(--color-surface)] border border-[var(--color-border-strong)] shadow-2xl animate-fade-in"
           >
             <h3 className="text-base font-semibold text-[var(--color-text-primary)] mb-2">
               Delete Canvas?
@@ -526,5 +487,119 @@ export default function App() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function App() {
+  const navigate = useNavigate();
+
+  const [canvases, setCanvases] = useState<CanvasListItem[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [dragActive, setDragActive] = useState(false);
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const loadCanvases = async () => {
+    try {
+      const list = await listCanvases();
+      setCanvases(list);
+    } catch {
+      setCanvases([]);
+    }
+  };
+
+  // Support deep-linking via ?canvas=<id> (redirects to the clean route)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const initialId = params.get("canvas");
+    if (initialId) {
+      navigate(`/canvas/${initialId}`, { replace: true });
+    }
+  }, [navigate]);
+
+  const handleCreateCanvas = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const canvas = await createCanvas();
+      navigate(`/canvas/${canvas.id}`);
+    } catch (err: any) {
+      setError(err?.message || "Failed to create canvas.");
+      console.error("Failed to create canvas:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleImportFile = async (file: File) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const canvas = await importCanvasZip(file);
+      navigate(`/canvas/${canvas.id}`);
+    } catch (err: any) {
+      setError(err?.message || "Failed to import canvas ZIP package.");
+      console.error("ZIP import failure:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeleteCanvas = async (id: string) => {
+    setLoading(true);
+    setError(null);
+    try {
+      await deleteCanvas(id);
+      setDeleteConfirmId(null);
+      await loadCanvases();
+    } catch (err: any) {
+      setError(err?.message || "Failed to delete canvas.");
+      console.error("Canvas deletion failure:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Routes>
+      <Route
+        path="/"
+        element={
+          <LandingPage
+            canvases={canvases}
+            loadCanvases={loadCanvases}
+            loading={loading}
+            setLoading={setLoading}
+            error={error}
+            setError={setError}
+            searchQuery={searchQuery}
+            setSearchQuery={setSearchQuery}
+            deleteConfirmId={deleteConfirmId}
+            setDeleteConfirmId={setDeleteConfirmId}
+            dragActive={dragActive}
+            setDragActive={setDragActive}
+            fileInputRef={fileInputRef}
+            handleCreateCanvas={handleCreateCanvas}
+            handleImportFile={handleImportFile}
+            handleDeleteCanvas={handleDeleteCanvas}
+          />
+        }
+      />
+      <Route
+        path="/canvas/:canvas_id"
+        element={
+          <CanvasEditorPage
+            loading={loading}
+            setLoading={setLoading}
+            error={error}
+            setError={setError}
+          />
+        }
+      />
+      <Route path="/chat/:conversation_id" element={<ChatPage />} />
+    </Routes>
   );
 }

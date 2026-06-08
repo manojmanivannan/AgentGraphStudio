@@ -3,13 +3,18 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useCanvasStore } from "@/store/canvasStore";
 import { TopBar } from "./TopBar";
+import { MemoryRouter } from "react-router-dom";
 
 describe("TopBar", () => {
   it("renders the canvas name and handles reset on home button click", async () => {
     const user = userEvent.setup();
     useCanvasStore.getState().setCanvas("canvas-test-id", "Mock Canvas Name");
 
-    render(<TopBar />);
+    render(
+      <MemoryRouter>
+        <TopBar />
+      </MemoryRouter>
+    );
 
     expect(screen.getByDisplayValue("Mock Canvas Name")).toBeInTheDocument();
 

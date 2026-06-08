@@ -439,6 +439,37 @@ async def get_conversation(
     return conv
 
 
+@canvas_router.get(
+    "/conversations/{conversation_id}",
+    response_model=ConversationResponse,
+)
+async def get_conversation_by_id(
+    conversation_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+):
+    logger.debug("Getting conversation by id: conv=%s", conversation_id)
+    repo = ConversationRepo(session)
+    try:
+        conv = await repo.get_or_404(conversation_id)
+    except ConversationNotFoundError:
+        raise HTTPException(status_code=404, detail="Conversation not found") from None
+    return conv
+
+
+@canvas_router.delete("/conversations/{conversation_id}", status_code=204)
+async def delete_conversation_by_id(
+    conversation_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+):
+    logger.info("Deleting conversation by id: conv=%s", conversation_id)
+    repo = ConversationRepo(session)
+    conv = await repo.get(conversation_id)
+    if not conv:
+        raise HTTPException(status_code=404, detail="Conversation not found") from None
+    await repo.delete(conversation_id)
+    logger.info("Conversation deleted by id: id=%s", conversation_id)
+
+
 @canvas_router.delete("/{canvas_id}/conversations/{conversation_id}", status_code=204)
 async def delete_conversation(
     canvas_id: uuid.UUID,

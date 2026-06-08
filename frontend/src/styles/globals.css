@@ -540,6 +540,10 @@ html[data-theme="light"] .rail-popover {
   }
 }
 
+.animate-fade-in {
+  animation: staggerFadeIn 0.3s ease-out both;
+}
+
 /* ─── Overlay Panel Animations ───────────────────────────── */
 
 @keyframes overlaySlideIn {
