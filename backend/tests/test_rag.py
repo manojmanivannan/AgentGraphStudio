@@ -101,6 +101,129 @@ async def test_run_rag_search_sqlite_similarity(test_session, blank_canvas):
     assert "Secret Antigravity Research" in passages
 
 
+@pytest.mark.asyncio
+async def test_rag_indexing_timeout_fallback(monkeypatch, test_session, blank_canvas):
+    from canvas_server.runner import rag_helper
+
+    repo = CanvasRepo(test_session)
+    agent_id = uuid.uuid4()
+    await repo.save_nodes_and_edges(
+        blank_canvas.id,
+        "RAG Canvas",
+        agents=[
+            AgentNodeInput(
+                id=agent_id,
+                name="RAGAgent",
+                role="Assistant",
+                instructions="Context: {{ rag_document }}",
+                agent_type="worker",
+                model_name="ollama:llama3.1",
+                enable_rag=True,
+                rag_chunk_size=1000,
+            )
+        ],
+        tools=[],
+        edges=[],
+    )
+
+    doc = AgentDocument(
+        id=uuid.uuid4(),
+        canvas_id=blank_canvas.id,
+        agent_node_id=agent_id,
+        name="test_doc.txt",
+        content="Timeout embedding fallback content.",
+    )
+    test_session.add(doc)
+    await test_session.commit()
+    test_session.expire_all()
+
+    monkeypatch.setattr(
+        rag_helper.asyncio,
+        "wait_for",
+        lambda coro, timeout: (_ for _ in ()).throw(TimeoutError()),
+    )
+
+    await RAGIndexManager.trigger_reindex(agent_id)
+
+    chunks = []
+    for _ in range(20):
+        test_session.expire_all()
+        res = await test_session.execute(
+            select(AgentDocumentChunk).where(
+                AgentDocumentChunk.agent_node_id == agent_id
+            )
+        )
+        chunks = res.scalars().all()
+        if chunks:
+            break
+        await asyncio.sleep(0.1)
+
+    assert len(chunks) == 1
+    assert "Timeout embedding fallback" in chunks[0].content
+
+
+@pytest.mark.asyncio
+async def test_rag_query_timeout_fallback(monkeypatch, test_session, blank_canvas):
+    from canvas_server.runner import rag_helper
+
+    repo = CanvasRepo(test_session)
+    agent_id = uuid.uuid4()
+    await repo.save_nodes_and_edges(
+        blank_canvas.id,
+        "RAG Canvas",
+        agents=[
+            AgentNodeInput(
+                id=agent_id,
+                name="RAGAgent",
+                role="Assistant",
+                instructions="Context: {{ rag_document }}",
+                agent_type="worker",
+                model_name="ollama:llama3.1",
+                enable_rag=True,
+                rag_chunk_size=1000,
+            )
+        ],
+        tools=[],
+        edges=[],
+    )
+
+    doc = AgentDocument(
+        id=uuid.uuid4(),
+        canvas_id=blank_canvas.id,
+        agent_node_id=agent_id,
+        name="test_doc.txt",
+        content="Antigravity fallback query document.",
+    )
+    test_session.add(doc)
+    await test_session.commit()
+    test_session.expire_all()
+
+    await RAGIndexManager.trigger_reindex(agent_id)
+
+    for _ in range(20):
+        test_session.expire_all()
+        res = await test_session.execute(
+            select(AgentDocumentChunk).where(
+                AgentDocumentChunk.agent_node_id == agent_id
+            )
+        )
+        chunks = res.scalars().all()
+        if chunks:
+            break
+        await asyncio.sleep(0.1)
+
+    assert chunks, "Expected chunks to exist before query fallback"
+
+    monkeypatch.setattr(
+        rag_helper.asyncio,
+        "wait_for",
+        lambda coro, timeout: (_ for _ in ()).throw(TimeoutError()),
+    )
+
+    passages = await run_rag_search(agent_id, "Antigravity", session=test_session)
+    assert "Antigravity fallback query document." in passages
+
+
 def test_pgvector_query_operator_compile():
     import uuid
 
