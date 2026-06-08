@@ -13,7 +13,7 @@ vi.mock("@xyflow/react", async () => {
   };
 });
 
-const makeProps = (data: Partial<AgentNodeData> = {}) => ({
+const makeProps = (data: Partial<AgentNodeData> = {}): any => ({
   id: data.id ?? "node-1",
   type: "agent" as const,
   selected: false,

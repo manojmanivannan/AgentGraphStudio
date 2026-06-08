@@ -10,6 +10,9 @@ export function TopBar() {
   const observabilityOpen = useCanvasStore((s) => s.observabilityOpen);
   const toggleObservability = useCanvasStore((s) => s.toggleObservability);
   const selectedNodeId = useCanvasStore((s) => s.selectedNodeId);
+  const chatWidth = useCanvasStore((s) => s.chatWidth);
+  const propertiesWidth = useCanvasStore((s) => s.propertiesWidth);
+  const isDraggingPanel = useCanvasStore((s) => s.isDraggingPanel);
 
   const propertiesOpen = selectedNodeId !== null;
 
@@ -17,12 +20,14 @@ export function TopBar() {
   const leftOffset = observabilityOpen ? "left-0" : "left-12";
 
   // Shift right edge to avoid being covered by overlay panels
-  const rightOffset = (chatOpen ? 400 : 0) + (propertiesOpen ? 320 : 0);
+  const rightOffset = (chatOpen ? chatWidth : 0) + (propertiesOpen ? propertiesWidth : 0);
 
   return (
     <div
       data-testid="top-bar"
-      className={`absolute top-0 ${leftOffset} h-10 chrome-glass border-b border-[var(--color-border-subtle)] flex items-center px-4 gap-3 z-30 transition-[right] duration-300 ease-out`}
+      className={`absolute top-0 ${leftOffset} h-10 chrome-glass border-b border-[var(--color-border-subtle)] flex items-center px-4 gap-3 z-30 ${
+        isDraggingPanel ? "" : "transition-[right] duration-300 ease-out"
+      }`}
       style={{ right: rightOffset }}
     >
       {/* Canvas name */}
