@@ -14,7 +14,7 @@ from canvas_server.routes.tools import tools_router
 
 logging.basicConfig(
     level=logging.DEBUG,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    format="%(asctime)s [%(levelname)s] %(name)s:%(lineno)d: %(message)s",
 )
 logger = logging.getLogger("canvas_server")
 

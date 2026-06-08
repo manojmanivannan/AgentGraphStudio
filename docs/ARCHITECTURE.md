@@ -190,7 +190,11 @@ mj-agent-framework/
 │   │       │   ├── canvas.py      # REST: /api/canvases/**
 │   │       │   ├── execute.py     # WebSocket: /ws/conversations/{id}/run
 │   │       │   └── tools.py       # REST: /api/tools/inspect, /api/tools/test
-│   │       ├── runner.py          # Core: CanvasRunner — setup, build agents, run workflow
+│   │       ├── runner/            # Core execution engine package
+│   │       │   ├── agent_factory.py # Builds DSPy agents from canvas nodes
+│   │       │   ├── execution.py     # Executes individual worker agent runs
+│   │       │   ├── rag_helper.py    # Chunking & in-memory DSPy embeddings search
+│   │       │   └── runner.py        # CanvasRunner — orchestrates multi-agent flows
 │   │       ├── streaming_react.py # StreamingReAct — DSPy ReAct subclass with event emission
 │   │       ├── tool_factory.py    # Sandbox-based Python string → DSPy tool compilation + test execution
 │   │       ├── memory_config.py   # mem0 config builder from settings
@@ -199,6 +203,7 @@ mj-agent-framework/
 │       ├── conftest.py          # Fixtures: fresh_db, test_session, test_client, canvas fixtures
 │       ├── test_runner.py       # CanvasRunner unit tests (mocked agents)
 │       ├── test_conversations.py # Conversation API + repo + runner integration tests
+│       ├── test_rag.py          # RAG utility, API endpoints, and runner integration tests
 │       ├── test_config.py
 │       ├── test_models_api.py
 │       ├── test_repos.py
@@ -303,9 +308,22 @@ agent_nodes
 ├── agent_type: VARCHAR(20) DEFAULT 'worker'       -- 'worker' | 'router'
 ├── enable_memory: BOOLEAN DEFAULT FALSE
 ├── enable_conversation_history: BOOLEAN DEFAULT FALSE
+├── enable_rag: BOOLEAN DEFAULT FALSE
+├── rag_chunk_size: INTEGER DEFAULT 1000
 ├── position_x: DOUBLE PRECISION DEFAULT 0
 ├── position_y: DOUBLE PRECISION DEFAULT 0
+├── relationships: documents (CASCADE delete)
 └── INDEX: idx_agent_nodes_canvas (canvas_id)
+
+agent_documents
+├── id: UUID PK
+├── canvas_id: UUID FK → canvases.id (CASCADE)
+├── agent_node_id: UUID FK → agent_nodes.id (CASCADE)
+├── name: VARCHAR(255)
+├── content: TEXT
+├── created_at: TIMESTAMPTZ
+├── INDEX: idx_agent_documents_canvas (canvas_id)
+└── INDEX: idx_agent_documents_agent (agent_node_id)
 
 tool_nodes
 ├── id: UUID PK
@@ -365,7 +383,68 @@ messages
 | `PUT` | `/api/canvases/{id}` | Save/replace nodes and edges (delete+insert) |
 | `DELETE` | `/api/canvases/{id}` | Delete canvas and all related data |
 | `GET` | `/api/canvases/{id}/export` | Download canvas as JSON file |
+| `GET` | `/api/canvases/{id}/export-zip` | Download canvas as ZIP package with manifest and RAG documents |
 | `POST` | `/api/canvases/import` | Import canvas from JSON payload |
+| `POST` | `/api/canvases/import-zip` | Import canvas from a ZIP package with manifest and document files |
+
+### Document Upload / RAG API (scoped under canvas & agent)
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/api/canvases/{id}/agents/{agent_id}/documents` | List uploaded RAG documents for the agent |
+| `POST` | `/api/canvases/{id}/agents/{agent_id}/documents` | Upload a new text document (multipart/form-data) |
+| `DELETE` | `/api/canvases/{id}/agents/{agent_id}/documents/{doc_id}` | Delete a document |
+
+### ZIP import/export format
+
+`/api/canvases/{id}/export-zip` produces a ZIP archive containing:
+- `manifest.json` — canvas metadata, nodes, edges, and document metadata
+- `documents/{agent_id}/{doc_id}.txt` — raw text content for each uploaded RAG document
+
+`/api/canvases/import-zip` reads the manifest and reconstructs the canvas, remapping IDs as needed and importing documents into their target agents.
+
+Example ZIP manifest structure:
+
+```json
+{
+  "name": "Demo Team",
+  "nodes": {
+    "agents": [
+      {
+        "id": "5c2a7c1a-6f3a-4e31-b8d3-4d3d4255e4a2",
+        "name": "SupportAgent",
+        "role": "You are a customer support agent.",
+        "instructions": "Answer questions using the provided docs.",
+        "model_name": "ollama_chat/gemma4:31b",
+        "agent_type": "worker",
+        "enable_memory": false,
+        "enable_conversation_history": false,
+        "enable_rag": true,
+        "rag_chunk_size": 1000,
+        "position_x": 120,
+        "position_y": 100
+      }
+    ],
+    "tools": [],
+  },
+  "edges": [],
+  "documents": [
+    {
+      "id": "7b4a1c6f-3a9d-4c65-8a77-5d2b1e4f6c9d",
+      "agent_node_id": "5c2a7c1a-6f3a-4e31-b8d3-4d3d4255e4a2",
+      "name": "support_faq.txt",
+      "created_at": "2026-06-08T15:00:00Z",
+      "path": "documents/5c2a7c1a-6f3a-4e31-b8d3-4d3d4255e4a2/7b4a1c6f-3a9d-4c65-8a77-5d2b1e4f6c9d.txt"
+    }
+  ]
+}
+```
+
+The ZIP archive also contains the referenced document file at:
+
+```
+documents/{agent_id}/{document_id}.txt
+```
 
 ### Conversation API (scoped under canvas)
 
@@ -404,6 +483,8 @@ messages
       "agent_type": "worker",
       "enable_memory": false,
       "enable_conversation_history": false,
+      "enable_rag": false,
+      "rag_chunk_size": 1000,
       "position_x": 100,
       "position_y": 200
     }],
@@ -424,8 +505,7 @@ messages
 }
 ```
 
-The save operation replaces all nodes and edges atomically (delete-all → insert-all
-within a transaction). `id` fields are client-generated and preserved across saves.
+The save operation performs a delta-sync (upsert) for agent nodes to preserve child relationships (such as agent documents), and uses a transaction to ensure atomicity. Tool nodes and edges are replaced atomically (delete-all → insert-all). `id` fields are client-generated and preserved across saves.
 
 ---
 
@@ -674,6 +754,7 @@ Workers are `StreamingReAct` instances built during `setup()`. They:
 - Receive a DSPy signature with `user_request` (and optionally `history`)
 - ReAct-loop through tools (thought → tool → observation → ... → finish)
 - Cannot hand off — they produce a final answer
+- **RAG Support**: If `enable_rag` is True, their instructions and role undergo templating. The `{{ rag_document }}` placeholder is replaced by the retrieved passages from the RAG search. This is built dynamically on every run/handoff turn.
 
 ### Router Agents
 
@@ -754,6 +835,12 @@ Memory is powered by [mem0ai](https://mem0.ai/) with a local Qdrant vector store
 All agents share a single `mem0.Memory` instance to avoid file-locking issues
 with the local Qdrant client. Each agent gets its own `MemoryProvider` with a
 distinct `user_id = f"agent_{agent_node.id}"` for isolation.
+
+Because the local Qdrant vector store persists to disk, only one mem0 client
+should access the same storage folder at a time. This project avoids that
+conflict by reusing the same shared mem0 instance within a single backend
+process. Running multiple backend worker processes or using `uvicorn --reload`
+against the same local Qdrant folder can still trigger access conflicts.
 
 ### MemoryProvider
 
@@ -1151,8 +1238,10 @@ span grouping.
   live code reload. Docker `develop.watch` config syncs source files.
 - **Session management**: Engine is a singleton — reconnect-safe but won't survive
   backend restart without hot reload.
-- **Memory**: mem0 Qdrant storage is local-only. For production, configure a remote
-  Qdrant instance in `memory_config.py`.
+- **Memory**: mem0 Qdrant storage is local-only. The backend uses a single in-process
+  mem0 client to prevent repeated Qdrant folder lock conflicts. Do not run multiple
+  backend processes or `uvicorn --reload` against the same local Qdrant storage.
+  For production, configure a remote Qdrant instance in `memory_config.py`.
 - **LLM**: Defaults to Ollama on the host machine. For cloud LLMs, update
   `LLM_BASE_URL`/`LLM_MODEL` and ensure DSPy LM adapter compatibility.
 - **Alembic**: Migrations are auto-generated. Always review autogenerated migration

@@ -29,6 +29,8 @@ export function useCanvasPersistence() {
             agent_type: (n.data?.agentType as string) || "worker",
             enable_memory: (n.data?.enableMemory as boolean) ?? false,
             enable_conversation_history: (n.data?.enableConversationHistory as boolean) ?? false,
+            enable_rag: (n.data?.enableRag as boolean) ?? false,
+            rag_chunk_size: (n.data?.ragChunkSize as number) ?? 1000,
             position_x: n.position.x,
             position_y: n.position.y,
           })),

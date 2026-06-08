@@ -167,10 +167,10 @@ class CanvasRunner:
     # Event wiring
     # ------------------------------------------------------------------
 
-    def _attach_events(self, agent_id: uuid.UUID, send_event):
+    def _attach_events(self, agent_id: uuid.UUID, send_event, force=False):
         """Wire event callbacks on *agent_id* so StreamingReAct events flow
         to ``send_event``.  Idempotent — agents are only wired once."""
-        if agent_id in self._wired_agents:
+        if agent_id in self._wired_agents and not force:
             return
         agent = self.agents.get(agent_id)
         agent_node = self.node_map.get(agent_id)
@@ -251,7 +251,20 @@ class CanvasRunner:
                 }
             )
 
-            self._attach_events(target_id, send_event)
+            target_agent = self.agents[target_id]
+
+            if getattr(target_node, "enable_rag", False):
+                from canvas_server.runner.rag_helper import run_rag_search
+                passages = await run_rag_search(
+                    target_id,
+                    task
+                )
+                target_agent = await self._agent_factory.build_worker_with_rag_prompt(target_node, passages)
+                self.agents[target_id] = target_agent
+                self._attach_events(target_id, send_event, force=True)
+            else:
+                self._attach_events(target_id, send_event)
+
             prompt = self._agent_factory.build_worker_prompt(task, history)
             try:
                 needs_history = self._agent_factory.needs_history(target_node)

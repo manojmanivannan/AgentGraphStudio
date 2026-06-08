@@ -36,14 +36,16 @@ MLflow (port 5000). Open `http://localhost:5173`.
 
 This is an **agent builder** — a visual IDE for creating multi-agent AI workflows:
 
-1. **Drag agents** onto a canvas — each with a role, instructions, and model
-2. **Wire tools** — write Python functions agents can call; test them instantly in the UI
-3. **Connect agents** — handoffs let one agent delegate to another
-4. **Run** — watch agents reason, call tools, and collaborate in real-time
+1. **Drag agents** onto a canvas — each with a role, instructions, and model.
+2. **Wire tools** — write Python functions agents can call; test them instantly in the UI.
+3. **Connect agents** — handoffs let one agent delegate to another.
+4. **Attach RAG Documents** — upload domain-specific text documents to Worker agents, configure paragraph-aligned chunking, and dynamically query/inject search results using the `{{ rag_document }}` template placeholder at execution time.
+5. **Export/Import ZIP packages** — export a canvas as a ZIP archive containing a manifest and per-agent RAG documents, or import it back to preserve team structure and document artifacts.
+6. **Run** — watch agents reason, call tools, use memory, run RAG queries, and collaborate in real-time.
 
 **Two agent types:**
-- **Workers** — execute tasks by reasoning and calling tools (DSPy ReAct loop)
-- **Routers** — orchestrate by handing off tasks to other agents
+- **Workers** — execute tasks by reasoning and calling tools (DSPy ReAct loop). Can have RAG documents.
+- **Routers** — orchestrate by handing off tasks to other agents.
 
 ---
 
@@ -85,7 +87,7 @@ Or use SQLite for development (set `DATABASE_URL=sqlite+aiosqlite:///dev.db`).
 - **Tool Sandbox:** Deno + Pyodide (WASM Python via DSPy PythonInterpreter)
 - **Database:** PostgreSQL 17 + pgvector (asyncpg), SQLite for tests
 - **LLM:** Configurable per agent — defaults to Ollama
-- **Memory:** mem0 + Qdrant vector store, per-agent via `user_id` scoping
+- **Memory:** mem0 + local Qdrant vector store, per-agent via `user_id` scoping and a shared in-process mem0 singleton
 - **Observability:** MLflow DSPy autolog
 
 ### Layout
@@ -111,9 +113,13 @@ Or use SQLite for development (set `DATABASE_URL=sqlite+aiosqlite:///dev.db`).
 | `MLFLOW_TRACKING_URI` | `http://mlflow:5000` | MLflow server URL |
 | `MLFLOW_ENABLED` | `true` | Set `false` to skip MLflow init (CI) |
 | `MEM0_LLM_MODEL` | `gemma4:31b` | Model used by mem0 |
-| `MEM0_EMBEDDER_MODEL` | `nomic-embed-text` | Embedding model for mem0 |
+| `MEM0_EMBEDDER_PROVIDER` | `ollama` | Embedding provider (e.g. `ollama`, `openai`) used by mem0 & RAG |
+| `MEM0_EMBEDDER_MODEL` | `nomic-embed-text` | Embedding model name used by mem0 & RAG |
+| `MEM0_EMBEDDER_DIMENSIONS` | `768` | Embedding dimensions used by mem0 & RAG |
 | `DATABASE_URL` | `postgresql+asyncpg://...` | Override for SQLite testing |
 | `CORS_ORIGINS` | `["http://localhost:5173"]` | Allowed origins |
+
+> Note: local Qdrant storage is not safe for concurrent access by multiple backend processes or reload/proxy workers. The backend shares a single in-process mem0 client to avoid repeated Qdrant folder conflicts.
 
 ---
 
@@ -123,6 +129,8 @@ Or use SQLite for development (set `DATABASE_URL=sqlite+aiosqlite:///dev.db`).
 ```bash
 cd backend
 uv run pytest -v
+# Run the canvas export/import ZIP coverage tests:
+uv run python -m pytest tests/test_routes_canvas.py -q
 ```
 
 ### Frontend Tests
