@@ -92,6 +92,6 @@ test.describe("Sidebar Rail", () => {
       page.getByTestId("export-button").click(),
     ]);
 
-    expect(download.suggestedFilename()).toMatch(/\.json$/);
+    expect(download.suggestedFilename()).toMatch(/\.zip$/);
   });
 });
