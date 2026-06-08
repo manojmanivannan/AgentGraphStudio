@@ -1,6 +1,17 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { http, HttpResponse } from "msw";
+import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { server } from "@/test/mocks/server";
+import { mockConversation, mockConversationSummary } from "@/test/mocks/handlers";
+import { useCanvasStore } from "@/store/canvasStore";
 import type { Message } from "@/types";
-import { groupMessagesIntoTurns } from "./ChatPage";
+import ChatPage, { groupMessagesIntoTurns } from "./ChatPage";
+
+beforeEach(() => {
+    useCanvasStore.getState().reset();
+});
 
 describe("groupMessagesIntoTurns", () => {
     it("keeps only the last final answer when no handoff occurs", () => {
@@ -79,5 +90,538 @@ describe("groupMessagesIntoTurns", () => {
         expect(turns[0].steps).toHaveLength(1);
         expect(turns[0].steps[0]).toEqual(handoffMsg);
         expect(turns[0].finalAnswer).toEqual(secondFinal);
+    });
+
+    it("handles messages before any user message as preTurnMessages", () => {
+        const systemMsg: Message = {
+            id: "s1",
+            conversation_id: "c1",
+            role: "system",
+            content: "System init",
+            event_type: "error",
+            created_at: "2026-01-01T00:00:00.000Z",
+        };
+        const userMsg: Message = {
+            id: "u1",
+            conversation_id: "c1",
+            role: "user",
+            content: "Hello",
+            created_at: "2026-01-01T00:00:01.000Z",
+        };
+
+        const { preTurnMessages, turns } = groupMessagesIntoTurns([systemMsg, userMsg]);
+
+        expect(preTurnMessages).toHaveLength(1);
+        expect(preTurnMessages[0]).toEqual(systemMsg);
+        expect(turns).toHaveLength(1);
+    });
+
+    it("handles multiple turns", () => {
+        const user1: Message = {
+            id: "u1", conversation_id: "c1", role: "user", content: "Q1",
+            created_at: "2026-01-01T00:00:00.000Z",
+        };
+        const ans1: Message = {
+            id: "a1", conversation_id: "c1", role: "assistant", content: "A1",
+            event_type: "final_answer", created_at: "2026-01-01T00:00:01.000Z",
+        };
+        const user2: Message = {
+            id: "u2", conversation_id: "c1", role: "user", content: "Q2",
+            created_at: "2026-01-01T00:00:02.000Z",
+        };
+        const ans2: Message = {
+            id: "a2", conversation_id: "c1", role: "assistant", content: "A2",
+            event_type: "final_answer", created_at: "2026-01-01T00:00:03.000Z",
+        };
+
+        const { turns } = groupMessagesIntoTurns([user1, ans1, user2, ans2]);
+
+        expect(turns).toHaveLength(2);
+        expect(turns[0].finalAnswer?.content).toBe("A1");
+        expect(turns[1].finalAnswer?.content).toBe("A2");
+    });
+
+    it("marks turn as streaming when no final_answer yet", () => {
+        const userMsg: Message = {
+            id: "u1", conversation_id: "c1", role: "user", content: "Hello",
+            created_at: "2026-01-01T00:00:00.000Z",
+        };
+        const thought: Message = {
+            id: "t1", conversation_id: "c1", role: "assistant", content: "Thinking...",
+            event_type: "thought", created_at: "2026-01-01T00:00:01.000Z",
+        };
+
+        const { turns } = groupMessagesIntoTurns([userMsg, thought]);
+
+        expect(turns).toHaveLength(1);
+        expect(turns[0].isStreaming).toBe(true);
+        expect(turns[0].steps).toHaveLength(1);
+    });
+});
+
+describe("ChatPage component", () => {
+    const API = "http://localhost:8000/api";
+
+    function renderChatPage(conversationId: string) {
+        return render(
+            <MemoryRouter initialEntries={[`/chat/${conversationId}`]}>
+                <Routes>
+                    <Route path="/chat/:conversation_id" element={<ChatPage />} />
+                    <Route path="/chat/empty" element={<ChatPage />} />
+                    <Route path="/canvas/:canvas_id" element={<div data-testid="canvas-page" />} />
+                    <Route path="/" element={<div data-testid="home-page" />} />
+                </Routes>
+            </MemoryRouter>
+        );
+    }
+
+    it("renders empty state when conversation_id is 'empty'", async () => {
+        renderChatPage("empty");
+
+        await waitFor(() => {
+            expect(screen.getByText("No Chat Active")).toBeInTheDocument();
+        });
+        expect(screen.getByText("Start New Conversation")).toBeInTheDocument();
+    });
+
+    it("renders loading state while fetching conversation", async () => {
+        server.use(
+            http.get(`${API}/canvases/conversations/conv-1`, () =>
+                new Promise(() => { /* never resolves to keep loading */ })
+            )
+        );
+
+        renderChatPage("conv-1");
+
+        await waitFor(() => {
+            const bouncingDots = document.querySelectorAll(".animate-bounce");
+            expect(bouncingDots.length).toBeGreaterThan(0);
+        });
+    });
+
+    it("renders error state when conversation fetch fails", async () => {
+        server.use(
+            http.get(`${API}/canvases/conversations/conv-1`, () =>
+                new HttpResponse(null, { status: 404 })
+            )
+        );
+
+        renderChatPage("conv-1");
+
+        await waitFor(() => {
+            expect(screen.getByText(/Failed to load conversation/)).toBeInTheDocument();
+        });
+    });
+
+    it("renders conversation messages and name", async () => {
+        server.use(
+            http.get(`${API}/canvases/conversations/conv-1`, () =>
+                HttpResponse.json(
+                    mockConversation({
+                        id: "conv-1",
+                        canvas_id: "canvas-1",
+                        name: "Test Chat",
+                        messages: [
+                            {
+                                id: "m1", conversation_id: "conv-1", role: "user",
+                                content: "Hello agent", created_at: "2026-01-01T00:00:00.000Z",
+                            },
+                            {
+                                id: "m2", conversation_id: "conv-1", role: "assistant",
+                                content: "Hi there!", event_type: "final_answer",
+                                agent_name: "Worker", created_at: "2026-01-01T00:00:01.000Z",
+                            },
+                        ],
+                    })
+                )
+            ),
+            http.get(`${API}/canvases/canvas-1`, () =>
+                HttpResponse.json({ id: "canvas-1", name: "My Canvas" })
+            ),
+            http.get(`${API}/canvases/canvas-1/conversations`, () =>
+                HttpResponse.json([mockConversationSummary({ id: "conv-1", name: "Test Chat" })])
+            )
+        );
+
+        renderChatPage("conv-1");
+
+        await waitFor(() => {
+            expect(screen.getByText("Hello agent")).toBeInTheDocument();
+            expect(screen.getByText("Hi there!")).toBeInTheDocument();
+        });
+    });
+
+    it("renders conversation list in sidebar", async () => {
+        server.use(
+            http.get(`${API}/canvases/conversations/conv-1`, () =>
+                HttpResponse.json(
+                    mockConversation({
+                        id: "conv-1",
+                        canvas_id: "canvas-1",
+                        name: "Current Chat",
+                        messages: [],
+                    })
+                )
+            ),
+            http.get(`${API}/canvases/canvas-1`, () =>
+                HttpResponse.json({ id: "canvas-1", name: "My Canvas" })
+            ),
+            http.get(`${API}/canvases/canvas-1/conversations`, () =>
+                HttpResponse.json([
+                    mockConversationSummary({ id: "conv-1", name: "Current Chat" }),
+                    mockConversationSummary({ id: "conv-2", name: "Old Chat" }),
+                ])
+            )
+        );
+
+        renderChatPage("conv-1");
+
+        await waitFor(() => {
+            // Both appear in sidebar list and header, so use getAllByText
+            const items = screen.getAllByText("Current Chat");
+            expect(items.length).toBeGreaterThanOrEqual(2);
+            expect(screen.getByText("Old Chat")).toBeInTheDocument();
+        });
+    });
+
+    it("shows empty conversations message when no chats exist", async () => {
+        server.use(
+            http.get(`${API}/canvases/conversations/conv-1`, () =>
+                HttpResponse.json(
+                    mockConversation({
+                        id: "conv-1",
+                        canvas_id: "canvas-1",
+                        name: "Current Chat",
+                        messages: [],
+                    })
+                )
+            ),
+            http.get(`${API}/canvases/canvas-1`, () =>
+                HttpResponse.json({ id: "canvas-1", name: "My Canvas" })
+            ),
+            http.get(`${API}/canvases/canvas-1/conversations`, () =>
+                HttpResponse.json([])
+            )
+        );
+
+        renderChatPage("conv-1");
+
+        await waitFor(() => {
+            expect(screen.getByText(/No chats found/)).toBeInTheDocument();
+        });
+    });
+
+    it("creates a new conversation on button click", async () => {
+        const user = userEvent.setup();
+        server.use(
+            http.get(`${API}/canvases/conversations/conv-1`, () =>
+                HttpResponse.json(
+                    mockConversation({
+                        id: "conv-1",
+                        canvas_id: "canvas-1",
+                        name: "Current Chat",
+                        messages: [],
+                    })
+                )
+            ),
+            http.get(`${API}/canvases/canvas-1`, () =>
+                HttpResponse.json({ id: "canvas-1", name: "My Canvas" })
+            ),
+            http.get(`${API}/canvases/canvas-1/conversations`, () =>
+                HttpResponse.json([mockConversationSummary({ id: "conv-1", name: "Current Chat" })])
+            ),
+            http.post(`${API}/canvases/canvas-1/conversations`, () =>
+                HttpResponse.json(
+                    mockConversation({ id: "conv-new", canvas_id: "canvas-1", name: "New Conversation" }),
+                    { status: 201 }
+                )
+            )
+        );
+
+        renderChatPage("conv-1");
+
+        await waitFor(() => {
+            expect(screen.getByText("Current Chat")).toBeInTheDocument();
+        });
+
+        const newConvButtons = screen.getAllByText("New Conversation");
+        await user.click(newConvButtons[0]);
+    });
+
+    it("shows delete confirmation modal and cancels", async () => {
+        const user = userEvent.setup();
+        server.use(
+            http.get(`${API}/canvases/conversations/conv-1`, () =>
+                HttpResponse.json(
+                    mockConversation({
+                        id: "conv-1",
+                        canvas_id: "canvas-1",
+                        name: "Current Chat",
+                        messages: [],
+                    })
+                )
+            ),
+            http.get(`${API}/canvases/canvas-1`, () =>
+                HttpResponse.json({ id: "canvas-1", name: "My Canvas" })
+            ),
+            http.get(`${API}/canvases/canvas-1/conversations`, () =>
+                HttpResponse.json([mockConversationSummary({ id: "conv-1", name: "Current Chat" })])
+            )
+        );
+
+        renderChatPage("conv-1");
+
+        await waitFor(() => {
+            expect(screen.getByText("Current Chat")).toBeInTheDocument();
+        });
+
+        // Hover over conversation item to reveal delete button, then click it
+        const deleteButtons = document.querySelectorAll('button[title="Delete conversation"]');
+        if (deleteButtons.length > 0) {
+            await user.click(deleteButtons[0] as HTMLElement);
+            await waitFor(() => {
+                expect(screen.getByText("Delete Chat Session?")).toBeInTheDocument();
+            });
+
+            await user.click(screen.getByText("Cancel"));
+            await waitFor(() => {
+                expect(screen.queryByText("Delete Chat Session?")).not.toBeInTheDocument();
+            });
+        }
+    });
+
+    it("renders thought and tool_result steps in expanded turn", async () => {
+        server.use(
+            http.get(`${API}/canvases/conversations/conv-1`, () =>
+                HttpResponse.json(
+                    mockConversation({
+                        id: "conv-1",
+                        canvas_id: "canvas-1",
+                        name: "Test Chat",
+                        messages: [
+                            {
+                                id: "m1", conversation_id: "conv-1", role: "user",
+                                content: "Run analysis", created_at: "2026-01-01T00:00:00.000Z",
+                            },
+                            {
+                                id: "m2", conversation_id: "conv-1", role: "assistant",
+                                content: "Let me think...", event_type: "thought",
+                                agent_name: "Worker", created_at: "2026-01-01T00:00:01.000Z",
+                            },
+                            {
+                                id: "m3", conversation_id: "conv-1", role: "assistant",
+                                content: "Result: 42", event_type: "tool_result",
+                                agent_name: "Worker", created_at: "2026-01-01T00:00:02.000Z",
+                            },
+                            {
+                                id: "m4", conversation_id: "conv-1", role: "assistant",
+                                content: "The answer is 42", event_type: "final_answer",
+                                agent_name: "Worker", created_at: "2026-01-01T00:00:03.000Z",
+                            },
+                        ],
+                    })
+                )
+            ),
+            http.get(`${API}/canvases/canvas-1`, () =>
+                HttpResponse.json({ id: "canvas-1", name: "My Canvas" })
+            ),
+            http.get(`${API}/canvases/canvas-1/conversations`, () =>
+                HttpResponse.json([mockConversationSummary({ id: "conv-1", name: "Test Chat" })])
+            )
+        );
+
+        renderChatPage("conv-1");
+
+        await waitFor(() => {
+            expect(screen.getByText("The answer is 42")).toBeInTheDocument();
+        });
+
+        // The steps toggle should be visible
+        const toggleBtn = screen.getByText(/Show.*execution step/);
+        expect(toggleBtn).toBeInTheDocument();
+    });
+
+    it("renders handoff message with correct styling", async () => {
+        server.use(
+            http.get(`${API}/canvases/conversations/conv-1`, () =>
+                HttpResponse.json(
+                    mockConversation({
+                        id: "conv-1",
+                        canvas_id: "canvas-1",
+                        name: "Test Chat",
+                        messages: [
+                            {
+                                id: "m1", conversation_id: "conv-1", role: "user",
+                                content: "Delegate task", created_at: "2026-01-01T00:00:00.000Z",
+                            },
+                            {
+                                id: "m2", conversation_id: "conv-1", role: "system",
+                                content: "Delegating to WorkerB...", event_type: "handoff",
+                                agent_name: "Router", created_at: "2026-01-01T00:00:01.000Z",
+                            },
+                            {
+                                id: "m3", conversation_id: "conv-1", role: "assistant",
+                                content: "Task done", event_type: "final_answer",
+                                agent_name: "WorkerB", created_at: "2026-01-01T00:00:02.000Z",
+                            },
+                        ],
+                    })
+                )
+            ),
+            http.get(`${API}/canvases/canvas-1`, () =>
+                HttpResponse.json({ id: "canvas-1", name: "My Canvas" })
+            ),
+            http.get(`${API}/canvases/canvas-1/conversations`, () =>
+                HttpResponse.json([mockConversationSummary({ id: "conv-1", name: "Test Chat" })])
+            )
+        );
+
+        renderChatPage("conv-1");
+
+        await waitFor(() => {
+            expect(screen.getByText("Task done")).toBeInTheDocument();
+        });
+    });
+
+    it("renders error message with alert styling when steps expanded", async () => {
+        const user = userEvent.setup();
+        server.use(
+            http.get(`${API}/canvases/conversations/conv-1`, () =>
+                HttpResponse.json(
+                    mockConversation({
+                        id: "conv-1",
+                        canvas_id: "canvas-1",
+                        name: "Test Chat",
+                        messages: [
+                            {
+                                id: "m1", conversation_id: "conv-1", role: "user",
+                                content: "Do something", created_at: "2026-01-01T00:00:00.000Z",
+                            },
+                            {
+                                id: "m2", conversation_id: "conv-1", role: "system",
+                                content: "Something went wrong", event_type: "error",
+                                created_at: "2026-01-01T00:00:01.000Z",
+                            },
+                        ],
+                    })
+                )
+            ),
+            http.get(`${API}/canvases/canvas-1`, () =>
+                HttpResponse.json({ id: "canvas-1", name: "My Canvas" })
+            ),
+            http.get(`${API}/canvases/canvas-1/conversations`, () =>
+                HttpResponse.json([mockConversationSummary({ id: "conv-1", name: "Test Chat" })])
+            )
+        );
+
+        renderChatPage("conv-1");
+
+        // The error is in a step, hidden behind the expand toggle
+        await waitFor(() => {
+            const toggleBtn = screen.getByText(/Show.*execution step/);
+            expect(toggleBtn).toBeInTheDocument();
+        });
+
+        await user.click(screen.getByText(/Show.*execution step/));
+
+        await waitFor(() => {
+            expect(screen.getByText("Something went wrong")).toBeInTheDocument();
+        });
+    });
+
+    it("renders empty messages prompt when no messages and not running", async () => {
+        server.use(
+            http.get(`${API}/canvases/conversations/conv-1`, () =>
+                HttpResponse.json(
+                    mockConversation({
+                        id: "conv-1",
+                        canvas_id: "canvas-1",
+                        name: "Test Chat",
+                        messages: [],
+                    })
+                )
+            ),
+            http.get(`${API}/canvases/canvas-1`, () =>
+                HttpResponse.json({ id: "canvas-1", name: "My Canvas" })
+            ),
+            http.get(`${API}/canvases/canvas-1/conversations`, () =>
+                HttpResponse.json([mockConversationSummary({ id: "conv-1", name: "Test Chat" })])
+            )
+        );
+
+        renderChatPage("conv-1");
+
+        await waitFor(() => {
+            expect(screen.getByText(/Send a message to start/)).toBeInTheDocument();
+        });
+    });
+
+    it("has input disabled when loading conversation", async () => {
+        server.use(
+            http.get(`${API}/canvases/conversations/conv-1`, () =>
+                new Promise(() => { /* never resolves */ })
+            )
+        );
+
+        renderChatPage("conv-1");
+
+        await waitFor(() => {
+            const input = screen.getByPlaceholderText("Message agents...");
+            expect(input).toBeDisabled();
+        });
+    });
+
+    it("navigates to home via sidebar Home link", async () => {
+        server.use(
+            http.get(`${API}/canvases/conversations/conv-1`, () =>
+                HttpResponse.json(
+                    mockConversation({
+                        id: "conv-1",
+                        canvas_id: "canvas-1",
+                        name: "Test Chat",
+                        messages: [],
+                    })
+                )
+            ),
+            http.get(`${API}/canvases/canvas-1`, () =>
+                HttpResponse.json({ id: "canvas-1", name: "My Canvas" })
+            ),
+            http.get(`${API}/canvases/canvas-1/conversations`, () =>
+                HttpResponse.json([mockConversationSummary({ id: "conv-1", name: "Test Chat" })])
+            )
+        );
+
+        renderChatPage("conv-1");
+
+        await waitFor(() => {
+            expect(screen.getByTitle("Home")).toBeInTheDocument();
+        });
+    });
+
+    it("navigates to canvas via sidebar Canvas link", async () => {
+        server.use(
+            http.get(`${API}/canvases/conversations/conv-1`, () =>
+                HttpResponse.json(
+                    mockConversation({
+                        id: "conv-1",
+                        canvas_id: "canvas-1",
+                        name: "Test Chat",
+                        messages: [],
+                    })
+                )
+            ),
+            http.get(`${API}/canvases/canvas-1`, () =>
+                HttpResponse.json({ id: "canvas-1", name: "My Canvas" })
+            ),
+            http.get(`${API}/canvases/canvas-1/conversations`, () =>
+                HttpResponse.json([mockConversationSummary({ id: "conv-1", name: "Test Chat" })])
+            )
+        );
+
+        renderChatPage("conv-1");
+
+        await waitFor(() => {
+            expect(screen.getByTitle("Canvas Editor")).toBeInTheDocument();
+        });
     });
 });
