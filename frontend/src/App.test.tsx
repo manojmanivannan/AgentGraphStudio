@@ -14,6 +14,8 @@ vi.mock("@/components/layout/AppShell", () => ({
 
 beforeEach(() => {
   useCanvasStore.getState().reset();
+  // Clear the JSDOM URL query params between tests to avoid test pollution
+  window.history.replaceState({}, "", "/");
 });
 
 describe("App — landing page", () => {

@@ -1,4 +1,4 @@
-import { Check, Loader2, AlertCircle, MessageSquare, Activity, Layout } from "lucide-react";
+import { Check, Loader2, AlertCircle, MessageSquare, Activity, Layout, Home } from "lucide-react";
 import { useCanvasStore } from "@/store/canvasStore";
 
 export function TopBar() {
@@ -30,6 +30,16 @@ export function TopBar() {
       }`}
       style={{ right: rightOffset }}
     >
+      {/* Home button */}
+      <button
+        onClick={() => useCanvasStore.getState().reset()}
+        data-testid="home-button"
+        className="flex items-center justify-center p-1 rounded-md text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-elevated)] transition-all"
+        title="Back to Landing Page"
+      >
+        <Home className="w-4 h-4" />
+      </button>
+
       {/* Canvas name */}
       <input
         type="text"

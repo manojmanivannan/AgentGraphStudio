@@ -79,6 +79,50 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Synchronize canvasId to the URL query parameters
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const currentParamId = params.get("canvas");
+
+    if (canvasId) {
+      if (currentParamId !== canvasId) {
+        params.set("canvas", canvasId);
+        window.history.pushState({}, "", `?${params.toString()}`);
+      }
+    } else {
+      if (currentParamId) {
+        params.delete("canvas");
+        const newSearch = params.toString();
+        window.history.pushState(
+          {},
+          "",
+          newSearch ? `?${newSearch}` : window.location.pathname
+        );
+      }
+    }
+  }, [canvasId]);
+
+  // Support browser back/forward buttons (history popstate event)
+  useEffect(() => {
+    const handlePopState = () => {
+      const params = new URLSearchParams(window.location.search);
+      const urlCanvasId = params.get("canvas");
+
+      if (urlCanvasId) {
+        if (urlCanvasId !== canvasId) {
+          handleOpenCanvas(urlCanvasId);
+        }
+      } else {
+        if (canvasId) {
+          useCanvasStore.getState().reset();
+        }
+      }
+    };
+
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, [canvasId]);
+
   const handleCreateCanvas = async () => {
     setLoading(true);
     setError(null);
