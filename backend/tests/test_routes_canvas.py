@@ -1,4 +1,7 @@
+import io
+import json
 import uuid
+import zipfile
 
 
 class TestCreateCanvas:
@@ -59,14 +62,26 @@ class TestSaveCanvas:
             "name": "S1 Updated",
             "nodes": {
                 "agents": [
-                    {"id": aid, "name": "AgentA", "model_name": "ollama:llama3.1", "agent_type": "worker", "position_x": 100, "position_y": 200},
+                    {
+                        "id": aid,
+                        "name": "AgentA",
+                        "model_name": "ollama:llama3.1",
+                        "agent_type": "worker",
+                        "position_x": 100,
+                        "position_y": 200,
+                    },
                 ],
                 "tools": [
                     {"id": tid, "name": "ToolT", "code": "def run(): return 42"},
                 ],
             },
             "edges": [
-                {"id": eid, "source_node_id": aid, "target_node_id": tid, "edge_type": "tool_access"},
+                {
+                    "id": eid,
+                    "source_node_id": aid,
+                    "target_node_id": tid,
+                    "edge_type": "tool_access",
+                },
             ],
         }
 
@@ -80,9 +95,14 @@ class TestSaveCanvas:
         assert data["nodes"]["agents"][0]["name"] == "AgentA"
 
     async def test_save_missing_canvas(self, test_client, fresh_db):
-        resp = await test_client.put(f"/api/canvases/{uuid.uuid4()}", json={
-            "name": "X", "nodes": {"agents": [], "tools": []}, "edges": [],
-        })
+        resp = await test_client.put(
+            f"/api/canvases/{uuid.uuid4()}",
+            json={
+                "name": "X",
+                "nodes": {"agents": [], "tools": []},
+                "edges": [],
+            },
+        )
         assert resp.status_code == 404
 
 
@@ -127,14 +147,17 @@ class TestExportCanvas:
         tid = str(uuid.uuid4())
         eid = str(uuid.uuid4())
 
-        await test_client.put(f"/api/canvases/{cid}", json={
-            "name": "FullCanvas",
-            "nodes": {
-                "agents": [{"id": aid, "name": "A1"}],
-                "tools": [{"id": tid, "name": "T1"}],
+        await test_client.put(
+            f"/api/canvases/{cid}",
+            json={
+                "name": "FullCanvas",
+                "nodes": {
+                    "agents": [{"id": aid, "name": "A1"}],
+                    "tools": [{"id": tid, "name": "T1"}],
+                },
+                "edges": [{"id": eid, "source_node_id": aid, "target_node_id": tid}],
             },
-            "edges": [{"id": eid, "source_node_id": aid, "target_node_id": tid}],
-        })
+        )
 
         resp = await test_client.get(f"/api/canvases/{cid}/export")
         assert resp.status_code == 200
@@ -160,16 +183,46 @@ class TestImportCanvas:
             "name": "Imported Canvas",
             "nodes": {
                 "agents": [
-                    {"id": aid, "name": "Master", "agent_type": "router", "model_name": "ollama:llama3.1", "position_x": 100, "position_y": 50},
-                    {"id": worker_id, "name": "Worker", "agent_type": "worker", "model_name": "ollama:llama3.1", "position_x": 300, "position_y": 200},
+                    {
+                        "id": aid,
+                        "name": "Master",
+                        "agent_type": "router",
+                        "model_name": "ollama:llama3.1",
+                        "position_x": 100,
+                        "position_y": 50,
+                    },
+                    {
+                        "id": worker_id,
+                        "name": "Worker",
+                        "agent_type": "worker",
+                        "model_name": "ollama:llama3.1",
+                        "position_x": 300,
+                        "position_y": 200,
+                    },
                 ],
                 "tools": [
-                    {"id": tid, "name": "Calc", "code": "def add(a,b): return a+b", "position_x": 500, "position_y": 200},
+                    {
+                        "id": tid,
+                        "name": "Calc",
+                        "code": "def add(a,b): return a+b",
+                        "position_x": 500,
+                        "position_y": 200,
+                    },
                 ],
             },
             "edges": [
-                {"id": e1, "source_node_id": aid, "target_node_id": worker_id, "edge_type": "handoff"},
-                {"id": e2, "source_node_id": worker_id, "target_node_id": tid, "edge_type": "tool_access"},
+                {
+                    "id": e1,
+                    "source_node_id": aid,
+                    "target_node_id": worker_id,
+                    "edge_type": "handoff",
+                },
+                {
+                    "id": e2,
+                    "source_node_id": worker_id,
+                    "target_node_id": tid,
+                    "edge_type": "tool_access",
+                },
             ],
         }
 
@@ -191,20 +244,26 @@ class TestImportCanvas:
         assert edge_types == {"handoff", "tool_access"}
 
     async def test_import_empty_canvas(self, test_client, fresh_db):
-        resp = await test_client.post("/api/canvases/import", json={
-            "name": "Empty Import",
-            "nodes": {"agents": [], "tools": []},
-            "edges": [],
-        })
+        resp = await test_client.post(
+            "/api/canvases/import",
+            json={
+                "name": "Empty Import",
+                "nodes": {"agents": [], "tools": []},
+                "edges": [],
+            },
+        )
         assert resp.status_code == 200
         assert resp.json()["name"] == "Empty Import"
         assert resp.json()["nodes"]["agents"] == []
 
     async def test_import_default_name(self, test_client, fresh_db):
-        resp = await test_client.post("/api/canvases/import", json={
-            "nodes": {"agents": [], "tools": []},
-            "edges": [],
-        })
+        resp = await test_client.post(
+            "/api/canvases/import",
+            json={
+                "nodes": {"agents": [], "tools": []},
+                "edges": [],
+            },
+        )
         assert resp.status_code == 200
         assert resp.json()["name"] == "Untitled Canvas"
 
@@ -233,4 +292,70 @@ class TestExportImportRoundTrip:
         assert exported["name"] == original_data["name"]
         assert exported["id"] == original_data["id"]
         assert len(exported["nodes"]["agents"]) == len(original_data["nodes"]["agents"])
-        assert exported["nodes"]["agents"][0]["name"] == original_data["nodes"]["agents"][0]["name"]
+        assert (
+            exported["nodes"]["agents"][0]["name"]
+            == original_data["nodes"]["agents"][0]["name"]
+        )
+
+
+class TestZipExportImport:
+    async def test_export_zip_and_import_zip_with_documents(
+        self, test_client, fresh_db
+    ):
+        payload = {
+            "name": "ZipCanvas",
+            "nodes": {
+                "agents": [
+                    {
+                        "id": str(uuid.uuid4()),
+                        "name": "DocAgent",
+                        "agent_type": "worker",
+                    }
+                ],
+                "tools": [],
+            },
+            "edges": [],
+        }
+
+        create_resp = await test_client.post("/api/canvases/import", json=payload)
+        assert create_resp.status_code == 200
+        canvas_id = create_resp.json()["id"]
+        agent_id = create_resp.json()["nodes"]["agents"][0]["id"]
+
+        upload_resp = await test_client.post(
+            f"/api/canvases/{canvas_id}/agents/{agent_id}/documents",
+            files={"file": ("note.txt", b"Hello RAG content", "text/plain")},
+        )
+        assert upload_resp.status_code == 200
+        assert upload_resp.json()["name"] == "note.txt"
+
+        export_resp = await test_client.get(f"/api/canvases/{canvas_id}/export-zip")
+        assert export_resp.status_code == 200
+        assert "application/zip" in export_resp.headers["content-type"]
+
+        archive = zipfile.ZipFile(io.BytesIO(export_resp.content))
+        assert "manifest.json" in archive.namelist()
+        manifest = json.loads(archive.read("manifest.json").decode("utf-8"))
+        assert manifest["name"] == "ZipCanvas"
+        assert len(manifest["documents"]) == 1
+        doc_entry = manifest["documents"][0]
+        assert doc_entry["name"] == "note.txt"
+        assert doc_entry["path"] in archive.namelist()
+
+        import_resp = await test_client.post(
+            "/api/canvases/import-zip",
+            files={"file": ("canvas.zip", export_resp.content, "application/zip")},
+        )
+        assert import_resp.status_code == 200
+        imported = import_resp.json()
+        assert imported["name"] == "ZipCanvas"
+        assert len(imported["nodes"]["agents"]) == 1
+
+        imported_agent_id = imported["nodes"]["agents"][0]["id"]
+        docs_resp = await test_client.get(
+            f"/api/canvases/{imported['id']}/agents/{imported_agent_id}/documents"
+        )
+        assert docs_resp.status_code == 200
+        docs = docs_resp.json()
+        assert len(docs) == 1
+        assert docs[0]["name"] == "note.txt"

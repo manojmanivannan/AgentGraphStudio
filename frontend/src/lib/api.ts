@@ -59,6 +59,12 @@ export async function exportCanvas(id: string): Promise<CanvasResponse> {
   return res.json();
 }
 
+export async function exportCanvasZip(id: string): Promise<Blob> {
+  const res = await fetch(`${API_BASE}/canvases/${id}/export-zip`);
+  if (!res.ok) throw new Error("Failed to export canvas ZIP");
+  return res.blob();
+}
+
 export async function importCanvas(
   payload: CanvasSavePayload
 ): Promise<CanvasResponse> {
@@ -68,6 +74,19 @@ export async function importCanvas(
     body: JSON.stringify(payload),
   });
   if (!res.ok) throw new Error("Failed to import canvas");
+  return res.json();
+}
+
+export async function importCanvasZip(file: File): Promise<CanvasResponse> {
+  const formData = new FormData();
+  formData.append("file", file);
+
+  const res = await fetch(`${API_BASE}/canvases/import-zip`, {
+    method: "POST",
+    body: formData,
+  });
+
+  if (!res.ok) throw new Error("Failed to import canvas ZIP");
   return res.json();
 }
 

@@ -40,7 +40,8 @@ This is an **agent builder** — a visual IDE for creating multi-agent AI workfl
 2. **Wire tools** — write Python functions agents can call; test them instantly in the UI.
 3. **Connect agents** — handoffs let one agent delegate to another.
 4. **Attach RAG Documents** — upload domain-specific text documents to Worker agents, configure paragraph-aligned chunking, and dynamically query/inject search results using the `{{ rag_document }}` template placeholder at execution time.
-5. **Run** — watch agents reason, call tools, use memory, run RAG queries, and collaborate in real-time.
+5. **Export/Import ZIP packages** — export a canvas as a ZIP archive containing a manifest and per-agent RAG documents, or import it back to preserve team structure and document artifacts.
+6. **Run** — watch agents reason, call tools, use memory, run RAG queries, and collaborate in real-time.
 
 **Two agent types:**
 - **Workers** — execute tasks by reasoning and calling tools (DSPy ReAct loop). Can have RAG documents.
@@ -126,6 +127,8 @@ Or use SQLite for development (set `DATABASE_URL=sqlite+aiosqlite:///dev.db`).
 ```bash
 cd backend
 uv run pytest -v
+# Run the canvas export/import ZIP coverage tests:
+uv run python -m pytest tests/test_routes_canvas.py -q
 ```
 
 ### Frontend Tests

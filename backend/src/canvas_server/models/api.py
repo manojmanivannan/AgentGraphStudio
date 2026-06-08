@@ -19,6 +19,15 @@ class AgentNodeInput(BaseModel):
     position_y: float = 0
 
 
+class AgentDocumentInput(BaseModel):
+    id: uuid.UUID
+    agent_node_id: uuid.UUID
+    name: str
+    content: str | None = None
+    created_at: datetime | None = None
+    path: str | None = None
+
+
 class AgentDocumentResponse(BaseModel):
     id: uuid.UUID
     name: str
@@ -66,6 +75,10 @@ class CanvasSaveRequest(BaseModel):
     name: str = "Untitled Canvas"
     nodes: CanvasNodesInput = Field(default_factory=CanvasNodesInput)
     edges: list[EdgeInput] = Field(default_factory=list)
+
+
+class CanvasImportRequest(CanvasSaveRequest):
+    documents: list[AgentDocumentInput] = Field(default_factory=list)
 
 
 class CanvasResponse(BaseModel):

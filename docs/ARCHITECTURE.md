@@ -383,7 +383,9 @@ messages
 | `PUT` | `/api/canvases/{id}` | Save/replace nodes and edges (delete+insert) |
 | `DELETE` | `/api/canvases/{id}` | Delete canvas and all related data |
 | `GET` | `/api/canvases/{id}/export` | Download canvas as JSON file |
+| `GET` | `/api/canvases/{id}/export-zip` | Download canvas as ZIP package with manifest and RAG documents |
 | `POST` | `/api/canvases/import` | Import canvas from JSON payload |
+| `POST` | `/api/canvases/import-zip` | Import canvas from a ZIP package with manifest and document files |
 
 ### Document Upload / RAG API (scoped under canvas & agent)
 
@@ -392,6 +394,57 @@ messages
 | `GET` | `/api/canvases/{id}/agents/{agent_id}/documents` | List uploaded RAG documents for the agent |
 | `POST` | `/api/canvases/{id}/agents/{agent_id}/documents` | Upload a new text document (multipart/form-data) |
 | `DELETE` | `/api/canvases/{id}/agents/{agent_id}/documents/{doc_id}` | Delete a document |
+
+### ZIP import/export format
+
+`/api/canvases/{id}/export-zip` produces a ZIP archive containing:
+- `manifest.json` — canvas metadata, nodes, edges, and document metadata
+- `documents/{agent_id}/{doc_id}.txt` — raw text content for each uploaded RAG document
+
+`/api/canvases/import-zip` reads the manifest and reconstructs the canvas, remapping IDs as needed and importing documents into their target agents.
+
+Example ZIP manifest structure:
+
+```json
+{
+  "name": "Demo Team",
+  "nodes": {
+    "agents": [
+      {
+        "id": "5c2a7c1a-6f3a-4e31-b8d3-4d3d4255e4a2",
+        "name": "SupportAgent",
+        "role": "You are a customer support agent.",
+        "instructions": "Answer questions using the provided docs.",
+        "model_name": "ollama_chat/gemma4:31b",
+        "agent_type": "worker",
+        "enable_memory": false,
+        "enable_conversation_history": false,
+        "enable_rag": true,
+        "rag_chunk_size": 1000,
+        "position_x": 120,
+        "position_y": 100
+      }
+    ],
+    "tools": [],
+  },
+  "edges": [],
+  "documents": [
+    {
+      "id": "7b4a1c6f-3a9d-4c65-8a77-5d2b1e4f6c9d",
+      "agent_node_id": "5c2a7c1a-6f3a-4e31-b8d3-4d3d4255e4a2",
+      "name": "support_faq.txt",
+      "created_at": "2026-06-08T15:00:00Z",
+      "path": "documents/5c2a7c1a-6f3a-4e31-b8d3-4d3d4255e4a2/7b4a1c6f-3a9d-4c65-8a77-5d2b1e4f6c9d.txt"
+    }
+  ]
+}
+```
+
+The ZIP archive also contains the referenced document file at:
+
+```
+documents/{agent_id}/{document_id}.txt
+```
 
 ### Conversation API (scoped under canvas)
 
