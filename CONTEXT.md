@@ -56,6 +56,14 @@ _Avoid_: Console, output, log, terminal
 Per-agent long-term storage backed by mem0 + Qdrant vector store. Each agent optionally gets three memory tools: `memory_search`, `memory_store`, `memory_get_all`.
 _Avoid_: Long-term memory, storage
 
+**RAG Documents**:
+Text documents uploaded by a user and attached to a specific agent node (usually a Worker) to provide domain-specific context. At execution time, relevant chunks from these documents are retrieved and templated.
+_Avoid_: Knowledge base, document store, uploaded files
+
+**RAG Chunk Size**:
+The maximum length (in characters) used when splitting RAG documents into paragraph-aligned chunks for embedding and retrieval.
+_Avoid_: Split size, block length, character limit
+
 **Observability**:
 An embedded MLflow UI iframe for tracing DSPy agent calls, tool invocations, and LLM interactions via `mlflow.dspy.autolog()`.
 _Avoid_: Tracing, monitoring, dashboard

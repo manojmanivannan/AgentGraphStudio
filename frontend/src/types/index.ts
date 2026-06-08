@@ -7,6 +7,14 @@ export interface AgentNodeData {
   agentType: "worker" | "router";
   enableMemory?: boolean;
   enableConversationHistory?: boolean;
+  enableRag?: boolean;
+  ragChunkSize?: number;
+}
+
+export interface AgentDocument {
+  id: string;
+  name: string;
+  created_at: string;
 }
 
 export interface ToolNodeData {
@@ -46,6 +54,8 @@ export interface CanvasSavePayload {
       agent_type: string;
       enable_memory: boolean;
       enable_conversation_history: boolean;
+      enable_rag: boolean;
+      rag_chunk_size: number;
       position_x: number;
       position_y: number;
     }[];
@@ -83,6 +93,8 @@ export interface CanvasResponse {
       agent_type: string;
       enable_memory: boolean;
       enable_conversation_history: boolean;
+      enable_rag: boolean;
+      rag_chunk_size: number;
       position_x: number;
       position_y: number;
     }>;

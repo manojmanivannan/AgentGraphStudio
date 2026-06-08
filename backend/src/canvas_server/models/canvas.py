@@ -80,10 +80,52 @@ class AgentNode(Base):
     enable_conversation_history: Mapped[bool] = mapped_column(
         sa.Boolean(), default=False, server_default=sa.text("false"), nullable=False
     )
+    enable_rag: Mapped[bool] = mapped_column(
+        sa.Boolean(), default=False, server_default=sa.text("false"), nullable=False
+    )
+    rag_chunk_size: Mapped[int] = mapped_column(
+        sa.Integer(), default=1000, server_default=sa.text("1000"), nullable=False
+    )
     position_x: Mapped[float] = mapped_column(Double, default=0)
     position_y: Mapped[float] = mapped_column(Double, default=0)
 
     canvas: Mapped[Canvas] = relationship("Canvas", back_populates="agent_nodes")
+    documents: Mapped[list[AgentDocument]] = relationship(
+        "AgentDocument",
+        back_populates="agent_node",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+
+
+class AgentDocument(Base):
+    __tablename__ = "agent_documents"
+    __table_args__ = (
+        Index("idx_agent_documents_canvas", "canvas_id"),
+        Index("idx_agent_documents_agent", "agent_node_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        Uuid,
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+    canvas_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid,
+        ForeignKey("canvases.id", ondelete="CASCADE"),
+    )
+    agent_node_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid,
+        ForeignKey("agent_nodes.id", ondelete="CASCADE"),
+    )
+    name: Mapped[str] = mapped_column(String(255))
+    content: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=_utcnow,
+    )
+
+    agent_node: Mapped[AgentNode] = relationship("AgentNode", back_populates="documents")
 
 
 class ToolNode(Base):
