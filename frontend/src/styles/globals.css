@@ -10,23 +10,23 @@
   --font-sans: "Outfit", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, monospace;
 
-  /* Surface layers — deep to elevated */
-  --color-base: #09090b;
-  --color-surface: #131316;
-  --color-elevated: #1c1c22;
-  --color-overlay: #24242c;
-  --color-inset: #0e0e11;
+  /* Surface layers — slightly lighter, warm slate-grey */
+  --color-base: #121216;
+  --color-surface: #1b1b22;
+  --color-elevated: #252530;
+  --color-overlay: #2d2d3a;
+  --color-inset: #0b0b0e;
 
-  /* Borders */
-  --color-border-subtle: #23232b;
-  --color-border-default: #2e2e38;
-  --color-border-strong: #3d3d4a;
+  /* Borders — defined greys for better structure */
+  --color-border-subtle: #2b2b36;
+  --color-border-default: #3e3e4f;
+  --color-border-strong: #54546c;
 
   /* Text */
-  --color-text-primary: #ededef;
-  --color-text-secondary: #9494a5;
-  --color-text-tertiary: #626272;
-  --color-text-inverse: #09090b;
+  --color-text-primary: #f1f1f4;
+  --color-text-secondary: #a3a3bd;
+  --color-text-tertiary: #74748b;
+  --color-text-inverse: #121216;
 
   /* Primary accent — distinctive teal */
   --color-accent: #14b8a6;
@@ -284,21 +284,40 @@ html[data-theme="light"] .rail-popover {
   box-shadow: 0 8px 32px -8px rgba(0, 0, 0, 0.12);
 }
 
-/* ─── Glow Effects (for nodes only) ───────────────────────── */
+/* ─── Glow Effects ────────────────────────────────────────── */
 
 .glow-accent {
   box-shadow: 0 0 20px -4px rgba(20, 184, 166, 0.3),
-    0 0 8px -2px rgba(20, 184, 166, 0.15);
+    0 0 8px -2px rgba(20, 184, 166, 0.15),
+    0 4px 24px -4px rgba(0, 0, 0, 0.5);
 }
 
 .glow-secondary {
   box-shadow: 0 0 20px -4px rgba(245, 158, 11, 0.3),
-    0 0 8px -2px rgba(245, 158, 11, 0.15);
+    0 0 8px -2px rgba(245, 158, 11, 0.15),
+    0 4px 24px -4px rgba(0, 0, 0, 0.5);
 }
 
 .glow-danger {
   box-shadow: 0 0 20px -4px rgba(239, 68, 68, 0.3),
-    0 0 8px -2px rgba(239, 68, 68, 0.15);
+    0 0 8px -2px rgba(239, 68, 68, 0.15),
+    0 4px 24px -4px rgba(0, 0, 0, 0.5);
+}
+
+.glow-grey {
+  box-shadow: 0 0 24px -4px rgba(116, 116, 139, 0.18),
+    0 0 8px -2px rgba(116, 116, 139, 0.08),
+    0 4px 20px -4px rgba(0, 0, 0, 0.45);
+}
+
+.glow-grey-hover {
+  transition: box-shadow 0.3s ease, border-color 0.3s ease;
+}
+
+.glow-grey-hover:hover {
+  box-shadow: 0 0 30px -4px rgba(116, 116, 139, 0.22),
+    0 0 12px -1px rgba(116, 116, 139, 0.12),
+    0 8px 32px -4px rgba(0, 0, 0, 0.5);
 }
 
 /* ─── Panel Surface ──────────────────────────────────────── */
