@@ -190,7 +190,11 @@ mj-agent-framework/
 │   │       │   ├── canvas.py      # REST: /api/canvases/**
 │   │       │   ├── execute.py     # WebSocket: /ws/conversations/{id}/run
 │   │       │   └── tools.py       # REST: /api/tools/inspect, /api/tools/test
-│   │       ├── runner.py          # Core: CanvasRunner — setup, build agents, run workflow
+│   │       ├── runner/            # Core execution engine package
+│   │       │   ├── agent_factory.py # Builds DSPy agents from canvas nodes
+│   │       │   ├── execution.py     # Executes individual worker agent runs
+│   │       │   ├── rag_helper.py    # Chunking & in-memory DSPy embeddings search
+│   │       │   └── runner.py        # CanvasRunner — orchestrates multi-agent flows
 │   │       ├── streaming_react.py # StreamingReAct — DSPy ReAct subclass with event emission
 │   │       ├── tool_factory.py    # Sandbox-based Python string → DSPy tool compilation + test execution
 │   │       ├── memory_config.py   # mem0 config builder from settings
@@ -199,6 +203,7 @@ mj-agent-framework/
 │       ├── conftest.py          # Fixtures: fresh_db, test_session, test_client, canvas fixtures
 │       ├── test_runner.py       # CanvasRunner unit tests (mocked agents)
 │       ├── test_conversations.py # Conversation API + repo + runner integration tests
+│       ├── test_rag.py          # RAG utility, API endpoints, and runner integration tests
 │       ├── test_config.py
 │       ├── test_models_api.py
 │       ├── test_repos.py
@@ -303,9 +308,22 @@ agent_nodes
 ├── agent_type: VARCHAR(20) DEFAULT 'worker'       -- 'worker' | 'router'
 ├── enable_memory: BOOLEAN DEFAULT FALSE
 ├── enable_conversation_history: BOOLEAN DEFAULT FALSE
+├── enable_rag: BOOLEAN DEFAULT FALSE
+├── rag_chunk_size: INTEGER DEFAULT 1000
 ├── position_x: DOUBLE PRECISION DEFAULT 0
 ├── position_y: DOUBLE PRECISION DEFAULT 0
+├── relationships: documents (CASCADE delete)
 └── INDEX: idx_agent_nodes_canvas (canvas_id)
+
+agent_documents
+├── id: UUID PK
+├── canvas_id: UUID FK → canvases.id (CASCADE)
+├── agent_node_id: UUID FK → agent_nodes.id (CASCADE)
+├── name: VARCHAR(255)
+├── content: TEXT
+├── created_at: TIMESTAMPTZ
+├── INDEX: idx_agent_documents_canvas (canvas_id)
+└── INDEX: idx_agent_documents_agent (agent_node_id)
 
 tool_nodes
 ├── id: UUID PK
@@ -367,6 +385,14 @@ messages
 | `GET` | `/api/canvases/{id}/export` | Download canvas as JSON file |
 | `POST` | `/api/canvases/import` | Import canvas from JSON payload |
 
+### Document Upload / RAG API (scoped under canvas & agent)
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/api/canvases/{id}/agents/{agent_id}/documents` | List uploaded RAG documents for the agent |
+| `POST` | `/api/canvases/{id}/agents/{agent_id}/documents` | Upload a new text document (multipart/form-data) |
+| `DELETE` | `/api/canvases/{id}/agents/{agent_id}/documents/{doc_id}` | Delete a document |
+
 ### Conversation API (scoped under canvas)
 
 | Method | Path | Description |
@@ -404,6 +430,8 @@ messages
       "agent_type": "worker",
       "enable_memory": false,
       "enable_conversation_history": false,
+      "enable_rag": false,
+      "rag_chunk_size": 1000,
       "position_x": 100,
       "position_y": 200
     }],
@@ -424,8 +452,7 @@ messages
 }
 ```
 
-The save operation replaces all nodes and edges atomically (delete-all → insert-all
-within a transaction). `id` fields are client-generated and preserved across saves.
+The save operation performs a delta-sync (upsert) for agent nodes to preserve child relationships (such as agent documents), and uses a transaction to ensure atomicity. Tool nodes and edges are replaced atomically (delete-all → insert-all). `id` fields are client-generated and preserved across saves.
 
 ---
 
@@ -674,6 +701,7 @@ Workers are `StreamingReAct` instances built during `setup()`. They:
 - Receive a DSPy signature with `user_request` (and optionally `history`)
 - ReAct-loop through tools (thought → tool → observation → ... → finish)
 - Cannot hand off — they produce a final answer
+- **RAG Support**: If `enable_rag` is True, their instructions and role undergo templating. The `{{ rag_document }}` placeholder is replaced by the retrieved passages from the RAG search. This is built dynamically on every run/handoff turn.
 
 ### Router Agents
 

@@ -32,10 +32,10 @@ and edges on a ReactFlow canvas, then run workflows against a FastAPI + DSPy bac
 | Pydantic schemas | `backend/src/canvas_server/models/api.py` | All request/response models |
 | Canvas CRUD | `backend/src/canvas_server/repos/canvas_repo.py` | CanvasRepo class |
 | Conversation CRUD | `backend/src/canvas_server/repos/conversation_repo.py` | ConversationRepo class |
-| REST routes | `backend/src/canvas_server/routes/canvas.py` | `/api/canvases/**` |
+| REST routes | `backend/src/canvas_server/routes/canvas.py` | `/api/canvases/**` (canvas CRUD + RAG documents CRUD) |
 | Tool test routes | `backend/src/canvas_server/routes/tools.py` | `/api/tools/inspect` + `/api/tools/test` |
 | WebSocket route | `backend/src/canvas_server/routes/execute.py` | `/ws/conversations/{id}/run` |
-| **Execution engine** | `backend/src/canvas_server/runner/runner.py` | **CanvasRunner** — the core orchestrator |
+| **Execution engine** | `backend/src/canvas_server/runner/` | Package containing `runner.py` (CanvasRunner orchestrator), `execution.py` (individual worker execution), `agent_factory.py` (agent builder), and `rag_helper.py` (RAG chunking and search helper) |
 | Custom DSPy agent | `backend/src/canvas_server/streaming_react.py` | **StreamingReAct** — emits events per iteration |
 | Tool compiler | `backend/src/canvas_server/tool_factory.py` | Sandbox-based compilation + inspect + test execution |
 | **Sandbox** | `backend/src/canvas_server/sandbox.py` | Singleton Deno/Pyodide sandbox (DSPy PythonInterpreter) |
@@ -213,6 +213,8 @@ and edges on a ReactFlow canvas, then run workflows against a FastAPI + DSPy bac
 10. **`@requires_deno` test marker** — Sandbox integration tests skip gracefully
     in CI environments without Deno installed (`pytest.mark.skipif(not shutil.which("deno"))`).
     Unit tests (inspect, coerce) don't need Deno.
+
+11. **In-Memory RAG for Workers** — RAG documents are stored as standard relational rows in PostgreSQL. Chunks are computed using a paragraph-aligned splitter and embedded dynamically in-memory at run-time using DSPy embedders. This avoids vector synchronization bugs during canvas auto-saves, which are supported by delta upserting nodes instead of destroying/recreating them.
 
 ---
 

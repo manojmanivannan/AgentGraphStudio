@@ -13,8 +13,18 @@ class AgentNodeInput(BaseModel):
     agent_type: str = "worker"
     enable_memory: bool = False
     enable_conversation_history: bool = False
+    enable_rag: bool = False
+    rag_chunk_size: int = 1000
     position_x: float = 0
     position_y: float = 0
+
+
+class AgentDocumentResponse(BaseModel):
+    id: uuid.UUID
+    name: str
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
 
 
 class AgentNodeResponse(AgentNodeInput):

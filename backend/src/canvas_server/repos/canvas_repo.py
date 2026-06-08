@@ -21,7 +21,7 @@ class CanvasRepo:
         return (
             select(Canvas)
             .options(
-                selectinload(Canvas.agent_nodes),
+                selectinload(Canvas.agent_nodes).selectinload(AgentNode.documents),
                 selectinload(Canvas.tool_nodes),
                 selectinload(Canvas.edges),
             )
@@ -63,6 +63,8 @@ class CanvasRepo:
                 agent_type=a.agent_type,
                 enable_memory=a.enable_memory,
                 enable_conversation_history=a.enable_conversation_history,
+                enable_rag=a.enable_rag,
+                rag_chunk_size=a.rag_chunk_size,
                 position_x=a.position_x,
                 position_y=a.position_y,
             )
@@ -145,27 +147,49 @@ class CanvasRepo:
             delete(Edge).where(Edge.canvas_id == canvas_id)
         )
         await self.session.execute(
-            delete(AgentNode).where(AgentNode.canvas_id == canvas_id)
-        )
-        await self.session.execute(
             delete(ToolNode).where(ToolNode.canvas_id == canvas_id)
         )
 
+        existing_agents = {n.id: n for n in canvas.agent_nodes}
+        new_agent_ids = {a.id for a in agents}
+
+        # Delete agent nodes that are no longer present on the canvas
+        for eid, node in list(existing_agents.items()):
+            if eid not in new_agent_ids:
+                await self.session.delete(node)
+
+        # Delta sync (upsert) the rest of the agent nodes
         for a in agents:
-            node = AgentNode(
-                id=a.id,
-                canvas_id=canvas_id,
-                name=a.name,
-                role=a.role,
-                instructions=a.instructions,
-                model_name=a.model_name,
-                agent_type=a.agent_type,
-                enable_memory=a.enable_memory,
-                enable_conversation_history=a.enable_conversation_history,
-                position_x=a.position_x,
-                position_y=a.position_y,
-            )
-            self.session.add(node)
+            if a.id in existing_agents:
+                node = existing_agents[a.id]
+                node.name = a.name
+                node.role = a.role
+                node.instructions = a.instructions
+                node.model_name = a.model_name
+                node.agent_type = a.agent_type
+                node.enable_memory = a.enable_memory
+                node.enable_conversation_history = a.enable_conversation_history
+                node.enable_rag = a.enable_rag
+                node.rag_chunk_size = a.rag_chunk_size
+                node.position_x = a.position_x
+                node.position_y = a.position_y
+            else:
+                node = AgentNode(
+                    id=a.id,
+                    canvas_id=canvas_id,
+                    name=a.name,
+                    role=a.role,
+                    instructions=a.instructions,
+                    model_name=a.model_name,
+                    agent_type=a.agent_type,
+                    enable_memory=a.enable_memory,
+                    enable_conversation_history=a.enable_conversation_history,
+                    enable_rag=a.enable_rag,
+                    rag_chunk_size=a.rag_chunk_size,
+                    position_x=a.position_x,
+                    position_y=a.position_y,
+                )
+                self.session.add(node)
 
         for t in tools:
             node = ToolNode(

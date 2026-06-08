@@ -6,6 +6,7 @@ import type {
   ConversationSummary,
   ToolInspectResponse,
   ToolTestResponse,
+  AgentDocument,
 } from "@/types";
 
 const API_BASE = `http://${import.meta.env.VITE_API_HOST || "localhost:8000"}/api`;
@@ -149,4 +150,44 @@ export async function testTool(
     throw new Error(error.detail || "Failed to test tool");
   }
   return res.json();
+}
+
+export async function listAgentDocuments(
+  canvasId: string,
+  agentId: string
+): Promise<AgentDocument[]> {
+  const res = await fetch(`${API_BASE}/canvases/${canvasId}/agents/${agentId}/documents`);
+  if (!res.ok) throw new Error("Failed to list agent documents");
+  return res.json();
+}
+
+export async function uploadAgentDocument(
+  canvasId: string,
+  agentId: string,
+  file: File
+): Promise<AgentDocument> {
+  const formData = new FormData();
+  formData.append("file", file);
+
+  const res = await fetch(
+    `${API_BASE}/canvases/${canvasId}/agents/${agentId}/documents`,
+    {
+      method: "POST",
+      body: formData,
+    }
+  );
+  if (!res.ok) throw new Error("Failed to upload agent document");
+  return res.json();
+}
+
+export async function deleteAgentDocument(
+  canvasId: string,
+  agentId: string,
+  documentId: string
+): Promise<void> {
+  const res = await fetch(
+    `${API_BASE}/canvases/${canvasId}/agents/${agentId}/documents/${documentId}`,
+    { method: "DELETE" }
+  );
+  if (!res.ok) throw new Error("Failed to delete agent document");
 }

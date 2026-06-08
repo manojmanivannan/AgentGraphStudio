@@ -110,6 +110,8 @@ export function SidebarRail() {
             enable_memory: ((n.data as any).enableMemory as boolean) ?? false,
             enable_conversation_history:
               ((n.data as any).enableConversationHistory as boolean) ?? false,
+            enable_rag: ((n.data as any).enableRag as boolean) ?? false,
+            rag_chunk_size: ((n.data as any).ragChunkSize as number) ?? 1000,
             position_x: n.position.x,
             position_y: n.position.y,
           })),
@@ -173,6 +175,8 @@ export function SidebarRail() {
           agentType: a.agent_type,
           enableMemory: a.enable_memory,
           enableConversationHistory: a.enable_conversation_history,
+          enableRag: a.enable_rag,
+          ragChunkSize: a.rag_chunk_size,
         },
       }));
 

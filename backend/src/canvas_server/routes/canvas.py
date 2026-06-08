@@ -2,7 +2,7 @@ import json
 import logging
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -16,6 +16,7 @@ from canvas_server.models.api import (
     ConversationResponse,
     CreateCanvasRequest,
     CreateConversationRequest,
+    AgentDocumentResponse,
 )
 from canvas_server.repos.canvas_repo import CanvasRepo
 from canvas_server.repos.conversation_repo import ConversationRepo
@@ -49,6 +50,7 @@ def _canvas_to_response(canvas) -> CanvasResponse:
                     agent_type=n.agent_type,
                     enable_memory=n.enable_memory,
                     enable_conversation_history=n.enable_conversation_history,
+                    enable_rag=n.enable_rag,
                     position_x=n.position_x,
                     position_y=n.position_y,
                 )
@@ -292,3 +294,88 @@ async def delete_conversation(
         ) from None
     await repo.delete(conversation_id)
     logger.info("Conversation deleted: id=%s", conversation_id)
+
+
+@canvas_router.get("/{canvas_id}/agents/{agent_id}/documents", response_model=list[AgentDocumentResponse])
+async def list_agent_documents(
+    canvas_id: uuid.UUID,
+    agent_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+):
+    from sqlalchemy import select
+    from canvas_server.models.canvas import AgentDocument, AgentNode
+
+    logger.info("Listing documents for canvas=%s agent=%s", canvas_id, agent_id)
+    stmt = select(AgentNode).where(AgentNode.id == agent_id, AgentNode.canvas_id == canvas_id)
+    res = await session.execute(stmt)
+    agent = res.scalar_one_or_none()
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found")
+
+    stmt = select(AgentDocument).where(AgentDocument.agent_node_id == agent_id, AgentDocument.canvas_id == canvas_id).order_by(AgentDocument.created_at.desc())
+    res = await session.execute(stmt)
+    docs = res.scalars().all()
+    return docs
+
+
+@canvas_router.post("/{canvas_id}/agents/{agent_id}/documents", response_model=AgentDocumentResponse)
+async def upload_agent_document(
+    canvas_id: uuid.UUID,
+    agent_id: uuid.UUID,
+    file: UploadFile = File(...),
+    session: AsyncSession = Depends(get_session),
+):
+    from sqlalchemy import select
+    from canvas_server.models.canvas import AgentDocument, AgentNode
+
+    logger.info("Uploading document for canvas=%s agent=%s name=%s", canvas_id, agent_id, file.filename)
+    stmt = select(AgentNode).where(AgentNode.id == agent_id, AgentNode.canvas_id == canvas_id)
+    res = await session.execute(stmt)
+    agent = res.scalar_one_or_none()
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found")
+
+    content_bytes = await file.read()
+    try:
+        content_text = content_bytes.decode("utf-8")
+    except UnicodeDecodeError:
+        content_text = content_bytes.decode("latin-1")
+
+    doc = AgentDocument(
+        id=uuid.uuid4(),
+        canvas_id=canvas_id,
+        agent_node_id=agent_id,
+        name=file.filename or "Unnamed Document",
+        content=content_text,
+    )
+    session.add(doc)
+    await session.commit()
+    logger.info("Document saved: id=%s", doc.id)
+    return doc
+
+
+@canvas_router.delete("/{canvas_id}/agents/{agent_id}/documents/{document_id}", status_code=204)
+async def delete_agent_document(
+    canvas_id: uuid.UUID,
+    agent_id: uuid.UUID,
+    document_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+):
+    from sqlalchemy import select
+    from canvas_server.models.canvas import AgentDocument
+
+    logger.info("Deleting document canvas=%s agent=%s doc=%s", canvas_id, agent_id, document_id)
+    stmt = select(AgentDocument).where(
+        AgentDocument.id == document_id,
+        AgentDocument.agent_node_id == agent_id,
+        AgentDocument.canvas_id == canvas_id,
+    )
+    res = await session.execute(stmt)
+    doc = res.scalar_one_or_none()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    await session.delete(doc)
+    await session.commit()
+    logger.info("Document deleted: id=%s", document_id)
+
