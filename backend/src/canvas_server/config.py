@@ -9,9 +9,8 @@ class Settings(BaseSettings):
     llm_model: str = "ollama_chat/gemma4:31b"
 
     # Memory (mem0) settings
-    mem0_llm_provider: str = "ollama"
+    mem0_provider: str = "ollama"
     mem0_llm_model: str = "gemma4:31b"
-    mem0_embedder_provider: str = "ollama"
     mem0_embedder_model: str = "nomic-embed-text"
     mem0_embedder_dimensions: int = 768
     mem0_qdrant_path: str = "/tmp/qdrant"

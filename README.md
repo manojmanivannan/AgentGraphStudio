@@ -20,12 +20,29 @@ nodes, wire them with edges, and run multi-agent teams powered by
 
 ## Quick Start
 
+Start the application containers using `make`:
+
 ```bash
-docker compose up
+# Start docker containers (excluding ollama by default)
+make up
+
+# Or start including ollama via GPU profile
+make up-gpu
 ```
 
-Launches PostgreSQL (pgvector), backend (port 8000), frontend (port 5173), and
-MLflow (port 5000). Open `http://localhost:5173`.
+Launches PostgreSQL (pgvector), backend (port 8000), frontend (port 5173), and MLflow (port 5000). Open `http://localhost:5173`.
+
+### Available Make Commands
+
+The repository provides a `Makefile` to manage the containers:
+
+| Command | Description |
+|---|---|
+| `make up` | Start docker containers (excluding ollama by default) |
+| `make up-gpu` | Start docker containers (including ollama via gpu profile) |
+| `make down` | Stop docker containers (including ollama) without removing volumes |
+| `make down-v` | Stop docker containers (including ollama) and remove volumes |
+| `make clean-sandbox` | Clean up sandbox containers running python3 |
 
 > **Requires an LLM backend.** Defaults to Ollama on the host machine (`http://192.168.1.120:11434`).
 > Configure via `backend/.env`. See [Configuration](#configuration) below.
@@ -118,7 +135,7 @@ The application features a clean, multi-page router architecture:
 | `MLFLOW_TRACKING_URI` | `http://mlflow:5000` | MLflow server URL |
 | `MLFLOW_ENABLED` | `true` | Set `false` to skip MLflow init (CI) |
 | `MEM0_LLM_MODEL` | `gemma4:31b` | Model used by mem0 |
-| `MEM0_EMBEDDER_PROVIDER` | `ollama` | Embedding provider (e.g. `ollama`, `openai`) used by mem0 & RAG |
+| `MEM0_PROVIDER` | `ollama` | Provider (e.g. `ollama`, `openai`) used by mem0 & RAG for LLM and embedding |
 | `MEM0_EMBEDDER_MODEL` | `nomic-embed-text` | Embedding model name used by mem0 & RAG |
 | `MEM0_EMBEDDER_DIMENSIONS` | `768` | Embedding dimensions used by mem0 & RAG |
 | `DATABASE_URL` | `postgresql+asyncpg://...` | Override for SQLite testing |
@@ -152,10 +169,4 @@ cd frontend
 npm run test:e2e
 ```
 
-### Migrations
-```bash
-cd backend
-uv run alembic revision --autogenerate -m "description"
-uv run alembic upgrade head
-```
 

@@ -78,6 +78,6 @@ The prompt injection occurs in both:
   * Added `rag_helper.py` containing `chunk_text` and `run_rag_search` functions.
   * Dynamic agent assembly: RAG-enabled agents are rebuilt during the run/transfer step if RAG is enabled, replacing the placeholder and updating the agent instance in the runner's dictionary.
 * **Configuration Requirements:**
-  * RAG uses the same embedder variables as memory: `MEM0_EMBEDDER_PROVIDER`, `MEM0_EMBEDDER_MODEL`, and `MEM0_EMBEDDER_DIMENSIONS`.
+  * RAG uses the same embedder variables as memory: `MEM0_PROVIDER` (used for both LLM and embedding), `MEM0_EMBEDDER_MODEL`, and `MEM0_EMBEDDER_DIMENSIONS`.
 * **Robustness & Fallbacks:**
   * If the embedding server is offline or fails, RAG falls back gracefully to selecting the first few document chunks rather than failing the workflow execution, logging warnings to aid troubleshooting.
