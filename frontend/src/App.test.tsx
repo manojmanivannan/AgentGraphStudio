@@ -257,4 +257,107 @@ describe("App — landing page", () => {
 
     expect(useCanvasStore.getState().canvasId).toBe("imported-zip");
   });
+
+  it("supports multi-select mode and batch deletion", async () => {
+    const user = userEvent.setup();
+    const deletedIds: string[] = [];
+
+    server.use(
+      http.get("http://localhost:8000/api/canvases", () =>
+        HttpResponse.json([
+          mockCanvasListItem({ id: "canvas-1", name: "Canvas One" }),
+          mockCanvasListItem({ id: "canvas-2", name: "Canvas Two" }),
+        ])
+      ),
+      http.delete("http://localhost:8000/api/canvases/:id", ({ params }) => {
+        deletedIds.push(params.id as string);
+        return new HttpResponse(null, { status: 204 });
+      })
+    );
+
+    render(
+      <MemoryRouter initialEntries={["/"]}>
+        <App />
+      </MemoryRouter>
+    );
+
+    // Verify canvases are rendered
+    await waitFor(() => {
+      expect(screen.getByText("Canvas One")).toBeInTheDocument();
+      expect(screen.getByText("Canvas Two")).toBeInTheDocument();
+    });
+
+    // Enter selection mode
+    const selectButton = screen.getByRole("button", { name: "Select" });
+    await user.click(selectButton);
+
+    // Verify selection buttons are displayed
+    expect(screen.getByRole("button", { name: "Select All" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeInTheDocument();
+    const deleteSelectedBtn = screen.getByRole("button", { name: /Delete Selected/ });
+    expect(deleteSelectedBtn).toBeInTheDocument();
+    expect(deleteSelectedBtn).toBeDisabled();
+
+    // Select Canvas One by clicking its card
+    await user.click(screen.getByText("Canvas One"));
+    expect(screen.getByRole("button", { name: "Delete Selected (1)" })).toBeInTheDocument();
+
+    // Select Canvas Two by clicking its card
+    await user.click(screen.getByText("Canvas Two"));
+    const finalDeleteBtn = screen.getByRole("button", { name: "Delete Selected (2)" });
+    expect(finalDeleteBtn).toBeInTheDocument();
+    expect(finalDeleteBtn).toBeEnabled();
+
+    // Click Delete Selected
+    await user.click(finalDeleteBtn);
+
+    // Verify confirmation modal is open with batch title and message
+    expect(screen.getByText("Delete 2 Canvases?")).toBeInTheDocument();
+    expect(screen.getByText(/Are you sure you want to delete the/)).toBeInTheDocument();
+
+    // Confirm deletion
+    const confirmButton = screen.getByRole("button", { name: "Delete" });
+    await user.click(confirmButton);
+
+    // Verify both items deleted
+    await waitFor(() => {
+      expect(deletedIds).toContain("canvas-1");
+      expect(deletedIds).toContain("canvas-2");
+    });
+  });
+
+  it("toggles all visible canvases on Select All click", async () => {
+    const user = userEvent.setup();
+    server.use(
+      http.get("http://localhost:8000/api/canvases", () =>
+        HttpResponse.json([
+          mockCanvasListItem({ id: "canvas-1", name: "Canvas One" }),
+          mockCanvasListItem({ id: "canvas-2", name: "Canvas Two" }),
+        ])
+      )
+    );
+
+    render(
+      <MemoryRouter initialEntries={["/"]}>
+        <App />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Canvas One")).toBeInTheDocument();
+    });
+
+    // Enter selection mode
+    await user.click(screen.getByRole("button", { name: "Select" }));
+
+    // Click Select All
+    await user.click(screen.getByRole("button", { name: "Select All" }));
+    expect(screen.getByRole("button", { name: "Delete Selected (2)" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Deselect All" })).toBeInTheDocument();
+
+    // Click Deselect All
+    await user.click(screen.getByRole("button", { name: "Deselect All" }));
+    expect(screen.getByRole("button", { name: "Delete Selected (0)" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Select All" })).toBeInTheDocument();
+  });
 });

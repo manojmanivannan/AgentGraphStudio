@@ -5,7 +5,7 @@ import { server } from "./mocks/server";
 
 // Suppress Node 22+ ExperimentalWarning about localStorage in jsdom
 const originalEmit = process.emit;
-process.emit = function (event: string, ...args: any[]) {
+process.emit = function (this: any, event: any, ...args: any[]) {
   if (event === "warning" && args[0]?.name === "ExperimentalWarning" &&
     String(args[0]?.message ?? "").includes("localStorage")) {
     return false;
