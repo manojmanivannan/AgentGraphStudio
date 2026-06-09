@@ -350,7 +350,7 @@ export function SidebarRail() {
               className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-elevated)] transition-colors text-left cursor-pointer"
             >
               <Upload className="w-4 h-4 text-[var(--color-text-tertiary)]" />
-              Import Canvas (.json / .zip)
+              Import Agent Canvas
             </button>
             <button
               onClick={handleExport}
@@ -358,7 +358,7 @@ export function SidebarRail() {
               className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-elevated)] transition-colors text-left cursor-pointer"
             >
               <Download className="w-4 h-4 text-[var(--color-text-tertiary)]" />
-              Export Canvas package
+              Export Agent Canvas
             </button>
 
             {/* Clear Canvas */}

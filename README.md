@@ -1,6 +1,10 @@
-# Agent Builder — Visual AI Workflow Canvas
+# AgentGraph Studio — Orchestrate AI agents & Chat
 
-![Canvas](./canvas_screen.png)
+
+<div style="display:flex; gap:16px;">
+  <img src="./docs/canvas_example.png" alt="Canvas" width="48%">
+  <img src="./docs/chat_example.png" alt="Chat" width="48%">
+</div>
 
 Visual canvas for composing and executing AI agent workflows. Drag agent and tool
 nodes, wire them with edges, and run multi-agent teams powered by
