@@ -1,4 +1,13 @@
-# AgentGraph Studio — Orchestrate AI agents & Chat
+<h1 align="center">AgentGraph Studio</h1
+
+<p align="center">
+<strong>Orchestrate AI agents & Chat</strong>
+</p>
+<p align="center">
+Design, connect, and orchestrate AI agents through an intuitive visual workflow builder.</br>
+Create complex multi-agent systems, orchestrate tools, and interact with agents in real time.
+Powered by <a href="https://dspy.ai/">DSPy</a>.
+</p>
 
 
 <div style="display:flex; gap:16px;">
@@ -6,9 +15,6 @@
   <img src="./docs/chat_example.png" alt="Chat" width="48%">
 </div>
 
-Visual canvas for composing and executing AI agent workflows. Drag agent and tool
-nodes, wire them with edges, and run multi-agent teams powered by
-[DSPy](https://dspy.ai/).
 
 ---
 
