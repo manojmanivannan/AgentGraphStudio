@@ -1,9 +1,13 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { http, HttpResponse } from "msw";
 import { useCanvasStore } from "@/store/canvasStore";
+import { server } from "@/test/mocks/server";
 import { AgentEditor } from "./AgentEditor";
 import type { Node } from "@xyflow/react";
+
+const API = "http://localhost:8000/api";
 
 const agentNode: Node = {
   id: "agent-1",
@@ -21,6 +25,7 @@ const agentNode: Node = {
 
 beforeEach(() => {
   useCanvasStore.getState().reset();
+  server.resetHandlers();
 });
 
 describe("AgentEditor", () => {
@@ -172,5 +177,100 @@ describe("AgentEditor", () => {
 
     const stored = useCanvasStore.getState().nodes.find((n) => n.id === "agent-1");
     expect(stored?.data.enableConversationHistory).toBe(true);
+  });
+
+  it("shows RAG toggle for worker agents", () => {
+    useCanvasStore.getState().setNodes([agentNode]);
+    useCanvasStore.getState().selectNode("agent-1");
+    render(<AgentEditor />);
+
+    expect(screen.getByTestId("agent-enable-rag")).toBeInTheDocument();
+  });
+
+  it("does not show RAG toggle for router agents", async () => {
+    const user = userEvent.setup();
+    useCanvasStore.getState().setNodes([agentNode]);
+    useCanvasStore.getState().selectNode("agent-1");
+    render(<AgentEditor />);
+
+    await user.selectOptions(screen.getByTestId("agent-type-select"), "router");
+
+    expect(screen.queryByTestId("agent-enable-rag")).not.toBeInTheDocument();
+  });
+
+  it("RAG toggle updates store", async () => {
+    const user = userEvent.setup();
+    useCanvasStore.getState().setNodes([agentNode]);
+    useCanvasStore.getState().selectNode("agent-1");
+    render(<AgentEditor />);
+
+    await user.click(screen.getByTestId("agent-enable-rag"));
+
+    const stored = useCanvasStore.getState().nodes.find((n) => n.id === "agent-1");
+    expect(stored?.data.enableRag).toBe(true);
+  });
+
+  it("shows RAG chunk size and documents section when RAG is enabled", async () => {
+    const user = userEvent.setup();
+    const ragNode = {
+      ...agentNode,
+      data: { ...agentNode.data, enableRag: true, ragChunkSize: 500 },
+    };
+    useCanvasStore.getState().setNodes([ragNode]);
+    useCanvasStore.getState().selectNode("agent-1");
+
+    server.use(
+      http.get(`${API}/canvases//agents/agent-1/documents`, () =>
+        HttpResponse.json([])
+      )
+    );
+
+    render(<AgentEditor />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Chunk Size (tokens)")).toBeInTheDocument();
+      expect(screen.getByText("Documents")).toBeInTheDocument();
+      expect(screen.getByText("Upload File")).toBeInTheDocument();
+    });
+  });
+
+  it("shows connected tools when edges exist", () => {
+    const toolNode: Node = {
+      id: "tool-1",
+      type: "tool",
+      position: { x: 300, y: 0 },
+      data: { id: "tool-1", name: "My Tool", code: "def run(): pass" },
+    };
+
+    useCanvasStore.getState().setNodes([agentNode, toolNode]);
+    useCanvasStore.getState().setEdges([
+      {
+        id: "edge-1",
+        source: "agent-1",
+        target: "tool-1",
+        data: { edgeType: "tool_access" },
+      },
+    ]);
+    useCanvasStore.getState().selectNode("agent-1");
+    render(<AgentEditor />);
+
+    expect(screen.getByText("Connected Tools")).toBeInTheDocument();
+    expect(screen.getByText("My Tool")).toBeInTheDocument();
+  });
+
+  it("shows 'No tools connected' when no edges exist", () => {
+    useCanvasStore.getState().setNodes([agentNode]);
+    useCanvasStore.getState().selectNode("agent-1");
+    render(<AgentEditor />);
+
+    expect(screen.getByText("No tools connected")).toBeInTheDocument();
+  });
+
+  it("renders Capabilities section header", () => {
+    useCanvasStore.getState().setNodes([agentNode]);
+    useCanvasStore.getState().selectNode("agent-1");
+    render(<AgentEditor />);
+
+    expect(screen.getByText("Capabilities")).toBeInTheDocument();
   });
 });

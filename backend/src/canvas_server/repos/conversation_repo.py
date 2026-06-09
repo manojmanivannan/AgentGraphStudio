@@ -14,10 +14,7 @@ class ConversationRepo:
         self.session = session
 
     def _eager_query(self):
-        return (
-            select(Conversation)
-            .options(selectinload(Conversation.messages))
-        )
+        return select(Conversation).options(selectinload(Conversation.messages))
 
     async def create(
         self,
@@ -53,9 +50,7 @@ class ConversationRepo:
     async def get_or_404(self, conversation_id: uuid.UUID) -> Conversation:
         conv = await self.get(conversation_id)
         if not conv:
-            raise ConversationNotFoundError(
-                f"Conversation {conversation_id} not found"
-            )
+            raise ConversationNotFoundError(f"Conversation {conversation_id} not found")
         return conv
 
     async def delete(self, conversation_id: uuid.UUID) -> bool:
@@ -104,3 +99,10 @@ class ConversationRepo:
             conv.status = "completed"
             conv.updated_at = datetime.now(UTC)
             await self.session.flush()
+
+    async def update_name(self, conversation_id: uuid.UUID, name: str) -> Conversation:
+        conv = await self.get_or_404(conversation_id)
+        conv.name = name
+        conv.updated_at = datetime.now(UTC)
+        await self.session.flush()
+        return conv

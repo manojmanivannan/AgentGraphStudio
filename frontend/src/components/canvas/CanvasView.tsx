@@ -63,7 +63,6 @@ export function CanvasView() {
   const setEdges = useCanvasStore((s) => s.setEdges);
   const selectNode = useCanvasStore((s) => s.selectNode);
   const setViewport = useCanvasStore((s) => s.setViewport);
-  const chatOpen = useCanvasStore((s) => s.chatOpen);
   const selectedNodeId = useCanvasStore((s) => s.selectedNodeId);
   const theme = useThemeStore((s) => s.theme);
   const isDark = theme === "dark";
@@ -81,7 +80,7 @@ export function CanvasView() {
     }, 350);
 
     return () => clearTimeout(timeout);
-  }, [chatOpen, propertiesOpen]);
+  }, [propertiesOpen]);
 
   useCanvasPersistence();
 

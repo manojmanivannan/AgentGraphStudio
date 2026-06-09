@@ -19,6 +19,7 @@
     "lucide-react": "^0.470.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "react-router-dom": "^7.17.0",
     "uuid": "^14.0.0",
     "zustand": "^5.0.0"
   },

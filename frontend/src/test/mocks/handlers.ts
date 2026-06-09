@@ -68,6 +68,13 @@ export const handlers = [
     );
   }),
 
+  http.post(`${API}/canvases/import-zip`, async () => {
+    return HttpResponse.json(
+      mockCanvas({ id: "imported-zip", name: "Imported ZIP Canvas" }),
+      { status: 201 }
+    );
+  }),
+
   http.get(`${API}/canvases/:id`, ({ params }) =>
     HttpResponse.json(mockCanvas({ id: params.id as string }))
   ),

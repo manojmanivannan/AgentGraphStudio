@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useCanvasStore } from "@/store/canvasStore";
 
 interface OverlayPanelProps {
   open: boolean;
@@ -7,6 +8,10 @@ interface OverlayPanelProps {
   children: ReactNode;
   onClose: () => void;
   "data-testid"?: string;
+  resizable?: boolean;
+  onWidthChange?: (width: number) => void;
+  minWidth?: number;
+  maxWidth?: number;
 }
 
 export function OverlayPanel({
@@ -16,9 +21,15 @@ export function OverlayPanel({
   children,
   onClose,
   "data-testid": dataTestId,
+  resizable = false,
+  onWidthChange,
+  minWidth,
+  maxWidth,
 }: OverlayPanelProps) {
   const [visible, setVisible] = useState(false);
   const [exiting, setExiting] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
+  const setIsDraggingPanel = useCanvasStore((s) => s.setIsDraggingPanel);
   const prevOpenRef = useRef(open);
 
   useEffect(() => {
@@ -51,6 +62,49 @@ export function OverlayPanel({
     return () => document.removeEventListener("keydown", handleEscape);
   }, [open, onClose]);
 
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (!resizable || !onWidthChange) return;
+    e.preventDefault();
+    setIsDragging(true);
+    setIsDraggingPanel(true);
+
+    const startX = e.clientX;
+    const startWidth = width;
+
+    // Prevent text selection and cursor glitches during drag
+    const prevUserSelect = document.body.style.userSelect;
+    const prevCursor = document.body.style.cursor;
+    document.body.style.userSelect = "none";
+    document.body.style.cursor = "ew-resize";
+
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      const deltaX = moveEvent.clientX - startX;
+      let newWidth = startWidth - deltaX;
+
+      if (minWidth !== undefined && newWidth < minWidth) {
+        newWidth = minWidth;
+      }
+      if (maxWidth !== undefined && newWidth > maxWidth) {
+        newWidth = maxWidth;
+      }
+
+      onWidthChange(newWidth);
+    };
+
+    const handleMouseUp = () => {
+      setIsDragging(false);
+      setIsDraggingPanel(false);
+      document.body.style.userSelect = prevUserSelect;
+      document.body.style.cursor = prevCursor;
+
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
+    };
+
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseup", handleMouseUp);
+  };
+
   if (!visible) return null;
 
   return (
@@ -64,6 +118,12 @@ export function OverlayPanel({
         right: offsetRight,
       }}
     >
+      {resizable && (
+        <div
+          className={`resize-handle ${isDragging ? "active" : ""}`}
+          onMouseDown={handleMouseDown}
+        />
+      )}
       {children}
     </div>
   );

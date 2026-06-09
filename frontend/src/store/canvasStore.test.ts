@@ -16,8 +16,9 @@ describe("canvasStore", () => {
       expect(store().edges).toEqual([]);
       expect(store().selectedNodeId).toBeNull();
       expect(store().activeNodeId).toBeNull();
-      expect(store().chatOpen).toBe(false);
       expect(store().saveStatus).toBe("idle");
+      expect(store().propertiesWidth).toBe(320);
+      expect(store().isDraggingPanel).toBe(false);
     });
   });
 
@@ -80,16 +81,6 @@ describe("canvasStore", () => {
     });
   });
 
-  describe("toggleChat", () => {
-    it("toggles the chat panel open/closed", () => {
-      expect(store().chatOpen).toBe(false);
-      store().toggleChat();
-      expect(store().chatOpen).toBe(true);
-      store().toggleChat();
-      expect(store().chatOpen).toBe(false);
-    });
-  });
-
   describe("setSaveStatus", () => {
     it("updates the save status", () => {
       store().setSaveStatus("saving");
@@ -101,15 +92,6 @@ describe("canvasStore", () => {
     });
   });
 
-  describe("toggleObservability", () => {
-    it("toggles the observability panel open/closed", () => {
-      expect(store().observabilityOpen).toBe(false);
-      store().toggleObservability();
-      expect(store().observabilityOpen).toBe(true);
-      store().toggleObservability();
-      expect(store().observabilityOpen).toBe(false);
-    });
-  });
 
   describe("setViewport", () => {
     it("updates the viewport zoom and coordinates", () => {
@@ -119,16 +101,30 @@ describe("canvasStore", () => {
     });
   });
 
+  describe("setPropertiesWidth", () => {
+    it("updates propertiesWidth", () => {
+      store().setPropertiesWidth(350);
+      expect(store().propertiesWidth).toBe(350);
+    });
+  });
+
+  describe("setIsDraggingPanel", () => {
+    it("updates isDraggingPanel status", () => {
+      store().setIsDraggingPanel(true);
+      expect(store().isDraggingPanel).toBe(true);
+    });
+  });
+
   describe("reset", () => {
     it("restores all state to defaults", () => {
       store().setCanvas("id-99", "Some Canvas");
       store().setNodes([{ id: "n1", type: "agent", position: { x: 0, y: 0 }, data: {} }] as any);
       store().selectNode("n1");
       store().setActiveNodeId("n1");
-      store().toggleChat();
-      store().toggleObservability();
       store().setSaveStatus("saving");
       store().setViewport({ x: 10, y: 20, zoom: 1.5 });
+      store().setPropertiesWidth(350);
+      store().setIsDraggingPanel(true);
 
       store().reset();
 
@@ -138,10 +134,10 @@ describe("canvasStore", () => {
       expect(store().edges).toEqual([]);
       expect(store().selectedNodeId).toBeNull();
       expect(store().activeNodeId).toBeNull();
-      expect(store().chatOpen).toBe(false);
-      expect(store().observabilityOpen).toBe(false);
       expect(store().saveStatus).toBe("idle");
       expect(store().viewport).toEqual({ x: 0, y: 0, zoom: 1 });
+      expect(store().propertiesWidth).toBe(320);
+      expect(store().isDraggingPanel).toBe(false);
     });
   });
 });

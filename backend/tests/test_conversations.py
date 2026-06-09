@@ -168,6 +168,31 @@ class TestConversationAPI:
         )
         assert resp.status_code == 404
 
+    async def test_get_conversation_by_id(self, test_client, fresh_db, blank_canvas):
+        create_resp = await test_client.post(
+            f"/api/canvases/{blank_canvas.id}/conversations",
+            json={"name": "Direct Chat"},
+        )
+        conv_id = create_resp.json()["id"]
+
+        resp = await test_client.get(f"/api/canvases/conversations/{conv_id}")
+        assert resp.status_code == 200
+        assert resp.json()["id"] == conv_id
+        assert resp.json()["name"] == "Direct Chat"
+
+    async def test_delete_conversation_by_id(self, test_client, fresh_db, blank_canvas):
+        create_resp = await test_client.post(
+            f"/api/canvases/{blank_canvas.id}/conversations",
+            json={"name": "DirectToDelete"},
+        )
+        conv_id = create_resp.json()["id"]
+
+        del_resp = await test_client.delete(f"/api/canvases/conversations/{conv_id}")
+        assert del_resp.status_code == 204
+
+        get_resp = await test_client.get(f"/api/canvases/conversations/{conv_id}")
+        assert get_resp.status_code == 404
+
 
 class TestConversationRepo:
     async def test_complete_conversation_sets_status(self, test_session, blank_canvas):
@@ -212,6 +237,38 @@ class TestConversationRepo:
         assert fetched.messages[1].role == "assistant"
         assert fetched.messages[1].agent_name == "MathAgent"
 
+    async def test_get_conversation_messages_are_ordered_by_created_at(
+        self, test_session, blank_canvas
+    ):
+        from datetime import UTC, datetime
+
+        from canvas_server.models.canvas import Message
+
+        repo = ConversationRepo(test_session)
+        conv = await repo.create(canvas_id=blank_canvas.id, name="Test Conv")
+        conv_id = conv.id
+
+        first = Message(
+            conversation_id=conv_id,
+            role="user",
+            content="First",
+            created_at=datetime(2020, 1, 1, 0, 0, tzinfo=UTC),
+        )
+        second = Message(
+            conversation_id=conv_id,
+            role="assistant",
+            content="Second",
+            created_at=datetime(2020, 1, 1, 0, 1, tzinfo=UTC),
+        )
+        test_session.add_all([second, first])
+        await test_session.commit()
+
+        test_session.expire_all()
+
+        fetched = await repo.get(conv_id)
+        assert fetched is not None
+        assert [msg.content for msg in fetched.messages] == ["First", "Second"]
+
     async def test_delete_conversation_cascades_messages(
         self, test_session, blank_canvas
     ):
@@ -245,6 +302,16 @@ class TestConversationRepo:
         result = await repo.list_for_canvas(canvas_id)
         names = {c.name for c in result}
         assert names == {"A", "B"}
+
+    async def test_update_conversation_name(self, test_session, blank_canvas):
+        repo = ConversationRepo(test_session)
+        conv = await repo.create(canvas_id=blank_canvas.id, name="New Conversation")
+        await repo.update_name(conv.id, "Weather question")
+        await test_session.commit()
+
+        fetched = await repo.get(conv.id)
+        assert fetched is not None
+        assert fetched.name == "Weather question"
 
 
 class TestRunnerWithConversation:
@@ -292,6 +359,24 @@ class TestRunnerWithConversation:
         user_msgs = [m for m in fetched.messages if m.role == "user"]
         assert len(user_msgs) == 1
         assert user_msgs[0].content == "Hello world"
+
+    async def test_generate_conversation_title(self, test_session, blank_canvas):
+        worker = FakeAgentNode(id=uuid.uuid4(), name="Worker", agent_type="worker")
+        canvas = FakeCanvas(agent_nodes=[worker])
+
+        repo = ConversationRepo(test_session)
+        conv = await repo.create(canvas_id=blank_canvas.id, name="New Conversation")
+        conv_id = conv.id
+
+        runner = await self._setup_worker_runner(worker, canvas)
+        runner.conversation_repo = repo
+        runner.conversation_id = conv_id
+        runner._lm.acall = AsyncMock(return_value=[{"content": "Weather question"}])
+
+        title = await runner.generate_conversation_title(
+            "What is the weather like today?"
+        )
+        assert title == "Weather question"
 
     async def test_runner_keeps_conversation_active(self, test_session, blank_canvas):
         worker = FakeAgentNode(id=uuid.uuid4(), name="Worker", agent_type="worker")
