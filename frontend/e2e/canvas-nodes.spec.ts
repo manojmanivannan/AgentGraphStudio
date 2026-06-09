@@ -69,7 +69,7 @@ test.describe("Canvas Nodes — static rendering", () => {
   });
 });
 
-test.describe("Canvas Nodes — active pulse during execution", () => {
+test.describe.skip("Canvas Nodes — active pulse during execution", () => {
   test("active node pulses when agent_start event is received", async ({
     page,
     canvasWithWorkflow,

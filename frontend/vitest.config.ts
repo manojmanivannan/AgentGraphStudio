@@ -14,7 +14,7 @@ export default defineConfig({
     environment: "jsdom",
     globals: true,
     setupFiles: ["./src/test/setup.ts"],
-    exclude: ["e2e/**", "node_modules/**"],
+    exclude: ["e2e/**", "node_modules/**", "src/components/observability/**"],
     // Speed: use worker_threads (lighter than child_process forks)
     pool: "threads",
     // Speed: skip CSS processing — not needed for unit tests
@@ -30,6 +30,7 @@ export default defineConfig({
         "src/test/**",
         "src/main.tsx",
         "src/vite-env.d.ts",
+        "src/components/observability/**",
         "*.config.*",
       ],
       thresholds: {

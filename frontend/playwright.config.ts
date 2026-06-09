@@ -5,10 +5,9 @@ export default defineConfig({
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
-  // Run up to 3 spec files in parallel. Each test gets its own seeded canvas
-  // via the canvasWithWorkflow fixture (per-test scope), so there are no
-  // shared-state conflicts. CI runners typically have 2–4 cores.
-  workers: process.env.CI ? 3 : 1,
+  // Run sequentially with 1 worker to prevent concurrent SQLite database write locks
+  // and CPU overloading on CI runners.
+  workers: 1,
   reporter: [
     ["html"],
     ["junit", { outputFile: "junit/e2e-results.xml" }],
