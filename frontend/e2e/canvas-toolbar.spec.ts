@@ -5,21 +5,18 @@
 import { test, expect } from "./fixtures";
 
 test.describe("Sidebar Rail", () => {
-  test("clicking Add Agent opens popover, then Worker adds a new agent node", async ({
+    test("clicking Add Worker Agent adds a new agent node", async ({
     page,
     canvasWithWorkflow,
   }) => {
+    // Wait for seeded agents to be visible
+    await expect(page.locator('[data-testid="agent-node"]').first()).toBeVisible();
+
     const initialCount = await page
       .locator('[data-testid="agent-node"]')
       .count();
 
-    await page.getByTestId("add-agent-button").click();
-
-    // Popover should appear
-    await expect(page.getByTestId("rail-popover")).toBeVisible();
-
-    // Click Worker option
-    await page.locator("button", { hasText: "Worker" }).click();
+    await page.getByTestId("add-agent-worker").click();
 
     // Wait for the new node to appear
     await expect(page.locator('[data-testid="agent-node"]')).toHaveCount(
@@ -32,6 +29,9 @@ test.describe("Sidebar Rail", () => {
     page,
     canvasWithWorkflow,
   }) => {
+    // Wait for seeded tools to be visible
+    await expect(page.locator('[data-testid="tool-node"]').first()).toBeVisible();
+
     const initialCount = await page
       .locator('[data-testid="tool-node"]')
       .count();
@@ -59,7 +59,7 @@ test.describe("Sidebar Rail", () => {
     await expect(page.getByTestId("rail-popover")).toBeVisible();
 
     // Click Clear in confirmation
-    await page.locator("button", { hasText: "Clear" }).click();
+    await page.getByTestId("rail-popover").getByRole("button", { name: "Clear", exact: true }).click();
 
     // All agent and tool nodes should be gone
     await expect(page.locator('[data-testid="agent-node"]')).toHaveCount(0, {

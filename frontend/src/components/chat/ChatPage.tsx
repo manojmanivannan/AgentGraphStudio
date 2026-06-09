@@ -12,8 +12,10 @@ import {
   Square,
   AlertCircle,
   FolderKanban,
+  Activity,
 } from "lucide-react";
 import { useCanvasStore } from "@/store/canvasStore";
+import { useThemeStore } from "@/store/themeStore";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import {
   createConversation,
@@ -73,6 +75,7 @@ export default function ChatPage() {
   const navigate = useNavigate();
 
   const setActiveNodeId = useCanvasStore((s) => s.setActiveNodeId);
+  const theme = useThemeStore((s) => s.theme);
 
   const [canvasId, setCanvasId] = useState<string | null>(null);
   const [canvasName, setCanvasName] = useState<string>("Canvas");
@@ -403,33 +406,50 @@ export default function ChatPage() {
       {/* Left Sidebar Panel */}
       <aside className="w-64 h-full border-r border-[var(--color-border-subtle)] bg-[var(--color-surface)] flex flex-col z-20">
         {/* Sidebar Header */}
-        <div className="p-4 border-b border-[var(--color-border-subtle)] flex flex-col gap-3">
-          <div className="flex items-center gap-2">
-            <FolderKanban className="w-5 h-5 text-[var(--color-accent)]" />
+        <div className="p-4 border-b border-[var(--color-border-subtle)] flex flex-col gap-2">
+          <div className="flex items-center gap-2 mb-2">
+            <img
+              src={theme === "dark" ? "/agent_graph_studio_logo_white.png" : "/agent_graph_studio_logo_dark.png"}
+              alt="Logo"
+              className="h-6 w-auto object-contain shrink-0"
+            />
             <span className="font-bold text-[14px] tracking-tight text-[var(--color-text-primary)]">
               AgentGraph Studio
             </span>
           </div>
 
-          <div className="grid grid-cols-2 gap-2 mt-1">
+          <div className="space-y-1">
             <Link
               to="/"
-              className="flex items-center justify-center gap-1.5 py-1.5 rounded-lg border border-[var(--color-border-default)] hover:bg-[var(--color-elevated)] text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] text-xs transition-colors"
+              className="flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-xs font-medium text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-elevated)] transition-colors"
               title="Home"
             >
-              <Home className="w-3.5 h-3.5" />
+              <Home className="w-4 h-4 text-[var(--color-text-tertiary)]" />
               Home
             </Link>
             {canvasId && (
               <Link
                 to={`/canvas/${canvasId}`}
-                className="flex items-center justify-center gap-1.5 py-1.5 rounded-lg border border-[var(--color-border-default)] hover:bg-[var(--color-elevated)] text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] text-xs transition-colors"
+                className="flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-xs font-medium text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-elevated)] transition-colors"
                 title="Canvas Editor"
               >
-                <Layout className="w-3.5 h-3.5" />
-                Canvas
+                <Layout className="w-4 h-4 text-[var(--color-text-tertiary)]" />
+                Visual Canvas
               </Link>
             )}
+            <button
+              className="w-full flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-[var(--color-elevated)] text-[var(--color-text-primary)] border border-[var(--color-border-default)] transition-colors text-left"
+            >
+              <MessageSquare className="w-4 h-4 text-[var(--color-text-tertiary)]" />
+              Agent Chat
+            </button>
+            <button
+              onClick={() => window.open("/mlflow/", "_blank")}
+              className="w-full flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-xs font-medium text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-elevated)] transition-colors text-left cursor-pointer"
+            >
+              <Activity className="w-4 h-4 text-[var(--color-text-tertiary)]" />
+              Observability
+            </button>
           </div>
         </div>
 
