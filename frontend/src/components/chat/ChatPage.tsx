@@ -103,9 +103,22 @@ export default function ChatPage() {
     setExpandedTurns(new Set());
   }, [conversation_id]);
 
+  // Support loading canvas_id from query param for empty state
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const urlCanvasId = params.get("canvas");
+    if (urlCanvasId) {
+      setCanvasId(urlCanvasId);
+      // Fetch canvas name
+      getCanvas(urlCanvasId)
+        .then((canvasData) => setCanvasName(canvasData.name))
+        .catch((err) => console.error("Failed to load canvas name from query param:", err));
+    }
+  }, []);
+
   // Load conversation details
   useEffect(() => {
-    if (!conversation_id) {
+    if (!conversation_id || conversation_id === "empty") {
       setMessages([]);
       return;
     }
@@ -709,11 +722,13 @@ export default function ChatPage() {
                 }}
                 placeholder="Message agents..."
                 disabled={running || loadingConv}
+                data-testid="chat-input"
                 className="input-base flex-1 py-2.5 px-4 rounded-xl"
               />
               <button
                 onClick={running ? stopRun : handleSend}
                 disabled={!running && (!input.trim() || loadingConv)}
+                data-testid={running ? "stop-button" : "send-button"}
                 className={`px-4 py-2.5 rounded-xl text-white text-sm font-semibold transition-all duration-200 disabled:opacity-40 flex items-center justify-center shadow ${running
                   ? "bg-[var(--color-danger)] hover:bg-[var(--color-danger)]/90"
                   : "bg-[var(--color-accent)] hover:bg-[var(--color-accent-bright)] shadow-[var(--color-accent-subtle)]"
