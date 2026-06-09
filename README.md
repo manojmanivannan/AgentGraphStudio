@@ -1,4 +1,10 @@
-<h1 align="center">AgentGraph Studio</h1>
+<h1 align="center">
+  <img src="https://raw.githubusercontent.com/manojmanivannan/agentgraphstudio/main/frontend/public/agent_graph_studio_logo_white.png#gh-light-mode-only" valign="middle" width="48" />
+  <img src="https://raw.githubusercontent.com/manojmanivannan/agentgraphstudio/main/frontend/public/agent_graph_studio_logo_dark.png#gh-dark-mode-only" valign="middle" width="48" />
+  AgentGraph Studio
+</h1>
+
+
 <p align="center">
   <strong>Orchestrate AI agents & Chat</strong>
 </p>
