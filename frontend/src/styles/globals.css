@@ -27,6 +27,7 @@
   --color-text-secondary: #a3a3bd;
   --color-text-tertiary: #74748b;
   --color-text-inverse: #121216;
+  --color-text-contrast: #ffffff;
 
   /* Primary accent — distinctive teal */
   --color-accent: #14b8a6;
@@ -85,6 +86,7 @@ html[data-theme="light"] {
   --color-text-secondary: #6e6e82;
   --color-text-tertiary: #9c9cb0;
   --color-text-inverse: #ffffff;
+  --color-text-contrast: #000000;
 
   /* Primary accent — teal (adjusted for light bg) */
   --color-accent: #0d9488;
@@ -755,4 +757,14 @@ html[data-theme="light"] ::-webkit-scrollbar-thumb:hover {
 .resize-handle:hover,
 .resize-handle.active {
   background-color: var(--color-accent);
+}
+
+/* ─── Delete Modal Title Theme ───────────────────────────── */
+
+.delete-modal-title {
+  color: #ffffff !important;
+}
+
+html[data-theme="light"] .delete-modal-title {
+  color: #000000 !important;
 }

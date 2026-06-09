@@ -1,20 +1,28 @@
 import { useRef, useState } from "react";
 import { v4 as uuidv4 } from "uuid";
+import { Link, useNavigate } from "react-router-dom";
 import {
   Brain,
   Wrench,
   Trash2,
   Download,
   Upload,
-  Sun,
-  Moon,
   GitBranch,
+  FolderKanban,
+  Layout,
+  MessageSquare,
+  Home,
+  Activity,
 } from "lucide-react";
 import { useCanvasStore } from "@/store/canvasStore";
-import { useThemeStore } from "@/store/themeStore";
-import { exportCanvasZip, importCanvas, importCanvasZip } from "@/lib/api";
+import {
+  exportCanvasZip,
+  importCanvas,
+  importCanvasZip,
+  listConversations,
+  createConversation,
+} from "@/lib/api";
 import type { CanvasSavePayload } from "@/types";
-import { RailItem } from "./RailItem";
 import { RailPopover } from "./RailPopover";
 
 export function SidebarRail() {
@@ -24,20 +32,18 @@ export function SidebarRail() {
   const setNodes = useCanvasStore((s) => s.setNodes);
   const setEdges = useCanvasStore((s) => s.setEdges);
   const setCanvas = useCanvasStore((s) => s.setCanvas);
-  const theme = useThemeStore((s) => s.theme);
-  const toggleTheme = useThemeStore((s) => s.toggleTheme);
 
-  const addAgentRef = useRef<HTMLButtonElement>(null);
+  const navigate = useNavigate();
+
   const clearRef = useRef<HTMLButtonElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [addAgentOpen, setAddAgentOpen] = useState(false);
   const [clearOpen, setClearOpen] = useState(false);
 
   /** Calculate a position in the center of the current canvas viewport,
    *  with slight randomness so multiple nodes don't stack. */
   const getViewportCenterPosition = () => {
     const { x, y, zoom } = useCanvasStore.getState().viewport;
-    const railWidth = 48;
+    const railWidth = 256;
     // Center of the visible canvas area in screen pixels
     const screenCenterX = railWidth + (window.innerWidth - railWidth) / 2;
     const screenCenterY = window.innerHeight / 2;
@@ -68,7 +74,6 @@ export function SidebarRail() {
       },
     };
     setNodes([...nodes, newNode]);
-    setAddAgentOpen(false);
   };
 
   const addTool = () => {
@@ -219,118 +224,178 @@ export function SidebarRail() {
     e.target.value = "";
   };
 
-  const isDark = theme === "dark";
+  const handleChatClick = async () => {
+    if (!canvasId) return;
+    try {
+      const convs = await listConversations(canvasId);
+      if (convs && convs.length > 0) {
+        navigate(`/chat/${convs[0].id}`);
+      } else {
+        const newConv = await createConversation(canvasId, "New Conversation");
+        navigate(`/chat/${newConv.id}`);
+      }
+    } catch (err) {
+      console.error("Failed to list/create conversations in SidebarRail:", err);
+      try {
+        const newConv = await createConversation(canvasId, "New Conversation");
+        navigate(`/chat/${newConv.id}`);
+      } catch (e) {
+        console.error("Fallback new conversation creation failed:", e);
+      }
+    }
+  };
 
   return (
-    <div
+    <aside
       data-testid="sidebar-rail"
-      className="absolute left-0 top-0 bottom-0 w-12 chrome-glass border-r border-[var(--color-border-subtle)] flex flex-col items-center py-3 gap-1 z-40"
+      className="absolute left-0 top-0 bottom-0 w-64 border-r border-[var(--color-border-subtle)] bg-[var(--color-surface)] flex flex-col z-40"
     >
-      {/* Create section */}
-      <div className="relative">
-        <RailItem
-          ref={addAgentRef}
-          icon={Brain}
-          label="Add Agent"
-          onClick={() => setAddAgentOpen((prev) => !prev)}
-          data-testid="add-agent-button"
-        />
-        <RailPopover
-          open={addAgentOpen}
-          onClose={() => setAddAgentOpen(false)}
-          anchorRef={addAgentRef}
-        >
-          <button
-            onClick={() => addAgent("worker")}
-            className="w-full flex items-center gap-2.5 px-3 py-2 text-[13px] text-[var(--color-text-secondary)] hover:text-[var(--color-accent)] hover:bg-[var(--color-accent-subtle)] rounded-md transition-colors"
+      {/* Sidebar Header */}
+      <div className="p-4 border-b border-[var(--color-border-subtle)] flex flex-col gap-2">
+        <div className="flex items-center gap-2 mb-2">
+          <FolderKanban className="w-5 h-5 text-[var(--color-accent)]" />
+          <span className="font-bold text-[14px] tracking-tight text-[var(--color-text-primary)]">
+            AgentGraph Studio
+          </span>
+        </div>
+
+        <div className="space-y-1">
+          <Link
+            to="/"
+            className="flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-xs font-medium text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-elevated)] transition-colors"
+            title="Home"
           >
-            <Brain className="w-3.5 h-3.5 text-[var(--color-accent)]" />
-            Worker
+            <Home className="w-4 h-4 text-[var(--color-text-tertiary)]" />
+            Home
+          </Link>
+          {canvasId && (
+            <Link
+              to={`/canvas/${canvasId}`}
+              className="flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-[var(--color-elevated)] text-[var(--color-text-primary)] border border-[var(--color-border-default)] transition-colors"
+              title="Canvas Editor"
+            >
+              <Layout className="w-4 h-4 text-[var(--color-text-tertiary)]" />
+              Visual Canvas
+            </Link>
+          )}
+          <button
+            onClick={handleChatClick}
+            data-testid="chat-toggle"
+            className="w-full flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-xs font-medium text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-elevated)] transition-colors text-left cursor-pointer"
+          >
+            <MessageSquare className="w-4 h-4 text-[var(--color-text-tertiary)]" />
+            Agent Chat
           </button>
           <button
-            onClick={() => addAgent("router")}
-            className="w-full flex items-center gap-2.5 px-3 py-2 text-[13px] text-[var(--color-text-secondary)] hover:text-[var(--color-agent)] hover:bg-[var(--color-agent-subtle)] rounded-md transition-colors"
+            onClick={() => window.open("/mlflow/", "_blank")}
+            data-testid="observability-toggle"
+            className="w-full flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-xs font-medium text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-elevated)] transition-colors text-left cursor-pointer"
           >
-            <GitBranch className="w-3.5 h-3.5 text-[var(--color-agent)]" />
-            Router
+            <Activity className="w-4 h-4 text-[var(--color-text-tertiary)]" />
+            Observability
           </button>
-        </RailPopover>
+        </div>
       </div>
 
-      <RailItem
-        icon={Wrench}
-        label="Add Tool"
-        onClick={addTool}
-        data-testid="add-tool-button"
-      />
+      {/* Sidebar Content (Middle actions) */}
+      <div className="flex-1 p-4 space-y-4 overflow-y-auto">
+        {/* Build Section */}
+        <div>
+          <h3 className="text-[10px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-wider mb-2">
+            Build
+          </h3>
+          <div className="space-y-1.5">
+            <button
+              onClick={() => addAgent("worker")}
+              data-testid="add-agent-worker"
+              className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium text-[var(--color-text-secondary)] hover:text-[var(--color-accent)] hover:bg-[var(--color-accent-subtle)] transition-colors text-left cursor-pointer"
+            >
+              <Brain className="w-4 h-4 text-[var(--color-accent)]" />
+              Add Worker Agent
+            </button>
+            <button
+              onClick={() => addAgent("router")}
+              data-testid="add-agent-router"
+              className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium text-[var(--color-text-secondary)] hover:text-[var(--color-agent)] hover:bg-[var(--color-agent-subtle)] transition-colors text-left cursor-pointer"
+            >
+              <GitBranch className="w-4 h-4 text-[var(--color-agent)]" />
+              Add Router Agent
+            </button>
+            <button
+              onClick={addTool}
+              data-testid="add-tool-button"
+              className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-elevated)] transition-colors text-left cursor-pointer"
+            >
+              <Wrench className="w-4 h-4 text-[var(--color-text-tertiary)]" />
+              Add Custom Tool
+            </button>
+          </div>
+        </div>
 
-      {/* Divider */}
-      <div className="w-6 h-px bg-[var(--color-border-subtle)] my-2" />
+        {/* Manage Section */}
+        <div>
+          <h3 className="text-[10px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-wider mb-2">
+            Manage Canvas
+          </h3>
+          <div className="space-y-1.5">
+            <button
+              onClick={handleImport}
+              data-testid="import-button"
+              className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-elevated)] transition-colors text-left cursor-pointer"
+            >
+              <Upload className="w-4 h-4 text-[var(--color-text-tertiary)]" />
+              Import Canvas (.json / .zip)
+            </button>
+            <button
+              onClick={handleExport}
+              data-testid="export-button"
+              className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-elevated)] transition-colors text-left cursor-pointer"
+            >
+              <Download className="w-4 h-4 text-[var(--color-text-tertiary)]" />
+              Export Canvas package
+            </button>
 
-      {/* Canvas actions */}
-      <div className="relative">
-        <RailItem
-          ref={clearRef}
-          icon={Trash2}
-          label="Clear Canvas"
-          onClick={() => setClearOpen((prev) => !prev)}
-          danger
-          data-testid="clear-canvas-button"
-        />
-        <RailPopover
-          open={clearOpen}
-          onClose={() => setClearOpen(false)}
-          anchorRef={clearRef}
-        >
-          <div className="px-3 py-2">
-            <p className="text-[12px] text-[var(--color-text-secondary)] mb-2">
-              Clear all nodes and edges?
-            </p>
-            <div className="flex gap-2">
+            {/* Clear Canvas */}
+            <div className="relative">
               <button
-                onClick={() => setClearOpen(false)}
-                className="btn-ghost text-[11px] px-2 py-1"
+                ref={clearRef}
+                onClick={() => setClearOpen((prev) => !prev)}
+                data-testid="clear-canvas-button"
+                className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium text-[var(--color-text-secondary)] hover:text-[var(--color-danger)] hover:bg-[var(--color-danger-subtle)] transition-colors text-left cursor-pointer"
               >
-                Cancel
+                <Trash2 className="w-4 h-4 text-[var(--color-text-tertiary)]" />
+                Clear Canvas
               </button>
-              <button
-                onClick={clearCanvas}
-                className="btn-danger-ghost text-[11px] px-2 py-1"
+
+              <RailPopover
+                open={clearOpen}
+                onClose={() => setClearOpen(false)}
+                anchorRef={clearRef}
               >
-                Clear
-              </button>
+                <div className="p-3">
+                  <p className="text-[11px] text-[var(--color-text-secondary)] mb-2 whitespace-nowrap">
+                    Clear all nodes and edges?
+                  </p>
+                  <div className="flex gap-2 justify-end">
+                    <button
+                      onClick={() => setClearOpen(false)}
+                      className="btn-ghost text-[10px] px-2 py-1"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={clearCanvas}
+                      className="btn-danger-ghost text-[10px] px-2 py-1"
+                    >
+                      Clear
+                    </button>
+                  </div>
+                </div>
+              </RailPopover>
             </div>
           </div>
-        </RailPopover>
+        </div>
       </div>
-
-      <RailItem
-        icon={Download}
-        label="Download"
-        onClick={handleExport}
-        data-testid="export-button"
-      />
-
-      <RailItem
-        icon={Upload}
-        label="Upload"
-        onClick={handleImport}
-        data-testid="import-button"
-      />
-
-      {/* Spacer */}
-      <div className="flex-1" />
-
-      {/* Divider */}
-      <div className="w-6 h-px bg-[var(--color-border-subtle)] my-2" />
-
-      {/* Theme toggle */}
-      <RailItem
-        icon={isDark ? Moon : Sun}
-        label={isDark ? "Light Mode" : "Dark Mode"}
-        onClick={toggleTheme}
-        data-testid="theme-toggle"
-      />
 
       <input
         ref={fileInputRef}
@@ -339,6 +404,6 @@ export function SidebarRail() {
         onChange={handleFileChange}
         className="hidden"
       />
-    </div>
+    </aside>
   );
 }
