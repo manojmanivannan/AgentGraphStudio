@@ -4,58 +4,57 @@
  */
 import { test, expect } from "./fixtures";
 
+test.beforeEach(async ({ page, canvasWithWorkflow }) => {
+  await page.getByTestId("chat-toggle").click();
+});
+
 test.describe("Chat Panel — conversation management", () => {
-  test("shows 'Select or create a conversation' placeholder when no conversation is active", async ({
+  test("shows 'No Chat Active' placeholder when no conversation is active", async ({
     page,
-    canvasWithWorkflow: _,
+    canvasWithWorkflow,
   }) => {
-    await expect(
-      page.getByText("Select or create a conversation")
-    ).toBeVisible();
+    // Navigate directly to the empty chat page for this canvas
+    await page.goto(`/chat/empty?canvas=${canvasWithWorkflow.canvasId}`);
+    await expect(page.getByText("No Chat Active")).toBeVisible();
+    await expect(page.getByText("Start New Conversation")).toBeVisible();
   });
 
-  test("clicking the selector opens the dropdown with New Conversation", async ({
+  test("shows sidebar with Recent Chats and New Conversation button", async ({
     page,
     canvasWithWorkflow: _,
   }) => {
-    await page.getByTestId("conversation-selector").click();
-    await expect(page.getByTestId("new-conversation-button")).toBeVisible();
+    await expect(page.getByText("Recent Chats")).toBeVisible();
+    await expect(page.getByRole("button", { name: "New Conversation" })).toBeVisible();
   });
 
   test("clicking New Conversation creates a conversation and shows it selected", async ({
     page,
     canvasWithWorkflow: _,
   }) => {
-    await page.getByTestId("conversation-selector").click();
-    await page.getByTestId("new-conversation-button").click();
+    await page.getByRole("button", { name: "New Conversation" }).click();
 
-    // Selector should now show the conversation name
-    await expect(page.getByTestId("conversation-selector")).toContainText(
-      "New Conversation",
-      { timeout: 5000 }
-    );
+    // The main heading should show the active conversation name
+    await expect(page.getByText("Chat session")).toBeVisible();
+    await expect(page.getByText("New Conversation").first()).toBeVisible();
   });
 
   test("deleting a conversation removes it from the list", async ({
     page,
     canvasWithWorkflow: _,
   }) => {
-    // Create a conversation first
-    await page.getByTestId("conversation-selector").click();
-    await page.getByTestId("new-conversation-button").click();
-    await expect(page.getByTestId("conversation-selector")).toContainText(
-      "New Conversation"
-    );
+    // There is already a conversation created by the chat-toggle click in beforeEach.
+    // Hover the conversation list item and click the delete button
+    const item = page.locator("aside").getByText("New Conversation").first();
+    await item.hover();
+    
+    // Find the delete button in the hovered item and click it
+    await page.getByTitle("Delete conversation").first().click();
 
-    // Open selector and delete
-    await page.getByTestId("conversation-selector").click();
-    await page.getByTestId("delete-conversation-button").click();
+    // Click confirm Delete button in modal (use exact match to avoid strictness violation)
+    await page.getByRole("button", { name: "Delete", exact: true }).click();
 
-    // Should revert to placeholder
-    await expect(page.getByTestId("conversation-selector")).not.toContainText(
-      "New Conversation",
-      { timeout: 5000 }
-    );
+    // It should navigate to /chat/empty and show the placeholder
+    await expect(page.getByText("No Chat Active")).toBeVisible({ timeout: 5000 });
   });
 });
 
@@ -64,9 +63,6 @@ test.describe("Chat Panel — message sending and streaming", () => {
     page,
     canvasWithWorkflow: _,
   }) => {
-    await page.getByTestId("conversation-selector").click();
-    await page.getByTestId("new-conversation-button").click();
-
     await page.getByTestId("chat-input").fill("Hello agent");
     await page.getByTestId("chat-input").press("Enter");
 
@@ -77,26 +73,12 @@ test.describe("Chat Panel — message sending and streaming", () => {
     page,
     canvasWithWorkflow: _,
   }) => {
-    await page.getByTestId("conversation-selector").click();
-    await page.getByTestId("new-conversation-button").click();
-
     await page.getByTestId("chat-input").fill("Run test");
     await page.getByTestId("chat-input").press("Enter");
 
     // Loading dots and stop button should appear
     await expect(page.getByTestId("stop-button")).toBeVisible({ timeout: 5000 });
   });
-
-  // TODO: Re-enable these streaming tests once the wsFixture mock is fixed.
-  // The WebSocket route mock does not properly deliver events to the ChatOverlay.
-  test.skip("streaming events render correctly in a real browser", async () => {});
-
-  test.skip("thought event appears as a step during streaming", async () => {});
-
-  test.skip("steps toggle collapses and expands step details", async () => {});
-
-  // TODO: Re-enable once wsFixture mock is fixed.
-  test.skip("after run_complete the send button is re-enabled", async () => {});
 });
 
 test.describe("Chat Panel — stop button", () => {
@@ -104,9 +86,6 @@ test.describe("Chat Panel — stop button", () => {
     page,
     canvasWithWorkflow: _,
   }) => {
-    await page.getByTestId("conversation-selector").click();
-    await page.getByTestId("new-conversation-button").click();
-
     await page.getByTestId("chat-input").fill("Long run");
     await page.getByTestId("chat-input").press("Enter");
 

@@ -5,6 +5,8 @@ export default defineConfig({
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
+  // Run sequentially with 1 worker to prevent concurrent SQLite database write locks
+  // and CPU overloading on CI runners.
   workers: 1,
   reporter: [
     ["html"],

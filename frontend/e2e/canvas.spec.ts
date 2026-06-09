@@ -1,9 +1,9 @@
 import { test, expect } from "@playwright/test";
 
 test.describe("Canvas landing page", () => {
-  test("shows Agent Builder heading", async ({ page }) => {
+  test("shows AgentGraph Studio heading", async ({ page }) => {
     await page.goto("/");
-    await expect(page.getByText("Agent Builder")).toBeVisible();
+    await expect(page.getByText("AgentGraph Studio")).toBeVisible();
     await expect(page.getByText("New Canvas")).toBeVisible();
   });
 
@@ -41,7 +41,7 @@ test.describe("Canvas landing page", () => {
     await page.goto("/");
     await page.evaluate(() => window.scrollTo(0, 0));
     // Use a more specific selector to avoid matching multiple elements
-    await page.getByRole("button", { name: uniqueName }).click();
+    await page.getByRole("link", { name: uniqueName }).click();
 
     await expect(page.locator(".react-flow")).toBeVisible({ timeout: 10_000 });
   });

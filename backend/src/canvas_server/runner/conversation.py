@@ -42,6 +42,15 @@ class ConversationService:
         node_id: uuid.UUID | None = None,
         event_type: str | None = None,
     ):
+        has_repo = self.conversation_repo is not None
+        logger.info(
+            "persist_message called: role=%s, event_type=%s, agent_name=%s, repo=%s, conv_id=%s",
+            role,
+            event_type,
+            agent_name,
+            has_repo,
+            self.conversation_id,
+        )
         if not self.conversation_repo or not self.conversation_id:
             return
         try:
@@ -80,6 +89,13 @@ class ConversationService:
                 and msg.node_id not in history_enabled_node_ids
             ):
                 continue
+            event_type = (
+                getattr(msg, "event_type", None)
+                if not isinstance(msg, dict)
+                else msg.get("event_type")
+            )
+            if msg.role == "assistant" and event_type not in (None, "final_answer"):
+                continue
             if msg.agent_name and msg.role == "assistant":
                 label = f"Assistant [{msg.agent_name}]"
             else:
@@ -108,7 +124,13 @@ class ConversationService:
             elif msg.role == "user":
                 dspy_messages.append({"user_request": msg.content})
             elif msg.role == "assistant" and msg.node_id in history_enabled_node_ids:
-                dspy_messages.append({"process_result": msg.content})
+                event_type = (
+                    getattr(msg, "event_type", None)
+                    if not isinstance(msg, dict)
+                    else msg.get("event_type")
+                )
+                if event_type in (None, "final_answer"):
+                    dspy_messages.append({"process_result": msg.content})
         if not dspy_messages:
             return None
         return dspy.History(messages=dspy_messages)

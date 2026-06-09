@@ -43,6 +43,8 @@ This is an **agent builder** — a visual IDE for creating multi-agent AI workfl
 5. **Export/Import ZIP packages** — export a canvas as a ZIP archive containing a manifest and per-agent RAG documents, or import it back to preserve team structure and document artifacts.
 6. **Run** — watch agents reason, call tools, use memory, run RAG queries, and collaborate in real-time.
 
+7. **Automatic conversation naming** — When a user sends the first message in a newly-created conversation, the backend uses a DSPy LLM call to generate a concise conversation title and updates the conversation name immediately. If the model doesn't return a name, the system falls back to a short excerpt from the user's question. The UI refreshes the conversation list in-place so the new title appears in the left-hand Recent Chats pane.
+
 **Two agent types:**
 - **Workers** — execute tasks by reasoning and calling tools (DSPy ReAct loop). Can have RAG documents.
 - **Routers** — orchestrate by handing off tasks to other agents.
@@ -90,15 +92,18 @@ Or use SQLite for development (set `DATABASE_URL=sqlite+aiosqlite:///dev.db`).
 - **Memory:** mem0 + local Qdrant vector store, per-agent via `user_id` scoping and a shared in-process mem0 singleton
 - **Observability:** MLflow DSPy autolog
 
-### Layout
+### Layout & Routes
 
-| Zone | Size | Description |
-|---|---|---|
-| **TopBar** | top, h=40 | Canvas name, save status, observability/chat toggles |
-| **SidebarRail** | left, w=48 | Add agent/tool, clear, export/import, theme |
-| **CanvasView** | center w/h | ReactFlow: drag agents, tools, edges |
-| **PropertiesOverlay** | right, w=320 | Edits selected agent/tool properties |
-| **ChatOverlay** | right, w=400 | Conversations, streaming output |
+The application features a clean, multi-page router architecture:
+
+- **Landing Page** (`/`): Dashboard listing all saved agent canvases with search and import options.
+- **Canvas Editor Page** (`/canvas/:canvas_id`): Interactive visual graph workspace with:
+  - **TopBar**: Canvas name, save status, and quick links to open **Observability** or **Agent Chat**.
+  - **SidebarRail**: Actions to add agent/tool nodes, clear the graph, export/import, and toggle the theme.
+  - **CanvasView**: ReactFlow workspace for layout and wiring of agents/tools.
+  - **PropertiesOverlay**: Drawer panel for modifying selected agent parameters, memory settings, or Monaco Python tool code.
+- **Agent Chat Page** (`/chat/:conversation_id`): Dedicated dual-pane conversation workspace featuring past conversations list, thread deletions, real-time thought/tool/handoff streaming view, and final answer history.
+- **Observability Page** (`/observability/:canvas_id`): Dedicated workspace housing the full-screen MLflow iframe alongside quick-jump navigation controls back to the chat page or canvas editor.
 
 ---
 

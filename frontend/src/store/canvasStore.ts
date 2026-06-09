@@ -12,10 +12,10 @@ interface CanvasStore {
   edges: Edge[];
   selectedNodeId: string | null;
   activeNodeId: string | null;
-  chatOpen: boolean;
-  observabilityOpen: boolean;
   saveStatus: SaveStatus;
   viewport: Viewport;
+  propertiesWidth: number;
+  isDraggingPanel: boolean;
 
   setCanvas: (id: string, name: string) => void;
   setName: (name: string) => void;
@@ -23,10 +23,10 @@ interface CanvasStore {
   setEdges: (edges: Edge[]) => void;
   selectNode: (id: string | null) => void;
   setActiveNodeId: (id: string | null) => void;
-  toggleChat: () => void;
-  toggleObservability: () => void;
   setSaveStatus: (status: SaveStatus) => void;
   setViewport: (viewport: Viewport) => void;
+  setPropertiesWidth: (width: number) => void;
+  setIsDraggingPanel: (isDragging: boolean) => void;
   reset: () => void;
 }
 
@@ -37,10 +37,10 @@ export const useCanvasStore = create<CanvasStore>((set) => ({
   edges: [],
   selectedNodeId: null,
   activeNodeId: null,
-  chatOpen: false,
-  observabilityOpen: false,
   saveStatus: "idle",
   viewport: { x: 0, y: 0, zoom: 1 },
+  propertiesWidth: 320,
+  isDraggingPanel: false,
 
   setCanvas: (id, name) => set({ canvasId: id, canvasName: name }),
   setName: (name) => set({ canvasName: name }),
@@ -48,10 +48,10 @@ export const useCanvasStore = create<CanvasStore>((set) => ({
   setEdges: (edges) => set({ edges }),
   selectNode: (id) => set({ selectedNodeId: id }),
   setActiveNodeId: (id) => set({ activeNodeId: id }),
-  toggleChat: () => set((s) => ({ chatOpen: !s.chatOpen })),
-  toggleObservability: () => set((s) => ({ observabilityOpen: !s.observabilityOpen })),
   setSaveStatus: (status) => set({ saveStatus: status }),
   setViewport: (viewport) => set({ viewport }),
+  setPropertiesWidth: (propertiesWidth) => set({ propertiesWidth }),
+  setIsDraggingPanel: (isDraggingPanel) => set({ isDraggingPanel }),
   reset: () =>
     set({
       canvasId: null,
@@ -60,9 +60,9 @@ export const useCanvasStore = create<CanvasStore>((set) => ({
       edges: [],
       selectedNodeId: null,
       activeNodeId: null,
-      chatOpen: false,
-      observabilityOpen: false,
       saveStatus: "idle",
       viewport: { x: 0, y: 0, zoom: 1 },
+      propertiesWidth: 320,
+      isDraggingPanel: false,
     }),
 }));

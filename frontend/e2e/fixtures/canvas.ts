@@ -89,9 +89,6 @@ export const test = base.extend<CanvasFixture>({
     await page.goto(`/?canvas=${nodeIds.canvasId}`);
     await expect(page.locator(".react-flow")).toBeVisible({ timeout: 10_000 });
 
-    // Open the chat panel via sidebar rail toggle
-    await page.getByTestId("chat-toggle").click();
-
     await use(nodeIds);
   },
 });

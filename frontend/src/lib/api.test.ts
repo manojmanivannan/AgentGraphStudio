@@ -280,7 +280,7 @@ describe("api", () => {
         })
       );
       const res = await inspectTool("print(1)", ["requests"]);
-      expect(res.valid).toBe(true);
+      expect((res as any).valid).toBe(true);
     });
 
     it("should throw server error with detail when status code is error", async () => {
@@ -335,7 +335,7 @@ describe("api", () => {
 
   describe("listAgentDocuments", () => {
     it("should list documents successfully", async () => {
-      const mockDocs = [{ id: "doc-1", filename: "test.txt", size: 123, created_at: "..." }];
+      const mockDocs = [{ id: "doc-1", name: "test.txt", created_at: "..." }];
       server.use(
         http.get(`${API}/canvases/:canvasId/agents/:agentId/documents`, () => {
           return HttpResponse.json(mockDocs);
@@ -343,7 +343,7 @@ describe("api", () => {
       );
       const res = await listAgentDocuments("canvas-1", "agent-1");
       expect(res).toHaveLength(1);
-      expect(res[0].filename).toBe("test.txt");
+      expect(res[0].name).toBe("test.txt");
     });
 
     it("should throw error when list fails", async () => {
@@ -358,7 +358,7 @@ describe("api", () => {
 
   describe("uploadAgentDocument", () => {
     it("should upload agent document successfully", async () => {
-      const mockDoc = { id: "doc-1", filename: "test.txt", size: 123, created_at: "..." };
+      const mockDoc = { id: "doc-1", name: "test.txt", created_at: "..." };
       server.use(
         http.post(`${API}/canvases/:canvasId/agents/:agentId/documents`, () => {
           return HttpResponse.json(mockDoc);
@@ -366,7 +366,7 @@ describe("api", () => {
       );
       const file = new File(["test data"], "test.txt", { type: "text/plain" });
       const res = await uploadAgentDocument("canvas-1", "agent-1", file);
-      expect(res.filename).toBe("test.txt");
+      expect(res.name).toBe("test.txt");
     });
 
     it("should throw error when upload fails", async () => {

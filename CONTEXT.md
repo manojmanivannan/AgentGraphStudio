@@ -40,6 +40,8 @@ _Avoid_: Custom agent, React agent
 A persisted chat thread scoped to a Canvas. Tracks multi-turn user↔assistant exchanges. Messages include role, agent name, node_id, and event_type.
 _Avoid_: Thread, chat session
 
+Automatic naming: When the first user message is sent in a newly-created conversation (default name `New Conversation`), the backend attempts to generate a concise human-friendly title using a DSPy LLM call. If successful the conversation `name` is updated and a `conversation_renamed` WebSocket event is emitted so the frontend updates the Recent Chats list and current header immediately. If the LLM does not produce a suitable title, the backend falls back to a short excerpt from the user's question.
+
 **Turn**:
 A single user message + the resulting assistant messages (steps + final answer) within a Conversation.
 _Avoid_: Exchange, round
@@ -71,7 +73,7 @@ The maximum length (in characters) used when splitting RAG documents into paragr
 _Avoid_: Split size, block length, character limit
 
 **Observability**:
-An embedded MLflow UI iframe for tracing DSPy agent calls, tool invocations, and LLM interactions via `mlflow.dspy.autolog()`.
+A dedicated MLflow UI page route (`/observability/:canvas_id`) that embeds the MLflow dashboard for tracing DSPy agent calls, tool invocations, and LLM interactions via `mlflow.dspy.autolog()`.
 _Avoid_: Tracing, monitoring, dashboard
 
 **Sandbox**:
