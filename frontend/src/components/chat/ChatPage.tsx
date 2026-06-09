@@ -15,6 +15,7 @@ import {
   Activity,
 } from "lucide-react";
 import { useCanvasStore } from "@/store/canvasStore";
+import { useThemeStore } from "@/store/themeStore";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import {
   createConversation,
@@ -74,6 +75,7 @@ export default function ChatPage() {
   const navigate = useNavigate();
 
   const setActiveNodeId = useCanvasStore((s) => s.setActiveNodeId);
+  const theme = useThemeStore((s) => s.theme);
 
   const [canvasId, setCanvasId] = useState<string | null>(null);
   const [canvasName, setCanvasName] = useState<string>("Canvas");
@@ -406,7 +408,11 @@ export default function ChatPage() {
         {/* Sidebar Header */}
         <div className="p-4 border-b border-[var(--color-border-subtle)] flex flex-col gap-2">
           <div className="flex items-center gap-2 mb-2">
-            <FolderKanban className="w-5 h-5 text-[var(--color-accent)]" />
+            <img
+              src={theme === "dark" ? "/agent_graph_studio_logo_white.png" : "/agent_graph_studio_logo_dark.png"}
+              alt="Logo"
+              className="h-6 w-auto object-contain shrink-0"
+            />
             <span className="font-bold text-[14px] tracking-tight text-[var(--color-text-primary)]">
               AgentGraph Studio
             </span>

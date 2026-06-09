@@ -164,7 +164,7 @@ describe("SidebarRail", () => {
     useCanvasStore.getState().setCanvas("canvas-1", "Test Canvas");
     
     const { listConversations } = await import("@/lib/api");
-    vi.mocked(listConversations).mockResolvedValue([{ id: "conv-1", canvas_id: "canvas-1", name: "Chat" }]);
+    vi.mocked(listConversations).mockResolvedValue([{ id: "conv-1", canvas_id: "canvas-1", name: "Chat" } as any]);
 
     renderSidebar();
 

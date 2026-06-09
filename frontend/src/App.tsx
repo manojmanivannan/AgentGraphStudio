@@ -26,6 +26,7 @@ import {
 import type { CanvasListItem } from "@/types";
 import type { Node } from "@xyflow/react";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { useThemeStore } from "@/store/themeStore";
 
 function getRelativeTimeString(dateStr: string): string {
   try {
@@ -197,6 +198,7 @@ function LandingPage({
   handleDeleteCanvases: (ids: string[]) => Promise<void>;
 }) {
   const resetStore = useCanvasStore((s) => s.reset);
+  const theme = useThemeStore((s) => s.theme);
 
   useEffect(() => {
     resetStore();
@@ -267,9 +269,11 @@ function LandingPage({
       {/* Header */}
       <header className="w-full max-w-4xl flex items-center justify-between mb-12 relative z-10">
         <div className="flex items-center gap-3">
-          <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-[var(--color-accent-subtle)] border border-[var(--color-border-default)] shadow-[0_2px_8px_rgba(0,0,0,0.2)]">
-            <Workflow className="w-5 h-5 text-[var(--color-accent)] animate-pulse" />
-          </div>
+          <img
+            src={theme === "dark" ? "/agent_graph_studio_logo_white.png" : "/agent_graph_studio_logo_dark.png"}
+            alt="Logo"
+            className="h-8 w-auto object-contain"
+          />
           <div>
             <h1 className="text-xl font-bold tracking-tight text-[var(--color-text-primary)]">
               AgentGraph Studio
