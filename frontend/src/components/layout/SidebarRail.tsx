@@ -15,6 +15,7 @@ import {
   Activity,
 } from "lucide-react";
 import { useCanvasStore } from "@/store/canvasStore";
+import { useThemeStore } from "@/store/themeStore";
 import {
   exportCanvasZip,
   importCanvas,
@@ -27,6 +28,7 @@ import { RailPopover } from "./RailPopover";
 
 export function SidebarRail() {
   const canvasId = useCanvasStore((s) => s.canvasId);
+  const theme = useThemeStore((s) => s.theme);
   const canvasName = useCanvasStore((s) => s.canvasName);
   const nodes = useCanvasStore((s) => s.nodes);
   const setNodes = useCanvasStore((s) => s.setNodes);
@@ -253,7 +255,11 @@ export function SidebarRail() {
       {/* Sidebar Header */}
       <div className="p-4 border-b border-[var(--color-border-subtle)] flex flex-col gap-2">
         <div className="flex items-center gap-2 mb-2">
-          <FolderKanban className="w-5 h-5 text-[var(--color-accent)]" />
+          <img
+            src={theme === "dark" ? "/agent_graph_studio_logo_white.png" : "/agent_graph_studio_logo_dark.png"}
+            alt="Logo"
+            className="h-6 w-auto object-contain shrink-0"
+          />
           <span className="font-bold text-[14px] tracking-tight text-[var(--color-text-primary)]">
             AgentGraph Studio
           </span>
