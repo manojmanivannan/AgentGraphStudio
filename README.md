@@ -1,8 +1,8 @@
-<h1 align="center">AgentGraph Studio</h1
-
+<h1 align="center">AgentGraph Studio</h1>
 <p align="center">
-<strong>Orchestrate AI agents & Chat</strong>
+  <strong>Orchestrate AI agents & Chat</strong>
 </p>
+
 <p align="center">
 Design, connect, and orchestrate AI agents through an intuitive visual workflow builder.</br>
 Create complex multi-agent systems, orchestrate tools, and interact with agents in real time.
