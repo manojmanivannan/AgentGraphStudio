@@ -1,7 +1,7 @@
-import { Check, Loader2, AlertCircle, MessageSquare, Activity, Layout, Home } from "lucide-react";
+import { Check, Loader2, AlertCircle, Home } from "lucide-react";
 import { useCanvasStore } from "@/store/canvasStore";
 import { useNavigate } from "react-router-dom";
-import { listConversations, createConversation } from "@/lib/api";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 export function TopBar() {
   const canvasId = useCanvasStore((s) => s.canvasId);
@@ -16,31 +16,10 @@ export function TopBar() {
 
   const propertiesOpen = selectedNodeId !== null;
 
-  const leftOffset = "left-12";
+  const leftOffset = "left-64";
 
   // Shift right edge to avoid being covered by overlay panels
   const rightOffset = propertiesOpen ? propertiesWidth : 0;
-
-  const handleChatClick = async () => {
-    if (!canvasId) return;
-    try {
-      const convs = await listConversations(canvasId);
-      if (convs && convs.length > 0) {
-        navigate(`/chat/${convs[0].id}`);
-      } else {
-        const newConv = await createConversation(canvasId, "New Conversation");
-        navigate(`/chat/${newConv.id}`);
-      }
-    } catch (err) {
-      console.error("Failed to list/create conversations in TopBar:", err);
-      try {
-        const newConv = await createConversation(canvasId, "New Conversation");
-        navigate(`/chat/${newConv.id}`);
-      } catch (e) {
-        console.error("Fallback new conversation creation failed:", e);
-      }
-    }
-  };
 
   return (
     <div
@@ -100,25 +79,8 @@ export function TopBar() {
         )}
       </div>
 
-      {/* Observability button */}
-      <button
-        onClick={() => canvasId && navigate(`/observability/${canvasId}`)}
-        data-testid="observability-toggle"
-        className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[12px] font-medium transition-colors text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)] hover:bg-[var(--color-elevated)]"
-      >
-        <Activity className="w-3.5 h-3.5" />
-        Observability
-      </button>
-
-      {/* Chat button */}
-      <button
-        onClick={handleChatClick}
-        data-testid="chat-toggle"
-        className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[12px] font-medium transition-colors text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)] hover:bg-[var(--color-elevated)]"
-      >
-        <MessageSquare className="w-3.5 h-3.5" />
-        Chat
-      </button>
+      {/* Theme Toggle */}
+      <ThemeToggle className="hover:bg-[var(--color-elevated)]" />
     </div>
   );
 }

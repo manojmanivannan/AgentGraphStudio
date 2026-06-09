@@ -20,7 +20,7 @@ export function AppShell() {
         className={`absolute bottom-0 z-0 ${
           isDraggingPanel ? "" : "transition-[right] duration-300 ease-out"
         }`}
-        style={{ top: 40, left: 48, right: canvasRightOffset }}
+        style={{ top: 40, left: 256, right: canvasRightOffset }}
       >
         <CanvasView />
       </div>

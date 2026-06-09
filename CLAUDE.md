@@ -234,6 +234,8 @@ npx playwright test                                # E2E tests
 npm run dev                                        # Dev server
 
 # Full stack
-docker compose up                                  # Launch everything
-docker compose up postgres backend                 # Backend only
+make up                                            # Launch everything (excluding ollama)
+make up-gpu                                        # Launch everything (including ollama via GPU)
+make down                                          # Stop all containers
+docker compose up postgres backend                 # Backend only (without frontend)
 ```

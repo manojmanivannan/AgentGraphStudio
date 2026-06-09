@@ -21,10 +21,12 @@ import {
   AlertCircle,
   X,
   HelpCircle,
+  Check,
 } from "lucide-react";
 import type { CanvasListItem } from "@/types";
 import type { Node } from "@xyflow/react";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { useThemeStore } from "@/store/themeStore";
 
 function getRelativeTimeString(dateStr: string): string {
   try {
@@ -157,14 +159,20 @@ function LandingPage({
   setError,
   searchQuery,
   setSearchQuery,
-  deleteConfirmId,
-  setDeleteConfirmId,
+  deleteConfirmIds,
+  setDeleteConfirmIds,
+  selectMode,
+  setSelectMode,
+  selectedCanvasIds,
+  toggleSelectCanvas,
+  handleToggleSelectAll,
+  handleCancelSelect,
   dragActive,
   setDragActive,
   fileInputRef,
   handleCreateCanvas,
   handleImportFile,
-  handleDeleteCanvas,
+  handleDeleteCanvases,
 }: {
   canvases: CanvasListItem[];
   loadCanvases: () => Promise<void>;
@@ -174,16 +182,23 @@ function LandingPage({
   setError: (e: string | null) => void;
   searchQuery: string;
   setSearchQuery: (q: string) => void;
-  deleteConfirmId: string | null;
-  setDeleteConfirmId: (id: string | null) => void;
+  deleteConfirmIds: string[] | null;
+  setDeleteConfirmIds: (ids: string[] | null) => void;
+  selectMode: boolean;
+  setSelectMode: (mode: boolean) => void;
+  selectedCanvasIds: Set<string>;
+  toggleSelectCanvas: (id: string) => void;
+  handleToggleSelectAll: (filteredCanvases: CanvasListItem[]) => void;
+  handleCancelSelect: () => void;
   dragActive: boolean;
   setDragActive: (active: boolean) => void;
   fileInputRef: React.RefObject<HTMLInputElement | null>;
   handleCreateCanvas: () => Promise<void>;
   handleImportFile: (file: File) => Promise<void>;
-  handleDeleteCanvas: (id: string) => Promise<void>;
+  handleDeleteCanvases: (ids: string[]) => Promise<void>;
 }) {
   const resetStore = useCanvasStore((s) => s.reset);
+  const theme = useThemeStore((s) => s.theme);
 
   useEffect(() => {
     resetStore();
@@ -224,11 +239,9 @@ function LandingPage({
     c.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const canvasToDelete = canvases.find((c) => c.id === deleteConfirmId);
-
   return (
     <div
-      className="min-h-screen w-full bg-gradient-to-b from-[var(--color-base)] to-[var(--color-inset)] flex flex-col items-center py-16 px-4 md:px-8 noise-bg relative overflow-y-auto"
+      className="h-screen w-full bg-gradient-to-b from-[var(--color-base)] to-[var(--color-inset)] flex flex-col items-center py-16 px-4 md:px-8 noise-bg relative overflow-y-auto"
       onDragEnter={handleDrag}
       onDragOver={handleDrag}
       onDragLeave={handleDrag}
@@ -256,9 +269,11 @@ function LandingPage({
       {/* Header */}
       <header className="w-full max-w-4xl flex items-center justify-between mb-12 relative z-10">
         <div className="flex items-center gap-3">
-          <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-[var(--color-accent-subtle)] border border-[var(--color-border-default)] shadow-[0_2px_8px_rgba(0,0,0,0.2)]">
-            <Workflow className="w-5 h-5 text-[var(--color-accent)] animate-pulse" />
-          </div>
+          <img
+            src={theme === "dark" ? "/agent_graph_studio_logo_white.png" : "/agent_graph_studio_logo_dark.png"}
+            alt="Logo"
+            className="h-8 w-auto object-contain"
+          />
           <div>
             <h1 className="text-xl font-bold tracking-tight text-[var(--color-text-primary)]">
               AgentGraph Studio
@@ -356,9 +371,44 @@ function LandingPage({
         className="w-full max-w-4xl relative z-10 animate-fade-in"
       >
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4 px-1">
-          <h2 className="text-[11px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-[0.1em]">
-            Recent Canvases
-          </h2>
+          <div className="flex items-center gap-3">
+            <h2 className="text-[11px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-[0.1em]">
+              Recent Canvases
+            </h2>
+            {canvases.length > 0 && !selectMode && (
+              <button
+                onClick={() => setSelectMode(true)}
+                className="btn-secondary text-[10px] px-2 py-0.5 rounded-md font-medium cursor-pointer"
+              >
+                Select
+              </button>
+            )}
+            {selectMode && (
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => handleToggleSelectAll(filteredCanvases)}
+                  className="btn-secondary text-[10px] px-2 py-0.5 rounded-md font-medium cursor-pointer"
+                >
+                  {filteredCanvases.length > 0 && filteredCanvases.every((c) => selectedCanvasIds.has(c.id))
+                    ? "Deselect All"
+                    : "Select All"}
+                </button>
+                <button
+                  onClick={handleCancelSelect}
+                  className="btn-secondary text-[10px] px-2 py-0.5 rounded-md font-medium cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => setDeleteConfirmIds(Array.from(selectedCanvasIds))}
+                  disabled={selectedCanvasIds.size === 0}
+                  className="btn-primary bg-[var(--color-danger)] hover:bg-red-600 text-white text-[10px] px-2 py-0.5 rounded-md font-medium disabled:opacity-40 cursor-pointer disabled:cursor-not-allowed"
+                >
+                  Delete Selected ({selectedCanvasIds.size})
+                </button>
+              </div>
+            )}
+          </div>
           {canvases.length > 0 && (
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--color-text-tertiary)]" />
@@ -393,10 +443,41 @@ function LandingPage({
               <div
                 key={c.id}
                 style={{ animation: `staggerFadeIn 0.4s ease-out ${0.05 * i}s both` }}
-                className="group relative flex items-center justify-between p-4 bg-gradient-to-r from-[var(--color-surface)] to-[var(--color-elevated)] border border-[var(--color-border-subtle)] hover:border-[var(--color-border-default)] rounded-xl transition-all duration-300 shadow-[0_4px_16px_rgba(0,0,0,0.25)] hover:shadow-[0_0_24px_-4px_rgba(116,116,139,0.18),0_0_8px_-2px_rgba(116,116,139,0.08),0_4px_12px_rgba(0,0,0,0.35)]"
+                onClick={() => {
+                  if (selectMode) {
+                    toggleSelectCanvas(c.id);
+                  }
+                }}
+                className={`group relative flex items-center justify-between p-4 bg-gradient-to-r from-[var(--color-surface)] to-[var(--color-elevated)] border rounded-xl transition-all duration-300 shadow-[0_4px_16px_rgba(0,0,0,0.25)] hover:shadow-[0_0_24px_-4px_rgba(116,116,139,0.18),0_0_8px_-2px_rgba(116,116,139,0.08),0_4px_12px_rgba(0,0,0,0.35)] ${
+                  selectMode
+                    ? selectedCanvasIds.has(c.id)
+                      ? "border-[var(--color-accent)]"
+                      : "border-[var(--color-border-subtle)] hover:border-[var(--color-border-default)] cursor-pointer"
+                    : "border-[var(--color-border-subtle)] hover:border-[var(--color-border-default)]"
+                }`}
               >
+                {selectMode && (
+                  <div
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toggleSelectCanvas(c.id);
+                    }}
+                    className={`w-4.5 h-4.5 rounded border flex items-center justify-center shrink-0 cursor-pointer transition-all mr-2 ${
+                      selectedCanvasIds.has(c.id)
+                        ? "border-[var(--color-accent)] bg-[var(--color-accent)] text-black"
+                        : "border-[var(--color-border-strong)] bg-[var(--color-inset)] hover:border-[var(--color-text-secondary)]"
+                    }`}
+                  >
+                    {selectedCanvasIds.has(c.id) && <Check className="w-3 h-3 stroke-[3]" />}
+                  </div>
+                )}
                 <Link
-                  to={`/canvas/${c.id}`}
+                  to={selectMode ? "#" : `/canvas/${c.id}`}
+                  onClick={(e) => {
+                    if (selectMode) {
+                      e.preventDefault();
+                    }
+                  }}
                   className="flex-1 flex items-center gap-3 text-left overflow-hidden"
                 >
                   <div className="w-9 h-9 rounded-lg bg-[var(--color-inset)] border border-[var(--color-border-subtle)] flex items-center justify-center text-[var(--color-text-secondary)] group-hover:text-[var(--color-accent)] group-hover:border-[var(--color-accent-subtle)] transition-all">
@@ -415,14 +496,16 @@ function LandingPage({
                     </span>
                   </div>
                 </Link>
-                <button
-                  onClick={() => setDeleteConfirmId(c.id)}
-                  disabled={loading}
-                  className="opacity-0 group-hover:opacity-100 p-2 text-[var(--color-text-tertiary)] hover:text-[var(--color-danger)] hover:bg-[var(--color-danger-subtle)] rounded-lg transition-all"
-                  title="Delete canvas"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
+                {!selectMode && (
+                  <button
+                    onClick={() => setDeleteConfirmIds([c.id])}
+                    disabled={loading}
+                    className="opacity-0 group-hover:opacity-100 p-2 text-[var(--color-text-tertiary)] hover:text-[var(--color-danger)] hover:bg-[var(--color-danger-subtle)] rounded-lg transition-all cursor-pointer"
+                    title="Delete canvas"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                )}
               </div>
             ))}
           </div>
@@ -451,34 +534,47 @@ function LandingPage({
       )}
 
       {/* Delete Confirmation Modal */}
-      {deleteConfirmId && (
+      {deleteConfirmIds && deleteConfirmIds.length > 0 && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div
             className="w-full max-w-sm p-6 rounded-2xl bg-[var(--color-surface)] border border-[var(--color-border-strong)] shadow-2xl animate-fade-in"
           >
-            <h3 className="text-base font-semibold text-[var(--color-text-primary)] mb-2">
-              Delete Canvas?
+            <h3 className="text-base font-semibold delete-modal-title mb-2">
+              {deleteConfirmIds.length === 1 ? "Delete Canvas?" : `Delete ${deleteConfirmIds.length} Canvases?`}
             </h3>
             <p className="text-xs text-[var(--color-text-secondary)] mb-6 leading-relaxed">
-              Are you sure you want to delete{" "}
-              <strong className="text-[var(--color-text-primary)]">
-                "{canvasToDelete?.name}"
-              </strong>
-              ? This will permanently remove all agents, tools, configurations,
-              and RAG documents associated with this canvas. This action cannot
-              be undone.
+              {deleteConfirmIds.length === 1 ? (
+                <>
+                  Are you sure you want to delete{" "}
+                  <strong className="text-[var(--color-text-primary)]">
+                    "{canvases.find((c) => c.id === deleteConfirmIds[0])?.name}"
+                  </strong>
+                  ?
+                </>
+              ) : (
+                <>
+                  Are you sure you want to delete the{" "}
+                  <strong className="text-[var(--color-text-primary)]">
+                    {deleteConfirmIds.length}
+                  </strong>{" "}
+                  selected canvases?
+                </>
+              )}{" "}
+              This will permanently remove all agents, tools, configurations,
+              and RAG documents associated with {deleteConfirmIds.length === 1 ? "this canvas" : "these canvases"}.
+              This action cannot be undone.
             </p>
             <div className="flex gap-3 justify-end">
               <button
-                onClick={() => setDeleteConfirmId(null)}
-                className="btn-secondary text-xs px-4 py-2"
+                onClick={() => setDeleteConfirmIds(null)}
+                className="btn-secondary text-xs px-4 py-2 cursor-pointer"
                 disabled={loading}
               >
                 Cancel
               </button>
               <button
-                onClick={() => handleDeleteCanvas(deleteConfirmId)}
-                className="btn-primary bg-[var(--color-danger)] hover:bg-red-600 text-white text-xs px-4 py-2"
+                onClick={() => handleDeleteCanvases(deleteConfirmIds)}
+                className="btn-primary bg-[var(--color-danger)] hover:bg-red-600 text-white text-xs px-4 py-2 cursor-pointer"
                 disabled={loading}
               >
                 Delete
@@ -499,7 +595,9 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [dragActive, setDragActive] = useState(false);
-  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [deleteConfirmIds, setDeleteConfirmIds] = useState<string[] | null>(null);
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedCanvasIds, setSelectedCanvasIds] = useState<Set<string>>(new Set());
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -549,12 +647,14 @@ export default function App() {
     }
   };
 
-  const handleDeleteCanvas = async (id: string) => {
+  const handleDeleteCanvases = async (ids: string[]) => {
     setLoading(true);
     setError(null);
     try {
-      await deleteCanvas(id);
-      setDeleteConfirmId(null);
+      await Promise.all(ids.map((id) => deleteCanvas(id)));
+      setDeleteConfirmIds(null);
+      setSelectedCanvasIds(new Set());
+      setSelectMode(false);
       await loadCanvases();
     } catch (err: any) {
       setError(err?.message || "Failed to delete canvas.");
@@ -562,6 +662,40 @@ export default function App() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const toggleSelectCanvas = (id: string) => {
+    setSelectedCanvasIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const handleToggleSelectAll = (filteredCanvases: CanvasListItem[]) => {
+    const allSelected = filteredCanvases.length > 0 && filteredCanvases.every((c) => selectedCanvasIds.has(c.id));
+    if (allSelected) {
+      setSelectedCanvasIds((prev) => {
+        const next = new Set(prev);
+        filteredCanvases.forEach((c) => next.delete(c.id));
+        return next;
+      });
+    } else {
+      setSelectedCanvasIds((prev) => {
+        const next = new Set(prev);
+        filteredCanvases.forEach((c) => next.add(c.id));
+        return next;
+      });
+    }
+  };
+
+  const handleCancelSelect = () => {
+    setSelectMode(false);
+    setSelectedCanvasIds(new Set());
   };
 
   return (
@@ -578,14 +712,20 @@ export default function App() {
             setError={setError}
             searchQuery={searchQuery}
             setSearchQuery={setSearchQuery}
-            deleteConfirmId={deleteConfirmId}
-            setDeleteConfirmId={setDeleteConfirmId}
+            deleteConfirmIds={deleteConfirmIds}
+            setDeleteConfirmIds={setDeleteConfirmIds}
+            selectMode={selectMode}
+            setSelectMode={setSelectMode}
+            selectedCanvasIds={selectedCanvasIds}
+            toggleSelectCanvas={toggleSelectCanvas}
+            handleToggleSelectAll={handleToggleSelectAll}
+            handleCancelSelect={handleCancelSelect}
             dragActive={dragActive}
             setDragActive={setDragActive}
             fileInputRef={fileInputRef}
             handleCreateCanvas={handleCreateCanvas}
             handleImportFile={handleImportFile}
-            handleDeleteCanvas={handleDeleteCanvas}
+            handleDeleteCanvases={handleDeleteCanvases}
           />
         }
       />

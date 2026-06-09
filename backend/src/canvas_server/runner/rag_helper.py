@@ -81,7 +81,7 @@ def chunk_text(text: str, max_chars: int) -> list[str]:
 
 
 def get_embedder() -> dspy.Embedder:
-    provider = settings.mem0_embedder_provider
+    provider = settings.mem0_provider
     model_name = settings.mem0_embedder_model
 
     if provider and not model_name.startswith(f"{provider}/"):

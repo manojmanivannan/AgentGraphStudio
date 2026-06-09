@@ -6,6 +6,7 @@ import { useCanvasStore } from "@/store/canvasStore";
 import { server } from "@/test/mocks/server";
 import { mockConversationSummary } from "@/test/mocks/handlers";
 import { TopBar } from "./TopBar";
+import { SidebarRail } from "./SidebarRail";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 
 const API = "http://localhost:8000/api";
@@ -19,7 +20,15 @@ function renderTopBar() {
   return render(
     <MemoryRouter initialEntries={["/canvas/canvas-1"]}>
       <Routes>
-        <Route path="/canvas/:canvas_id" element={<TopBar />} />
+        <Route
+          path="/canvas/:canvas_id"
+          element={
+            <div>
+              <TopBar />
+              <SidebarRail />
+            </div>
+          }
+        />
         <Route path="/chat/:conversation_id" element={<div data-testid="chat-page" />} />
         <Route path="/" element={<div data-testid="home-page" />} />
       </Routes>
@@ -155,7 +164,7 @@ describe("TopBar", () => {
 
     render(
       <MemoryRouter>
-        <TopBar />
+        <SidebarRail />
       </MemoryRouter>
     );
 
