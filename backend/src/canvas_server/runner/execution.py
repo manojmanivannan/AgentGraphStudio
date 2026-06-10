@@ -15,6 +15,10 @@ import logging
 import uuid
 from abc import ABC, abstractmethod
 from collections.abc import Callable
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from canvas_server.runner.handoff import HandoffToolBuilder
 
 from canvas_server.exceptions import (
     LLMConfigurationError,
@@ -42,8 +46,7 @@ class StrategyServices:
         memory_manager,
         tool_registry,
         attach_events: Callable[[uuid.UUID, Callable], None],
-        make_handoff_tool: Callable,
-        make_parallel_handoff_tool: Callable | None = None,
+        handoff_tool_builder: HandoffToolBuilder,
     ):
         self.agents = agents
         self.node_map = node_map
@@ -53,8 +56,7 @@ class StrategyServices:
         self.memory_manager = memory_manager
         self.tool_registry = tool_registry
         self.attach_events = attach_events
-        self.make_handoff_tool = make_handoff_tool
-        self.make_parallel_handoff_tool = make_parallel_handoff_tool
+        self.handoff_tool_builder = handoff_tool_builder
 
 
 class ExecutionStrategy(ABC):
@@ -186,8 +188,7 @@ class RouterExecution(ExecutionStrategy):
             ctx.send_event,
             ctx.history_text,
             ctx.dspy_history,
-            self._services.make_handoff_tool,
-            self._services.make_parallel_handoff_tool,
+            self._services.handoff_tool_builder,
         )
         self._services.attach_events(agent_id, ctx.send_event)
 

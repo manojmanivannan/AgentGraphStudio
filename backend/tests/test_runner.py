@@ -267,9 +267,9 @@ class TestCanvasRunner:
         runner.node_map = {master.id: master, math_router.id: math_router, math_worker.id: math_worker}
         runner.agents[math_worker.id] = _make_agent_mock("6")
 
-        # _make_handoff_tool should NOT crash even though math_router
+        # make_handoff_tool should NOT crash even though math_router
         # is not yet in self.agents (it's a router, built lazily)
-        tool = runner._make_handoff_tool(
+        tool = runner._handoff_tool_builder.make_handoff_tool(
             math_router.id, master.name, collect, history=""
         )
         assert tool.__name__ == "transfer_to_MathTeam"
@@ -541,8 +541,8 @@ class TestCanvasRunner:
         async def collect(event):
             events.append(event)
 
-        # Create transfer function using runner._make_handoff_tool
-        transfer_tool = runner._make_handoff_tool(
+        # Create transfer function using HandoffToolBuilder
+        transfer_tool = runner._handoff_tool_builder.make_handoff_tool(
             worker.id, master.name, collect, history=""
         )
 
@@ -608,7 +608,7 @@ class TestCanvasRunner:
         async def collect(event):
             events.append(event)
 
-        parallel_tool = runner._make_parallel_handoff_tool(
+        parallel_tool = runner._handoff_tool_builder.make_parallel_handoff_tool(
             [worker_a.id, worker_b.id], master.name, collect, history=""
         )
 
@@ -674,7 +674,7 @@ class TestCanvasRunner:
         async def collect(event):
             events.append(event)
 
-        parallel_tool = runner._make_parallel_handoff_tool(
+        parallel_tool = runner._handoff_tool_builder.make_parallel_handoff_tool(
             [worker_a.id, worker_b.id], master.name, collect, history=""
         )
 

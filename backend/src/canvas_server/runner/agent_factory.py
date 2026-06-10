@@ -4,10 +4,14 @@ from __future__ import annotations
 
 import logging
 import uuid
+from typing import TYPE_CHECKING
 
 import dspy
 
 from canvas_server.streaming_react import StreamingReAct
+
+if TYPE_CHECKING:
+    from canvas_server.runner.handoff import HandoffToolBuilder
 
 logger = logging.getLogger("canvas_server.runner.agent_factory")
 
@@ -211,8 +215,7 @@ class AgentFactory:
         send_event,
         history_text: str,
         dspy_history,
-        make_handoff_tool_fn,
-        make_parallel_handoff_tool_fn=None,
+        handoff_tool_builder: HandoffToolBuilder,
     ) -> StreamingReAct:
         """Build (or rebuild) a router agent and register it in *existing_agents*.
 
@@ -235,15 +238,15 @@ class AgentFactory:
 
         handoff_targets = await self._get_handoff_target_ids(agent_node.id)
         handoff_tools = [
-            make_handoff_tool_fn(
+            handoff_tool_builder.make_handoff_tool(
                 tid, router_name, send_event, history_text, dspy_history
             )
             for tid in handoff_targets
         ]
         all_tools = tools + handoff_tools
 
-        if len(handoff_targets) >= 2 and make_parallel_handoff_tool_fn:
-            parallel_tool = make_parallel_handoff_tool_fn(
+        if len(handoff_targets) >= 2:
+            parallel_tool = handoff_tool_builder.make_parallel_handoff_tool(
                 handoff_targets, router_name, send_event, history_text, dspy_history
             )
             all_tools.append(parallel_tool)
