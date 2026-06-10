@@ -327,7 +327,9 @@ class TestCanvasRunner:
 
         # Mock compile_tool_from_code to avoid actually calling the sandbox during compilation
         # and mock AgentFactory.build_workers to avoid building workers
-        with patch("canvas_server.runner.runner.PackageManager") as mock_pm_class:
+        with patch("canvas_server.runner.runner.PackageManager") as mock_pm_class, \
+             patch("canvas_server.runner.tool_registry.compile_tool_from_code", new_callable=AsyncMock), \
+             patch("canvas_server.runner.agent_factory.AgentFactory.build_workers", new_callable=AsyncMock):
 
             mock_pm = MagicMock()
             mock_pm.install_packages = AsyncMock()
@@ -337,4 +339,234 @@ class TestCanvasRunner:
 
             # Verify that install_packages was called with the sorted list of unique dependencies
             mock_pm.install_packages.assert_called_once_with(["numpy", "pandas"])
+
+    async def test_llm_validation_failure_raises_configuration_error(self):
+        import pytest
+
+        from canvas_server.exceptions import LLMConfigurationError
+        canvas = FakeCanvas()
+        runner = CanvasRunner(canvas)
+        runner._lm.acall = AsyncMock(side_effect=Exception("Connection refused"))
+
+        import os
+        with patch.dict(os.environ, {"TEST_VALIDATE_LLM": "true"}):
+            with pytest.raises(LLMConfigurationError) as exc_info:
+                await runner.setup()
+            assert "LLM configuration is incorrect" in str(exc_info.value)
+
+    async def test_memory_validation_failure_emits_warning(self):
+        from canvas_server.runner.memory import MemoryManager
+        MemoryManager._shared_memory = None
+
+        agent = FakeAgentNode(name="Worker1", agent_type="worker")
+        agent.enable_memory = True
+        canvas = FakeCanvas(agent_nodes=[agent])
+
+        runner = CanvasRunner(canvas)
+        events = []
+        async def collect(event):
+            events.append(event)
+
+        with patch.object(runner._lm, "acall", new_callable=AsyncMock), \
+             patch("mem0.Memory.from_config", side_effect=Exception("Vector DB offline")):
+            runner._conversation.persist_message = AsyncMock()
+
+            await runner.setup(send_event=collect)
+
+            assert len(events) == 1
+            assert events[0]["type"] == "warning"
+            assert "Memory/Message configuration is wrong" in events[0]["message"]
+
+    async def test_memory_failure_propagates_to_agent_prompt_and_tools(self):
+        from canvas_server.runner.memory import MemoryManager
+        MemoryManager._shared_memory = None
+
+        agent_node = FakeAgentNode(name="MemoryAgent", agent_type="worker")
+        agent_node.enable_memory = True
+        canvas = FakeCanvas(agent_nodes=[agent_node])
+
+        runner = CanvasRunner(canvas)
+        runner._conversation.persist_message = AsyncMock()
+
+        import pytest
+        # Mock memory initialization to fail with a Vector DB exception
+        with patch.object(runner._lm, "acall", new_callable=AsyncMock), \
+             patch("mem0.Memory.from_config", side_effect=Exception("Vector DB offline")):
+            await runner.setup()
+
+            # The agent should be constructed
+            assert agent_node.id in runner.agents
+            agent = runner.agents[agent_node.id]
+
+            # The agent signature instructions should contain the warning about memory failure
+            instructions = agent.react.signature.instructions
+            assert "[SYSTEM WARNING]" in instructions
+            assert "Vector DB offline" in instructions
+
+            # The memory tools should be registered on the agent
+            tool_names = list(agent.tools.keys())
+            assert "store_memory" in tool_names
+            assert "search_memories" in tool_names
+            assert "get_all_memories" in tool_names
+
+            # When calling store_memory tool, it should raise the Vector DB offline exception
+            with pytest.raises(Exception) as exc_info:
+                await agent.tools["store_memory"].acall(content="I am in Mumbai")
+            assert "Vector DB offline" in str(exc_info.value)
+
+    async def test_python_syntax_error_propagates_to_tool_output(self):
+        from canvas_server.runner.memory import MemoryManager
+        MemoryManager._shared_memory = None
+
+        agent_node = FakeAgentNode(name="WorkerAgent", agent_type="worker")
+
+        class FakeToolNode:
+            def __init__(self, name, code, dependencies=None):
+                self.id = uuid.uuid4()
+                self.name = name
+                self.code = code
+                self.dependencies = dependencies or []
+
+        # Tool node has bad python syntax
+        tool_node = FakeToolNode(
+            name="broken_tool",
+            code="def broken_tool(:",
+        )
+
+        class FakeEdge:
+            def __init__(self, source, target, edge_type):
+                self.id = uuid.uuid4()
+                self.canvas_id = uuid.uuid4()
+                self.source_node_id = source
+                self.target_node_id = target
+                self.edge_type = edge_type
+
+        edges = [FakeEdge(agent_node.id, tool_node.id, "tool_access")]
+        canvas = FakeCanvas(agent_nodes=[agent_node], tool_nodes=[tool_node], edges=edges)
+
+        runner = CanvasRunner(canvas)
+        runner._conversation.persist_message = AsyncMock()
+
+        # Compile should NOT raise an exception during setup
+        with patch.object(runner._lm, "acall", new_callable=AsyncMock):
+            await runner.setup()
+
+            # The agent should be constructed
+            assert agent_node.id in runner.agents
+            agent = runner.agents[agent_node.id]
+
+            # The tool should be registered
+            assert "broken_tool" in agent.tools
+
+            # Calling the tool should raise PythonSyntaxError
+            import pytest
+
+            from canvas_server.exceptions import PythonSyntaxError
+            with pytest.raises(PythonSyntaxError):
+                await agent.tools["broken_tool"].acall()
+
+    async def test_rag_search_failure_graceful_handling(self):
+        agent_node = FakeAgentNode(name="RAGAgent", agent_type="worker")
+        agent_node.enable_rag = True
+        agent_node.instructions = "Context: {{ rag_document }}"
+        canvas = FakeCanvas(agent_nodes=[agent_node])
+
+        runner = CanvasRunner(canvas)
+        runner.setup = AsyncMock()
+        runner.node_map = {agent_node.id: agent_node}
+        runner._conversation.persist_message = AsyncMock()
+
+        agent_mock = _make_agent_mock("Success despite RAG failure")
+        runner.agents[agent_node.id] = agent_mock
+
+        events = []
+        async def collect(event):
+            events.append(event)
+
+        with patch("canvas_server.runner.rag_helper.run_rag_search", side_effect=ValueError("Retrieval failed")), \
+             patch.object(runner._agent_factory, "build_worker_with_rag_prompt", return_value=agent_mock) as mock_build:
+
+            await runner.run("what is RAG?", collect)
+
+            # Check if build_worker_with_rag_prompt was called with the fallback text
+            mock_build.assert_called_once()
+            args, kwargs = mock_build.call_args
+            assert args[1] == "Here context retrieval failed and you see this line. You are unable to leverage context."
+
+            # Check if the warning event was emitted
+            warning_events = [e for e in events if e["type"] == "warning"]
+            assert len(warning_events) == 1
+            assert "RAG document retrieval failed" in warning_events[0]["message"]
+
+            # Check if the warning message was persisted
+            runner._conversation.persist_message.assert_any_call(
+                role="system",
+                content=warning_events[0]["message"],
+                event_type="warning",
+                node_id=agent_node.id
+            )
+
+    async def test_rag_search_failure_in_handoff_graceful_handling(self):
+        master = FakeAgentNode(
+            id=uuid.uuid4(), name="Master", role="Router", agent_type="router"
+        )
+        worker = FakeAgentNode(
+            id=uuid.uuid4(), name="RAGWorker", role="Worker", agent_type="worker"
+        )
+        worker.enable_rag = True
+        worker.instructions = "Context: {{ rag_document }}"
+
+        class FakeEdge:
+            def __init__(self, source, target, edge_type):
+                self.id = uuid.uuid4()
+                self.canvas_id = uuid.uuid4()
+                self.source_node_id = source
+                self.target_node_id = target
+                self.edge_type = edge_type
+
+        canvas = FakeCanvas(
+            agent_nodes=[master, worker],
+            edges=[FakeEdge(master.id, worker.id, "handoff")],
+        )
+
+        runner = CanvasRunner(canvas)
+        runner.setup = AsyncMock()
+        runner.node_map = {master.id: master, worker.id: worker}
+        runner._conversation.persist_message = AsyncMock()
+
+        worker_mock = _make_agent_mock("Worker handled it despite RAG failure")
+        runner.agents[worker.id] = worker_mock
+
+        events = []
+        async def collect(event):
+            events.append(event)
+
+        # Create transfer function using runner._make_handoff_tool
+        transfer_tool = runner._make_handoff_tool(
+            worker.id, master.name, collect, history=""
+        )
+
+        with patch("canvas_server.runner.rag_helper.run_rag_search", side_effect=ValueError("Retrieval failed")), \
+             patch.object(runner._agent_factory, "build_worker_with_rag_prompt", return_value=worker_mock) as mock_build:
+
+            await transfer_tool("what is RAG?")
+
+            # Check if build_worker_with_rag_prompt was called with the fallback text
+            mock_build.assert_called_once()
+            args, kwargs = mock_build.call_args
+            assert args[1] == "Here context retrieval failed and you see this line. You are unable to leverage context."
+
+            # Check if the warning event was emitted
+            warning_events = [e for e in events if e["type"] == "warning"]
+            assert len(warning_events) == 1
+            assert "RAG document retrieval failed" in warning_events[0]["message"]
+
+            # Check if the warning message was persisted
+            runner._conversation.persist_message.assert_any_call(
+                role="system",
+                content=warning_events[0]["message"],
+                event_type="warning",
+                node_id=worker.id
+            )
+
 

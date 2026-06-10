@@ -25,27 +25,31 @@ class ToolRegistry:
         self._tool_name_to_id: dict[str, uuid.UUID] = {}
 
     async def compile_all(self, tool_nodes: list) -> None:
-        """Compile every ``ToolNode`` in *tool_nodes*.
-
-        Failed compilations are logged and skipped — one bad tool doesn't
-        prevent the rest from being compiled.
-        """
+        """Compile every ``ToolNode`` in *tool_nodes*."""
         logger.debug("Building tools from %d tool nodes", len(tool_nodes))
         for tool_node in tool_nodes:
             try:
                 fn = await compile_tool_from_code(
                     tool_node.name, tool_node.code, dependencies=tool_node.dependencies
                 )
-                self.tools[tool_node.id] = fn
-                self._tool_name_to_id[tool_node.name] = tool_node.id
-                logger.debug(
-                    "  compiled tool: id=%s name=%s", tool_node.id, tool_node.name
-                )
             except Exception as e:
-                logger.error(
-                    "  failed to compile tool %s: %s", tool_node.name, e, exc_info=True
-                )
-        logger.info("Built %d tools successfully", len(self.tools))
+                logger.warning("Failed to compile tool %s: %s", tool_node.name, e)
+                # Create a fallback/stub tool that raises the error when called
+                def make_failed_tool(name: str, err: Exception):
+                    async def failed_tool(*args, **kwargs):
+                        """Failed to compile this tool. Call this tool to see the error details."""
+                        raise err
+                    failed_tool.__name__ = name
+                    return failed_tool
+
+                fn = make_failed_tool(tool_node.name, e)
+
+            self.tools[tool_node.id] = fn
+            self._tool_name_to_id[tool_node.name] = tool_node.id
+            logger.debug(
+                "  compiled tool: id=%s name=%s", tool_node.id, tool_node.name
+            )
+        logger.info("Built %d tools", len(self.tools))
 
     def get_tools_for_agent(self, agent_id: uuid.UUID, edges: list) -> list:
         """Return the list of compiled tool callables accessible to *agent_id*

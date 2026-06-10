@@ -220,8 +220,10 @@ async def test_rag_query_timeout_fallback(monkeypatch, test_session, blank_canva
         lambda coro, timeout: (_ for _ in ()).throw(TimeoutError()),
     )
 
-    passages = await run_rag_search(agent_id, "Antigravity", session=test_session)
-    assert "Antigravity fallback query document." in passages
+    from canvas_server.exceptions import RAGEmbeddingError
+    with pytest.raises(RAGEmbeddingError) as exc_info:
+        await run_rag_search(agent_id, "Antigravity", session=test_session)
+    assert "timed out" in str(exc_info.value)
 
 
 def test_pgvector_query_operator_compile():

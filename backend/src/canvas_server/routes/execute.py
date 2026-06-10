@@ -78,6 +78,15 @@ async def run_conversation(websocket: WebSocket, conversation_id: uuid.UUID):
                     )
                     await session.commit()
                 except Exception as e:
+                    try:
+                        await runner._conversation.persist_message(
+                            role="system",
+                            content=str(e),
+                            event_type="error",
+                        )
+                        await session.commit()
+                    except Exception:
+                        pass
                     await send_event({"type": "error", "message": str(e)})
 
             task = asyncio.create_task(run_task())

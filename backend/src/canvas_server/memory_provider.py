@@ -13,15 +13,18 @@ class MemoryProvider:
     single QdrantClient) to avoid local-qdrant file-locking issues.
     """
 
-    def __init__(self, user_id: str, memory):
+    def __init__(self, user_id: str, memory, initialization_error: Exception | None = None):
         self.user_id = user_id
         self.memory = memory
+        self.initialization_error = initialization_error
 
     async def store_memory(self, content: str) -> str:
         """
         Persist a fact, preference, or detail from the current conversation into long-term memory
         so it can be recalled later. Call this after you learn something about the user or the task.
         """
+        if self.initialization_error is not None:
+            raise self.initialization_error
         try:
             self.memory.add(content, user_id=self.user_id, infer=False)
             return f"Stored memory: {content}"
@@ -32,6 +35,8 @@ class MemoryProvider:
     async def search_memories(self, query: str) -> str:
         """Search stored memories semantically by meaning. Returns up to 5 matching memories.
         Use this when you need to recall past information the user shared."""
+        if self.initialization_error is not None:
+            raise self.initialization_error
         try:
             results = self.memory.search(
                 query, filters={"user_id": self.user_id}, limit=5
@@ -48,6 +53,8 @@ class MemoryProvider:
 
     async def get_all_memories(self) -> str:
         """Retrieve every stored memory for this agent. Use this to see everything you remember."""
+        if self.initialization_error is not None:
+            raise self.initialization_error
         try:
             results = self.memory.get_all(filters={"user_id": self.user_id})
             if not results.get("results"):

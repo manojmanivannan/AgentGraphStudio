@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from canvas_server.config import settings
 from canvas_server.database import get_session_factory
+from canvas_server.exceptions import RAGEmbeddingError
 from canvas_server.models.canvas import AgentDocument, AgentDocumentChunk, AgentNode
 
 logger = logging.getLogger("canvas_server.runner.rag_helper")
@@ -271,40 +272,30 @@ async def _run_rag_search_impl(
             query_embs = await asyncio.wait_for(
                 asyncio.to_thread(embedder, [query]), timeout=5.0
             )
-        except TimeoutError:
-            logger.warning(
-                "Query embedding timed out after 5s. Falling back to first few corpus chunks."
+        except TimeoutError as e:
+            err_msg = (
+                f"RAG embedding generation timed out after 5.0s. Please check your "
+                f"embedder model ('{settings.mem0_embedder_model}') and configuration."
             )
-            # Fallback if embedding times out: fetch first 5 chunks by index
-            stmt = (
-                select(AgentDocumentChunk)
-                .where(AgentDocumentChunk.agent_node_id == agent_id)
-                .order_by(AgentDocumentChunk.chunk_index.asc())
-                .limit(5)
-            )
-            res = await session.execute(stmt)
-            chunks = res.scalars().all()
-            return "\n\n---\n\n".join([c.content for c in chunks])
+            logger.error("Query embedding timed out: %s", err_msg)
+            raise RAGEmbeddingError(err_msg) from e
         query_emb_raw = query_embs[0]
         query_embedding = (
             query_emb_raw.tolist()
             if hasattr(query_emb_raw, "tolist")
             else list(query_emb_raw)
         )
+    except RAGEmbeddingError:
+        raise
     except Exception as e:
-        logger.warning(
-            "Query embedding failed: %s. Falling back to first few corpus chunks.", e
+        err_msg = (
+            f"RAG embedding generation failed. Please check your embedder configuration "
+            f"(provider: '{settings.mem0_provider}', model: '{settings.mem0_embedder_model}', "
+            f"base URL: '{settings.llm_base_url}').\n"
+            f"Details: {e}"
         )
-        # Fallback if embedding fails: fetch first 5 chunks by index
-        stmt = (
-            select(AgentDocumentChunk)
-            .where(AgentDocumentChunk.agent_node_id == agent_id)
-            .order_by(AgentDocumentChunk.chunk_index.asc())
-            .limit(5)
-        )
-        res = await session.execute(stmt)
-        chunks = res.scalars().all()
-        return "\n\n---\n\n".join([c.content for c in chunks])
+        logger.error("Query embedding failed: %s", err_msg)
+        raise RAGEmbeddingError(err_msg) from e
 
     # 2. Retrieve top matching chunks
     bind = session.get_bind()

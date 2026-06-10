@@ -62,13 +62,24 @@ class AgentFactory:
             full_instructions = instructions or "You are a helpful AI agent."
 
         if self._memory_manager.needs_memory(agent_node):
-            full_instructions += (
-                "\n\nYou have memory tools available. After each interaction, "
-                "use store_memory to save important information the user shares "
-                "(facts, preferences, details from previous questions). "
-                "When the user asks about something from the past, use search_memories "
-                "to look up relevant information. Use get_all_memories to list everything stored."
-            )
+            if self._memory_manager.initialization_error is not None:
+                err_details = str(self._memory_manager.initialization_error)
+                full_instructions += (
+                    f"\n\n[SYSTEM WARNING] Memory initialization failed: {err_details}. "
+                    "Although memory tools (store_memory, search_memories, get_all_memories) "
+                    "are registered on your toolset, calling them will fail. "
+                    "If the user asks you to remember something or retrieve past information, "
+                    "you must explicitly inform them that memory features are currently "
+                    "disabled/failed and you cannot save or retrieve memories."
+                )
+            else:
+                full_instructions += (
+                    "\n\nYou have memory tools available. After each interaction, "
+                    "use store_memory to save important information the user shares "
+                    "(facts, preferences, details from previous questions). "
+                    "When the user asks about something from the past, use search_memories "
+                    "to look up relevant information. Use get_all_memories to list everything stored."
+                )
 
         if getattr(agent_node, "enable_conversation_history", False):
 
@@ -164,13 +175,24 @@ class AgentFactory:
             full_instructions = instructions or "You are a helpful AI agent."
 
         if self._memory_manager.needs_memory(agent_node):
-            full_instructions += (
-                "\n\nYou have memory tools available. After each interaction, "
-                "use store_memory to save important information the user shares "
-                "(facts, preferences, details from previous questions). "
-                "When the user asks about something from the past, use search_memories "
-                "to look up relevant information. Use get_all_memories to list everything stored."
-            )
+            if self._memory_manager.initialization_error is not None:
+                err_details = str(self._memory_manager.initialization_error)
+                full_instructions += (
+                    f"\n\n[SYSTEM WARNING] Memory initialization failed: {err_details}. "
+                    "Although memory tools (store_memory, search_memories, get_all_memories) "
+                    "are registered on your toolset, calling them will fail. "
+                    "If the user asks you to remember something or retrieve past information, "
+                    "you must explicitly inform them that memory features are currently "
+                    "disabled/failed and you cannot save or retrieve memories."
+                )
+            else:
+                full_instructions += (
+                    "\n\nYou have memory tools available. After each interaction, "
+                    "use store_memory to save important information the user shares "
+                    "(facts, preferences, details from previous questions). "
+                    "When the user asks about something from the past, use search_memories "
+                    "to look up relevant information. Use get_all_memories to list everything stored."
+                )
 
         if getattr(agent_node, "enable_conversation_history", False):
             class _AgentSig(dspy.Signature):

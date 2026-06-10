@@ -19,7 +19,12 @@ import logging
 import time
 from typing import Any
 
-from canvas_server.exceptions import ToolCompilationError, ToolExecutionError
+from canvas_server.exceptions import (
+    PythonImportError,
+    PythonSyntaxError,
+    ToolCompilationError,
+    ToolExecutionError,
+)
 from canvas_server.models.api import (
     ToolArgumentInfo,
     ToolInspectResponse,
@@ -100,7 +105,7 @@ def _extract_function_ast(code: str, name: str):
     try:
         tree = ast.parse(code)
     except SyntaxError as e:
-        raise ToolCompilationError(f"Syntax error in tool '{name}': {e}") from e
+        raise PythonSyntaxError(f"Syntax error in tool '{name}': {e}") from e
 
     for node in tree.body:
         if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
@@ -235,9 +240,11 @@ async def compile_tool_from_code(
         with session:
             result_obj = session.run(f"compile({repr(code)}, '<tool>', 'exec')")
             if result_obj.exit_code != 0:
-                raise ToolCompilationError(result_obj.stderr or result_obj.stdout)
+                raise PythonSyntaxError(result_obj.stderr or result_obj.stdout)
+    except PythonSyntaxError:
+        raise
     except Exception as e:
-        raise ToolCompilationError(f"Syntax error in tool '{name}': {e}") from e
+        raise PythonSyntaxError(f"Syntax error in tool '{name}': {e}") from e
     finally:
         # We don't release the global syntax session as it's shared
         pass
@@ -276,7 +283,7 @@ def run_tool():
         result = local_vars['{fn_name}']({args_repr})
         return result
     except Exception as e:
-        print(f"PYTHON_ERROR: {{e}}", file=sys.stderr)
+        print(f"PYTHON_ERROR: {{type(e).__name__}}: {{e}}", file=sys.stderr)
         sys.exit(1)
 
 if __name__ == '__main__':
@@ -289,9 +296,19 @@ if __name__ == '__main__':
             result_obj = session.run(wrapped_code)
 
         if result_obj.exit_code != 0:
-            raise ToolExecutionError(
-                result_obj.stderr or f"Tool execution failed with exit code {result_obj.exit_code}"
-            )
+            stderr = result_obj.stderr or ""
+            if "SyntaxError" in stderr:
+                raise PythonSyntaxError(
+                    f"Syntax error in tool '{fn_name}': {stderr.strip()}"
+                )
+            elif "ImportError" in stderr or "ModuleNotFoundError" in stderr:
+                raise PythonImportError(
+                    f"Python import failed in tool '{fn_name}': {stderr.strip()}"
+                )
+            else:
+                raise ToolExecutionError(
+                    stderr or f"Tool execution failed with exit code {result_obj.exit_code}"
+                )
 
         stdout = result_obj.stdout.strip()
 

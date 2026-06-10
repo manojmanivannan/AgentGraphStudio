@@ -14,13 +14,16 @@ After the big modularisation, ``CanvasRunner`` is a thin orchestrator that:
 from __future__ import annotations
 
 import logging
+import os
 import re
+import sys
 import uuid
 
 import dspy
 import mlflow
 
 from canvas_server.config import settings
+from canvas_server.exceptions import LLMConfigurationError
 from canvas_server.package_manager import PackageManager
 from canvas_server.runner.agent_factory import AgentFactory
 from canvas_server.runner.config import RunContext
@@ -143,7 +146,7 @@ class CanvasRunner:
     # Setup
     # ------------------------------------------------------------------
 
-    async def setup(self):
+    async def setup(self, send_event=None):
         """Initialise all services and build worker agents.
 
         Called at the start of every ``run()``.  Idempotent-ish: if a
@@ -151,6 +154,28 @@ class CanvasRunner:
         is cheap (but currently we always re-build).
         """
         logger.info("Setting up canvas runner")
+
+        # Proactively validate LLM configuration (skipped in unit tests unless TEST_VALIDATE_LLM is set)
+        if "pytest" not in sys.modules or os.environ.get("TEST_VALIDATE_LLM"):
+            try:
+                await self._lm.acall(prompt="Test connection. Respond with 'ok'.", max_tokens=5)
+            except Exception as e:
+                err_details = str(e)
+                if "<html" in err_details.lower() or "<!doctype" in err_details.lower():
+                    err_details = (
+                        "LLM/API returned an HTML error page. "
+                        "Please check that your server URL, credentials, and settings are correct."
+                    )
+                elif len(err_details) > 300:
+                    err_details = err_details[:300] + "..."
+                err_msg = (
+                    f"LLM configuration is incorrect. Please check your LLM settings "
+                    f"(model name: '{settings.llm_model}', base URL: '{settings.llm_base_url}', "
+                    f"API key: '{'***' if settings.llm_api_key else 'None'}').\n"
+                    f"Details: {err_details}"
+                )
+                logger.error("LLM configuration validation failed: %s", err_msg)
+                raise LLMConfigurationError(err_msg) from e
 
         # Build the node map for fast lookups
         for node in self.canvas.agent_nodes:
@@ -167,6 +192,12 @@ class CanvasRunner:
 
         self._edge_graph = EdgeGraph(self.canvas.edges)
         self._memory_manager = MemoryManager()
+
+        # Eagerly initialize memory providers for all agents that need them to check for configuration errors
+        for node in self.canvas.agent_nodes:
+            if self._memory_manager.needs_memory(node):
+                self._memory_manager.build_provider(node)
+
         self._agent_factory = AgentFactory(
             lm=self._lm,
             tool_registry=self._tool_registry,
@@ -176,6 +207,25 @@ class CanvasRunner:
 
         # Build worker agents (routers are built lazily at run time)
         self.agents = await self._agent_factory.build_workers(self.canvas.agent_nodes)
+
+        # Alert if memory provider failed to initialize but proceed with LLM anyway
+        if self._memory_manager.initialization_error:
+            warn_msg = (
+                f"Memory/Message configuration is wrong, memory will not work. Proceeding with LLM anyway. "
+                f"(Error: {self._memory_manager.initialization_error})"
+            )
+            logger.warning(warn_msg)
+            if send_event:
+                await send_event({
+                    "type": "warning",
+                    "message": warn_msg
+                })
+            # Persist the warning so it is loaded on page refresh
+            await self._conversation.persist_message(
+                role="system",
+                content=warn_msg,
+                event_type="warning"
+            )
 
         logger.info(
             "Setup complete: %d tools, %d agents",
@@ -326,7 +376,27 @@ class CanvasRunner:
             if getattr(target_node, "enable_rag", False):
                 from canvas_server.runner.rag_helper import run_rag_search
 
-                passages = await run_rag_search(target_id, task)
+                try:
+                    passages = await run_rag_search(target_id, task)
+                except Exception as e:
+                    warn_msg = f"RAG document retrieval failed for agent '{target_node.name}': {e}"
+                    logger.warning(warn_msg)
+                    if send_event:
+                        await send_event({
+                            "type": "warning",
+                            "message": warn_msg
+                        })
+                    await self._conversation.persist_message(
+                        role="system",
+                        content=warn_msg,
+                        event_type="warning",
+                        node_id=target_id,
+                    )
+                    passages = (
+                        "Here context retrieval failed and you see this line. "
+                        "You are unable to leverage context."
+                    )
+
                 target_agent = await self._agent_factory.build_worker_with_rag_prompt(
                     target_node, passages
                 )
@@ -419,7 +489,7 @@ class CanvasRunner:
             user_prompt[:100],
             str(target_agent_id) if target_agent_id else "auto",
         )
-        await self.setup()
+        await self.setup(send_event=send_event)
 
         if not self.canvas.agent_nodes:
             logger.error("Canvas has no agent nodes")
