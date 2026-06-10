@@ -9,7 +9,7 @@ A named, persisted workspace containing a graph of nodes and edges. A user works
 _Avoid_: Board, diagram, flow, graph, workspace
 
 **Agent Node**:
-A visual block on the Canvas representing an AI agent with a name, role, instructions, LLM model, and agent type (worker or router).
+A visual block on the Canvas representing an AI agent with a name, role, instructions, and agent type (worker or router).
 _Avoid_: Agent, block, step
 
 **Tool Node**:

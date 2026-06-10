@@ -254,7 +254,7 @@ mj-agent-framework/
 │       │   │   ├── RailPopover.tsx    # Popover anchored to rail item, click-outside closes
 │       │   │   └── OverlayPanel.tsx   # Slide-in panel with enter/exit animations, Escape to close
 │       │   ├── sidebar/
-│       │   │   ├── AgentEditor.tsx    # Agent properties: type, name, role, instructions, model, memory, history
+│       │   │   ├── AgentEditor.tsx    # Agent properties: type, name, role, instructions, memory, history
 │       │   │   ├── ToolEditor.tsx     # Monaco Python editor, tool name, inferred args preview
 │       │   │   └── ...test.tsx       # Corresponding tests
 │       │   ├── chat/

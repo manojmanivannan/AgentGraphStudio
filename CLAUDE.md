@@ -51,7 +51,7 @@ and edges on a ReactFlow canvas, then run workflows against a FastAPI + DSPy bac
 | Agent node | `frontend/src/components/canvas/AgentNode.tsx` | Visual node with role/instructions preview |
 | Tool node | `frontend/src/components/canvas/ToolNode.tsx` | Visual node with code preview |
 | Custom edge | `frontend/src/components/canvas/CustomEdge.tsx` | Bezier path, hover delete, handoff style |
-| Agent editor | `frontend/src/components/sidebar/AgentEditor.tsx` | Type, name, role, model, memory toggle |
+| Agent editor | `frontend/src/components/sidebar/AgentEditor.tsx` | Type, name, role, memory toggle |
 | Tool editor | `frontend/src/components/sidebar/ToolEditor.tsx` | Monaco Python editor + Test Tool panel |
 | Chat overlay | `frontend/src/components/chat/ChatOverlay.tsx` | Conversations, WebSocket, streaming UI |
 | Observability | `frontend/src/components/observability/ObservabilityView.tsx` | MLflow iframe |
