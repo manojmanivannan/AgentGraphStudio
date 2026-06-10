@@ -39,7 +39,8 @@ class MemoryManager:
 
             config = build_mem0_config()
             shared = Memory.from_config(config)
-            # Dry-run search to verify embedder & vector-db connection (skipped for tests using fake/mock Memory objects)
+            # Dry-run search to verify embedder & vector-db connection
+            # (skipped for tests using fake/mock Memory objects)
             if hasattr(shared, "search"):
                 shared.search("test_connection", filters={"user_id": "test_init_connection"}, limit=1)
             self.__class__._shared_memory = shared
@@ -74,10 +75,13 @@ class MemoryManager:
         except Exception as e:
             err_msg = str(e)
             if "<html" in err_msg.lower() or "<!doctype" in err_msg.lower():
-                err_msg = "Database/API returned an HTML error page. Please check that your server URL, credentials, and settings are correct."
+                err_msg = (
+                    "Database/API returned an HTML error page. "
+                    "Please check that your server URL, credentials, and settings are correct."
+                )
             elif len(err_msg) > 300:
                 err_msg = err_msg[:300] + "..."
-            
+
             logger.warning(
                 "Failed to initialize mem0 for agent %s: %s", agent_node.name, err_msg
             )

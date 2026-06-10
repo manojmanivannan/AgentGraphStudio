@@ -2,8 +2,6 @@ import logging
 
 import dspy
 
-
-
 logger = logging.getLogger("canvas_server.streaming_react")
 
 

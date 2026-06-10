@@ -328,8 +328,8 @@ class TestCanvasRunner:
         # Mock compile_tool_from_code to avoid actually calling the sandbox during compilation
         # and mock AgentFactory.build_workers to avoid building workers
         with patch("canvas_server.runner.runner.PackageManager") as mock_pm_class, \
-             patch("canvas_server.runner.tool_registry.compile_tool_from_code", new_callable=AsyncMock) as mock_compile, \
-             patch("canvas_server.runner.agent_factory.AgentFactory.build_workers", new_callable=AsyncMock) as mock_build_workers:
+             patch("canvas_server.runner.tool_registry.compile_tool_from_code", new_callable=AsyncMock), \
+             patch("canvas_server.runner.agent_factory.AgentFactory.build_workers", new_callable=AsyncMock):
 
             mock_pm = MagicMock()
             mock_pm.install_packages = AsyncMock()
@@ -342,6 +342,7 @@ class TestCanvasRunner:
 
     async def test_llm_validation_failure_raises_configuration_error(self):
         import pytest
+
         from canvas_server.exceptions import LLMConfigurationError
         canvas = FakeCanvas()
         runner = CanvasRunner(canvas)
@@ -418,7 +419,7 @@ class TestCanvasRunner:
         MemoryManager._shared_memory = None
 
         agent_node = FakeAgentNode(name="WorkerAgent", agent_type="worker")
-        
+
         class FakeToolNode:
             def __init__(self, name, code, dependencies=None):
                 self.id = uuid.uuid4()
@@ -431,7 +432,7 @@ class TestCanvasRunner:
             name="broken_tool",
             code="def broken_tool(:",
         )
-        
+
         class FakeEdge:
             def __init__(self, source, target, edge_type):
                 self.id = uuid.uuid4()
@@ -459,6 +460,7 @@ class TestCanvasRunner:
 
             # Calling the tool should raise PythonSyntaxError
             import pytest
+
             from canvas_server.exceptions import PythonSyntaxError
             with pytest.raises(PythonSyntaxError):
                 await agent.tools["broken_tool"].acall()
@@ -483,7 +485,7 @@ class TestCanvasRunner:
 
         with patch("canvas_server.runner.rag_helper.run_rag_search", side_effect=ValueError("Retrieval failed")), \
              patch.object(runner._agent_factory, "build_worker_with_rag_prompt", return_value=agent_mock) as mock_build:
-            
+
             await runner.run("what is RAG?", collect)
 
             # Check if build_worker_with_rag_prompt was called with the fallback text
@@ -546,7 +548,7 @@ class TestCanvasRunner:
 
         with patch("canvas_server.runner.rag_helper.run_rag_search", side_effect=ValueError("Retrieval failed")), \
              patch.object(runner._agent_factory, "build_worker_with_rag_prompt", return_value=worker_mock) as mock_build:
-            
+
             await transfer_tool("what is RAG?")
 
             # Check if build_worker_with_rag_prompt was called with the fallback text

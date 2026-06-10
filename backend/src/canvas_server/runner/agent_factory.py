@@ -66,8 +66,11 @@ class AgentFactory:
                 err_details = str(self._memory_manager.initialization_error)
                 full_instructions += (
                     f"\n\n[SYSTEM WARNING] Memory initialization failed: {err_details}. "
-                    "Although memory tools (store_memory, search_memories, get_all_memories) are registered on your toolset, calling them will fail. "
-                    "If the user asks you to remember something or retrieve past information, you must explicitly inform them that memory features are currently disabled/failed and you cannot save or retrieve memories."
+                    "Although memory tools (store_memory, search_memories, get_all_memories) "
+                    "are registered on your toolset, calling them will fail. "
+                    "If the user asks you to remember something or retrieve past information, "
+                    "you must explicitly inform them that memory features are currently "
+                    "disabled/failed and you cannot save or retrieve memories."
                 )
             else:
                 full_instructions += (
@@ -176,8 +179,11 @@ class AgentFactory:
                 err_details = str(self._memory_manager.initialization_error)
                 full_instructions += (
                     f"\n\n[SYSTEM WARNING] Memory initialization failed: {err_details}. "
-                    "Although memory tools (store_memory, search_memories, get_all_memories) are registered on your toolset, calling them will fail. "
-                    "If the user asks you to remember something or retrieve past information, you must explicitly inform them that memory features are currently disabled/failed and you cannot save or retrieve memories."
+                    "Although memory tools (store_memory, search_memories, get_all_memories) "
+                    "are registered on your toolset, calling them will fail. "
+                    "If the user asks you to remember something or retrieve past information, "
+                    "you must explicitly inform them that memory features are currently "
+                    "disabled/failed and you cannot save or retrieve memories."
                 )
             else:
                 full_instructions += (

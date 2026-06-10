@@ -23,6 +23,7 @@ import dspy
 import mlflow
 
 from canvas_server.config import settings
+from canvas_server.exceptions import LLMConfigurationError
 from canvas_server.package_manager import PackageManager
 from canvas_server.runner.agent_factory import AgentFactory
 from canvas_server.runner.config import RunContext
@@ -35,7 +36,6 @@ from canvas_server.runner.execution import (
     StrategyServices,
     WorkerExecution,
 )
-from canvas_server.exceptions import LLMConfigurationError
 from canvas_server.runner.memory import MemoryManager
 from canvas_server.runner.tool_registry import ToolRegistry
 
@@ -162,7 +162,10 @@ class CanvasRunner:
             except Exception as e:
                 err_details = str(e)
                 if "<html" in err_details.lower() or "<!doctype" in err_details.lower():
-                    err_details = "LLM/API returned an HTML error page. Please check that your server URL, credentials, and settings are correct."
+                    err_details = (
+                        "LLM/API returned an HTML error page. "
+                        "Please check that your server URL, credentials, and settings are correct."
+                    )
                 elif len(err_details) > 300:
                     err_details = err_details[:300] + "..."
                 err_msg = (
@@ -389,7 +392,10 @@ class CanvasRunner:
                         event_type="warning",
                         node_id=target_id,
                     )
-                    passages = "Here context retrieval failed and you see this line. You are unable to leverage context."
+                    passages = (
+                        "Here context retrieval failed and you see this line. "
+                        "You are unable to leverage context."
+                    )
 
                 target_agent = await self._agent_factory.build_worker_with_rag_prompt(
                     target_node, passages
