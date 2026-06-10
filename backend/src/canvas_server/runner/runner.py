@@ -499,7 +499,7 @@ class CanvasRunner:
             results = await asyncio.gather(*coroutines, return_exceptions=True)
 
             findings = []
-            for name, result in zip(names, results):
+            for name, result in zip(names, results, strict=False):
                 if isinstance(result, Exception):
                     findings.append(f"Agent '{name}' failed with error: {result}")
                 else:
