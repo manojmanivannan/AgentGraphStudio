@@ -32,7 +32,8 @@
 
 ---
 
-## 🗺️ Execution Flow
+<details>
+<summary><strong>🗺️ Execution Flow</strong></summary>
 
 Here is how user prompts trigger visual tool execution, state progression, and real-time streaming:
 
@@ -53,6 +54,8 @@ graph TD
     G -->|8. Log Traces & Metrics| I["MLflow Tracing"]:::storage
     G -->|9. Real-time Event Stream| A
 ```
+
+</details>
 
 ---
 
