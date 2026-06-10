@@ -21,7 +21,7 @@ A directed connection between two nodes. An Agent→Tool Edge grants the agent t
 _Avoid_: Connection, link, arrow
 
 **Handoff**:
-An Agent→Agent Edge. At runtime the source agent can delegate execution to the target agent.
+A directed connection between agent nodes. At runtime the source agent can delegate execution to the target agent sequentially, or concurrently in parallel if the source is a Router with multiple targets.
 _Avoid_: Delegation, routing
 
 **Worker**:
@@ -29,7 +29,7 @@ An agent type that executes tasks by reasoning through DSPy ReAct (thought → t
 _Avoid_: Sub-agent, leaf agent
 
 **Router**:
-An agent type that orchestrates by handing off tasks to other agents (workers or other routers). Routers are built lazily at run time when first invoked.
+An agent type that orchestrates by handing off tasks to other agents (workers or other routers). Routers are built lazily at run time when first invoked. If a Router has two or more outgoing handoff edges, it is automatically equipped with the `execute_parallel_agents` tool to invoke multiple target agents concurrently.
 _Avoid_: Orchestrator, coordinator, manager
 
 **StreamingReAct**:
