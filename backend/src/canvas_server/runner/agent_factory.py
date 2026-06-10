@@ -43,7 +43,7 @@ class AgentFactory:
     # DSPy signature
     # ------------------------------------------------------------------
 
-    def build_signature(self, agent_node) -> type[dspy.Signature]:
+    def build_signature(self, agent_node, passages: str | None = None) -> type[dspy.Signature]:
         """Dynamically create a ``dspy.Signature`` for *agent_node*.
 
         The signature includes a ``history`` field when conversation history is
@@ -52,7 +52,10 @@ class AgentFactory:
         role = agent_node.role or ""
         instructions = agent_node.instructions or ""
 
-        if not getattr(agent_node, "enable_rag", False):
+        if passages is not None:
+            role = role.replace("{{ rag_document }}", passages)
+            instructions = instructions.replace("{{ rag_document }}", passages)
+        elif not getattr(agent_node, "enable_rag", False):
             role = role.replace("{{ rag_document }}", "")
             instructions = instructions.replace("{{ rag_document }}", "")
 
@@ -134,13 +137,13 @@ class AgentFactory:
         agents: dict[uuid.UUID, StreamingReAct] = {}
         for agent_node in agent_nodes:
             if agent_node.agent_type == "worker":
-                agent = await self._build_worker(agent_node)
+                agent = await self.build_worker(agent_node)
                 agents[agent_node.id] = agent
         logger.info("Built %d worker agents", len(agents))
         return agents
 
-    async def _build_worker(self, agent_node) -> StreamingReAct:
-        """Build a single worker agent."""
+    async def build_worker(self, agent_node, passages: str | None = None) -> StreamingReAct:
+        """Build a single worker agent, optionally with retrieved RAG passages."""
         tools = list(
             self._tool_registry.get_tools_for_agent(agent_node.id, self._edges)
         )
@@ -155,7 +158,7 @@ class AgentFactory:
                 ]
             )
 
-        signature = self.build_signature(agent_node)
+        signature = self.build_signature(agent_node, passages=passages)
         agent = StreamingReAct(signature, tools=tools)
         logger.debug(
             "  built worker: id=%s name=%s tools=%d",
@@ -165,73 +168,36 @@ class AgentFactory:
         )
         return agent
 
-    async def build_worker_with_rag_prompt(self, agent_node, passages: str) -> StreamingReAct:
-        """Build a single worker agent with RAG search results substituted into instructions."""
-        tools = list(
-            self._tool_registry.get_tools_for_agent(agent_node.id, self._edges)
-        )
+    async def assemble_rag_worker(
+        self,
+        agent_node,
+        task: str,
+        conversation_service,
+        send_event=None,
+    ) -> StreamingReAct:
+        """Fetch RAG documents, perform similarity search, handle warnings/errors, and compile the worker agent."""
+        from canvas_server.runner.rag_helper import run_rag_search
 
-        memory_provider = self._memory_manager.build_provider(agent_node)
-        if memory_provider:
-            tools.extend(
-                [
-                    memory_provider.search_memories,
-                    memory_provider.store_memory,
-                    memory_provider.get_all_memories,
-                ]
-            )
-
-        role = agent_node.role or ""
-        instructions = agent_node.instructions or ""
-
-        # Substitute the template placeholder
-        role = role.replace("{{ rag_document }}", passages)
-        instructions = instructions.replace("{{ rag_document }}", passages)
-
-        if role and instructions:
-            full_instructions = f"{role}\n\n{instructions}"
-        elif role:
-            full_instructions = role
-        else:
-            full_instructions = instructions or "You are a helpful AI agent."
-
-        if self._memory_manager.needs_memory(agent_node):
-            if self._memory_manager.initialization_error is not None:
-                err_details = str(self._memory_manager.initialization_error)
-                full_instructions += (
-                    f"\n\n[SYSTEM WARNING] Memory initialization failed: {err_details}. "
-                    "Although memory tools (store_memory, search_memories, get_all_memories) "
-                    "are registered on your toolset, calling them will fail. "
-                    "If the user asks you to remember something or retrieve past information, "
-                    "you must explicitly inform them that memory features are currently "
-                    "disabled/failed and you cannot save or retrieve memories."
+        try:
+            passages = await run_rag_search(agent_node.id, task)
+        except Exception as e:
+            warn_msg = f"RAG document retrieval failed for agent '{agent_node.name}': {e}"
+            logger.warning(warn_msg)
+            if send_event:
+                await send_event({
+                    "type": "warning",
+                    "message": warn_msg
+                })
+            if conversation_service:
+                await conversation_service.persist_message(
+                    role="system",
+                    content=warn_msg,
+                    event_type="warning",
+                    node_id=agent_node.id,
                 )
-            else:
-                full_instructions += (
-                    "\n\nYou have memory tools available. After each interaction, "
-                    "use store_memory to save important information the user shares "
-                    "(facts, preferences, details from previous questions). "
-                    "When the user asks about something from the past, use search_memories "
-                    "to look up relevant information. Use get_all_memories to list everything stored."
-                )
+            passages = "Here context retrieval failed and you see this line. You are unable to leverage context."
 
-        if getattr(agent_node, "enable_conversation_history", False):
-            class _AgentSig(dspy.Signature):
-                user_request: str = dspy.InputField()
-                history: dspy.History = dspy.InputField()
-                process_result: str = dspy.OutputField(
-                    desc="Final answer summarizing the result and information the user needs"
-                )
-        else:
-            class _AgentSig(dspy.Signature):
-                user_request: str = dspy.InputField()
-                process_result: str = dspy.OutputField(
-                    desc="Final answer summarizing the result and information the user needs"
-                )
-
-        signature = _AgentSig.with_instructions(full_instructions)
-        agent = StreamingReAct(signature, tools=tools)
-        return agent
+        return await self.build_worker(agent_node, passages=passages)
 
     # ------------------------------------------------------------------
     # Building router agents (lazy, at run time)

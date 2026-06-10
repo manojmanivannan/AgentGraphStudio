@@ -377,31 +377,11 @@ class CanvasRunner:
             target_agent = self.agents[target_id]
 
             if getattr(target_node, "enable_rag", False):
-                from canvas_server.runner.rag_helper import run_rag_search
-
-                try:
-                    passages = await run_rag_search(target_id, task)
-                except Exception as e:
-                    warn_msg = f"RAG document retrieval failed for agent '{target_node.name}': {e}"
-                    logger.warning(warn_msg)
-                    if send_event:
-                        await send_event({
-                            "type": "warning",
-                            "message": warn_msg
-                        })
-                    await self._conversation.persist_message(
-                        role="system",
-                        content=warn_msg,
-                        event_type="warning",
-                        node_id=target_id,
-                    )
-                    passages = (
-                        "Here context retrieval failed and you see this line. "
-                        "You are unable to leverage context."
-                    )
-
-                target_agent = await self._agent_factory.build_worker_with_rag_prompt(
-                    target_node, passages
+                target_agent = await self._agent_factory.assemble_rag_worker(
+                    agent_node=target_node,
+                    task=task,
+                    conversation_service=self._conversation,
+                    send_event=send_event,
                 )
                 self.agents[target_id] = target_agent
                 self._attach_events(target_id, send_event, force=True)
@@ -633,23 +613,7 @@ class CanvasRunner:
                 {"user_request": user_prompt, "process_result": final_text}
             )
 
-        # ---- Auto-store memory for the primary agent ----
-        if final_text:
-            primary_id = (
-                target_agent_id
-                if target_agent_id
-                else (agent_ids[0] if agent_ids else None)
-            )
-            primary_node = self.node_map.get(primary_id) if primary_id else None
-            if primary_node and self._memory_manager.needs_memory(primary_node):
-                mp = self._memory_manager.get_provider(primary_id)
-                if mp:
-                    try:
-                        await mp.store_memory(
-                            f"The user asked: '{user_prompt}' → Response: {final_text[:500]}"
-                        )
-                    except Exception as e:
-                        logger.warning("Failed to auto-store memory: %s", e)
+
 
         logger.info("Canvas execution completed: canvas_id=%s", self.canvas.id)
         await send_event(

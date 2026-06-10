@@ -786,7 +786,7 @@ export default function ChatPage() {
       {deleteConfirmId && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="w-full max-w-sm p-6 rounded-2xl bg-[var(--color-surface)] border border-[var(--color-border-strong)] shadow-2xl animate-fade-in">
-            <h3 className="text-base font-semibold text-[var(--color-text-primary)] mb-2">
+            <h3 className="text-base font-semibold delete-modal-title mb-2">
               Delete Chat Session?
             </h3>
             <p className="text-xs text-[var(--color-text-secondary)] mb-6 leading-relaxed">
