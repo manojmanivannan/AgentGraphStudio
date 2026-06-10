@@ -100,3 +100,6 @@ temp/
 .cache-loader/
 .sass-cache/
 .eslintcache
+
+
+.agent

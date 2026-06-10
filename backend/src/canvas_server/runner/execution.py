@@ -15,6 +15,10 @@ import logging
 import uuid
 from abc import ABC, abstractmethod
 from collections.abc import Callable
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from canvas_server.runner.handoff import HandoffToolBuilder
 
 from canvas_server.exceptions import (
     LLMConfigurationError,
@@ -42,8 +46,7 @@ class StrategyServices:
         memory_manager,
         tool_registry,
         attach_events: Callable[[uuid.UUID, Callable], None],
-        make_handoff_tool: Callable,
-        make_parallel_handoff_tool: Callable | None = None,
+        handoff_tool_builder: HandoffToolBuilder,
     ):
         self.agents = agents
         self.node_map = node_map
@@ -53,8 +56,7 @@ class StrategyServices:
         self.memory_manager = memory_manager
         self.tool_registry = tool_registry
         self.attach_events = attach_events
-        self.make_handoff_tool = make_handoff_tool
-        self.make_parallel_handoff_tool = make_parallel_handoff_tool
+        self.handoff_tool_builder = handoff_tool_builder
 
 
 class ExecutionStrategy(ABC):
@@ -93,29 +95,12 @@ class ExecutionStrategy(ABC):
         )
 
         if getattr(agent_node, "enable_rag", False):
-            from canvas_server.runner.rag_helper import run_rag_search
-            try:
-                passages = await run_rag_search(
-                    agent_id,
-                    user_prompt
-                )
-            except Exception as e:
-                warn_msg = f"RAG document retrieval failed for agent '{agent_node.name}': {e}"
-                logger.warning(warn_msg)
-                if send_event:
-                    await send_event({
-                        "type": "warning",
-                        "message": warn_msg
-                    })
-                await self._services.conversation_service.persist_message(
-                    role="system",
-                    content=warn_msg,
-                    event_type="warning",
-                    node_id=agent_id,
-                )
-                passages = "Here context retrieval failed and you see this line. You are unable to leverage context."
-
-            agent = await self._services.agent_factory.build_worker_with_rag_prompt(agent_node, passages)
+            agent = await self._services.agent_factory.assemble_rag_worker(
+                agent_node=agent_node,
+                task=user_prompt,
+                conversation_service=self._services.conversation_service,
+                send_event=send_event,
+            )
             self._services.agents[agent_id] = agent
             self._services.attach_events(agent_id, send_event, force=True)
         else:
@@ -203,8 +188,7 @@ class RouterExecution(ExecutionStrategy):
             ctx.send_event,
             ctx.history_text,
             ctx.dspy_history,
-            self._services.make_handoff_tool,
-            self._services.make_parallel_handoff_tool,
+            self._services.handoff_tool_builder,
         )
         self._services.attach_events(agent_id, ctx.send_event)
 

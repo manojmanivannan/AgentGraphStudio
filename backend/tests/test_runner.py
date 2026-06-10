@@ -267,9 +267,9 @@ class TestCanvasRunner:
         runner.node_map = {master.id: master, math_router.id: math_router, math_worker.id: math_worker}
         runner.agents[math_worker.id] = _make_agent_mock("6")
 
-        # _make_handoff_tool should NOT crash even though math_router
+        # make_handoff_tool should NOT crash even though math_router
         # is not yet in self.agents (it's a router, built lazily)
-        tool = runner._make_handoff_tool(
+        tool = runner._handoff_tool_builder.make_handoff_tool(
             math_router.id, master.name, collect, history=""
         )
         assert tool.__name__ == "transfer_to_MathTeam"
@@ -484,14 +484,14 @@ class TestCanvasRunner:
             events.append(event)
 
         with patch("canvas_server.runner.rag_helper.run_rag_search", side_effect=ValueError("Retrieval failed")), \
-             patch.object(runner._agent_factory, "build_worker_with_rag_prompt", return_value=agent_mock) as mock_build:
+             patch.object(runner._agent_factory, "build_worker", return_value=agent_mock) as mock_build:
 
             await runner.run("what is RAG?", collect)
 
-            # Check if build_worker_with_rag_prompt was called with the fallback text
+            # Check if build_worker was called with the fallback text
             mock_build.assert_called_once()
             args, kwargs = mock_build.call_args
-            assert args[1] == "Here context retrieval failed and you see this line. You are unable to leverage context."
+            assert kwargs.get("passages") == "Here context retrieval failed and you see this line. You are unable to leverage context."
 
             # Check if the warning event was emitted
             warning_events = [e for e in events if e["type"] == "warning"]
@@ -541,20 +541,20 @@ class TestCanvasRunner:
         async def collect(event):
             events.append(event)
 
-        # Create transfer function using runner._make_handoff_tool
-        transfer_tool = runner._make_handoff_tool(
+        # Create transfer function using HandoffToolBuilder
+        transfer_tool = runner._handoff_tool_builder.make_handoff_tool(
             worker.id, master.name, collect, history=""
         )
 
         with patch("canvas_server.runner.rag_helper.run_rag_search", side_effect=ValueError("Retrieval failed")), \
-             patch.object(runner._agent_factory, "build_worker_with_rag_prompt", return_value=worker_mock) as mock_build:
+             patch.object(runner._agent_factory, "build_worker", return_value=worker_mock) as mock_build:
 
             await transfer_tool("what is RAG?")
 
-            # Check if build_worker_with_rag_prompt was called with the fallback text
+            # Check if build_worker was called with the fallback text
             mock_build.assert_called_once()
             args, kwargs = mock_build.call_args
-            assert args[1] == "Here context retrieval failed and you see this line. You are unable to leverage context."
+            assert kwargs.get("passages") == "Here context retrieval failed and you see this line. You are unable to leverage context."
 
             # Check if the warning event was emitted
             warning_events = [e for e in events if e["type"] == "warning"]
@@ -608,7 +608,7 @@ class TestCanvasRunner:
         async def collect(event):
             events.append(event)
 
-        parallel_tool = runner._make_parallel_handoff_tool(
+        parallel_tool = runner._handoff_tool_builder.make_parallel_handoff_tool(
             [worker_a.id, worker_b.id], master.name, collect, history=""
         )
 
@@ -674,7 +674,7 @@ class TestCanvasRunner:
         async def collect(event):
             events.append(event)
 
-        parallel_tool = runner._make_parallel_handoff_tool(
+        parallel_tool = runner._handoff_tool_builder.make_parallel_handoff_tool(
             [worker_a.id, worker_b.id], master.name, collect, history=""
         )
 
