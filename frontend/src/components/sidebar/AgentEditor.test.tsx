@@ -44,7 +44,6 @@ describe("AgentEditor", () => {
     expect(screen.getByTestId("agent-name-input")).toHaveValue("Researcher");
     expect(screen.getByTestId("agent-role-input")).toHaveValue("Researches topics");
     expect(screen.getByTestId("agent-instructions-input")).toHaveValue("Be thorough");
-    expect(screen.getByTestId("agent-model-input")).toHaveValue("ollama:llama3.1");
     expect(screen.getByTestId("agent-type-select")).toHaveValue("worker");
   });
 
@@ -97,27 +96,6 @@ describe("AgentEditor", () => {
 
     const stored = useCanvasStore.getState().nodes.find((n) => n.id === "agent-1");
     expect(stored?.data.instructions).toBe("New instructions");
-  });
-
-  it("updates the model field in the store", async () => {
-    const user = userEvent.setup();
-    useCanvasStore.getState().setNodes([agentNode]);
-    useCanvasStore.getState().selectNode("agent-1");
-    render(<AgentEditor />);
-
-    await user.clear(screen.getByTestId("agent-model-input"));
-    await user.type(screen.getByTestId("agent-model-input"), "openai:gpt-4o");
-
-    const stored = useCanvasStore.getState().nodes.find((n) => n.id === "agent-1");
-    expect(stored?.data.modelName).toBe("openai:gpt-4o");
-  });
-
-  it("has a datalist with model suggestions", () => {
-    useCanvasStore.getState().setNodes([agentNode]);
-    useCanvasStore.getState().selectNode("agent-1");
-    render(<AgentEditor />);
-
-    expect(document.getElementById("model-suggestions")).toBeInTheDocument();
   });
 
   it("shows memory toggle for worker agents", () => {

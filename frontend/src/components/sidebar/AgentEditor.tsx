@@ -4,17 +4,6 @@ import { Wrench, Plus, Loader2, FileText, Trash2 } from "lucide-react";
 import { listAgentDocuments, uploadAgentDocument, deleteAgentDocument } from "@/lib/api";
 import type { AgentDocument } from "@/types";
 
-const MODEL_SUGGESTIONS = [
-  "ollama:llama3.1",
-  "ollama:llama3.2",
-  "ollama:mistral",
-  "ollama:codellama",
-  "ollama:gemma4:31b",
-  "openai:gpt-4o",
-  "openai:gpt-4o-mini",
-  "anthropic:claude-sonnet-4-20250514",
-  "groq:llama-3.1-70b-versatile",
-];
 export function AgentEditor() {
   const selectedNodeId = useCanvasStore((s) => s.selectedNodeId);
   const nodes = useCanvasStore((s) => s.nodes);
@@ -165,24 +154,6 @@ export function AgentEditor() {
           className="input-base w-full resize-none"
           placeholder="Instructions for the agent..."
         />
-      </div>
-
-      <div>
-        <label className="block text-[11px] font-semibold text-[var(--color-text-tertiary)] mb-1.5 uppercase tracking-[0.06em]">Model</label>
-        <input
-          type="text"
-          list="model-suggestions"
-          value={(data as any).modelName ?? "ollama:llama3.1"}
-          onChange={(e) => updateField("modelName", e.target.value)}
-          data-testid="agent-model-input"
-          className="input-base w-full"
-          placeholder="e.g. ollama:gemma4:31b"
-        />
-        <datalist id="model-suggestions">
-          {MODEL_SUGGESTIONS.map((m) => (
-            <option key={m} value={m} />
-          ))}
-        </datalist>
       </div>
 
       <div className="pt-4 border-t border-[var(--color-border-subtle)] space-y-3">

@@ -222,7 +222,7 @@ class TestExecuteToolCode:
         assert result.execution_time_ms >= 0
 
 
-# ── coerce_arg (unit tests — no Deno needed) ─────────────────────────────────
+# ── coerce_arg (unit tests — no Docker needed) ─────────────────────────────────
 
 
 class TestCoerceArg:

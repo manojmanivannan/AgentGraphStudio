@@ -34,6 +34,7 @@ export type ExecutionEvent =
   | { type: "final_answer"; agent?: string; content: string; node_id?: string }
   | { type: "run_complete"; result: string }
   | { type: "error"; message: string; agent?: string; node_id?: string }
+  | { type: "warning"; message: string; agent?: string; node_id?: string }
   | { type: "conversation_renamed"; conversation_id: string; name: string };
 
 export type ExecutionStatus = "idle" | "running" | "done" | "error";
