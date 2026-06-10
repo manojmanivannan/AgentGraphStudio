@@ -761,6 +761,11 @@ by `run()`. They:
 - The handoff tool is a plain async function `transfer_to_{target_name}(task: str) -> str`
 - Router delegates to sub-agent, collects result, and returns it as tool output
 - Sub-agents can be workers or other routers (deferred lookup pattern)
+- **Parallel Routing**: If a Router has two or more outgoing handoff edges, it is automatically equipped with the `execute_parallel_agents` tool. This tool accepts a list of agent names and inputs (using Python's `list[dict]` type annotation):
+  ```python
+  execute_parallel_agents(agents_and_inputs: list[dict]) -> str
+  ```
+  It executes the selected target agents concurrently using `asyncio.gather(..., return_exceptions=True)` and aggregates their results (including graceful handling of per-agent errors) into a single findings report returned to the router.
 
 ### Handoff Chain (No Target Agent)
 
@@ -897,6 +902,10 @@ To improve usability, the system now attempts to rename fresh conversations auto
 - The frontend takes two defensive steps to ensure the left-pane reflects the persisted name:
   1. `conversation_renamed` handler updates local state for the sidebar and header, and triggers a background `listConversations()` refresh.
   2. On `run_complete`, the Chat page performs a cache-busting fetch of the current conversation (`GET /api/canvases/conversations/{id}?_={ts}`) and refreshes the sidebar entries if necessary.
+
+### Concurrency & Session Safety
+
+When executing worker agents in parallel (using `execute_parallel_agents`), multiple concurrent tasks can emit thoughts, tool calls, or handoff messages simultaneously. To prevent concurrent flushes on the shared SQLAlchemy session (`Session is already flushing` errors), `ConversationService.persist_message` coordinates all message database persistence through an `asyncio.Lock`. This serializes message additions and flushes, ensuring database integrity and session safety during highly concurrent orchestrations.
 
 This flow prevents stale `New Conversation` entries appearing in the Recent Chats pane when clients rely on cached API responses or miss the rename event.
 

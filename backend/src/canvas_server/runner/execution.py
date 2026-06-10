@@ -43,6 +43,7 @@ class StrategyServices:
         tool_registry,
         attach_events: Callable[[uuid.UUID, Callable], None],
         make_handoff_tool: Callable,
+        make_parallel_handoff_tool: Callable | None = None,
     ):
         self.agents = agents
         self.node_map = node_map
@@ -53,6 +54,7 @@ class StrategyServices:
         self.tool_registry = tool_registry
         self.attach_events = attach_events
         self.make_handoff_tool = make_handoff_tool
+        self.make_parallel_handoff_tool = make_parallel_handoff_tool
 
 
 class ExecutionStrategy(ABC):
@@ -202,6 +204,7 @@ class RouterExecution(ExecutionStrategy):
             ctx.history_text,
             ctx.dspy_history,
             self._services.make_handoff_tool,
+            self._services.make_parallel_handoff_tool,
         )
         self._services.attach_events(agent_id, ctx.send_event)
 

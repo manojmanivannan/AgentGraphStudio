@@ -64,7 +64,7 @@ graph TD
 *   **🎨 Visual Canvas Editor**: Build architectures using ReactFlow v12. Drag, configure, and wire agents and tools. Custom edges support smooth handoffs and distinct tool-access channels.
 *   **🧠 Dual Agent Model**:
     *   **Workers**: Execute specialized tasks via DSPy ReAct loops (thoughts $\rightarrow$ tool calls $\rightarrow$ observations $\rightarrow$ answer).
-    *   **Routers**: Orchestrate tasks by dynamically delegating execution to other worker or router nodes using lazy handoff tools.
+    *   **Routers**: Orchestrate tasks by dynamically delegating execution to other worker or router nodes. Supports sequential lazy handoff tools and concurrent multi-agent delegation via the parallel execution tool.
 *   **🛡️ Secure Docker Sandbox**: Execute user-defined Python tools safely inside isolated Docker containers managed by the `llm-sandbox` library. Provides OS-level isolation, native Python performance, and persistent session state across runs.
 *   **📚 In-Memory RAG**: Attach domain-specific text documents directly to worker nodes. Documents are split using a paragraph-aligned chunker, embedded dynamically, and retrieved at runtime using the `{{ rag_document }}` template placeholder.
 *   **💾 Agent Memory (mem0 + Qdrant)**: Maintain context across messages. Leverages a thread-safe, in-process shared `mem0` instance connected to a local Qdrant vector store.
