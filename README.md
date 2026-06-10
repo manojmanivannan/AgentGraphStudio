@@ -43,7 +43,7 @@ graph TD
     classDef storage fill:#8b5cf6,stroke:#6d28d9,stroke-width:2px,color:#fff;
     classDef sandbox fill:#f59e0b,stroke:#d97706,stroke-width:2px,color:#fff;
 
-    A["React Canvas / Chat UI"]:::frontend -->|1. WebSocket Connection| B["FastAPI ws/conversations/{id}/run"]:::backend
+    A["React Canvas / Chat UI"]:::frontend -->|1. WebSocket Connection| B["FastAPI ws/conversations/:id/run"]:::backend
     B -->|2. Load Canvas Graph| C[("PostgreSQL + pgvector")]:::storage
     B -->|3. Initialize Runner| D["CanvasRunner"]:::backend
     D -->|4. Lazy Compilation & Setup| E["Build Worker/Router Agents"]:::backend
