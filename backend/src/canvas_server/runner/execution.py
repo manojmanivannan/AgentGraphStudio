@@ -16,6 +16,10 @@ import uuid
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 
+from canvas_server.exceptions import (
+    LLMConfigurationError,
+    RAGEmbeddingError,
+)
 from canvas_server.runner.config import RunContext
 
 logger = logging.getLogger("canvas_server.runner.execution")
@@ -116,6 +120,9 @@ class ExecutionStrategy(ABC):
                 event_type="final_answer",
             )
             return text
+        except (LLMConfigurationError, RAGEmbeddingError) as e:
+            logger.error("Agent %s failed with terminal exception: %s", agent_node.name, e)
+            raise
         except Exception as e:
             logger.error("Agent %s failed: %s", agent_node.name, e, exc_info=True)
             await self._services.conversation_service.persist_message(
@@ -209,6 +216,9 @@ class RouterExecution(ExecutionStrategy):
                 )
             )
             return final_text
+        except (LLMConfigurationError, RAGEmbeddingError) as e:
+            logger.error("Router agent %s failed with terminal exception: %s", agent_node.name, e)
+            raise
         except Exception as e:
             logger.error(
                 "Router agent %s failed: %s", agent_node.name, e, exc_info=True

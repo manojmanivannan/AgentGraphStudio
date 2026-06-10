@@ -297,6 +297,20 @@ export default function ChatPage() {
           return;
         }
 
+        if (event.type === "warning") {
+          const warnMsg: Message = {
+            id: crypto.randomUUID(),
+            conversation_id: convId,
+            role: "system",
+            content: event.message,
+            agent_name: event.agent ?? null,
+            node_id: event.node_id ?? null,
+            event_type: "warning",
+            created_at: new Date().toISOString(),
+          };
+          addMessageLocal(warnMsg);
+        }
+
         if (event.node_id) {
           setActiveNodeId(event.node_id);
         }
@@ -644,6 +658,7 @@ export default function ChatPage() {
                               const isToolResult = stepMsg.event_type === "tool_result";
                               const isError = stepMsg.event_type === "error";
                               const isSubAnswer = stepMsg.event_type === "final_answer";
+                              const isWarning = stepMsg.event_type === "warning";
 
                               return (
                                 <div
@@ -651,7 +666,7 @@ export default function ChatPage() {
                                   className="flex flex-col items-start"
                                   style={{ animation: "staggerFadeIn 0.3s ease-out" }}
                                 >
-                                  {stepMsg.agent_name && !isHandoff && !isError && (
+                                  {stepMsg.agent_name && !isHandoff && !isError && !isWarning && (
                                     <span className="text-[10px] text-[var(--color-text-tertiary)] mb-0.5 px-1 font-semibold tracking-wide">
                                       {stepMsg.agent_name}
                                       {stepMsg.event_type &&
@@ -664,13 +679,15 @@ export default function ChatPage() {
                                       ? "bg-[var(--color-info-subtle)] text-[var(--color-info)] border border-[var(--color-info)]/20 rounded-bl-sm"
                                       : isError
                                         ? "bg-[var(--color-danger-subtle)] text-[var(--color-danger)] border border-[var(--color-danger)]/20 rounded-bl-sm"
-                                        : isThought
-                                          ? "bg-[var(--color-agent-subtle)] text-[var(--color-agent)] border border-[var(--color-agent)]/20 rounded-bl-sm font-mono whitespace-pre-wrap text-[11px]"
-                                          : isToolResult
-                                            ? "bg-[var(--color-success-subtle)] text-[var(--color-success)] border border-[var(--color-success)]/20 rounded-bl-sm font-mono"
-                                            : isSubAnswer
-                                              ? "bg-[var(--color-elevated)] text-[var(--color-text-secondary)] border border-[var(--color-border-subtle)] rounded-bl-sm"
-                                              : "bg-[var(--color-elevated)] text-[var(--color-text-primary)] border border-[var(--color-border-subtle)] rounded-bl-sm"
+                                        : isWarning
+                                          ? "bg-[var(--color-warning-subtle)] text-[var(--color-warning)] border border-[var(--color-warning)]/20 rounded-bl-sm"
+                                          : isThought
+                                            ? "bg-[var(--color-agent-subtle)] text-[var(--color-agent)] border border-[var(--color-agent)]/20 rounded-bl-sm font-mono whitespace-pre-wrap text-[11px]"
+                                            : isToolResult
+                                              ? "bg-[var(--color-success-subtle)] text-[var(--color-success)] border border-[var(--color-success)]/20 rounded-bl-sm font-mono"
+                                              : isSubAnswer
+                                                ? "bg-[var(--color-elevated)] text-[var(--color-text-secondary)] border border-[var(--color-border-subtle)] rounded-bl-sm"
+                                                : "bg-[var(--color-elevated)] text-[var(--color-text-primary)] border border-[var(--color-border-subtle)] rounded-bl-sm"
                                       }`}
                                   >
                                     {stepMsg.content}
