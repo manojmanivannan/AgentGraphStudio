@@ -38,7 +38,7 @@ and edges on a ReactFlow canvas, then run workflows against a FastAPI + DSPy bac
 | **Execution engine** | `backend/src/canvas_server/runner/` | Package containing `runner.py` (CanvasRunner orchestrator), `execution.py` (individual worker execution), `agent_factory.py` (agent builder), and `rag_helper.py` (RAG chunking and search helper) |
 | Custom DSPy agent | `backend/src/canvas_server/streaming_react.py` | **StreamingReAct** — emits events per iteration |
 | Tool compiler | `backend/src/canvas_server/tool_factory.py` | Sandbox-based compilation + inspect + test execution |
-| **Sandbox** | `backend/src/canvas_server/sandbox.py` | Singleton Deno/Pyodide sandbox (DSPy PythonInterpreter) |
+| **Sandbox** | `backend/src/canvas_server/sandbox.py` | Singleton Docker-based sandbox manager (via llm-sandbox) |
 | Memory config | `backend/src/canvas_server/memory_config.py` | mem0 config builder |
 | Memory provider | `backend/src/canvas_server/memory_provider.py` | mem0 wrapper as DSPy tool functions |
 | Error types | `backend/src/canvas_server/exceptions.py` | CanvasNotFoundError, ToolCompilationError, ToolExecutionError, LLMConfigurationError, PythonSyntaxError, PythonImportError, RAGEmbeddingError |
@@ -198,21 +198,19 @@ and edges on a ReactFlow canvas, then run workflows against a FastAPI + DSPy bac
    plain UUIDs without foreign key constraints because they can reference either
    `agent_nodes` or `tool_nodes`.
 
-8. **Deno/Pyodide sandbox for tool execution** — All tool code (both agent runs
-   and interactive testing) executes in a Deno subprocess running Pyodide (WASM
-   Python) via DSPy's `PythonInterpreter`. Host-side `exec()` is used only for
+8. **Docker sandbox for tool execution** — All tool code (both agent runs
+   and interactive testing) executes in an isolated Docker container session
+   via the `llm-sandbox` library. Host-side AST parsing is used for
    extracting function metadata (`__name__`, `__doc__`, `__annotations__`) that
    DSPy needs to build tool descriptors — never for execution. The sandbox has
-   no access to host filesystem, network, or env vars by default. See
-   [ADR-0002](./docs/adr/0002-deno-sandbox-tool-execution.md).
+   no access to the host's filesystem, network, or env vars by default.
 
-9. **Sandbox singleton** — The Deno/Pyodide process is expensive to start (~2s).
-   It's pre-warmed during FastAPI lifespan startup and kept alive across requests.
-   Managed by `canvas_server.sandbox.Sandbox`.
+9. **Sandbox pool** — The Docker containers are managed as a pool of warm instances
+   to avoid container startup overhead. Managed by `canvas_server.sandbox.SandboxManager`.
 
-10. **`@requires_deno` test marker** — Sandbox integration tests skip gracefully
-    in CI environments without Deno installed (`pytest.mark.skipif(not shutil.which("deno"))`).
-    Unit tests (inspect, coerce) don't need Deno.
+10. **`@requires_docker` test marker** — Sandbox integration tests skip gracefully
+    in environments without Docker installed (`pytest.mark.skipif(not shutil.which("docker"))`).
+    Unit tests (inspect, coerce) don't need Docker.
 
 11. **In-Memory RAG for Workers** — RAG documents are stored as standard relational rows in PostgreSQL. Chunks are computed using a paragraph-aligned splitter and embedded dynamically in-memory at run-time using DSPy embedders. This avoids vector synchronization bugs during canvas auto-saves, which are supported by delta upserting nodes instead of destroying/recreating them.
 

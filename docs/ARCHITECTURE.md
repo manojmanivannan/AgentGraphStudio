@@ -42,7 +42,7 @@ them with edges, and execute multi-agent teams powered by [DSPy](https://dspy.ai
 | Icons              | lucide-react                                                         |
 | Backend            | Python 3.12+ / FastAPI / async                                       |
 | Agent Framework    | DSPy v3.1+ (StreamingReAct — custom ReAct subclass)                  |
-| Tool Sandbox       | Deno + Pyodide (via DSPy PythonInterpreter)                          |
+| Tool Sandbox       | Docker Sandbox (via llm-sandbox library)                             |
 | LLM Default        | Ollama (configurable: OpenAI, Anthropic, Groq via DSPy LM)           |
 | Database           | PostgreSQL 17 + pgvector (async SQLAlchemy 2.0 + Alembic)            |
 | Migrations         | Alembic (auto-generated, in `backend/alembic/versions/`)             |
@@ -176,7 +176,7 @@ mj-agent-framework/
 │   │       ├── config.py          # pydantic-settings: DB, LLM, mem0, MLflow
 │   │       ├── database.py        # Async engine, session factory, Base
 │   │       ├── exceptions.py      # CanvasNotFoundError, ToolCompilationError, ToolExecutionError
-│   │       ├── sandbox.py         # Singleton Deno/Pyodide sandbox (via DSPy PythonInterpreter)
+│   │       ├── sandbox.py         # Singleton Docker-based sandbox (via llm-sandbox pool manager)
 │   │       ├── models/
 │   │       │   ├── canvas.py      # SQLAlchemy ORM: Canvas, AgentNode, ToolNode, Edge, Conversation, Message
 │   │       │   └── api.py         # Pydantic: request/response schemas
@@ -682,11 +682,11 @@ run(user_prompt, send_event, target_agent_id=None)
 
 ```python
 async def compile_tool_from_code(name: str, code: str, dependencies: list[str] | None = None) -> callable:
-    # 1. Validate syntax via sandbox (Deno/Pyodide)
-    # 2. Extract function metadata on host side (exec for metadata only)
+    # 1. Validate syntax via sandbox (interactive Docker session)
+    # 2. Extract function metadata on host side (AST parsing for metadata only)
     # 3. Return async wrapper that calls the function in the sandbox
     #    — wrapper preserves __name__, __doc__, __annotations__ for DSPy
-    #    — wrapper handles `pip install` for specified dependencies
+    #    — wrapper handles `pip install` for dependencies in the sandbox session
 
 
 async def inspect_tool_code(name, code) -> ToolInspectResponse:
@@ -702,14 +702,14 @@ def coerce_arg(value: str, type_hint: str) -> Any:
 ```
 
 **Sandbox model:** All tool execution (both agent runs and interactive testing)
-goes through the Deno/Pyodide sandbox (`canvas_server.sandbox.Sandbox`). The
-sandbox is a long-lived Deno subprocess running Pyodide (WASM Python), started
-at app startup and kept warm. Host-side `exec()` is used **only** for extracting
-function metadata (name, docstring, annotations) that DSPy needs — never for
-execution.
+goes through the Docker sandbox (`canvas_server.sandbox.SandboxManager`). The
+sandbox is managed as a warm pool of Docker containers via the `llm-sandbox` library.
+Sessions are established and mapped to conversations. Host-side AST parsing is used
+to safely extract function metadata (name, docstring, annotations) that DSPy needs—avoiding
+dangerous host-side execution.
 
-**Security:** The sandbox has no access to the host filesystem, network, or
-environment variables by default (Deno permission model). See ADR-0002.
+**Security:** The sandbox executes inside isolated Docker containers, preventing
+unauthorized access to the host filesystem and environment variables.
 
 ### streaming_react.py — StreamingReAct
 
@@ -1116,11 +1116,19 @@ Four services connect to a shared `agent_network`:
 ```dockerfile
 FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim
 
-# Install curl and Deno for sandboxed Python execution (Pyodide/WASM via DSPy PythonInterpreter)
-RUN apt-get update && apt-get install -y curl unzip && rm -rf /var/lib/apt/lists/*
-RUN curl -fsSL https://deno.land/install.sh | sh && \
-    mv /root/.deno/bin/deno /usr/local/bin/deno && \
-    chmod +x /usr/local/bin/deno
+# Install Docker CLI to communicate with the host Docker daemon
+RUN apt-get update && \
+    apt-get install -y curl unzip ca-certificates gnupg && \
+    mkdir -p /etc/apt/keyrings && \
+    curl -fsSL https://download.docker.com/linux/debian/gpg | \
+    gpg --dearmor -o /etc/apt/keyrings/docker.gpg && \
+    echo \
+    "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] \
+    https://download.docker.com/linux/debian bookworm stable" \
+    > /etc/apt/sources.list.d/docker.list && \
+    apt-get update && \
+    apt-get install -y docker-ce-cli && \
+    rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 ENV UV_COMPILE_BYTECODE=1

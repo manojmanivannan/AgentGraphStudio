@@ -77,8 +77,8 @@ A dedicated MLflow UI page route (`/observability/:canvas_id`) that embeds the M
 _Avoid_: Tracing, monitoring, dashboard
 
 **Sandbox**:
-A Deno/Pyodide subprocess (via DSPy `PythonInterpreter`) that executes all tool code in an isolated WASM-based Python runtime. No access to host filesystem, network, or environment variables by default. Managed as a singleton by `canvas_server.sandbox.Sandbox`.
-_Avoid_: Container, VM, isolation layer
+An isolated Docker container session (managed via the `llm-sandbox` library) that executes all tool code in a sandboxed Python environment. Restricts access to host filesystem, host network, and host environment variables. Managed by the `canvas_server.sandbox.SandboxManager` singleton.
+_Avoid_: Deno subprocess, WASM runtime, Pyodide sandbox
 
 **Tool Inspection**:
 Extracting function metadata (name, parameter names, type hints, default values) from user-written Python code. Used by the Test Tool UI to generate argument input fields. Provided by `POST /api/tools/inspect`.
