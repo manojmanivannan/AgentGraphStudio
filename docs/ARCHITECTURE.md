@@ -826,6 +826,12 @@ To ensure robust execution in production, the backend implements a structured ex
 3. **LLM & Configuration Errors**:
    - Connection/authentication issues with LLM providers are validated eagerly on setup via a lightweight dry-run check. If this check fails, a `LLMConfigurationError` is raised, halting execution and notifying the user with instructions on what environment variables to fix.
 
+4. **RAG Retrieval and Embedding Failures**:
+   - During agent execution (either a worker execution or during router handoff to a sub-agent), the runner performs RAG similarity searches.
+   - If embedding or vector retrieval fails (e.g., connection timeout, bad credentials, database connection failure), the execution does **not** crash.
+   - The runner logs a warning, emits a `warning` event to the frontend client (which displays a warning banner), and persists a `warning` event message in the conversation history.
+   - The `{{ rag_document }}` placeholder in the agent instructions/role is populated with a fallback message: `"Here context retrieval failed and you see this line. You are unable to leverage context."` This allows the agent to execute safely while warning the model/user about the retrieval failure.
+
 ---
 
 ## Memory Architecture
