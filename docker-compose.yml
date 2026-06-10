@@ -99,6 +99,7 @@ services:
     volumes:
       - ollama_data:/root/.ollama
       - ./ollama_entrypoint.sh:/entrypoint.sh
+    env_file: ./backend/.env
     tty: true
     restart: always
     networks:
