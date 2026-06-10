@@ -43,14 +43,14 @@ graph TD
     classDef storage fill:#8b5cf6,stroke:#6d28d9,stroke-width:2px,color:#fff;
     classDef sandbox fill:#f59e0b,stroke:#d97706,stroke-width:2px,color:#fff;
 
-    A[React Canvas / Chat UI]:::frontend -->|1. WebSocket Connection| B[FastAPI ws/conversations/{id}/run]:::backend
-    B -->|2. Load Canvas Graph| C[(PostgreSQL + pgvector)]:::storage
-    B -->|3. Initialize Runner| D[CanvasRunner]:::backend
-    D -->|4. Lazy Compilation & Setup| E[Build Worker/Router Agents]:::backend
-    E -->|5. Sandboxed Tool Execution| F[Docker Sandbox / llm-sandbox]:::sandbox
-    E -->|6. Multi-turn Agent Logic| G[DSPy StreamingReAct Loop]:::backend
-    G -->|7. Embeddings / RAG / Memory| H[(mem0 + Qdrant)]:::storage
-    G -->|8. Log Traces & Metrics| I[MLflow Tracing]:::storage
+    A["React Canvas / Chat UI"]:::frontend -->|1. WebSocket Connection| B["FastAPI ws/conversations/{id}/run"]:::backend
+    B -->|2. Load Canvas Graph| C[("PostgreSQL + pgvector")]:::storage
+    B -->|3. Initialize Runner| D["CanvasRunner"]:::backend
+    D -->|4. Lazy Compilation & Setup| E["Build Worker/Router Agents"]:::backend
+    E -->|5. Sandboxed Tool Execution| F["Docker Sandbox / llm-sandbox"]:::sandbox
+    E -->|6. Multi-turn Agent Logic| G["DSPy StreamingReAct Loop"]:::backend
+    G -->|7. Embeddings / RAG / Memory| H[("mem0 + Qdrant")]:::storage
+    G -->|8. Log Traces & Metrics| I["MLflow Tracing"]:::storage
     G -->|9. Real-time Event Stream| A
 ```
 
