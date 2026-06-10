@@ -808,6 +808,24 @@ Tool node ID is resolved via `_tool_name_to_id` map (built during `_build_tools`
 Enforced on frontend (`isValidConnection` in `CanvasView.tsx`) and implicitly
 on backend (edge validation happens during graph traversal, not as explicit checks).
 
+### Graceful Exception & Error Handling
+
+To ensure robust execution in production, the backend implements a structured exception-handling system:
+
+1. **Memory Configuration Dry Runs**:
+   - During setup, the `MemoryManager` performs an eager dry-run check (connecting to the vector store and executing a dummy search) to verify API settings and database accessibility.
+   - If memory initialization fails, the runner does **not** crash. Instead, it logs a warning, persists it as a `warning` message, and fires a `warning` event to the frontend (which displays a warning banner).
+   - The runner then appends a `[SYSTEM WARNING]` to the agent's instructions detailing the failure. The memory tools (`store_memory`, `search_memories`, `get_all_memories`) are still registered on the agent, but invoking them raises the initialization error at call-time, which becomes the tool output observation. This allows the agent to reason about the failure and explicitly inform the user instead of pretending memory was saved or retrieved.
+
+2. **Python Compilation and Syntax Errors**:
+   - If a custom tool contains invalid python syntax or package import failures, these are caught during setup/compilation in `ToolRegistry.compile_all()`.
+   - Instead of crashing the runner startup, the registry registers a `failed_tool` stub function with the tool's name. When called, the stub raises the original compilation/syntax exception.
+   - In the `StreamingReAct` execution loop, compilation, syntax, and import exceptions are caught and returned to the agent as the tool output/observation (e.g., `Execution error in broken_tool: Syntax error in tool...`).
+   - The agent reads this observation as the tool result, allowing it to gracefully explain the syntax or package import issue to the user so the user can fix the code.
+
+3. **LLM & Configuration Errors**:
+   - Connection/authentication issues with LLM providers are validated eagerly on setup via a lightweight dry-run check. If this check fails, a `LLMConfigurationError` is raised, halting execution and notifying the user with instructions on what environment variables to fix.
+
 ---
 
 ## Memory Architecture

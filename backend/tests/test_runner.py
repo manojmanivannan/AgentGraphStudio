@@ -463,3 +463,108 @@ class TestCanvasRunner:
             with pytest.raises(PythonSyntaxError):
                 await agent.tools["broken_tool"].acall()
 
+    async def test_rag_search_failure_graceful_handling(self):
+        agent_node = FakeAgentNode(name="RAGAgent", agent_type="worker")
+        agent_node.enable_rag = True
+        agent_node.instructions = "Context: {{ rag_document }}"
+        canvas = FakeCanvas(agent_nodes=[agent_node])
+
+        runner = CanvasRunner(canvas)
+        runner.setup = AsyncMock()
+        runner.node_map = {agent_node.id: agent_node}
+        runner._conversation.persist_message = AsyncMock()
+
+        agent_mock = _make_agent_mock("Success despite RAG failure")
+        runner.agents[agent_node.id] = agent_mock
+
+        events = []
+        async def collect(event):
+            events.append(event)
+
+        with patch("canvas_server.runner.rag_helper.run_rag_search", side_effect=ValueError("Retrieval failed")), \
+             patch.object(runner._agent_factory, "build_worker_with_rag_prompt", return_value=agent_mock) as mock_build:
+            
+            await runner.run("what is RAG?", collect)
+
+            # Check if build_worker_with_rag_prompt was called with the fallback text
+            mock_build.assert_called_once()
+            args, kwargs = mock_build.call_args
+            assert args[1] == "Here context retrieval failed and you see this line. You are unable to leverage context."
+
+            # Check if the warning event was emitted
+            warning_events = [e for e in events if e["type"] == "warning"]
+            assert len(warning_events) == 1
+            assert "RAG document retrieval failed" in warning_events[0]["message"]
+
+            # Check if the warning message was persisted
+            runner._conversation.persist_message.assert_any_call(
+                role="system",
+                content=warning_events[0]["message"],
+                event_type="warning",
+                node_id=agent_node.id
+            )
+
+    async def test_rag_search_failure_in_handoff_graceful_handling(self):
+        master = FakeAgentNode(
+            id=uuid.uuid4(), name="Master", role="Router", agent_type="router"
+        )
+        worker = FakeAgentNode(
+            id=uuid.uuid4(), name="RAGWorker", role="Worker", agent_type="worker"
+        )
+        worker.enable_rag = True
+        worker.instructions = "Context: {{ rag_document }}"
+
+        class FakeEdge:
+            def __init__(self, source, target, edge_type):
+                self.id = uuid.uuid4()
+                self.canvas_id = uuid.uuid4()
+                self.source_node_id = source
+                self.target_node_id = target
+                self.edge_type = edge_type
+
+        canvas = FakeCanvas(
+            agent_nodes=[master, worker],
+            edges=[FakeEdge(master.id, worker.id, "handoff")],
+        )
+
+        runner = CanvasRunner(canvas)
+        runner.setup = AsyncMock()
+        runner.node_map = {master.id: master, worker.id: worker}
+        runner._conversation.persist_message = AsyncMock()
+
+        worker_mock = _make_agent_mock("Worker handled it despite RAG failure")
+        runner.agents[worker.id] = worker_mock
+
+        events = []
+        async def collect(event):
+            events.append(event)
+
+        # Create transfer function using runner._make_handoff_tool
+        transfer_tool = runner._make_handoff_tool(
+            worker.id, master.name, collect, history=""
+        )
+
+        with patch("canvas_server.runner.rag_helper.run_rag_search", side_effect=ValueError("Retrieval failed")), \
+             patch.object(runner._agent_factory, "build_worker_with_rag_prompt", return_value=worker_mock) as mock_build:
+            
+            await transfer_tool("what is RAG?")
+
+            # Check if build_worker_with_rag_prompt was called with the fallback text
+            mock_build.assert_called_once()
+            args, kwargs = mock_build.call_args
+            assert args[1] == "Here context retrieval failed and you see this line. You are unable to leverage context."
+
+            # Check if the warning event was emitted
+            warning_events = [e for e in events if e["type"] == "warning"]
+            assert len(warning_events) == 1
+            assert "RAG document retrieval failed" in warning_events[0]["message"]
+
+            # Check if the warning message was persisted
+            runner._conversation.persist_message.assert_any_call(
+                role="system",
+                content=warning_events[0]["message"],
+                event_type="warning",
+                node_id=worker.id
+            )
+
+

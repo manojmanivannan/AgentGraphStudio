@@ -92,10 +92,27 @@ class ExecutionStrategy(ABC):
 
         if getattr(agent_node, "enable_rag", False):
             from canvas_server.runner.rag_helper import run_rag_search
-            passages = await run_rag_search(
-                agent_id,
-                user_prompt
-            )
+            try:
+                passages = await run_rag_search(
+                    agent_id,
+                    user_prompt
+                )
+            except Exception as e:
+                warn_msg = f"RAG document retrieval failed for agent '{agent_node.name}': {e}"
+                logger.warning(warn_msg)
+                if send_event:
+                    await send_event({
+                        "type": "warning",
+                        "message": warn_msg
+                    })
+                await self._services.conversation_service.persist_message(
+                    role="system",
+                    content=warn_msg,
+                    event_type="warning",
+                    node_id=agent_id,
+                )
+                passages = "Here context retrieval failed and you see this line. You are unable to leverage context."
+
             agent = await self._services.agent_factory.build_worker_with_rag_prompt(agent_node, passages)
             self._services.agents[agent_id] = agent
             self._services.attach_events(agent_id, send_event, force=True)

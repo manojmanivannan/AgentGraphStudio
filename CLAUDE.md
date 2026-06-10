@@ -41,7 +41,7 @@ and edges on a ReactFlow canvas, then run workflows against a FastAPI + DSPy bac
 | **Sandbox** | `backend/src/canvas_server/sandbox.py` | Singleton Deno/Pyodide sandbox (DSPy PythonInterpreter) |
 | Memory config | `backend/src/canvas_server/memory_config.py` | mem0 config builder |
 | Memory provider | `backend/src/canvas_server/memory_provider.py` | mem0 wrapper as DSPy tool functions |
-| Error types | `backend/src/canvas_server/exceptions.py` | CanvasNotFoundError, ToolCompilationError, ToolExecutionError |
+| Error types | `backend/src/canvas_server/exceptions.py` | CanvasNotFoundError, ToolCompilationError, ToolExecutionError, LLMConfigurationError, PythonSyntaxError, PythonImportError, RAGEmbeddingError |
 | App root | `frontend/src/App.tsx` | Landing page or AppShell |
 | Zustand store | `frontend/src/store/canvasStore.ts` | All UI state |
 | Theme store | `frontend/src/store/themeStore.ts` | Dark/light + localStorage persistence |
@@ -215,6 +215,8 @@ and edges on a ReactFlow canvas, then run workflows against a FastAPI + DSPy bac
     Unit tests (inspect, coerce) don't need Deno.
 
 11. **In-Memory RAG for Workers** — RAG documents are stored as standard relational rows in PostgreSQL. Chunks are computed using a paragraph-aligned splitter and embedded dynamically in-memory at run-time using DSPy embedders. This avoids vector synchronization bugs during canvas auto-saves, which are supported by delta upserting nodes instead of destroying/recreating them.
+
+12. **Graceful Exception Tool Output Propagation** — Memory initialization failures and tool compilation/syntax/import errors do not crash runner setup. Instead, they register fallback stubs that raise the exception at call-time. In `StreamingReAct.aforward`, these exceptions are caught and returned to the agent as standard tool output observations (e.g. `Execution error in broken_tool: Syntax error in tool...`), allowing the agent to reason about the failure and explicitly inform the user so they can correct the configuration or code.
 
 ---
 
