@@ -31,11 +31,13 @@ class AgentFactory:
         tool_registry,
         memory_manager,
         edges: list,
+        agent_names: dict[uuid.UUID, str] | None = None,
     ):
         self._lm = lm
         self._tool_registry = tool_registry
         self._memory_manager = memory_manager
         self._edges = edges
+        self._agent_names = agent_names or {}
 
     # ------------------------------------------------------------------
     # DSPy signature
@@ -60,6 +62,25 @@ class AgentFactory:
             full_instructions = role
         else:
             full_instructions = instructions or "You are a helpful AI agent."
+
+        if agent_node.agent_type == "router":
+            handoff_targets = [
+                edge.target_node_id
+                for edge in self._edges
+                if edge.source_node_id == agent_node.id and edge.edge_type == "handoff"
+            ]
+            if len(handoff_targets) >= 2:
+                target_names = [
+                    self._agent_names.get(tid, f"Agent-{str(tid)[:8]}")
+                    for tid in handoff_targets
+                ]
+                full_instructions += (
+                    "\n\nYou have a parallel execution tool available: `execute_parallel_agents`. "
+                    "If the user's request requires work from multiple downstream agents that can be run "
+                    "independently/simultaneously, call `execute_parallel_agents` with the list of agent names "
+                    "and their inputs to run them in parallel and get their combined findings. "
+                    f"The available parallel handoff agents are: {', '.join(target_names)}."
+                )
 
         if self._memory_manager.needs_memory(agent_node):
             if self._memory_manager.initialization_error is not None:
@@ -225,6 +246,7 @@ class AgentFactory:
         history_text: str,
         dspy_history,
         make_handoff_tool_fn,
+        make_parallel_handoff_tool_fn=None,
     ) -> StreamingReAct:
         """Build (or rebuild) a router agent and register it in *existing_agents*.
 
@@ -253,6 +275,12 @@ class AgentFactory:
             for tid in handoff_targets
         ]
         all_tools = tools + handoff_tools
+
+        if len(handoff_targets) >= 2 and make_parallel_handoff_tool_fn:
+            parallel_tool = make_parallel_handoff_tool_fn(
+                handoff_targets, router_name, send_event, history_text, dspy_history
+            )
+            all_tools.append(parallel_tool)
 
         signature = self.build_signature(agent_node)
         agent = StreamingReAct(signature, tools=all_tools)

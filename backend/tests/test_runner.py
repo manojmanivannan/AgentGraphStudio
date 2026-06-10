@@ -569,4 +569,124 @@ class TestCanvasRunner:
                 node_id=worker.id
             )
 
+    async def test_make_parallel_handoff_tool_execution(self):
+        master = FakeAgentNode(
+            id=uuid.uuid4(), name="Master", role="Router", agent_type="router"
+        )
+        worker_a = FakeAgentNode(
+            id=uuid.uuid4(), name="WorkerA", role="Worker A", agent_type="worker"
+        )
+        worker_b = FakeAgentNode(
+            id=uuid.uuid4(), name="WorkerB", role="Worker B", agent_type="worker"
+        )
+
+        class FakeEdge:
+            def __init__(self, source, target, edge_type):
+                self.id = uuid.uuid4()
+                self.canvas_id = uuid.uuid4()
+                self.source_node_id = source
+                self.target_node_id = target
+                self.edge_type = edge_type
+
+        canvas = FakeCanvas(
+            agent_nodes=[master, worker_a, worker_b],
+            edges=[
+                FakeEdge(master.id, worker_a.id, "handoff"),
+                FakeEdge(master.id, worker_b.id, "handoff"),
+            ],
+        )
+
+        runner = CanvasRunner(canvas)
+        runner.setup = AsyncMock()
+        runner.node_map = {master.id: master, worker_a.id: worker_a, worker_b.id: worker_b}
+        runner._conversation.persist_message = AsyncMock()
+
+        runner.agents[worker_a.id] = _make_agent_mock("Result A")
+        runner.agents[worker_b.id] = _make_agent_mock("Result B")
+
+        events = []
+        async def collect(event):
+            events.append(event)
+
+        parallel_tool = runner._make_parallel_handoff_tool(
+            [worker_a.id, worker_b.id], master.name, collect, history=""
+        )
+
+        assert parallel_tool.__name__ == "execute_parallel_agents"
+
+        # Execute parallel agents
+        payload = [
+            {"agent_name": "WorkerA", "task": "task 1"},
+            {"agent_name": "WorkerB", "task": "task 2"},
+        ]
+        result = await parallel_tool(payload)
+
+        # Result should be aggregated findings
+        assert "Agent 'WorkerA' findings:\nResult A" in result
+        assert "Agent 'WorkerB' findings:\nResult B" in result
+
+        # Check if events were emitted for both agents
+        agent_starts = [e for e in events if e.get("type") == "agent_start"]
+        assert len(agent_starts) == 2
+        agent_names = {e["agent"] for e in agent_starts}
+        assert agent_names == {"WorkerA", "WorkerB"}
+
+    async def test_make_parallel_handoff_tool_graceful_failure(self):
+        master = FakeAgentNode(
+            id=uuid.uuid4(), name="Master", role="Router", agent_type="router"
+        )
+        worker_a = FakeAgentNode(
+            id=uuid.uuid4(), name="WorkerA", role="Worker A", agent_type="worker"
+        )
+        worker_b = FakeAgentNode(
+            id=uuid.uuid4(), name="WorkerB", role="Worker B", agent_type="worker"
+        )
+
+        class FakeEdge:
+            def __init__(self, source, target, edge_type):
+                self.id = uuid.uuid4()
+                self.canvas_id = uuid.uuid4()
+                self.source_node_id = source
+                self.target_node_id = target
+                self.edge_type = edge_type
+
+        canvas = FakeCanvas(
+            agent_nodes=[master, worker_a, worker_b],
+            edges=[
+                FakeEdge(master.id, worker_a.id, "handoff"),
+                FakeEdge(master.id, worker_b.id, "handoff"),
+            ],
+        )
+
+        runner = CanvasRunner(canvas)
+        runner.setup = AsyncMock()
+        runner.node_map = {master.id: master, worker_a.id: worker_a, worker_b.id: worker_b}
+        runner._conversation.persist_message = AsyncMock()
+
+        # Worker A succeeds, Worker B throws an exception
+        runner.agents[worker_a.id] = _make_agent_mock("Result A")
+
+        agent_b_mock = AsyncMock()
+        agent_b_mock.aforward = AsyncMock(side_effect=Exception("Connection refused"))
+        runner.agents[worker_b.id] = agent_b_mock
+
+        events = []
+        async def collect(event):
+            events.append(event)
+
+        parallel_tool = runner._make_parallel_handoff_tool(
+            [worker_a.id, worker_b.id], master.name, collect, history=""
+        )
+
+        payload = [
+            {"agent_name": "WorkerA", "task": "task 1"},
+            {"agent_name": "WorkerB", "task": "task 2"},
+        ]
+        result = await parallel_tool(payload)
+
+        # Output should show findings for A, and error message for B
+        assert "Agent 'WorkerA' findings:\nResult A" in result
+        assert "Agent 'WorkerB' findings:\nError: Connection refused" in result
+
+
 

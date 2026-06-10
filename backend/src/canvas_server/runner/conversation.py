@@ -21,6 +21,8 @@ class ConversationService:
     def __init__(self, conversation_repo=None, conversation_id=None):
         self.conversation_repo = conversation_repo
         self.conversation_id = conversation_id
+        import asyncio
+        self._lock = asyncio.Lock()
 
     async def load_messages(self) -> list:
         """Return all messages for the current conversation, or ``[]``."""
@@ -53,17 +55,18 @@ class ConversationService:
         )
         if not self.conversation_repo or not self.conversation_id:
             return
-        try:
-            await self.conversation_repo.add_message(
-                conversation_id=self.conversation_id,
-                role=role,
-                content=content,
-                agent_name=agent_name,
-                node_id=node_id,
-                event_type=event_type,
-            )
-        except Exception as e:
-            logger.error("Failed to persist message: %s", e, exc_info=True)
+        async with self._lock:
+            try:
+                await self.conversation_repo.add_message(
+                    conversation_id=self.conversation_id,
+                    role=role,
+                    content=content,
+                    agent_name=agent_name,
+                    node_id=node_id,
+                    event_type=event_type,
+                )
+            except Exception as e:
+                logger.error("Failed to persist message: %s", e, exc_info=True)
 
     def format_history(
         self,
