@@ -14,11 +14,6 @@ from __future__ import annotations
 import logging
 import uuid
 from abc import ABC, abstractmethod
-from collections.abc import Callable
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from canvas_server.runner.handoff import HandoffToolBuilder
 
 from canvas_server.exceptions import (
     LLMConfigurationError,
