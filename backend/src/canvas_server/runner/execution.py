@@ -14,11 +14,6 @@ from __future__ import annotations
 import logging
 import uuid
 from abc import ABC, abstractmethod
-from collections.abc import Callable
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from canvas_server.runner.handoff import HandoffToolBuilder
 
 from canvas_server.exceptions import (
     LLMConfigurationError,
@@ -37,26 +32,41 @@ class StrategyServices:
 
     def __init__(
         self,
-        *,
-        agents: dict[uuid.UUID, object],
-        node_map: dict[uuid.UUID, object],
-        agent_factory,
-        conversation_service,
+        run_state,
         edge_graph,
         memory_manager,
-        tool_registry,
-        attach_events: Callable[[uuid.UUID, Callable], None],
-        handoff_tool_builder: HandoffToolBuilder,
     ):
-        self.agents = agents
-        self.node_map = node_map
-        self.agent_factory = agent_factory
-        self.conversation_service = conversation_service
+        self.run_state = run_state
         self.edge_graph = edge_graph
         self.memory_manager = memory_manager
-        self.tool_registry = tool_registry
-        self.attach_events = attach_events
-        self.handoff_tool_builder = handoff_tool_builder
+
+    @property
+    def agents(self):
+        return self.run_state.agents
+
+    @property
+    def node_map(self):
+        return self.run_state.node_map
+
+    @property
+    def agent_factory(self):
+        return self.run_state.agent_factory
+
+    @property
+    def conversation_service(self):
+        return self.run_state.conversation_service
+
+    @property
+    def tool_registry(self):
+        return self.run_state.tool_registry
+
+    @property
+    def attach_events(self):
+        return self.run_state.attach_events
+
+    @property
+    def handoff_tool_builder(self):
+        return self.run_state.handoff_tool_builder
 
 
 class ExecutionStrategy(ABC):
@@ -84,27 +94,17 @@ class ExecutionStrategy(ABC):
         dspy_history,
     ) -> str | None:
         """Execute a single worker agent and return its answer."""
-        agent = self._services.agents.get(agent_id)
         agent_node = self._services.node_map.get(agent_id)
-        if not agent or not agent_node:
-            logger.warning("Agent not found: id=%s", agent_id)
+        if not agent_node:
+            logger.warning("Agent node not found: id=%s", agent_id)
             return None
 
         logger.info(
             "Running agent: %s (type=%s)", agent_node.name, agent_node.agent_type
         )
 
-        if getattr(agent_node, "enable_rag", False):
-            agent = await self._services.agent_factory.assemble_rag_worker(
-                agent_node=agent_node,
-                task=user_prompt,
-                conversation_service=self._services.conversation_service,
-                send_event=send_event,
-            )
-            self._services.agents[agent_id] = agent
-            self._services.attach_events(agent_id, send_event, force=True)
-        else:
-            self._services.attach_events(agent_id, send_event)
+        # Delegate RAG compilation, caching, and event callbacks to run_state
+        agent = await self._services.run_state.get_or_build_agent(agent_id, task=user_prompt)
 
         needs_history = self._services.agent_factory.needs_history(agent_node)
         prompt = self._services.agent_factory.build_worker_prompt(user_prompt)
@@ -152,7 +152,6 @@ class WorkerExecution(ExecutionStrategy):
             logger.warning("Worker agent node not found: id=%s", agent_id)
             return None
 
-        self._services.attach_events(agent_id, ctx.send_event)
         result = await self._run_worker(
             agent_id, ctx.user_prompt, ctx.send_event, ctx.dspy_history
         )
@@ -181,16 +180,8 @@ class RouterExecution(ExecutionStrategy):
             logger.warning("Router agent node not found: id=%s", agent_id)
             return None
 
-        agent = await self._services.agent_factory.build_router(
-            agent_node,
-            self._services.agents,
-            agent_node.name,
-            ctx.send_event,
-            ctx.history_text,
-            ctx.dspy_history,
-            self._services.handoff_tool_builder,
-        )
-        self._services.attach_events(agent_id, ctx.send_event)
+        # CanvasRunState handles lazy building and event wiring for routers
+        agent = await self._services.run_state.get_or_build_agent(agent_id)
 
         prompt = self._services.agent_factory.build_worker_prompt(
             ctx.user_prompt, ctx.history_text
@@ -251,8 +242,6 @@ class ChainExecution(ExecutionStrategy):
 
         while current_agent_id is not None and current_agent_id not in visited:
             visited.add(current_agent_id)
-            self._services.attach_events(current_agent_id, ctx.send_event)
-
             result_text = await self._run_worker(
                 current_agent_id,
                 ctx.user_prompt,

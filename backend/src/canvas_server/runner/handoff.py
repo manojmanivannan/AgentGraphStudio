@@ -17,19 +17,38 @@ class HandoffToolBuilder:
     execution/tool-call time, avoiding circular references and callback passing.
     """
 
-    def __init__(
-        self,
-        agents: dict[uuid.UUID, object],
-        node_map: dict[uuid.UUID, object],
-        agent_factory,
-        conversation_service,
-        attach_events: Callable[[uuid.UUID, Callable, bool], None],
-    ):
-        self.agents = agents
-        self.node_map = node_map
-        self.agent_factory = agent_factory
-        self.conversation_service = conversation_service
-        self.attach_events = attach_events
+    def __init__(self, run_state):
+        self.run_state = run_state
+
+    # -- backward-compat properties for testing -----------------------------
+
+    @property
+    def agents(self):
+        return self.run_state.agents
+
+    @agents.setter
+    def agents(self, value):
+        self.run_state.agents = value
+
+    @property
+    def node_map(self):
+        return self.run_state.node_map
+
+    @node_map.setter
+    def node_map(self, value):
+        self.run_state.node_map = value
+
+    @property
+    def agent_factory(self):
+        return self.run_state.agent_factory
+
+    @property
+    def conversation_service(self):
+        return self.run_state.conversation_service
+
+    @property
+    def attach_events(self):
+        return self.run_state.attach_events
 
     def make_handoff_tool(
         self,
@@ -48,24 +67,9 @@ class HandoffToolBuilder:
         target_name = target_node.name
 
         async def transfer(task: str) -> str:
-            # Lazily build the target agent if it hasn't been built yet
-            if target_id not in self.agents:
-                if target_node.agent_type == "router":
-                    await self.agent_factory.build_router(
-                        target_node,
-                        self.agents,
-                        router_name,
-                        send_event,
-                        history,
-                        dspy_history,
-                        self,
-                    )
-                else:
-                    raise RuntimeError(
-                        f"Worker agent '{target_name}' (id={target_id}) not found in agents dict"
-                    )
-
-            target_agent = self.agents[target_id]
+            self.run_state.send_event = send_event
+            # Delegate lookup, setup, lazy building, RAG assembly, and event wiring
+            target_agent = await self.run_state.get_or_build_agent(target_id, task=task)
 
             await send_event(
                 {
@@ -90,18 +94,6 @@ class HandoffToolBuilder:
                     "node_id": str(target_id),
                 }
             )
-
-            if getattr(target_node, "enable_rag", False):
-                target_agent = await self.agent_factory.assemble_rag_worker(
-                    agent_node=target_node,
-                    task=task,
-                    conversation_service=self.conversation_service,
-                    send_event=send_event,
-                )
-                self.agents[target_id] = target_agent
-                self.attach_events(target_id, send_event, force=True)
-            else:
-                self.attach_events(target_id, send_event)
 
             prompt = self.agent_factory.build_worker_prompt(task, history)
             try:
