@@ -38,6 +38,7 @@ from canvas_server.runner.execution import (
 )
 from canvas_server.runner.handoff import HandoffToolBuilder
 from canvas_server.runner.memory import MemoryManager
+from canvas_server.runner.run_state import CanvasRunState
 from canvas_server.runner.tool_registry import ToolRegistry
 
 logger = logging.getLogger("canvas_server.runner")
@@ -53,13 +54,6 @@ class CanvasRunner:
 
     def __init__(self, canvas, conversation_repo=None, conversation_id=None):
         self.canvas = canvas
-
-        # ---- mutable run-time state (owned here, shared with services) ----
-        self.tools: dict[uuid.UUID, object] = {}
-        self._tool_name_to_id: dict[str, uuid.UUID] = {}
-        self.agents: dict[uuid.UUID, object] = {}
-        self._wired_agents: set[uuid.UUID] = set()
-        self._node_map: dict[uuid.UUID, object] = {}
 
         # ---- LM (cheap to construct, needs no I/O) ----
         self._lm = dspy.LM(
@@ -83,23 +77,59 @@ class CanvasRunner:
             edges=self.canvas.edges if self.canvas else [],
             agent_names={node.id: node.name for node in self.canvas.agent_nodes} if self.canvas else {},
         )
-        self._handoff_tool_builder = HandoffToolBuilder(
-            agents=self.agents,
-            node_map=self.node_map,
+
+        # ---- runtime context and state management ----
+        self.run_state = CanvasRunState(
+            canvas=self.canvas,
             agent_factory=self._agent_factory,
             conversation_service=self._conversation,
-            attach_events=self._attach_events,
+            tool_registry=self._tool_registry,
         )
+
+        self._handoff_tool_builder = HandoffToolBuilder(self.run_state)
+        self.run_state.handoff_tool_builder = self._handoff_tool_builder
 
     # -- backward-compat properties so existing tests don't break ----------
 
     @property
+    def tools(self) -> dict[uuid.UUID, object]:
+        return self.run_state.tool_registry.tools
+
+    @tools.setter
+    def tools(self, value: dict[uuid.UUID, object]):
+        self.run_state.tool_registry.tools = value
+
+    @property
+    def _tool_name_to_id(self) -> dict[str, uuid.UUID]:
+        return self.run_state.tool_registry._tool_name_to_id
+
+    @_tool_name_to_id.setter
+    def _tool_name_to_id(self, value: dict[str, uuid.UUID]):
+        self.run_state.tool_registry._tool_name_to_id = value
+
+    @property
+    def agents(self) -> dict[uuid.UUID, object]:
+        return self.run_state.agents
+
+    @agents.setter
+    def agents(self, value: dict[uuid.UUID, object]):
+        self.run_state.agents = value
+
+    @property
+    def _wired_agents(self) -> set[uuid.UUID]:
+        return self.run_state.wired_agents
+
+    @_wired_agents.setter
+    def _wired_agents(self, value: set[uuid.UUID]):
+        self.run_state.wired_agents = value
+
+    @property
     def node_map(self) -> dict[uuid.UUID, object]:
-        return self._node_map
+        return self.run_state.node_map
 
     @node_map.setter
     def node_map(self, value: dict[uuid.UUID, object]):
-        self._node_map = value
+        self.run_state.node_map = value
         if hasattr(self, "_handoff_tool_builder"):
             self._handoff_tool_builder.node_map = value
 
@@ -205,6 +235,7 @@ class CanvasRunner:
 
         self._tool_registry = ToolRegistry()
         await self._tool_registry.compile_all(self.canvas.tool_nodes)
+        self.run_state.tool_registry = self._tool_registry
         # Sync tool state up to the runner for backward-compat access
         self.tools = self._tool_registry.tools
         self._tool_name_to_id = self._tool_registry._tool_name_to_id
@@ -224,17 +255,13 @@ class CanvasRunner:
             edges=self.canvas.edges,
             agent_names={node.id: node.name for node in self.canvas.agent_nodes},
         )
+        self.run_state.agent_factory = self._agent_factory
 
         # Build worker agents (routers are built lazily at run time)
         self.agents = await self._agent_factory.build_workers(self.canvas.agent_nodes)
 
-        self._handoff_tool_builder = HandoffToolBuilder(
-            agents=self.agents,
-            node_map=self.node_map,
-            agent_factory=self._agent_factory,
-            conversation_service=self._conversation,
-            attach_events=self._attach_events,
-        )
+        self._handoff_tool_builder = HandoffToolBuilder(self.run_state)
+        self.run_state.handoff_tool_builder = self._handoff_tool_builder
 
         # Alert if memory provider failed to initialize but proceed with LLM anyway
         if self._memory_manager.initialization_error:
@@ -291,49 +318,8 @@ class CanvasRunner:
     def _attach_events(self, agent_id: uuid.UUID, send_event, force=False):
         """Wire event callbacks on *agent_id* so StreamingReAct events flow
         to ``send_event``.  Idempotent — agents are only wired once."""
-        if agent_id in self._wired_agents and not force:
-            return
-        agent = self.agents.get(agent_id)
-        agent_node = self.node_map.get(agent_id)
-        if agent and agent_node:
-            self._wired_agents.add(agent_id)
-            tool_name_to_id = self._tool_name_to_id
-
-            async def callback(event, aid=agent_id, aname=agent_node.name):
-                await send_event({"agent": aname, "node_id": str(aid), **event})
-                if event.get("type") == "tool_start":
-                    tool_name = event.get("tool", "")
-                    tool_node_id = tool_name_to_id.get(tool_name)
-                    if tool_node_id:
-                        await send_event(
-                            {
-                                "type": "tool_start",
-                                "tool": tool_name,
-                                "node_id": str(tool_node_id),
-                            }
-                        )
-                elif event.get("type") == "thought":
-                    await self._conversation.persist_message(
-                        role="assistant",
-                        content=event.get("content", ""),
-                        agent_name=aname,
-                        node_id=aid,
-                        event_type="thought",
-                    )
-                elif event.get("type") == "tool_result":
-                    tool_name = event.get("tool", "")
-                    clean_tool_name = (
-                        tool_name.replace("transfer_to_", "") if tool_name else aname
-                    )
-                    await self._conversation.persist_message(
-                        role="assistant",
-                        content=event.get("output", ""),
-                        agent_name=clean_tool_name,
-                        node_id=aid,
-                        event_type="tool_result",
-                    )
-
-            agent.on_event(callback)
+        self.run_state.send_event = send_event
+        self.run_state.attach_events(agent_id, force=force)
 
 
     # ------------------------------------------------------------------
@@ -347,15 +333,9 @@ class CanvasRunner:
     def _resolve_strategy(self, target_agent_id) -> ExecutionStrategy:
         """Build the appropriate execution strategy from the services context."""
         services = StrategyServices(
-            agents=self.agents,
-            node_map=self.node_map,
-            agent_factory=self._agent_factory,
-            conversation_service=self._conversation,
+            run_state=self.run_state,
             edge_graph=self._edge_graph,
             memory_manager=self._memory_manager,
-            tool_registry=self._tool_registry,
-            attach_events=self._attach_events,
-            handoff_tool_builder=self._handoff_tool_builder,
         )
 
         if target_agent_id is not None:
@@ -437,6 +417,14 @@ class CanvasRunner:
             dspy_history=dspy_history,
             history_enabled_node_ids=history_enabled_node_ids,
             primary_agent_id=first_agent_id,
+        )
+
+        # Set ephemeral fields on the runtime state
+        self.run_state.set_run_context(
+            user_prompt=user_prompt,
+            send_event=send_event,
+            history_text=history_text,
+            dspy_history=dspy_history,
         )
 
         # ---- Execute ---
