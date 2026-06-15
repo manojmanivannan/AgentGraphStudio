@@ -13,6 +13,8 @@ import {
   MessageSquare,
   Home,
   Activity,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import { useCanvasStore } from "@/store/canvasStore";
 import { useThemeStore } from "@/store/themeStore";
@@ -34,6 +36,8 @@ export function SidebarRail() {
   const setNodes = useCanvasStore((s) => s.setNodes);
   const setEdges = useCanvasStore((s) => s.setEdges);
   const setCanvas = useCanvasStore((s) => s.setCanvas);
+  const sidebarCollapsed = useCanvasStore((s) => s.sidebarCollapsed);
+  const setSidebarCollapsed = useCanvasStore((s) => s.setSidebarCollapsed);
 
   const navigate = useNavigate();
 
@@ -45,7 +49,7 @@ export function SidebarRail() {
    *  with slight randomness so multiple nodes don't stack. */
   const getViewportCenterPosition = () => {
     const { x, y, zoom } = useCanvasStore.getState().viewport;
-    const railWidth = 256;
+    const railWidth = sidebarCollapsed ? 64 : 256;
     // Center of the visible canvas area in screen pixels
     const screenCenterX = railWidth + (window.innerWidth - railWidth) / 2;
     const screenCenterY = window.innerHeight / 2;
@@ -247,118 +251,201 @@ export function SidebarRail() {
     }
   };
 
+  const navItemClass = (toPath: string, testId?: string) => {
+    const isExact = window.location.pathname === toPath;
+    const isChat = toPath === "/chat" && window.location.pathname.startsWith("/chat/");
+    const isActive = isExact || isChat;
+    
+    return sidebarCollapsed
+      ? `flex items-center justify-center w-10 h-10 mx-auto rounded-lg transition-all ${
+          isActive
+            ? "bg-[var(--color-elevated)] text-[var(--color-text-primary)] border border-[var(--color-border-default)]"
+            : "text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-elevated)]"
+        }`
+      : `flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+          isActive
+            ? "bg-[var(--color-elevated)] text-[var(--color-text-primary)] border border-[var(--color-border-default)]"
+            : "text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-elevated)]"
+        }`;
+  };
+
+  const workerBtnClass = sidebarCollapsed
+    ? "flex items-center justify-center w-10 h-10 mx-auto rounded-lg text-[var(--color-text-secondary)] hover:text-[var(--color-accent)] hover:bg-[var(--color-accent-subtle)] transition-all cursor-pointer"
+    : "w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium text-[var(--color-text-secondary)] hover:text-[var(--color-accent)] hover:bg-[var(--color-accent-subtle)] transition-colors text-left cursor-pointer";
+
+  const routerBtnClass = sidebarCollapsed
+    ? "flex items-center justify-center w-10 h-10 mx-auto rounded-lg text-[var(--color-text-secondary)] hover:text-[var(--color-agent)] hover:bg-[var(--color-agent-subtle)] transition-all cursor-pointer"
+    : "w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium text-[var(--color-text-secondary)] hover:text-[var(--color-agent)] hover:bg-[var(--color-agent-subtle)] transition-colors text-left cursor-pointer";
+
+  const toolBtnClass = sidebarCollapsed
+    ? "flex items-center justify-center w-10 h-10 mx-auto rounded-lg text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-elevated)] transition-all cursor-pointer"
+    : "w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-elevated)] transition-colors text-left cursor-pointer";
+
+  const importExportBtnClass = sidebarCollapsed
+    ? "flex items-center justify-center w-10 h-10 mx-auto rounded-lg text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-elevated)] transition-all cursor-pointer"
+    : "w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-elevated)] transition-colors text-left cursor-pointer";
+
+  const clearBtnClass = sidebarCollapsed
+    ? "flex items-center justify-center w-10 h-10 mx-auto rounded-lg text-[var(--color-text-secondary)] hover:text-[var(--color-danger)] hover:bg-[var(--color-danger-subtle)] transition-all cursor-pointer"
+    : "w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium text-[var(--color-text-secondary)] hover:text-[var(--color-danger)] hover:bg-[var(--color-danger-subtle)] transition-colors text-left cursor-pointer";
+
   return (
     <aside
       data-testid="sidebar-rail"
-      className="absolute left-0 top-0 bottom-0 w-64 border-r border-[var(--color-border-subtle)] bg-[var(--color-surface)] flex flex-col z-40"
+      className={`absolute left-0 top-0 bottom-0 ${
+        sidebarCollapsed ? "w-16" : "w-64"
+      } border-r border-[var(--color-border-subtle)] bg-[var(--color-surface)] flex flex-col z-40 transition-[width] duration-300 ease-in-out overflow-hidden`}
     >
       {/* Sidebar Header */}
-      <div className="p-4 border-b border-[var(--color-border-subtle)] flex flex-col gap-2">
-        <div className="flex items-center gap-2 mb-2">
-          <img
-            src={theme === "dark" ? "/agent_graph_studio_logo_white.png" : "/agent_graph_studio_logo_dark.png"}
-            alt="Logo"
-            className="h-6 w-auto object-contain shrink-0"
-          />
-          <span className="font-bold text-[14px] tracking-tight text-[var(--color-text-primary)]">
-            AgentGraph Studio
-          </span>
-        </div>
+      <div className={`p-4 border-b border-[var(--color-border-subtle)] flex flex-col gap-2 ${sidebarCollapsed ? "items-center" : ""}`}>
+        {!sidebarCollapsed ? (
+          <div className="flex items-center justify-between mb-2 w-full">
+            <div className="flex items-center gap-2">
+              <img
+                src={theme === "dark" ? "/agent_graph_studio_logo_white.png" : "/agent_graph_studio_logo_dark.png"}
+                alt="Logo"
+                className="h-6 w-auto object-contain shrink-0"
+              />
+              <span className="font-bold text-[14px] tracking-tight text-[var(--color-text-primary)]">
+                AgentGraph Studio
+              </span>
+            </div>
+            <button
+              onClick={() => setSidebarCollapsed(true)}
+              data-testid="collapse-sidebar"
+              className="p-1 rounded hover:bg-[var(--color-elevated)] text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)] transition-colors cursor-pointer"
+              title="Collapse Sidebar"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+          </div>
+        ) : (
+          <div className="flex flex-col items-center gap-3 mb-2 w-full">
+            <img
+              src={theme === "dark" ? "/agent_graph_studio_logo_white.png" : "/agent_graph_studio_logo_dark.png"}
+              alt="Logo"
+              className="h-6 w-auto object-contain"
+            />
+            <button
+              onClick={() => setSidebarCollapsed(false)}
+              data-testid="expand-sidebar"
+              className="p-1.5 rounded hover:bg-[var(--color-elevated)] text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)] transition-colors cursor-pointer"
+              title="Expand Sidebar"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
+        )}
 
-        <div className="space-y-1">
+        <div className="space-y-1 w-full">
           <Link
             to="/"
-            className="flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-xs font-medium text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-elevated)] transition-colors"
+            className={navItemClass("/")}
             title="Home"
           >
-            <Home className="w-4 h-4 text-[var(--color-text-tertiary)]" />
-            Home
+            <Home className="w-4 h-4 text-[var(--color-text-tertiary)] shrink-0" />
+            {!sidebarCollapsed && "Home"}
           </Link>
           {canvasId && (
             <Link
               to={`/canvas/${canvasId}`}
-              className="flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-[var(--color-elevated)] text-[var(--color-text-primary)] border border-[var(--color-border-default)] transition-colors"
+              className={navItemClass(`/canvas/${canvasId}`)}
               title="Canvas Editor"
             >
-              <Layout className="w-4 h-4 text-[var(--color-text-tertiary)]" />
-              Visual Canvas
+              <Layout className="w-4 h-4 text-[var(--color-text-tertiary)] shrink-0" />
+              {!sidebarCollapsed && "Visual Canvas"}
             </Link>
           )}
           <button
             onClick={handleChatClick}
             data-testid="chat-toggle"
-            className="w-full flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-xs font-medium text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-elevated)] transition-colors text-left cursor-pointer"
+            className={navItemClass("/chat", "chat-toggle")}
+            title="Agent Chat"
           >
-            <MessageSquare className="w-4 h-4 text-[var(--color-text-tertiary)]" />
-            Agent Chat
+            <MessageSquare className="w-4 h-4 text-[var(--color-text-tertiary)] shrink-0" />
+            {!sidebarCollapsed && "Agent Chat"}
           </button>
           <button
             onClick={() => window.open("/mlflow/", "_blank")}
             data-testid="observability-toggle"
-            className="w-full flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-xs font-medium text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-elevated)] transition-colors text-left cursor-pointer"
+            className={navItemClass("/mlflow")}
+            title="Observability"
           >
-            <Activity className="w-4 h-4 text-[var(--color-text-tertiary)]" />
-            Observability
+            <Activity className="w-4 h-4 text-[var(--color-text-tertiary)] shrink-0" />
+            {!sidebarCollapsed && "Observability"}
           </button>
         </div>
       </div>
 
       {/* Sidebar Content (Middle actions) */}
-      <div className="flex-1 p-4 space-y-4 overflow-y-auto">
+      <div className="flex-1 p-4 space-y-4 overflow-y-auto w-full">
         {/* Build Section */}
         <div>
-          <h3 className="text-[10px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-wider mb-2">
-            Build
-          </h3>
+          {sidebarCollapsed ? (
+            <div className="border-t border-[var(--color-border-subtle)] my-2" />
+          ) : (
+            <h3 className="text-[10px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-wider mb-2">
+              Build
+            </h3>
+          )}
           <div className="space-y-1.5">
             <button
               onClick={() => addAgent("worker")}
               data-testid="add-agent-worker"
-              className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium text-[var(--color-text-secondary)] hover:text-[var(--color-accent)] hover:bg-[var(--color-accent-subtle)] transition-colors text-left cursor-pointer"
+              className={workerBtnClass}
+              title="Add Worker Agent"
             >
-              <Brain className="w-4 h-4 text-[var(--color-accent)]" />
-              Add Worker Agent
+              <Brain className="w-4 h-4 text-[var(--color-accent)] shrink-0" />
+              {!sidebarCollapsed && "Add Worker Agent"}
             </button>
             <button
               onClick={() => addAgent("router")}
               data-testid="add-agent-router"
-              className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium text-[var(--color-text-secondary)] hover:text-[var(--color-agent)] hover:bg-[var(--color-agent-subtle)] transition-colors text-left cursor-pointer"
+              className={routerBtnClass}
+              title="Add Router Agent"
             >
-              <GitBranch className="w-4 h-4 text-[var(--color-agent)]" />
-              Add Router Agent
+              <GitBranch className="w-4 h-4 text-[var(--color-agent)] shrink-0" />
+              {!sidebarCollapsed && "Add Router Agent"}
             </button>
             <button
               onClick={addTool}
               data-testid="add-tool-button"
-              className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-elevated)] transition-colors text-left cursor-pointer"
+              className={toolBtnClass}
+              title="Add Custom Tool"
             >
-              <Wrench className="w-4 h-4 text-[var(--color-text-tertiary)]" />
-              Add Custom Tool
+              <Wrench className="w-4 h-4 text-[var(--color-text-tertiary)] shrink-0" />
+              {!sidebarCollapsed && "Add Custom Tool"}
             </button>
           </div>
         </div>
 
         {/* Manage Section */}
         <div>
-          <h3 className="text-[10px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-wider mb-2">
-            Manage Canvas
-          </h3>
+          {sidebarCollapsed ? (
+            <div className="border-t border-[var(--color-border-subtle)] my-2" />
+          ) : (
+            <h3 className="text-[10px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-wider mb-2">
+              Manage Canvas
+            </h3>
+          )}
           <div className="space-y-1.5">
             <button
               onClick={handleImport}
               data-testid="import-button"
-              className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-elevated)] transition-colors text-left cursor-pointer"
+              className={importExportBtnClass}
+              title="Import Agent Canvas"
             >
-              <Upload className="w-4 h-4 text-[var(--color-text-tertiary)]" />
-              Import Agent Canvas
+              <Upload className="w-4 h-4 text-[var(--color-text-tertiary)] shrink-0" />
+              {!sidebarCollapsed && "Import Agent Canvas"}
             </button>
             <button
               onClick={handleExport}
               data-testid="export-button"
-              className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-elevated)] transition-colors text-left cursor-pointer"
+              className={importExportBtnClass}
+              title="Export Agent Canvas"
             >
-              <Download className="w-4 h-4 text-[var(--color-text-tertiary)]" />
-              Export Agent Canvas
+              <Download className="w-4 h-4 text-[var(--color-text-tertiary)] shrink-0" />
+              {!sidebarCollapsed && "Export Agent Canvas"}
             </button>
 
             {/* Clear Canvas */}
@@ -367,10 +454,11 @@ export function SidebarRail() {
                 ref={clearRef}
                 onClick={() => setClearOpen((prev) => !prev)}
                 data-testid="clear-canvas-button"
-                className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium text-[var(--color-text-secondary)] hover:text-[var(--color-danger)] hover:bg-[var(--color-danger-subtle)] transition-colors text-left cursor-pointer"
+                className={clearBtnClass}
+                title="Clear Canvas"
               >
-                <Trash2 className="w-4 h-4 text-[var(--color-text-tertiary)]" />
-                Clear Canvas
+                <Trash2 className="w-4 h-4 text-[var(--color-text-tertiary)] shrink-0" />
+                {!sidebarCollapsed && "Clear Canvas"}
               </button>
 
               <RailPopover
