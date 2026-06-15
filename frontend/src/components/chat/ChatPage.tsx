@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import {
   Send,
@@ -13,6 +13,7 @@ import {
   AlertCircle,
   FolderKanban,
   Activity,
+  ChevronLeft,
 } from "lucide-react";
 import { useCanvasStore } from "@/store/canvasStore";
 import { useThemeStore } from "@/store/themeStore";
@@ -24,7 +25,7 @@ import {
   deleteConversationById,
   getCanvas,
 } from "@/lib/api";
-import type { ConversationSummary, Message, ExecutionEvent } from "@/types";
+import type { ConversationSummary, Message, ExecutionEvent, CanvasResponse } from "@/types";
 
 const WS_BASE = `ws://${import.meta.env.VITE_API_HOST || "localhost:8000"}`;
 
@@ -70,16 +71,124 @@ export function groupMessagesIntoTurns(messages: Message[]): {
   return { preTurnMessages, turns };
 }
 
+function computeNestingLevels(canvasData: CanvasResponse): Record<string, number> {
+  const levels: Record<string, number> = {};
+  const agents = canvasData.nodes?.agents || [];
+  const tools = canvasData.nodes?.tools || [];
+  const edges = canvasData.edges || [];
+
+  // Build adjacency list: node_id -> list of target node_ids
+  const adj: Record<string, string[]> = {};
+  // Track incoming edges of any type
+  const hasIncoming = new Set<string>();
+
+  for (const edge of edges) {
+    if (!adj[edge.source_node_id]) {
+      adj[edge.source_node_id] = [];
+    }
+    adj[edge.source_node_id].push(edge.target_node_id);
+    hasIncoming.add(edge.target_node_id);
+  }
+
+  // Find root nodes: agents with no incoming edges
+  const roots = agents.filter(a => !hasIncoming.has(a.id));
+
+  // If no roots (e.g. cycle or empty), use all agents as fallback roots
+  const initialNodes = roots.length > 0 ? roots : agents;
+
+  // BFS queue: { id, level }
+  const queue: { id: string; level: number }[] = [];
+  const visited = new Set<string>();
+
+  for (const node of initialNodes) {
+    levels[node.id] = 0;
+    queue.push({ id: node.id, level: 0 });
+    visited.add(node.id);
+  }
+
+  while (queue.length > 0) {
+    const { id, level } = queue.shift()!;
+    const targets = adj[id] || [];
+    for (const targetId of targets) {
+      if (!visited.has(targetId)) {
+        visited.add(targetId);
+        levels[targetId] = level + 1;
+        queue.push({ id: targetId, level: level + 1 });
+      }
+    }
+  }
+
+  // Handle any nodes that were not reached by the BFS (e.g., disconnected subgraphs)
+  for (const agent of agents) {
+    if (!visited.has(agent.id)) {
+      levels[agent.id] = 0;
+      queue.push({ id: agent.id, level: 0 });
+      visited.add(agent.id);
+
+      while (queue.length > 0) {
+        const { id, level } = queue.shift()!;
+        const targets = adj[id] || [];
+        for (const targetId of targets) {
+          if (!visited.has(targetId)) {
+            visited.add(targetId);
+            levels[targetId] = level + 1;
+            queue.push({ id: targetId, level: level + 1 });
+          }
+        }
+      }
+    }
+  }
+
+  return levels;
+}
+
 export default function ChatPage() {
   const { conversation_id } = useParams<{ conversation_id: string }>();
   const navigate = useNavigate();
 
   const setActiveNodeId = useCanvasStore((s) => s.setActiveNodeId);
   const theme = useThemeStore((s) => s.theme);
+  const sidebarCollapsed = useCanvasStore((s) => s.sidebarCollapsed);
+  const setSidebarCollapsed = useCanvasStore((s) => s.setSidebarCollapsed);
 
   const [canvasId, setCanvasId] = useState<string | null>(null);
   const [canvasName, setCanvasName] = useState<string>("Canvas");
+  const [canvas, setCanvas] = useState<CanvasResponse | null>(null);
   const [conversationName, setConversationName] = useState<string>("Chat");
+
+  const nestingLevels = useMemo(() => {
+    if (!canvas) return {};
+    return computeNestingLevels(canvas);
+  }, [canvas]);
+
+  const findNodeByNameOrId = useCallback((name?: string | null, id?: string | null) => {
+    if (name) {
+      const cleanName = name.trim().toLowerCase();
+      const agent = canvas?.nodes?.agents?.find(
+        (a) => a.name.trim().toLowerCase() === cleanName
+      );
+      if (agent) return agent;
+      const tool = canvas?.nodes?.tools?.find(
+        (t) => t.name.trim().toLowerCase() === cleanName
+      );
+      if (tool) return tool;
+    }
+    if (id) {
+      const agent = canvas?.nodes?.agents?.find((a) => a.id === id);
+      if (agent) return agent;
+      const tool = canvas?.nodes?.tools?.find((t) => t.id === id);
+      if (tool) return tool;
+    }
+    return null;
+  }, [canvas]);
+
+  const getMessageNestingLevel = useCallback((msg: Message) => {
+    const node = findNodeByNameOrId(msg.agent_name, msg.node_id ?? undefined);
+    if (node && nestingLevels[node.id] !== undefined) {
+      return nestingLevels[node.id];
+    }
+    return 0;
+  }, [findNodeByNameOrId, nestingLevels]);
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
@@ -114,7 +223,10 @@ export default function ChatPage() {
       setCanvasId(urlCanvasId);
       // Fetch canvas name
       getCanvas(urlCanvasId)
-        .then((canvasData) => setCanvasName(canvasData.name))
+        .then((canvasData) => {
+          setCanvasName(canvasData.name);
+          setCanvas(canvasData);
+        })
         .catch((err) => console.error("Failed to load canvas name from query param:", err));
     }
   }, []);
@@ -144,6 +256,7 @@ export default function ChatPage() {
         try {
           const canvasData = await getCanvas(conv.canvas_id);
           setCanvasName(canvasData.name);
+          setCanvas(canvasData);
         } catch (err) {
           console.error("Failed to load canvas name:", err);
         }
@@ -358,6 +471,8 @@ export default function ChatPage() {
         }
 
         if (event.type === "tool_result") {
+          const toolName = event.tool ?? "";
+          const isHandoffTool = toolName.startsWith("transfer_to_");
           const msg: Message = {
             id: crypto.randomUUID(),
             conversation_id: convId,
@@ -365,7 +480,7 @@ export default function ChatPage() {
             content: event.output,
             agent_name: event.tool?.replace("transfer_to_", "") ?? event.agent,
             node_id: event.node_id ?? null,
-            event_type: "tool_result",
+            event_type: isHandoffTool ? "response" : "tool_result",
             created_at: new Date().toISOString(),
           };
           addMessageLocal(msg);
@@ -411,6 +526,24 @@ export default function ChatPage() {
     setActiveNodeId(null);
   };
 
+  const navItemClass = (toPath: string) => {
+    const isExact = window.location.pathname.startsWith(toPath);
+    const isHome = toPath === "/";
+    const isActive = isHome ? window.location.pathname === "/" : isExact;
+    
+    return sidebarCollapsed
+      ? `flex items-center justify-center w-10 h-10 mx-auto rounded-lg transition-all ${
+          isActive
+            ? "bg-[var(--color-elevated)] text-[var(--color-text-primary)] border border-[var(--color-border-default)]"
+            : "text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-elevated)]"
+        }`
+      : `flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+          isActive
+            ? "bg-[var(--color-elevated)] text-[var(--color-text-primary)] border border-[var(--color-border-default)]"
+            : "text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-elevated)]"
+        }`;
+  };
+
   const { preTurnMessages, turns } = groupMessagesIntoTurns(messages);
 
   const isEmpty = !conversation_id || conversation_id === "empty";
@@ -418,61 +551,97 @@ export default function ChatPage() {
   return (
     <div className="h-screen w-screen flex bg-[var(--color-base)] noise-bg relative overflow-hidden">
       {/* Left Sidebar Panel */}
-      <aside className="w-64 h-full border-r border-[var(--color-border-subtle)] bg-[var(--color-surface)] flex flex-col z-20">
+      <aside className={`h-full border-r border-[var(--color-border-subtle)] bg-[var(--color-surface)] flex flex-col z-20 transition-[width] duration-300 ease-in-out overflow-hidden ${
+        sidebarCollapsed ? "w-16" : "w-64"
+      }`}>
         {/* Sidebar Header */}
-        <div className="p-4 border-b border-[var(--color-border-subtle)] flex flex-col gap-2">
-          <div className="flex items-center gap-2 mb-2">
-            <img
-              src={theme === "dark" ? "/agent_graph_studio_logo_white.png" : "/agent_graph_studio_logo_dark.png"}
-              alt="Logo"
-              className="h-6 w-auto object-contain shrink-0"
-            />
-            <span className="font-bold text-[14px] tracking-tight text-[var(--color-text-primary)]">
-              AgentGraph Studio
-            </span>
-          </div>
+        <div className={`p-4 border-b border-[var(--color-border-subtle)] flex flex-col gap-2 ${sidebarCollapsed ? "items-center" : ""}`}>
+          {!sidebarCollapsed ? (
+            <div className="flex items-center justify-between mb-2 w-full">
+              <div className="flex items-center gap-2">
+                <img
+                  src={theme === "dark" ? "/agent_graph_studio_logo_white.png" : "/agent_graph_studio_logo_dark.png"}
+                  alt="Logo"
+                  className="h-6 w-auto object-contain shrink-0"
+                />
+                <span className="font-bold text-[14px] tracking-tight text-[var(--color-text-primary)]">
+                  AgentGraph Studio
+                </span>
+              </div>
+              <button
+                onClick={() => setSidebarCollapsed(true)}
+                data-testid="collapse-sidebar"
+                className="p-1 rounded hover:bg-[var(--color-elevated)] text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)] transition-colors cursor-pointer"
+                title="Collapse Sidebar"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center gap-3 mb-2 w-full">
+              <img
+                src={theme === "dark" ? "/agent_graph_studio_logo_white.png" : "/agent_graph_studio_logo_dark.png"}
+                alt="Logo"
+                className="h-6 w-auto object-contain"
+              />
+              <button
+                onClick={() => setSidebarCollapsed(false)}
+                data-testid="expand-sidebar"
+                className="p-1.5 rounded hover:bg-[var(--color-elevated)] text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)] transition-colors cursor-pointer"
+                title="Expand Sidebar"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+          )}
 
-          <div className="space-y-1">
+          <div className="space-y-1 w-full">
             <Link
               to="/"
-              className="flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-xs font-medium text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-elevated)] transition-colors"
+              className={navItemClass("/")}
               title="Home"
             >
-              <Home className="w-4 h-4 text-[var(--color-text-tertiary)]" />
-              Home
+              <Home className="w-4 h-4 text-[var(--color-text-tertiary)] shrink-0" />
+              {!sidebarCollapsed && "Home"}
             </Link>
             {canvasId && (
               <Link
                 to={`/canvas/${canvasId}`}
-                className="flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-xs font-medium text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-elevated)] transition-colors"
+                className={navItemClass(`/canvas/${canvasId}`)}
                 title="Canvas Editor"
               >
-                <Layout className="w-4 h-4 text-[var(--color-text-tertiary)]" />
-                Visual Canvas
+                <Layout className="w-4 h-4 text-[var(--color-text-tertiary)] shrink-0" />
+                {!sidebarCollapsed && "Visual Canvas"}
               </Link>
             )}
             <button
-              className="w-full flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-[var(--color-elevated)] text-[var(--color-text-primary)] border border-[var(--color-border-default)] transition-colors text-left"
+              className={navItemClass("/chat")}
+              title="Agent Chat"
             >
-              <MessageSquare className="w-4 h-4 text-[var(--color-text-tertiary)]" />
-              Agent Chat
+              <MessageSquare className="w-4 h-4 text-[var(--color-text-tertiary)] shrink-0" />
+              {!sidebarCollapsed && "Agent Chat"}
             </button>
             <button
               onClick={() => window.open("/mlflow/", "_blank")}
-              className="w-full flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-xs font-medium text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-elevated)] transition-colors text-left cursor-pointer"
+              className={navItemClass("/mlflow")}
+              title="Observability"
             >
-              <Activity className="w-4 h-4 text-[var(--color-text-tertiary)]" />
-              Observability
+              <Activity className="w-4 h-4 text-[var(--color-text-tertiary)] shrink-0" />
+              {!sidebarCollapsed && "Observability"}
             </button>
           </div>
         </div>
 
         {/* Sidebar Middle - Conversations List */}
-        <div className="flex-1 overflow-y-auto p-2 space-y-1">
-          <div className="px-2 py-1.5 text-[10px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-[0.08em]">
-            Recent Chats
-          </div>
-          {conversations.length === 0 && (
+        <div className="flex-1 overflow-y-auto p-2 space-y-1 w-full">
+          {sidebarCollapsed ? (
+            <div className="border-t border-[var(--color-border-subtle)] my-2" />
+          ) : (
+            <div className="px-2 py-1.5 text-[10px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-[0.08em]">
+              Recent Chats
+            </div>
+          )}
+          {conversations.length === 0 && !sidebarCollapsed && (
             <div className="px-3 py-6 text-xs text-[var(--color-text-tertiary)] text-center font-light">
               No chats found for this canvas.
             </div>
@@ -482,40 +651,57 @@ export default function ChatPage() {
             return (
               <div
                 key={c.id}
-                className={`group flex items-center justify-between px-2 py-1.5 rounded-lg cursor-pointer transition-all duration-150 ${isActive
-                  ? "bg-[var(--color-elevated)] border border-[var(--color-border-default)] text-[var(--color-text-primary)]"
-                  : "hover:bg-[var(--color-overlay)]/40 text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
-                  }`}
+                title={c.name}
+                className={sidebarCollapsed
+                  ? `flex items-center justify-center w-10 h-10 mx-auto rounded-lg cursor-pointer transition-all duration-150 ${isActive
+                      ? "bg-[var(--color-elevated)] border border-[var(--color-border-default)] text-[var(--color-text-primary)]"
+                      : "hover:bg-[var(--color-overlay)]/40 text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
+                    }`
+                  : `group flex items-center justify-between px-2 py-1.5 rounded-lg cursor-pointer transition-all duration-150 ${isActive
+                      ? "bg-[var(--color-elevated)] border border-[var(--color-border-default)] text-[var(--color-text-primary)]"
+                      : "hover:bg-[var(--color-overlay)]/40 text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
+                    }`
+                }
                 onClick={() => navigate(`/chat/${c.id}`)}
               >
-                <div className="flex items-center gap-2 truncate flex-1">
+                {sidebarCollapsed ? (
                   <MessageSquare className="w-3.5 h-3.5 text-[var(--color-text-tertiary)] shrink-0" />
-                  <span className="text-xs truncate font-medium">{c.name}</span>
-                </div>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setDeleteConfirmId(c.id);
-                  }}
-                  className="opacity-0 group-hover:opacity-100 p-1 text-[var(--color-text-tertiary)] hover:text-[var(--color-danger)] hover:bg-[var(--color-danger-subtle)] rounded transition-all duration-150"
-                  title="Delete conversation"
-                >
-                  <Trash2 className="w-3 h-3" />
-                </button>
+                ) : (
+                  <>
+                    <div className="flex items-center gap-2 truncate flex-1">
+                      <MessageSquare className="w-3.5 h-3.5 text-[var(--color-text-tertiary)] shrink-0" />
+                      <span className="text-xs truncate font-medium">{c.name}</span>
+                    </div>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setDeleteConfirmId(c.id);
+                      }}
+                      className="opacity-0 group-hover:opacity-100 p-1 text-[var(--color-text-tertiary)] hover:text-[var(--color-danger)] hover:bg-[var(--color-danger-subtle)] rounded transition-all duration-150"
+                      title="Delete conversation"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </button>
+                  </>
+                )}
               </div>
             );
           })}
         </div>
 
         {/* Sidebar Bottom - Start New Conversation */}
-        <div className="p-3 border-t border-[var(--color-border-subtle)] bg-[var(--color-inset)]">
+        <div className={`p-3 border-t border-[var(--color-border-subtle)] bg-[var(--color-inset)] w-full ${sidebarCollapsed ? "flex justify-center" : ""}`}>
           <button
             onClick={handleNewConversation}
             disabled={!canvasId}
-            className="w-full btn-primary flex items-center justify-center gap-1.5 py-2 text-xs"
+            className={sidebarCollapsed
+              ? "btn-primary w-10 h-10 p-0 flex items-center justify-center rounded-lg"
+              : "w-full btn-primary flex items-center justify-center gap-1.5 py-2 text-xs"
+            }
+            title="New Conversation"
           >
-            <Plus className="w-3.5 h-3.5" />
-            New Conversation
+            <Plus className="w-3.5 h-3.5 shrink-0" />
+            {!sidebarCollapsed && <span>New Conversation</span>}
           </button>
         </div>
       </aside>
@@ -659,12 +845,18 @@ export default function ChatPage() {
                               const isError = stepMsg.event_type === "error";
                               const isSubAnswer = stepMsg.event_type === "final_answer";
                               const isWarning = stepMsg.event_type === "warning";
+                              const isResponse = stepMsg.event_type === "response";
 
+                              const level = getMessageNestingLevel(stepMsg);
                               return (
                                 <div
                                   key={stepMsg.id}
-                                  className="flex flex-col items-start"
-                                  style={{ animation: "staggerFadeIn 0.3s ease-out" }}
+                                  className="flex flex-col items-start w-full"
+                                  style={{
+                                    animation: "staggerFadeIn 0.3s ease-out",
+                                    paddingLeft: `${level * 24}px`,
+                                    transition: "padding-left 0.2s ease-out",
+                                  }}
                                 >
                                   {stepMsg.agent_name && !isHandoff && !isError && !isWarning && (
                                     <span className="text-[10px] text-[var(--color-text-tertiary)] mb-0.5 px-1 font-semibold tracking-wide">
@@ -685,9 +877,11 @@ export default function ChatPage() {
                                             ? "bg-[var(--color-agent-subtle)] text-[var(--color-agent)] border border-[var(--color-agent)]/20 rounded-bl-sm font-mono whitespace-pre-wrap text-[11px]"
                                             : isToolResult
                                               ? "bg-[var(--color-success-subtle)] text-[var(--color-success)] border border-[var(--color-success)]/20 rounded-bl-sm font-mono"
-                                              : isSubAnswer
-                                                ? "bg-[var(--color-elevated)] text-[var(--color-text-secondary)] border border-[var(--color-border-subtle)] rounded-bl-sm"
-                                                : "bg-[var(--color-elevated)] text-[var(--color-text-primary)] border border-[var(--color-border-subtle)] rounded-bl-sm"
+                                              : isResponse
+                                                ? "bg-[var(--color-agent-subtle)] text-[var(--color-agent)] border border-[var(--color-agent)]/20 rounded-bl-sm"
+                                                : isSubAnswer
+                                                  ? "bg-[var(--color-elevated)] text-[var(--color-text-secondary)] border border-[var(--color-border-subtle)] rounded-bl-sm"
+                                                  : "bg-[var(--color-elevated)] text-[var(--color-text-primary)] border border-[var(--color-border-subtle)] rounded-bl-sm"
                                       }`}
                                   >
                                     {stepMsg.content}

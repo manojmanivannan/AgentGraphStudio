@@ -624,4 +624,108 @@ describe("ChatPage component", () => {
             expect(screen.getByTitle("Canvas Editor")).toBeInTheDocument();
         });
     });
+
+    it("indents steps according to their nesting level in the graph wiring", async () => {
+        const user = userEvent.setup();
+        const canvasMock = {
+            id: "canvas-1",
+            name: "My Canvas",
+            nodes: {
+                agents: [
+                    { id: "agent-root-id", name: "MasterAgent", agent_type: "router" },
+                    { id: "agent-child-id", name: "WeatherAgent", agent_type: "worker" },
+                ],
+                tools: [
+                    { id: "tool-id", name: "get_weather" },
+                ]
+            },
+            edges: [
+                { id: "e1", source_node_id: "agent-root-id", target_node_id: "agent-child-id", edge_type: "handoff" },
+                { id: "e2", source_node_id: "agent-child-id", target_node_id: "tool-id", edge_type: "tool" },
+            ]
+        };
+
+        server.use(
+            http.get(`${API}/canvases/conversations/conv-1`, () =>
+                HttpResponse.json(
+                    mockConversation({
+                        id: "conv-1",
+                        canvas_id: "canvas-1",
+                        name: "Test Chat",
+                        messages: [
+                            {
+                                id: "m1", conversation_id: "conv-1", role: "user",
+                                content: "how's the weather in Mumbai", created_at: "2026-01-01T00:00:00.000Z",
+                            },
+                            {
+                                id: "m2", conversation_id: "conv-1", role: "assistant",
+                                content: "MasterAgent thought", event_type: "thought",
+                                agent_name: "MasterAgent", node_id: "agent-root-id", created_at: "2026-01-01T00:00:01.000Z",
+                            },
+                            {
+                                id: "m3", conversation_id: "conv-1", role: "system",
+                                content: "Delegating to WeatherAgent...", event_type: "handoff",
+                                agent_name: "MasterAgent", node_id: "agent-child-id", created_at: "2026-01-01T00:00:02.000Z",
+                            },
+                            {
+                                id: "m4", conversation_id: "conv-1", role: "assistant",
+                                content: "WeatherAgent thought", event_type: "thought",
+                                agent_name: "WeatherAgent", node_id: "agent-child-id", created_at: "2026-01-01T00:00:03.000Z",
+                            },
+                            {
+                                id: "m5", conversation_id: "conv-1", role: "assistant",
+                                content: "get_weather result", event_type: "tool_result",
+                                agent_name: "get_weather", node_id: "agent-child-id", created_at: "2026-01-01T00:00:04.000Z",
+                            },
+                            {
+                                id: "m5_sub", conversation_id: "conv-1", role: "assistant",
+                                content: "sub response", event_type: "response",
+                                agent_name: "WeatherAgent", node_id: "agent-child-id", created_at: "2026-01-01T00:00:04.500Z",
+                            },
+                            {
+                                id: "m6", conversation_id: "conv-1", role: "assistant",
+                                content: "The weather in Mumbai is currently cloudy.", event_type: "final_answer",
+                                agent_name: "MasterAgent", node_id: "agent-root-id", created_at: "2026-01-01T00:00:05.000Z",
+                            },
+                        ],
+                    })
+                )
+            ),
+            http.get(`${API}/canvases/canvas-1`, () =>
+                HttpResponse.json(canvasMock)
+            ),
+            http.get(`${API}/canvases/canvas-1/conversations`, () =>
+                HttpResponse.json([mockConversationSummary({ id: "conv-1", name: "Test Chat" })])
+            )
+        );
+
+        renderChatPage("conv-1");
+
+        // Wait for the message steps toggle to be available
+        await waitFor(() => {
+            expect(screen.getByText("The weather in Mumbai is currently cloudy.")).toBeInTheDocument();
+        });
+
+        const toggleBtn = screen.getByText(/Show.*execution step/);
+        await user.click(toggleBtn);
+
+        // Verify that steps are indented according to nesting levels:
+        // - MasterAgent (root) -> level 0 (0px padding-left)
+        // - WeatherAgent (child) -> level 1 (24px padding-left)
+        // - get_weather (tool of WeatherAgent) -> level 2 (48px padding-left)
+        await waitFor(() => {
+            const masterThought = screen.getByText("MasterAgent thought").closest("div[style*='padding-left']");
+            const handoffMsg = screen.getByText("Delegating to WeatherAgent...").closest("div[style*='padding-left']");
+            const childThought = screen.getByText("WeatherAgent thought").closest("div[style*='padding-left']");
+            const toolResult = screen.getByText("get_weather result").closest("div[style*='padding-left']");
+            const subResponse = screen.getByText("sub response").closest("div[style*='padding-left']");
+
+            expect(masterThought).toHaveStyle({ paddingLeft: "0px" });
+            expect(handoffMsg).toHaveStyle({ paddingLeft: "0px" });
+            expect(childThought).toHaveStyle({ paddingLeft: "24px" });
+            expect(toolResult).toHaveStyle({ paddingLeft: "48px" });
+            expect(subResponse).toHaveStyle({ paddingLeft: "24px" });
+            expect(screen.getByText("WeatherAgent · response")).toBeInTheDocument();
+        });
+    });
 });

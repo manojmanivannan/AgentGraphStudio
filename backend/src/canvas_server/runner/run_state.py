@@ -155,12 +155,13 @@ class CanvasRunState:
                     clean_tool_name = (
                         tool_name.replace("transfer_to_", "") if tool_name else aname
                     )
+                    is_handoff_tool = tool_name.startswith("transfer_to_") if tool_name else False
                     await self.conversation_service.persist_message(
                         role="assistant",
                         content=event.get("output", ""),
                         agent_name=clean_tool_name,
                         node_id=aid,
-                        event_type="tool_result",
+                        event_type="response" if is_handoff_tool else "tool_result",
                     )
 
             agent.on_event(callback)

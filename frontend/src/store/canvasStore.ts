@@ -16,6 +16,7 @@ interface CanvasStore {
   viewport: Viewport;
   propertiesWidth: number;
   isDraggingPanel: boolean;
+  sidebarCollapsed: boolean;
 
   setCanvas: (id: string, name: string) => void;
   setName: (name: string) => void;
@@ -27,6 +28,7 @@ interface CanvasStore {
   setViewport: (viewport: Viewport) => void;
   setPropertiesWidth: (width: number) => void;
   setIsDraggingPanel: (isDragging: boolean) => void;
+  setSidebarCollapsed: (collapsed: boolean) => void;
   reset: () => void;
 }
 
@@ -41,6 +43,7 @@ export const useCanvasStore = create<CanvasStore>((set) => ({
   viewport: { x: 0, y: 0, zoom: 1 },
   propertiesWidth: 320,
   isDraggingPanel: false,
+  sidebarCollapsed: typeof localStorage !== "undefined" ? localStorage.getItem("sidebarCollapsed") === "true" : false,
 
   setCanvas: (id, name) => set({ canvasId: id, canvasName: name }),
   setName: (name) => set({ canvasName: name }),
@@ -52,6 +55,12 @@ export const useCanvasStore = create<CanvasStore>((set) => ({
   setViewport: (viewport) => set({ viewport }),
   setPropertiesWidth: (propertiesWidth) => set({ propertiesWidth }),
   setIsDraggingPanel: (isDraggingPanel) => set({ isDraggingPanel }),
+  setSidebarCollapsed: (sidebarCollapsed) => {
+    if (typeof localStorage !== "undefined") {
+      localStorage.setItem("sidebarCollapsed", String(sidebarCollapsed));
+    }
+    set({ sidebarCollapsed });
+  },
   reset: () =>
     set({
       canvasId: null,

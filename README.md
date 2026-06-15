@@ -22,12 +22,8 @@
 </p>
 
 <p align="center">
-  <img src="canvas_screen.png" alt="AgentGraph Studio Canvas Editor" width="90%" style="border-radius: 8px;" />
-</p>
-
-<p align="center">
-  <img src="docs/canvas_example.png" alt="ReactFlow Workflow Builder" width="48%" />
-  <img src="docs/chat_example.png" alt="Real-time Streaming Chat" width="48%" />
+  <img src="docs/canvas_example.png" alt="ReactFlow Workflow Builder" width="55%" />
+  <img src="docs/chat_example.png" alt="Real-time Streaming Chat" width="44%" />
 </p>
 
 ---
