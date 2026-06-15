@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import {
   Send,
@@ -24,7 +24,7 @@ import {
   deleteConversationById,
   getCanvas,
 } from "@/lib/api";
-import type { ConversationSummary, Message, ExecutionEvent } from "@/types";
+import type { ConversationSummary, Message, ExecutionEvent, CanvasResponse } from "@/types";
 
 const WS_BASE = `ws://${import.meta.env.VITE_API_HOST || "localhost:8000"}`;
 
@@ -70,6 +70,77 @@ export function groupMessagesIntoTurns(messages: Message[]): {
   return { preTurnMessages, turns };
 }
 
+function computeNestingLevels(canvasData: CanvasResponse): Record<string, number> {
+  const levels: Record<string, number> = {};
+  const agents = canvasData.nodes?.agents || [];
+  const tools = canvasData.nodes?.tools || [];
+  const edges = canvasData.edges || [];
+
+  // Build adjacency list: node_id -> list of target node_ids
+  const adj: Record<string, string[]> = {};
+  // Track incoming edges of any type
+  const hasIncoming = new Set<string>();
+
+  for (const edge of edges) {
+    if (!adj[edge.source_node_id]) {
+      adj[edge.source_node_id] = [];
+    }
+    adj[edge.source_node_id].push(edge.target_node_id);
+    hasIncoming.add(edge.target_node_id);
+  }
+
+  // Find root nodes: agents with no incoming edges
+  const roots = agents.filter(a => !hasIncoming.has(a.id));
+
+  // If no roots (e.g. cycle or empty), use all agents as fallback roots
+  const initialNodes = roots.length > 0 ? roots : agents;
+
+  // BFS queue: { id, level }
+  const queue: { id: string; level: number }[] = [];
+  const visited = new Set<string>();
+
+  for (const node of initialNodes) {
+    levels[node.id] = 0;
+    queue.push({ id: node.id, level: 0 });
+    visited.add(node.id);
+  }
+
+  while (queue.length > 0) {
+    const { id, level } = queue.shift()!;
+    const targets = adj[id] || [];
+    for (const targetId of targets) {
+      if (!visited.has(targetId)) {
+        visited.add(targetId);
+        levels[targetId] = level + 1;
+        queue.push({ id: targetId, level: level + 1 });
+      }
+    }
+  }
+
+  // Handle any nodes that were not reached by the BFS (e.g., disconnected subgraphs)
+  for (const agent of agents) {
+    if (!visited.has(agent.id)) {
+      levels[agent.id] = 0;
+      queue.push({ id: agent.id, level: 0 });
+      visited.add(agent.id);
+
+      while (queue.length > 0) {
+        const { id, level } = queue.shift()!;
+        const targets = adj[id] || [];
+        for (const targetId of targets) {
+          if (!visited.has(targetId)) {
+            visited.add(targetId);
+            levels[targetId] = level + 1;
+            queue.push({ id: targetId, level: level + 1 });
+          }
+        }
+      }
+    }
+  }
+
+  return levels;
+}
+
 export default function ChatPage() {
   const { conversation_id } = useParams<{ conversation_id: string }>();
   const navigate = useNavigate();
@@ -79,7 +150,42 @@ export default function ChatPage() {
 
   const [canvasId, setCanvasId] = useState<string | null>(null);
   const [canvasName, setCanvasName] = useState<string>("Canvas");
+  const [canvas, setCanvas] = useState<CanvasResponse | null>(null);
   const [conversationName, setConversationName] = useState<string>("Chat");
+
+  const nestingLevels = useMemo(() => {
+    if (!canvas) return {};
+    return computeNestingLevels(canvas);
+  }, [canvas]);
+
+  const findNodeByNameOrId = useCallback((name?: string | null, id?: string | null) => {
+    if (name) {
+      const cleanName = name.trim().toLowerCase();
+      const agent = canvas?.nodes?.agents?.find(
+        (a) => a.name.trim().toLowerCase() === cleanName
+      );
+      if (agent) return agent;
+      const tool = canvas?.nodes?.tools?.find(
+        (t) => t.name.trim().toLowerCase() === cleanName
+      );
+      if (tool) return tool;
+    }
+    if (id) {
+      const agent = canvas?.nodes?.agents?.find((a) => a.id === id);
+      if (agent) return agent;
+      const tool = canvas?.nodes?.tools?.find((t) => t.id === id);
+      if (tool) return tool;
+    }
+    return null;
+  }, [canvas]);
+
+  const getMessageNestingLevel = useCallback((msg: Message) => {
+    const node = findNodeByNameOrId(msg.agent_name, msg.node_id ?? undefined);
+    if (node && nestingLevels[node.id] !== undefined) {
+      return nestingLevels[node.id];
+    }
+    return 0;
+  }, [findNodeByNameOrId, nestingLevels]);
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
@@ -114,7 +220,10 @@ export default function ChatPage() {
       setCanvasId(urlCanvasId);
       // Fetch canvas name
       getCanvas(urlCanvasId)
-        .then((canvasData) => setCanvasName(canvasData.name))
+        .then((canvasData) => {
+          setCanvasName(canvasData.name);
+          setCanvas(canvasData);
+        })
         .catch((err) => console.error("Failed to load canvas name from query param:", err));
     }
   }, []);
@@ -144,6 +253,7 @@ export default function ChatPage() {
         try {
           const canvasData = await getCanvas(conv.canvas_id);
           setCanvasName(canvasData.name);
+          setCanvas(canvasData);
         } catch (err) {
           console.error("Failed to load canvas name:", err);
         }
@@ -358,6 +468,8 @@ export default function ChatPage() {
         }
 
         if (event.type === "tool_result") {
+          const toolName = event.tool ?? "";
+          const isHandoffTool = toolName.startsWith("transfer_to_");
           const msg: Message = {
             id: crypto.randomUUID(),
             conversation_id: convId,
@@ -365,7 +477,7 @@ export default function ChatPage() {
             content: event.output,
             agent_name: event.tool?.replace("transfer_to_", "") ?? event.agent,
             node_id: event.node_id ?? null,
-            event_type: "tool_result",
+            event_type: isHandoffTool ? "response" : "tool_result",
             created_at: new Date().toISOString(),
           };
           addMessageLocal(msg);
@@ -659,12 +771,18 @@ export default function ChatPage() {
                               const isError = stepMsg.event_type === "error";
                               const isSubAnswer = stepMsg.event_type === "final_answer";
                               const isWarning = stepMsg.event_type === "warning";
+                              const isResponse = stepMsg.event_type === "response";
 
+                              const level = getMessageNestingLevel(stepMsg);
                               return (
                                 <div
                                   key={stepMsg.id}
-                                  className="flex flex-col items-start"
-                                  style={{ animation: "staggerFadeIn 0.3s ease-out" }}
+                                  className="flex flex-col items-start w-full"
+                                  style={{
+                                    animation: "staggerFadeIn 0.3s ease-out",
+                                    paddingLeft: `${level * 24}px`,
+                                    transition: "padding-left 0.2s ease-out",
+                                  }}
                                 >
                                   {stepMsg.agent_name && !isHandoff && !isError && !isWarning && (
                                     <span className="text-[10px] text-[var(--color-text-tertiary)] mb-0.5 px-1 font-semibold tracking-wide">
@@ -685,9 +803,11 @@ export default function ChatPage() {
                                             ? "bg-[var(--color-agent-subtle)] text-[var(--color-agent)] border border-[var(--color-agent)]/20 rounded-bl-sm font-mono whitespace-pre-wrap text-[11px]"
                                             : isToolResult
                                               ? "bg-[var(--color-success-subtle)] text-[var(--color-success)] border border-[var(--color-success)]/20 rounded-bl-sm font-mono"
-                                              : isSubAnswer
-                                                ? "bg-[var(--color-elevated)] text-[var(--color-text-secondary)] border border-[var(--color-border-subtle)] rounded-bl-sm"
-                                                : "bg-[var(--color-elevated)] text-[var(--color-text-primary)] border border-[var(--color-border-subtle)] rounded-bl-sm"
+                                              : isResponse
+                                                ? "bg-[var(--color-agent-subtle)] text-[var(--color-agent)] border border-[var(--color-agent)]/20 rounded-bl-sm"
+                                                : isSubAnswer
+                                                  ? "bg-[var(--color-elevated)] text-[var(--color-text-secondary)] border border-[var(--color-border-subtle)] rounded-bl-sm"
+                                                  : "bg-[var(--color-elevated)] text-[var(--color-text-primary)] border border-[var(--color-border-subtle)] rounded-bl-sm"
                                       }`}
                                   >
                                     {stepMsg.content}
