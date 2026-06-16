@@ -87,3 +87,7 @@ _Avoid_: Reflection, introspection, parsing
 **Tool Test**:
 Running a tool function in the sandbox with user-provided argument values and returning the result (output or error) to the UI. Provided by `POST /api/tools/test`.
 _Avoid_: Playground, REPL, runner
+
+**Plotting / PlotProvider**:
+A capability that enables agents to generate visual charts and plots by executing python code containing matplotlib or plotly commands inside the sandboxed Docker session. The generated plots are captured, saved to local storage, and returned to the conversation as markdown image links (`![Plot](/api/static/plots/{filename})`).
+_Avoid_: Client-side charting, host-side plotting, inline plot generation

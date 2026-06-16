@@ -42,7 +42,7 @@ them with edges, and execute multi-agent teams powered by [DSPy](https://dspy.ai
 | Icons              | lucide-react                                                         |
 | Backend            | Python 3.12+ / FastAPI / async                                       |
 | Agent Framework    | DSPy v3.1+ (StreamingReAct — custom ReAct subclass)                  |
-| Tool Sandbox       | Docker Sandbox (via llm-sandbox library)                             |
+| Tool Sandbox       | Docker Sandbox (via llm-sandbox library; matplotlib & plotly plotting support) |
 | LLM Default        | Ollama (configurable: OpenAI, Anthropic, Groq via DSPy LM)           |
 | Database           | PostgreSQL 17 + pgvector (async SQLAlchemy 2.0 + Alembic)            |
 | Migrations         | Alembic (auto-generated, in `backend/alembic/versions/`)             |
@@ -190,6 +190,7 @@ mj-agent-framework/
 │   │       ├── runner/            # Core execution engine package
 │   │       │   ├── agent_factory.py # Builds DSPy agents from canvas nodes
 │   │       │   ├── execution.py     # Executes individual worker agent runs
+│   │       │   ├── plot_provider.py # PlotProvider — wraps SandboxManager to expose generate_plot tool
 │   │       │   ├── rag_helper.py    # Chunking & in-memory DSPy embeddings search
 │   │       │   └── runner.py        # CanvasRunner — orchestrates multi-agent flows
 │   │       ├── streaming_react.py # StreamingReAct — DSPy ReAct subclass with event emission
@@ -254,7 +255,7 @@ mj-agent-framework/
 │       │   │   ├── RailPopover.tsx    # Popover anchored to rail item, click-outside closes
 │       │   │   └── OverlayPanel.tsx   # Slide-in panel with enter/exit animations, Escape to close
 │       │   ├── sidebar/
-│       │   │   ├── AgentEditor.tsx    # Agent properties: type, name, role, instructions, memory, history
+│       │   │   ├── AgentEditor.tsx    # Agent properties: type, name, role, instructions, memory, plotting, RAG, history
 │       │   │   ├── ToolEditor.tsx     # Monaco Python editor, tool name, inferred args preview
 │       │   │   └── ...test.tsx       # Corresponding tests
 │       │   ├── chat/
@@ -303,6 +304,7 @@ agent_nodes
 ├── instructions: TEXT DEFAULT ''
 ├── model_name: VARCHAR(255) DEFAULT 'ollama:llama3.1'
 ├── agent_type: VARCHAR(20) DEFAULT 'worker'       -- 'worker' | 'router'
+├── enable_plotting: BOOLEAN DEFAULT FALSE
 ├── enable_memory: BOOLEAN DEFAULT FALSE
 ├── enable_conversation_history: BOOLEAN DEFAULT FALSE
 ├── enable_rag: BOOLEAN DEFAULT FALSE
@@ -710,6 +712,16 @@ dangerous host-side execution.
 
 **Security:** The sandbox executes inside isolated Docker containers, preventing
 unauthorized access to the host filesystem and environment variables.
+
+**Plotting Support:**
+If the `enable_plotting` capability flag is checked on an Agent Node (Worker or Router):
+1. The `AgentFactory` instantiates a `PlotProvider` initialized with the current `conversation_id`.
+2. The `PlotProvider` exposes the `generate_plot(python_code: str) -> str` tool function to the agent's available tools.
+3. When the agent runs Python plotting code (using standard matplotlib or plotly APIs), it invokes `generate_plot` which runs the script inside the Docker sandbox session (`ArtifactSandboxSession`).
+4. Any figures produced by calling `plt.show()` or `fig.show()` are captured by the sandbox session as base64 images.
+5. The `PlotProvider` decodes these images, writes them to `storage/plots/` on the backend host, and returns a Markdown image link (e.g., `![Plot](/api/static/plots/{filename}.png)`) to the agent.
+6. The agent is strictly instructed via dynamic prompts to preserve this exact markdown image link in its final response.
+7. The frontend chat overlay renders the markdown image tag natively in the conversation turn thread.
 
 ### streaming_react.py — StreamingReAct
 
