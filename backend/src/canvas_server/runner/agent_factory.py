@@ -8,8 +8,8 @@ from typing import TYPE_CHECKING
 
 import dspy
 
-from canvas_server.streaming_react import StreamingReAct
 from canvas_server.runner.plot_provider import PlotProvider
+from canvas_server.streaming_react import StreamingReAct
 
 if TYPE_CHECKING:
     from canvas_server.runner.handoff import HandoffToolBuilder
@@ -164,10 +164,9 @@ class AgentFactory:
                 ]
             )
 
-        if getattr(agent_node, "enable_plotting", False):
-            if self._conversation_id:
-                plot_provider = PlotProvider(self._conversation_id)
-                tools.append(plot_provider.generate_plot)
+        if getattr(agent_node, "enable_plotting", False) and self._conversation_id:
+            plot_provider = PlotProvider(self._conversation_id)
+            tools.append(plot_provider.generate_plot)
 
 
         signature = self.build_signature(agent_node, passages=passages)
@@ -243,10 +242,9 @@ class AgentFactory:
                 ]
             )
 
-        if getattr(agent_node, "enable_plotting", False):
-            if self._conversation_id:
-                plot_provider = PlotProvider(self._conversation_id)
-                tools.append(plot_provider.generate_plot)
+        if getattr(agent_node, "enable_plotting", False) and self._conversation_id:
+            plot_provider = PlotProvider(self._conversation_id)
+            tools.append(plot_provider.generate_plot)
 
 
         handoff_targets = await self._get_handoff_target_ids(agent_node.id)
