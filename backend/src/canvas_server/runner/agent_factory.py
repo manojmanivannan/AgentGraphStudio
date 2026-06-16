@@ -92,6 +92,13 @@ class AgentFactory:
                     f"The available parallel handoff agents are: {', '.join(target_names)}."
                 )
 
+            full_instructions += (
+                "\n\n[CRITICAL SYSTEM RULE] If any downstream agent or tool generates a plot "
+                "or returns a markdown image link (e.g. `![Plot](/api/static/plots/...)`), "
+                "you MUST preserve this image markdown link exactly and include it "
+                "in your final answer/response to the user. Do not omit, summarize, or modify the image link."
+            )
+
         if self._memory_manager.needs_memory(agent_node):
             if self._memory_manager.initialization_error is not None:
                 err_details = str(self._memory_manager.initialization_error)

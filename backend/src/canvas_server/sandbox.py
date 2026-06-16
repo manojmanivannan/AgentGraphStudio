@@ -63,6 +63,7 @@ class SandboxManager:
                     max_pool_size=POOL_SIZE_MAX, min_pool_size=POOL_SIZE_MIN
                 ),
                 lang=DEFAULT_LANG,
+                libraries=["matplotlib", "plotly"]
             )
             self._initialized = True
             logger.info("Sandbox pool initialized successfully")
@@ -70,13 +71,15 @@ class SandboxManager:
             logger.error(f"Failed to initialize sandbox pool: {e}")
             raise SandboxError(f"Sandbox initialization failed: {e}") from e
 
-    def get_session(self, conversation_id: str) -> ArtifactSandboxSession:
+    def get_session(self, conversation_id: str, enable_plotting: bool = True) -> ArtifactSandboxSession:
         """
         Get an existing interactive session for the conversation,
         or create a new one from the pool.
         """
         if conversation_id in self._active_sessions:
-            return self._active_sessions[conversation_id]
+            session = self._active_sessions[conversation_id]
+            session.enable_plotting = enable_plotting
+            return session
 
         if not self._pool_manager:
             raise SandboxError(
@@ -91,6 +94,7 @@ class SandboxManager:
             lang=DEFAULT_LANG,
             pool=self._pool_manager,
             verbose=True,
+            enable_plotting=enable_plotting,
         )
 
         # try:

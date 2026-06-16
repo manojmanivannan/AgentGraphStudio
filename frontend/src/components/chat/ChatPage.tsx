@@ -24,6 +24,7 @@ import {
   getConversationById,
   deleteConversationById,
   getCanvas,
+  apiOrigin,
 } from "@/lib/api";
 import type { ConversationSummary, Message, ExecutionEvent, CanvasResponse } from "@/types";
 
@@ -39,25 +40,65 @@ interface TurnGroup {
 }
 
 
-function renderMessageContent(content: string) {
-  try {
-    // Try to parse the content as JSON (this is how we return plot responses)
-    const data = JSON.parse(content);
-    if (data.status === 'success' && Array.isArray(data.images_base64)) {
-      return (
-        <div className="flex flex-col gap-2 mt-2">
-          {data.stdout && <div className="text-xs text-[var(--color-text-secondary)] whitespace-pre-wrap">{data.stdout}</div>}
-          {data.images_base64.map((b64: string, idx: number) => (
-            <img key={idx} src={`data:image/png;base64,${b64}`} className="max-w-full rounded border border-[var(--color-border-subtle)]" alt="Plot" />
-          ))}
-        </div>
-      );
+function renderMessageContent(content: string, isToolResult: boolean = false) {
+  if (!content) return null;
+
+  // Render markdown images like ![alt](url)
+  const regex = /!\[(.*?)\]\((.*?)\)/g;
+  const parts = [];
+  let lastIndex = 0;
+  let match;
+
+  while ((match = regex.exec(content)) !== null) {
+    const textBefore = content.substring(lastIndex, match.index);
+    if (textBefore) {
+      parts.push({ type: 'text', value: textBefore });
     }
-  } catch (e) {
-    // Not JSON, just render as text
+    const alt = match[1];
+    let url = match[2];
+    
+    // Resolve relative backend URLs using apiOrigin
+    if (url.startsWith('/')) {
+      url = `${apiOrigin}${url}`;
+    }
+    
+    parts.push({ type: 'image', value: url, alt });
+    lastIndex = regex.lastIndex;
   }
-  return <div className="whitespace-pre-wrap">{content}</div>;
+
+  const textAfter = content.substring(lastIndex);
+  if (textAfter) {
+    parts.push({ type: 'text', value: textAfter });
+  }
+
+  if (parts.length === 0) {
+    return <div className="whitespace-pre-wrap">{content}</div>;
+  }
+
+  return (
+    <div className="flex flex-col gap-2">
+      {parts.map((part, idx) => {
+        if (part.type === 'image') {
+          return (
+            <img
+              key={idx}
+              src={part.value}
+              alt={part.alt || "Image"}
+              className="max-w-full rounded border border-[var(--color-border-subtle)] shadow-sm my-1"
+            />
+          );
+        } else {
+          return (
+            <div key={idx} className="whitespace-pre-wrap">
+              {part.value}
+            </div>
+          );
+        }
+      })}
+    </div>
+  );
 }
+
 
 export function groupMessagesIntoTurns(messages: Message[]): {
   preTurnMessages: Message[];
@@ -905,7 +946,7 @@ export default function ChatPage() {
                                                   : "bg-[var(--color-elevated)] text-[var(--color-text-primary)] border border-[var(--color-border-subtle)] rounded-bl-sm"
                                       }`}
                                   >
-                                    {renderMessageContent(stepMsg.content)}
+                                    {renderMessageContent(stepMsg.content, true)}
                                   </div>
                                 </div>
                               );

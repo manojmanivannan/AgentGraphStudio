@@ -15,7 +15,7 @@ const defaultApiOrigin =
     ? `${window.location.protocol}//${window.location.hostname}:8000`
     : "http://localhost:8000";
 
-const apiOrigin = configuredApiHost
+export const apiOrigin = configuredApiHost
   ? /^https?:\/\//.test(configuredApiHost)
     ? configuredApiHost
     : `http://${configuredApiHost}`

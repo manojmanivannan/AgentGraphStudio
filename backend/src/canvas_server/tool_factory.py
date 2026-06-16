@@ -234,7 +234,7 @@ async def compile_tool_from_code(
     # However, to keep it simple and avoid state contamination,
     # we just ensure we use the manager.
     syntax_session_id = "syntax_check_global"
-    session = manager.get_session(syntax_session_id)
+    session = manager.get_session(syntax_session_id, enable_plotting=False)
     try:
         # Run simple compilation check
         with session:
@@ -267,7 +267,7 @@ async def compile_tool_from_code(
 
         # For backward compatibility or standalone calls, we use "global".
         # In production, the system should be refactored to pass the conversation_id.
-        session = manager.get_session("syntax_check_global")
+        session = manager.get_session("syntax_check_global", enable_plotting=False)
         args_repr = ", ".join(f"{k}={repr(v)}" for k, v in kwargs.items())
 
         # JSON harness to capture the return value of the function
@@ -278,7 +278,7 @@ import sys
 def run_tool():
     try:
         local_vars = {{}}
-        exec({repr(tool_code)}, {{}}, local_vars)
+        exec({repr(tool_code)}, local_vars)
         # Execute the specific function
         result = local_vars['{fn_name}']({args_repr})
         return result
@@ -419,7 +419,7 @@ async def execute_tool_code(
         # Use a stable session ID based on the tool name to reuse the environment
         # and avoid reinstalling dependencies on every test run.
         test_session_id = f"tool_test_{name}"
-        session = manager.get_session(test_session_id)
+        session = manager.get_session(test_session_id, enable_plotting=False)
         try:
             fn_name = original_func.__name__
             args_repr = ", ".join(f"{k}={repr(v)}" for k, v in coerced_args.items())
@@ -432,7 +432,7 @@ import sys
 def run_test():
     try:
         local_vars = {{}}
-        exec({repr(code)}, {{}}, local_vars)
+        exec({repr(code)}, local_vars)
         result = local_vars['{fn_name}']({args_repr})
         return result
     except Exception as e:

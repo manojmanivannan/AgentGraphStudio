@@ -274,7 +274,7 @@ class TestExportImportRoundTrip:
         payload = {
             "name": "RoundTrip Canvas",
             "nodes": {
-                "agents": [{"id": aid, "name": "OnlyAgent", "agent_type": "worker"}],
+                "agents": [{"id": aid, "name": "OnlyAgent", "agent_type": "worker", "enable_plotting": True}],
                 "tools": [],
             },
             "edges": [],
@@ -296,6 +296,7 @@ class TestExportImportRoundTrip:
             exported["nodes"]["agents"][0]["name"]
             == original_data["nodes"]["agents"][0]["name"]
         )
+        assert exported["nodes"]["agents"][0]["enable_plotting"] is True
 
 
 class TestZipExportImport:
@@ -310,6 +311,7 @@ class TestZipExportImport:
                         "id": str(uuid.uuid4()),
                         "name": "DocAgent",
                         "agent_type": "worker",
+                        "enable_plotting": True,
                     }
                 ],
                 "tools": [],
@@ -338,6 +340,7 @@ class TestZipExportImport:
         manifest = json.loads(archive.read("manifest.json").decode("utf-8"))
         assert manifest["name"] == "ZipCanvas"
         assert len(manifest["documents"]) == 1
+        assert manifest["nodes"]["agents"][0]["enable_plotting"] is True
         doc_entry = manifest["documents"][0]
         assert doc_entry["name"] == "note.txt"
         assert doc_entry["path"] in archive.namelist()
@@ -350,6 +353,7 @@ class TestZipExportImport:
         imported = import_resp.json()
         assert imported["name"] == "ZipCanvas"
         assert len(imported["nodes"]["agents"]) == 1
+        assert imported["nodes"]["agents"][0]["enable_plotting"] is True
 
         imported_agent_id = imported["nodes"]["agents"][0]["id"]
         docs_resp = await test_client.get(

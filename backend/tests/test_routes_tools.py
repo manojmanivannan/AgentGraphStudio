@@ -167,3 +167,22 @@ class TestTestEndpoint:
         data = response.json()
         assert data["success"] is True
         assert data["output"] == "42"
+
+    @requires_docker
+    async def test_test_with_imports_and_globals(self, tools_client):
+        code = (
+            "from datetime import datetime, timedelta\n"
+            "import random\n"
+            "def run() -> str:\n"
+            "    t = datetime.now()\n"
+            "    r = random.uniform(1, 2)\n"
+            "    return 'ok'"
+        )
+        response = await tools_client.post(
+            "/api/tools/test",
+            json={"code": code, "args": {}},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+        assert data["output"] == "ok"

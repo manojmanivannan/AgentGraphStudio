@@ -1,6 +1,7 @@
-"""Plot provider -- gives worker agents the ability to generate plots via Python code."""
-
+import base64
 import logging
+import os
+import uuid
 
 from canvas_server.sandbox import get_sandbox
 
@@ -24,7 +25,8 @@ class PlotProvider:
             python_code (str): The complete Python code script to execute.
 
         Returns:
-            str: A JSON string containing the base64-encoded plot image(s) if successful, or an error message.
+            str: A Markdown string containing the image link(s) to the
+                 generated plot(s) if successful, or an error message.
         """
         try:
             sandbox = await get_sandbox()
@@ -32,36 +34,49 @@ class PlotProvider:
             session = sandbox.get_session(self.conversation_id)
 
             logger.info("Executing plot code in sandbox...")
-            result = session.run(python_code)
+            with session:
+                result = session.run(python_code)
 
-            if result.error:
-                logger.error(f"Plot code execution error: {result.error}")
-                return f"Error executing plot code: {result.error}\nStderr: {result.stderr}"
+            if result.exit_code != 0:
+                logger.error(f"Plot code execution error: {result.stderr}")
+                return f"Error executing plot code (exit code {result.exit_code}):\n{result.stderr}"
 
-            # Extract plots
-            plots_base64 = []
+            # Extract and save plots
+            import canvas_server
+            backend_root = os.path.dirname(os.path.dirname(os.path.dirname(canvas_server.__file__)))
+            plots_dir = os.path.join(backend_root, "storage", "plots")
+            os.makedirs(plots_dir, exist_ok=True)
+
+            markdown_links = []
             if hasattr(result, "plots") and result.plots:
                 for plot in result.plots:
-                    plots_base64.append(plot.content_base64)
+                    ext = "png"
+                    if hasattr(plot, "format") and plot.format:
+                        if hasattr(plot.format, "value"):
+                            ext = str(plot.format.value).lower()
+                        else:
+                            ext = str(plot.format).lower()
 
-            if not plots_base64:
+                    filename = f"{uuid.uuid4().hex}.{ext}"
+                    filepath = os.path.join(plots_dir, filename)
+                    with open(filepath, "wb") as f:
+                        f.write(base64.b64decode(plot.content_base64))
+
+                    markdown_links.append(f"![Plot](/api/static/plots/{filename})")
+
+            if not markdown_links:
                 return (
                     "Execution successful, but no plots were generated. "
                     f"Did you call plt.show() or fig.show()?\nStdout: {result.stdout}"
                 )
 
-            # For returning multiple images, we could format a JSON payload that the frontend understands,
-            # but for DSPy tool response, we'll return a marker string that the frontend can parse,
-            # or just return the base64 encoded string directly if it's one image.
-            import json
-
-            return json.dumps({
-                "status": "success",
-                "message": "Plot generated successfully. The UI will render this data.",
-                "images_base64": plots_base64,
-                "stdout": result.stdout
-            })
+            # Combine stdout and markdown links
+            result_str = "\n".join(markdown_links)
+            if result.stdout and result.stdout.strip():
+                result_str = f"{result.stdout.strip()}\n\n{result_str}"
+            return result_str
 
         except Exception as e:
             logger.exception("generate_plot failed")
             return f"Error generating plot: {e}"
+

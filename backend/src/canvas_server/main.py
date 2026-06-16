@@ -1,4 +1,5 @@
 import logging
+import os
 import time
 from contextlib import asynccontextmanager
 
@@ -6,7 +7,9 @@ import mlflow
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 
+import canvas_server
 from canvas_server.config import settings
 from canvas_server.routes.canvas import canvas_router
 from canvas_server.routes.execute import execute_router
@@ -22,6 +25,13 @@ logger = logging.getLogger("canvas_server")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Canvas server starting up")
+
+    # Ensure plots storage directory exists
+    backend_root = os.path.dirname(os.path.dirname(os.path.dirname(canvas_server.__file__)))
+    plots_dir = os.path.join(backend_root, "storage", "plots")
+    os.makedirs(plots_dir, exist_ok=True)
+    logger.info(f"Ensured plots storage directory exists: {plots_dir}")
+
     url_part = (
         settings.database_url.split("@")[1] if "@" in settings.database_url else "..."
     )
@@ -75,8 +85,15 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Canvas Server", version="0.1.0", lifespan=lifespan)
 
+# Mount static files route for plots
+backend_root = os.path.dirname(os.path.dirname(os.path.dirname(canvas_server.__file__)))
+plots_dir = os.path.join(backend_root, "storage", "plots")
+os.makedirs(plots_dir, exist_ok=True)
+app.mount("/api/static/plots", StaticFiles(directory=plots_dir), name="plots")
+
 app.add_middleware(
     CORSMiddleware,
+
     allow_origins=settings.cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
