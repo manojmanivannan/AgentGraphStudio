@@ -38,6 +38,27 @@ interface TurnGroup {
   isStreaming: boolean;
 }
 
+
+function renderMessageContent(content: string) {
+  try {
+    // Try to parse the content as JSON (this is how we return plot responses)
+    const data = JSON.parse(content);
+    if (data.status === 'success' && Array.isArray(data.images_base64)) {
+      return (
+        <div className="flex flex-col gap-2 mt-2">
+          {data.stdout && <div className="text-xs text-[var(--color-text-secondary)] whitespace-pre-wrap">{data.stdout}</div>}
+          {data.images_base64.map((b64: string, idx: number) => (
+            <img key={idx} src={`data:image/png;base64,${b64}`} className="max-w-full rounded border border-[var(--color-border-subtle)]" alt="Plot" />
+          ))}
+        </div>
+      );
+    }
+  } catch (e) {
+    // Not JSON, just render as text
+  }
+  return <div className="whitespace-pre-wrap">{content}</div>;
+}
+
 export function groupMessagesIntoTurns(messages: Message[]): {
   preTurnMessages: Message[];
   turns: TurnGroup[];
@@ -884,7 +905,7 @@ export default function ChatPage() {
                                                   : "bg-[var(--color-elevated)] text-[var(--color-text-primary)] border border-[var(--color-border-subtle)] rounded-bl-sm"
                                       }`}
                                   >
-                                    {stepMsg.content}
+                                    {renderMessageContent(stepMsg.content)}
                                   </div>
                                 </div>
                               );
@@ -904,7 +925,7 @@ export default function ChatPage() {
                               </span>
                             )}
                             <div className="max-w-[85%] rounded-2xl px-4 py-3 text-[13px] leading-relaxed bg-[var(--color-surface)] text-[var(--color-text-primary)] border border-[var(--color-border-default)] rounded-bl-sm shadow-md">
-                              {turn.finalAnswer.content}
+                              {renderMessageContent(turn.finalAnswer.content)}
                             </div>
                           </div>
                         )}

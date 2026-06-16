@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import logging
 
-from llm_sandbox import SandboxSession
+from llm_sandbox import ArtifactSandboxSession
 from llm_sandbox.pool import PoolConfig, create_pool_manager
 
 logger = logging.getLogger("canvas_server.sandbox")
@@ -39,7 +39,7 @@ class SandboxManager:
 
     def __init__(self):
         self._pool_manager = None
-        self._active_sessions: dict[str, SandboxSession] = {}
+        self._active_sessions: dict[str, ArtifactSandboxSession] = {}
         self._initialized = False
 
     @classmethod
@@ -70,7 +70,7 @@ class SandboxManager:
             logger.error(f"Failed to initialize sandbox pool: {e}")
             raise SandboxError(f"Sandbox initialization failed: {e}") from e
 
-    def get_session(self, conversation_id: str) -> SandboxSession:
+    def get_session(self, conversation_id: str) -> ArtifactSandboxSession:
         """
         Get an existing interactive session for the conversation,
         or create a new one from the pool.
@@ -87,7 +87,7 @@ class SandboxManager:
             f"Creating new interactive session for conversation: {conversation_id}"
         )
         # InteractiveSandboxSession maintains state across multiple .run() calls
-        session = SandboxSession(
+        session = ArtifactSandboxSession(
             lang=DEFAULT_LANG,
             pool=self._pool_manager,
             verbose=True,

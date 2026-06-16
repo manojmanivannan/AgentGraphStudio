@@ -84,6 +84,7 @@ class AgentNode(Base):
     instructions: Mapped[str] = mapped_column(Text, default="")
     model_name: Mapped[str] = mapped_column(String(255), default="ollama:llama3.1")
     agent_type: Mapped[str] = mapped_column(String(20), default="worker")
+    enable_plotting: Mapped[bool] = mapped_column(sa.Boolean(), default=False, server_default=sa.text("false"), nullable=False)
     enable_memory: Mapped[bool] = mapped_column(
         sa.Boolean(), default=False, server_default=sa.text("false"), nullable=False
     )

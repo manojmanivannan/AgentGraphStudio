@@ -6,7 +6,7 @@ services:
       POSTGRES_PASSWORD: canvas
       POSTGRES_DB: canvas_db
     ports:
-      - "5432:5432"
+      - "5437:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     networks:
@@ -50,7 +50,7 @@ services:
     ports:
       - "5173:5173"
     environment:
-      VITE_API_HOST: localhost:8000
+      VITE_API_HOST: ${VITE_API_HOST:-}
       MLFLOW_PROXY_TARGET: http://mlflow:5000
     networks:
       - agent_network

@@ -85,6 +85,7 @@ function CanvasEditorPage({
           instructions: a.instructions,
           modelName: a.model_name,
           agentType: a.agent_type,
+          enablePlotting: a.enable_plotting,
           enableMemory: a.enable_memory,
           enableConversationHistory: a.enable_conversation_history,
           enableRag: a.enable_rag,

@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 import dspy
 
 from canvas_server.streaming_react import StreamingReAct
+from canvas_server.runner.plot_provider import PlotProvider
 
 if TYPE_CHECKING:
     from canvas_server.runner.handoff import HandoffToolBuilder
@@ -36,12 +37,14 @@ class AgentFactory:
         memory_manager,
         edges: list,
         agent_names: dict[uuid.UUID, str] | None = None,
+        conversation_id: str | None = None,
     ):
         self._lm = lm
         self._tool_registry = tool_registry
         self._memory_manager = memory_manager
         self._edges = edges
         self._agent_names = agent_names or {}
+        self._conversation_id = conversation_id
 
     # ------------------------------------------------------------------
     # DSPy signature
@@ -151,7 +154,6 @@ class AgentFactory:
         tools = list(
             self._tool_registry.get_tools_for_agent(agent_node.id, self._edges)
         )
-
         memory_provider = self._memory_manager.build_provider(agent_node)
         if memory_provider:
             tools.extend(
@@ -161,6 +163,12 @@ class AgentFactory:
                     memory_provider.get_all_memories,
                 ]
             )
+
+        if getattr(agent_node, "enable_plotting", False):
+            if self._conversation_id:
+                plot_provider = PlotProvider(self._conversation_id)
+                tools.append(plot_provider.generate_plot)
+
 
         signature = self.build_signature(agent_node, passages=passages)
         agent = StreamingReAct(signature, tools=tools)
@@ -225,7 +233,6 @@ class AgentFactory:
         tools = list(
             self._tool_registry.get_tools_for_agent(agent_node.id, self._edges)
         )
-
         memory_provider = self._memory_manager.build_provider(agent_node)
         if memory_provider:
             tools.extend(
@@ -235,6 +242,12 @@ class AgentFactory:
                     memory_provider.get_all_memories,
                 ]
             )
+
+        if getattr(agent_node, "enable_plotting", False):
+            if self._conversation_id:
+                plot_provider = PlotProvider(self._conversation_id)
+                tools.append(plot_provider.generate_plot)
+
 
         handoff_targets = await self._get_handoff_target_ids(agent_node.id)
         handoff_tools = [
