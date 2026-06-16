@@ -64,7 +64,7 @@ graph TD
 *   **🛡️ Secure Docker Sandbox**: Execute user-defined Python tools safely inside isolated Docker containers managed by the `llm-sandbox` library. Provides OS-level isolation, native Python performance, and persistent session state across runs.
 *   **📚 In-Memory RAG**: Attach domain-specific text documents directly to worker nodes. Documents are split using a paragraph-aligned chunker, embedded dynamically, and retrieved at runtime using the `{{ rag_document }}` template placeholder.
 *   **💾 Agent Memory (mem0 + Qdrant)**: Maintain context across messages. Leverages a thread-safe, in-process shared `mem0` instance connected to a local Qdrant vector store.
-*   ** WebSocket Streaming**: Watch thoughts, tool starts, tool results, handoffs, and final answers stream live. Canvas nodes glow green dynamically as they trigger.
+*   **WebSocket Streaming**: Watch thoughts, tool starts, tool results, handoffs, and final answers stream live. Canvas nodes glow green dynamically as they trigger.
 *   **📦 Portable ZIP Packages**: Export an entire canvas (layout, agent states, tool scripts, and attached RAG documents) as a single portable `.zip` bundle, or import it back to share it.
 *   **📈 MLflow Observability**: Full execution transparency. Automatically trace DSPy pipelines, LLM prompt signatures, and tool outputs using integrated MLflow tracking.
 *   **🏷️ Automatic Conversation Naming**: Automatically titles new threads using a quick LLM call on the first message, with a fallback to the user's initial prompt.

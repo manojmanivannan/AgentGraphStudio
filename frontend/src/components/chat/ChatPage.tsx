@@ -24,6 +24,7 @@ import {
   getConversationById,
   deleteConversationById,
   getCanvas,
+  apiOrigin,
 } from "@/lib/api";
 import type { ConversationSummary, Message, ExecutionEvent, CanvasResponse } from "@/types";
 
@@ -37,6 +38,67 @@ interface TurnGroup {
   finalAnswer?: Message;
   isStreaming: boolean;
 }
+
+
+function renderMessageContent(content: string, isToolResult: boolean = false) {
+  if (!content) return null;
+
+  // Render markdown images like ![alt](url)
+  const regex = /!\[(.*?)\]\((.*?)\)/g;
+  const parts = [];
+  let lastIndex = 0;
+  let match;
+
+  while ((match = regex.exec(content)) !== null) {
+    const textBefore = content.substring(lastIndex, match.index);
+    if (textBefore) {
+      parts.push({ type: 'text', value: textBefore });
+    }
+    const alt = match[1];
+    let url = match[2];
+    
+    // Resolve relative backend URLs using apiOrigin
+    if (url.startsWith('/')) {
+      url = `${apiOrigin}${url}`;
+    }
+    
+    parts.push({ type: 'image', value: url, alt });
+    lastIndex = regex.lastIndex;
+  }
+
+  const textAfter = content.substring(lastIndex);
+  if (textAfter) {
+    parts.push({ type: 'text', value: textAfter });
+  }
+
+  if (parts.length === 0) {
+    return <div className="whitespace-pre-wrap">{content}</div>;
+  }
+
+  return (
+    <div className="flex flex-col gap-2">
+      {parts.map((part, idx) => {
+        if (part.type === 'image') {
+          return (
+            <img
+              key={idx}
+              src={part.value}
+              alt={part.alt || "Image"}
+              className="max-w-full rounded border border-[var(--color-border-subtle)] shadow-sm my-1"
+            />
+          );
+        } else {
+          return (
+            <div key={idx} className="whitespace-pre-wrap">
+              {part.value}
+            </div>
+          );
+        }
+      })}
+    </div>
+  );
+}
+
 
 export function groupMessagesIntoTurns(messages: Message[]): {
   preTurnMessages: Message[];
@@ -884,7 +946,7 @@ export default function ChatPage() {
                                                   : "bg-[var(--color-elevated)] text-[var(--color-text-primary)] border border-[var(--color-border-subtle)] rounded-bl-sm"
                                       }`}
                                   >
-                                    {stepMsg.content}
+                                    {renderMessageContent(stepMsg.content, true)}
                                   </div>
                                 </div>
                               );
@@ -904,7 +966,7 @@ export default function ChatPage() {
                               </span>
                             )}
                             <div className="max-w-[85%] rounded-2xl px-4 py-3 text-[13px] leading-relaxed bg-[var(--color-surface)] text-[var(--color-text-primary)] border border-[var(--color-border-default)] rounded-bl-sm shadow-md">
-                              {turn.finalAnswer.content}
+                              {renderMessageContent(turn.finalAnswer.content)}
                             </div>
                           </div>
                         )}

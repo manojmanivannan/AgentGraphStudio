@@ -133,6 +133,7 @@ export function SidebarRail() {
             instructions: ((n.data as any).instructions as string) || "",
             model_name: ((n.data as any).modelName as string) || "ollama:llama3.1",
             agent_type: ((n.data as any).agentType as string) || "worker",
+            enable_plotting: ((n.data as any).enablePlotting as boolean) ?? false,
             enable_memory: ((n.data as any).enableMemory as boolean) ?? false,
             enable_conversation_history:
               ((n.data as any).enableConversationHistory as boolean) ?? false,
@@ -199,6 +200,7 @@ export function SidebarRail() {
           instructions: a.instructions,
           modelName: a.model_name,
           agentType: a.agent_type,
+          enablePlotting: a.enable_plotting,
           enableMemory: a.enable_memory,
           enableConversationHistory: a.enable_conversation_history,
           enableRag: a.enable_rag,

@@ -22,7 +22,7 @@ async def test_sandbox_session_lifecycle():
         manager = SandboxManager()
         await manager.initialize_pool()
 
-        session = manager.get_session("test_conv")
+        session = manager.get_session("test_conv", enable_plotting=False)
 
         # Mock the session.run return value
         # llm-sandbox returns a result object with .stdout
@@ -32,6 +32,7 @@ async def test_sandbox_session_lifecycle():
         from llm_sandbox.pool.session import PooledSandboxSession
         mock_backend = MagicMock()
         mock_backend.run.return_value = mock_result
+        mock_backend.language_handler.run_with_artifacts.return_value = (mock_result, [])
 
         with patch.object(PooledSandboxSession, "_create_backend_session", return_value=mock_backend):
             with session:
@@ -55,7 +56,7 @@ async def test_sandbox_session_install():
 
         manager = SandboxManager()
         await manager.initialize_pool()
-        session = manager.get_session("test_conv")
+        session = manager.get_session("test_conv", enable_plotting=False)
 
         mock_result = MagicMock()
         mock_result.stdout = "Success"
@@ -63,6 +64,10 @@ async def test_sandbox_session_install():
         from llm_sandbox.pool.session import PooledSandboxSession
         mock_backend = MagicMock()
         mock_backend.run.return_value = mock_result
+
+        def mock_run_with_artifacts(container, code, libraries=None, **kwargs):
+            return mock_backend.run(code, libraries=libraries, **kwargs), []
+        mock_backend.language_handler.run_with_artifacts.side_effect = mock_run_with_artifacts
 
         with patch.object(PooledSandboxSession, "_create_backend_session", return_value=mock_backend):
             with session:

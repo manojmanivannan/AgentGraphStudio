@@ -9,7 +9,19 @@ import type {
   AgentDocument,
 } from "@/types";
 
-const API_BASE = `http://${import.meta.env.VITE_API_HOST || "localhost:8000"}/api`;
+const configuredApiHost = (import.meta.env.VITE_API_HOST as string | undefined)?.trim();
+const defaultApiOrigin =
+  typeof window !== "undefined"
+    ? `${window.location.protocol}//${window.location.hostname}:8000`
+    : "http://localhost:8000";
+
+export const apiOrigin = configuredApiHost
+  ? /^https?:\/\//.test(configuredApiHost)
+    ? configuredApiHost
+    : `http://${configuredApiHost}`
+  : defaultApiOrigin;
+
+const API_BASE = `${apiOrigin}/api`;
 
 export async function createCanvas(
   name = "Untitled Canvas"

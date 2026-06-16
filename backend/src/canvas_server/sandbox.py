@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import logging
 
-from llm_sandbox import SandboxSession
+from llm_sandbox import ArtifactSandboxSession
 from llm_sandbox.pool import PoolConfig, create_pool_manager
 
 logger = logging.getLogger("canvas_server.sandbox")
@@ -39,7 +39,7 @@ class SandboxManager:
 
     def __init__(self):
         self._pool_manager = None
-        self._active_sessions: dict[str, SandboxSession] = {}
+        self._active_sessions: dict[str, ArtifactSandboxSession] = {}
         self._initialized = False
 
     @classmethod
@@ -63,6 +63,7 @@ class SandboxManager:
                     max_pool_size=POOL_SIZE_MAX, min_pool_size=POOL_SIZE_MIN
                 ),
                 lang=DEFAULT_LANG,
+                libraries=["matplotlib", "plotly"]
             )
             self._initialized = True
             logger.info("Sandbox pool initialized successfully")
@@ -70,13 +71,15 @@ class SandboxManager:
             logger.error(f"Failed to initialize sandbox pool: {e}")
             raise SandboxError(f"Sandbox initialization failed: {e}") from e
 
-    def get_session(self, conversation_id: str) -> SandboxSession:
+    def get_session(self, conversation_id: str, enable_plotting: bool = True) -> ArtifactSandboxSession:
         """
         Get an existing interactive session for the conversation,
         or create a new one from the pool.
         """
         if conversation_id in self._active_sessions:
-            return self._active_sessions[conversation_id]
+            session = self._active_sessions[conversation_id]
+            session.enable_plotting = enable_plotting
+            return session
 
         if not self._pool_manager:
             raise SandboxError(
@@ -87,10 +90,11 @@ class SandboxManager:
             f"Creating new interactive session for conversation: {conversation_id}"
         )
         # InteractiveSandboxSession maintains state across multiple .run() calls
-        session = SandboxSession(
+        session = ArtifactSandboxSession(
             lang=DEFAULT_LANG,
             pool=self._pool_manager,
             verbose=True,
+            enable_plotting=enable_plotting,
         )
 
         # try:

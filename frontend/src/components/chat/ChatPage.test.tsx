@@ -728,4 +728,69 @@ describe("ChatPage component", () => {
             expect(screen.getByText("WeatherAgent · response")).toBeInTheDocument();
         });
     });
+
+    it("renders plots from markdown image links resolved via apiOrigin", async () => {
+        const user = userEvent.setup();
+        const plotMarkdown = "matplotlib stdout info\n\n![Plot](/api/static/plots/test-image.png)";
+
+        server.use(
+            http.get(`${API}/canvases/conversations/conv-1`, () =>
+                HttpResponse.json(
+                    mockConversation({
+                        id: "conv-1",
+                        canvas_id: "canvas-1",
+                        name: "Test Chat",
+                        messages: [
+                            {
+                                id: "m1", conversation_id: "conv-1", role: "user",
+                                content: "plot weather", created_at: "2026-01-01T00:00:00.000Z",
+                            },
+                            {
+                                id: "m2", conversation_id: "conv-1", role: "assistant",
+                                content: plotMarkdown, event_type: "tool_result",
+                                agent_name: "generate_plot", created_at: "2026-01-01T00:00:01.000Z",
+                            },
+                            {
+                                id: "m3", conversation_id: "conv-1", role: "assistant",
+                                content: "Here is your plot:\n![Plot](/api/static/plots/test-image.png)", event_type: "final_answer",
+                                agent_name: "MasterAgent", created_at: "2026-01-01T00:00:02.000Z",
+                            },
+                        ],
+                    })
+                )
+            ),
+            http.get(`${API}/canvases/canvas-1`, () =>
+                HttpResponse.json({ id: "canvas-1", name: "My Canvas" })
+            ),
+            http.get(`${API}/canvases/canvas-1/conversations`, () =>
+                HttpResponse.json([mockConversationSummary({ id: "conv-1", name: "Test Chat" })])
+            )
+        );
+
+        renderChatPage("conv-1");
+
+        // Wait for final answer and verify image is rendered
+        await waitFor(() => {
+            expect(screen.getByText(/Here is your plot/)).toBeInTheDocument();
+        });
+
+        // The image in final answer should be visible
+        const images = screen.getAllByAltText("Plot") as HTMLImageElement[];
+        expect(images.length).toBeGreaterThanOrEqual(1);
+        expect(images[0].src).toContain("/api/static/plots/test-image.png");
+
+        // Expand steps and check that the tool result step also renders the image
+        const toggleBtn = screen.getByText(/Show.*execution step/);
+        await user.click(toggleBtn);
+
+        await waitFor(() => {
+            // Verify tool result message text/stdout is rendered
+            expect(screen.getByText("matplotlib stdout info")).toBeInTheDocument();
+        });
+
+        const imagesAfterExpand = screen.getAllByAltText("Plot") as HTMLImageElement[];
+        expect(imagesAfterExpand.length).toBe(2);
+        expect(imagesAfterExpand[1].src).toContain("/api/static/plots/test-image.png");
+    });
 });
+

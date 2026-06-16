@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 
 import dspy
 
+from canvas_server.runner.plot_provider import PlotProvider
 from canvas_server.streaming_react import StreamingReAct
 
 if TYPE_CHECKING:
@@ -36,12 +37,14 @@ class AgentFactory:
         memory_manager,
         edges: list,
         agent_names: dict[uuid.UUID, str] | None = None,
+        conversation_id: str | None = None,
     ):
         self._lm = lm
         self._tool_registry = tool_registry
         self._memory_manager = memory_manager
         self._edges = edges
         self._agent_names = agent_names or {}
+        self._conversation_id = conversation_id
 
     # ------------------------------------------------------------------
     # DSPy signature
@@ -88,6 +91,13 @@ class AgentFactory:
                     "and their inputs to run them in parallel and get their combined findings. "
                     f"The available parallel handoff agents are: {', '.join(target_names)}."
                 )
+
+            full_instructions += (
+                "\n\n[CRITICAL SYSTEM RULE] If any downstream agent or tool generates a plot "
+                "or returns a markdown image link (e.g. `![Plot](/api/static/plots/...)`), "
+                "you MUST preserve this image markdown link exactly and include it "
+                "in your final answer/response to the user. Do not omit, summarize, or modify the image link."
+            )
 
         if self._memory_manager.needs_memory(agent_node):
             if self._memory_manager.initialization_error is not None:
@@ -151,7 +161,6 @@ class AgentFactory:
         tools = list(
             self._tool_registry.get_tools_for_agent(agent_node.id, self._edges)
         )
-
         memory_provider = self._memory_manager.build_provider(agent_node)
         if memory_provider:
             tools.extend(
@@ -161,6 +170,11 @@ class AgentFactory:
                     memory_provider.get_all_memories,
                 ]
             )
+
+        if getattr(agent_node, "enable_plotting", False) and self._conversation_id:
+            plot_provider = PlotProvider(self._conversation_id)
+            tools.append(plot_provider.generate_plot)
+
 
         signature = self.build_signature(agent_node, passages=passages)
         agent = StreamingReAct(signature, tools=tools)
@@ -225,7 +239,6 @@ class AgentFactory:
         tools = list(
             self._tool_registry.get_tools_for_agent(agent_node.id, self._edges)
         )
-
         memory_provider = self._memory_manager.build_provider(agent_node)
         if memory_provider:
             tools.extend(
@@ -235,6 +248,11 @@ class AgentFactory:
                     memory_provider.get_all_memories,
                 ]
             )
+
+        if getattr(agent_node, "enable_plotting", False) and self._conversation_id:
+            plot_provider = PlotProvider(self._conversation_id)
+            tools.append(plot_provider.generate_plot)
+
 
         handoff_targets = await self._get_handoff_target_ids(agent_node.id)
         handoff_tools = [

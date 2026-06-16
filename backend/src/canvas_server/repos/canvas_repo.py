@@ -64,6 +64,7 @@ class CanvasRepo:
                 instructions=a.instructions,
                 model_name=a.model_name,
                 agent_type=a.agent_type,
+                enable_plotting=a.enable_plotting,
                 enable_memory=a.enable_memory,
                 enable_conversation_history=a.enable_conversation_history,
                 enable_rag=a.enable_rag,
@@ -195,6 +196,7 @@ class CanvasRepo:
                 node.instructions = a.instructions
                 node.model_name = a.model_name
                 node.agent_type = a.agent_type
+                node.enable_plotting = a.enable_plotting
                 node.enable_memory = a.enable_memory
                 node.enable_conversation_history = a.enable_conversation_history
                 node.enable_rag = a.enable_rag
@@ -212,7 +214,8 @@ class CanvasRepo:
                     instructions=a.instructions,
                     model_name=a.model_name,
                     agent_type=a.agent_type,
-                    enable_memory=a.enable_memory,
+                    enable_plotting=a.enable_plotting,
+                enable_memory=a.enable_memory,
                     enable_conversation_history=a.enable_conversation_history,
                     enable_rag=a.enable_rag,
                     rag_chunk_size=a.rag_chunk_size,

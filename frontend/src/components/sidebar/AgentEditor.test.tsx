@@ -144,6 +144,26 @@ describe("AgentEditor", () => {
     expect(stored?.data.enableMemory).toBe(true);
   });
 
+  it("shows plotting toggle for worker agents", () => {
+    useCanvasStore.getState().setNodes([agentNode]);
+    useCanvasStore.getState().selectNode("agent-1");
+    render(<AgentEditor />);
+
+    expect(screen.getByTestId("agent-enable-plotting")).toBeInTheDocument();
+  });
+
+  it("plotting toggle updates store", async () => {
+    const user = userEvent.setup();
+    useCanvasStore.getState().setNodes([agentNode]);
+    useCanvasStore.getState().selectNode("agent-1");
+    render(<AgentEditor />);
+
+    await user.click(screen.getByTestId("agent-enable-plotting"));
+
+    const stored = useCanvasStore.getState().nodes.find((n) => n.id === "agent-1");
+    expect(stored?.data.enablePlotting).toBe(true);
+  });
+
   it("history toggle updates store for router agents", async () => {
     const user = userEvent.setup();
     const routerNode = { ...agentNode, data: { ...agentNode.data, agentType: "router" } };
