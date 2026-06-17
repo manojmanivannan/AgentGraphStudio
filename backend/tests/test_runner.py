@@ -338,7 +338,10 @@ class TestCanvasRunner:
             await runner.setup()
 
             # Verify that install_packages was called with the sorted list of unique dependencies
-            mock_pm.install_packages.assert_called_once_with(["numpy", "pandas"])
+            mock_pm.install_packages.assert_called_once_with(
+                ["numpy", "pandas"],
+                runtime_session_id=None,
+            )
 
     async def test_setup_passes_conversation_id_to_tool_registry(self):
         canvas = FakeCanvas(agent_nodes=[])
@@ -352,6 +355,37 @@ class TestCanvasRunner:
         compile_all_mock.assert_awaited_once()
         kwargs = compile_all_mock.await_args.kwargs
         assert kwargs["runtime_session_id"] == str(conversation_id)
+
+    async def test_setup_installs_dependencies_in_conversation_session(self):
+        class FakeToolNode:
+            def __init__(self, name, code, dependencies=None):
+                self.id = uuid.uuid4()
+                self.name = name
+                self.code = code
+                self.dependencies = dependencies or []
+
+        conversation_id = uuid.uuid4()
+        tool = FakeToolNode(
+            name="dummy_tool",
+            code="def dummy_tool():\n    pass",
+            dependencies=["numpy"],
+        )
+        canvas = FakeCanvas(tool_nodes=[tool])
+        runner = CanvasRunner(canvas, conversation_id=conversation_id)
+
+        with patch("canvas_server.runner.runner.PackageManager") as mock_pm_class, \
+             patch("canvas_server.runner.tool_registry.compile_tool_from_code", new_callable=AsyncMock), \
+             patch("canvas_server.runner.agent_factory.AgentFactory.build_workers", new_callable=AsyncMock):
+            mock_pm = MagicMock()
+            mock_pm.install_packages = AsyncMock()
+            mock_pm_class.return_value = mock_pm
+
+            await runner.setup()
+
+            mock_pm.install_packages.assert_awaited_once_with(
+                ["numpy"],
+                runtime_session_id=str(conversation_id),
+            )
 
     async def test_llm_validation_failure_raises_configuration_error(self):
         import pytest

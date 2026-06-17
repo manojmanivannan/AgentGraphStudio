@@ -310,12 +310,20 @@ class CanvasRunner:
 
         if all_packages:
             pm = PackageManager()
+            runtime_session_id = (
+                str(self._conversation.conversation_id)
+                if self._conversation.conversation_id is not None
+                else None
+            )
             logger.info(
                 "Installing tool dependencies: %s",
                 sorted(all_packages),
             )
             try:
-                await pm.install_packages(sorted(all_packages))
+                await pm.install_packages(
+                    sorted(all_packages),
+                    runtime_session_id=runtime_session_id,
+                )
                 logger.info("Tool dependencies installed successfully")
             except Exception as e:
                 logger.error("Failed to install tool dependencies: %s", e)
