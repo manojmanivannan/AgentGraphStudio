@@ -11,6 +11,8 @@ if TYPE_CHECKING:
     from canvas_server.runner.handoff import HandoffToolBuilder
     from canvas_server.runner.tool_registry import ToolRegistry
 
+from canvas_server.runner.transcript_classifier import classify_tool_result
+
 logger = logging.getLogger("canvas_server.runner.run_state")
 
 
@@ -152,16 +154,16 @@ class CanvasRunState:
                     )
                 elif event.get("type") == "tool_result":
                     tool_name = event.get("tool", "")
-                    clean_tool_name = (
-                        tool_name.replace("transfer_to_", "") if tool_name else aname
+                    classification = classify_tool_result(
+                        tool_name=tool_name,
+                        fallback_agent_name=aname,
                     )
-                    is_handoff_tool = tool_name.startswith("transfer_to_") if tool_name else False
                     await self.conversation_service.persist_message(
                         role="assistant",
                         content=event.get("output", ""),
-                        agent_name=clean_tool_name,
+                        agent_name=classification.agent_name,
                         node_id=aid,
-                        event_type="response" if is_handoff_tool else "tool_result",
+                        event_type=classification.event_type,
                     )
 
             agent.on_event(callback)

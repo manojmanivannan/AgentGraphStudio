@@ -27,6 +27,7 @@ import {
   apiOrigin,
 } from "@/lib/api";
 import type { ConversationSummary, Message, ExecutionEvent, CanvasResponse } from "@/types";
+import { executionEventToMessage } from "./executionEventMessage";
 
 const WS_BASE = `ws://${import.meta.env.VITE_API_HOST || "localhost:8000"}`;
 
@@ -456,97 +457,32 @@ export default function ChatPage() {
         }
 
         if (event.type === "error") {
-          const errMsg: Message = {
-            id: crypto.randomUUID(),
-            conversation_id: convId,
-            role: "system",
-            content: event.message,
-            agent_name: event.agent ?? null,
-            node_id: event.node_id ?? null,
-            event_type: "error",
-            created_at: new Date().toISOString(),
-          };
-          addMessageLocal(errMsg);
+          const errMsg = executionEventToMessage(event, {
+            conversationId: convId,
+            messageId: crypto.randomUUID(),
+            createdAt: new Date().toISOString(),
+          });
+          if (errMsg) {
+            addMessageLocal(errMsg);
+          }
           setRunning(false);
           setActiveNodeId(null);
           return;
         }
 
-        if (event.type === "warning") {
-          const warnMsg: Message = {
-            id: crypto.randomUUID(),
-            conversation_id: convId,
-            role: "system",
-            content: event.message,
-            agent_name: event.agent ?? null,
-            node_id: event.node_id ?? null,
-            event_type: "warning",
-            created_at: new Date().toISOString(),
-          };
-          addMessageLocal(warnMsg);
+        const message = executionEventToMessage(event, {
+          conversationId: convId,
+          messageId: crypto.randomUUID(),
+          createdAt: new Date().toISOString(),
+        });
+        if (message) {
+          addMessageLocal(message);
         }
 
         if (event.node_id) {
           setActiveNodeId(event.node_id);
         }
 
-        if (event.type === "final_answer") {
-          const msg: Message = {
-            id: crypto.randomUUID(),
-            conversation_id: convId,
-            role: "assistant",
-            content: event.content,
-            agent_name: event.agent ?? null,
-            node_id: event.node_id ?? null,
-            event_type: "final_answer",
-            created_at: new Date().toISOString(),
-          };
-          addMessageLocal(msg);
-        }
-
-        if (event.type === "thought") {
-          const msg: Message = {
-            id: crypto.randomUUID(),
-            conversation_id: convId,
-            role: "assistant",
-            content: event.content,
-            agent_name: event.agent,
-            node_id: event.node_id ?? null,
-            event_type: "thought",
-            created_at: new Date().toISOString(),
-          };
-          addMessageLocal(msg);
-        }
-
-        if (event.type === "handoff") {
-          const msg: Message = {
-            id: crypto.randomUUID(),
-            conversation_id: convId,
-            role: "system",
-            content: `Delegating to ${event.to}...`,
-            agent_name: event.from,
-            node_id: event.node_id ?? null,
-            event_type: "handoff",
-            created_at: new Date().toISOString(),
-          };
-          addMessageLocal(msg);
-        }
-
-        if (event.type === "tool_result") {
-          const toolName = event.tool ?? "";
-          const isHandoffTool = toolName.startsWith("transfer_to_");
-          const msg: Message = {
-            id: crypto.randomUUID(),
-            conversation_id: convId,
-            role: "assistant",
-            content: event.output,
-            agent_name: event.tool?.replace("transfer_to_", "") ?? event.agent,
-            node_id: event.node_id ?? null,
-            event_type: isHandoffTool ? "response" : "tool_result",
-            created_at: new Date().toISOString(),
-          };
-          addMessageLocal(msg);
-        }
       };
 
       ws.onerror = () => {

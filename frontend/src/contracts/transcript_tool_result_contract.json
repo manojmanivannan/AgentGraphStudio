@@ -1,0 +1,20 @@
+[
+  {
+    "tool_name": "transfer_to_WeatherAgent",
+    "fallback_agent_name": "Router",
+    "expected_agent_name": "WeatherAgent",
+    "expected_event_type": "response"
+  },
+  {
+    "tool_name": "get_weather",
+    "fallback_agent_name": "WeatherAgent",
+    "expected_agent_name": "get_weather",
+    "expected_event_type": "tool_result"
+  },
+  {
+    "tool_name": "",
+    "fallback_agent_name": "Worker",
+    "expected_agent_name": "Worker",
+    "expected_event_type": "tool_result"
+  }
+]
