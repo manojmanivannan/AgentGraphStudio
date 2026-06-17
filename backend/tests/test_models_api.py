@@ -6,7 +6,9 @@ from pydantic import ValidationError
 
 from canvas_server.models.api import (
     AgentNodeInput,
+    AgentNodeResponse,
     CanvasNodesInput,
+    CanvasNodesResponse,
     CanvasResponse,
     CanvasSaveRequest,
     CreateCanvasRequest,
@@ -48,6 +50,35 @@ class TestAgentNodeInput:
     def test_id_required(self):
         with pytest.raises(ValidationError):
             AgentNodeInput()
+
+
+class TestAgentNodeResponse:
+    def test_is_not_input_subclass(self):
+        assert not issubclass(AgentNodeResponse, AgentNodeInput)
+
+    def test_creation(self):
+        aid = uuid.uuid4()
+        cid = uuid.uuid4()
+        resp = AgentNodeResponse(
+            id=aid,
+            canvas_id=cid,
+            name="WeatherBot",
+            role="Weather expert",
+            instructions="Answer weather queries",
+            model_name="ollama:mistral",
+            agent_type="router",
+            enable_plotting=True,
+            enable_memory=True,
+            enable_conversation_history=True,
+            enable_rag=True,
+            rag_chunk_size=1337,
+            position_x=100.5,
+            position_y=200.3,
+        )
+        assert resp.id == aid
+        assert resp.canvas_id == cid
+        assert resp.enable_rag is True
+        assert resp.rag_chunk_size == 1337
 
 
 class TestToolNodeInput:
@@ -138,7 +169,7 @@ class TestCanvasResponse:
             name="Test",
             created_at=now,
             updated_at=now,
-            nodes=CanvasNodesInput(),
+            nodes=CanvasNodesResponse(),
             edges=[],
         )
         assert resp.id == cid

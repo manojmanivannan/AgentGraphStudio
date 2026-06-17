@@ -592,7 +592,8 @@ UUIDs without FK constraints (can point to agent or tool nodes).
 
 Input models: `AgentNodeInput`, `ToolNodeInput`, `EdgeInput`, `CanvasSaveRequest`.
 Response models: `CanvasResponse`, `ConversationResponse`, `MessageResponse`.
-The `CanvasResponse` nests `CanvasNodesInput` (agents + tools) + edges.
+The `CanvasResponse` nests `CanvasNodesResponse` (agents + tools) + edges.
+`AgentNodeInput` and `AgentNodeResponse` share a base shape, but the response model is separate so runtime-only fields like `canvas_id` and capability values stay explicit at the response seam.
 
 Key fields on `AgentNodeInput`: `agent_type`, `enable_memory`, `enable_conversation_history`.
 

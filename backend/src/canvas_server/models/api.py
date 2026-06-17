@@ -4,7 +4,7 @@ from datetime import datetime
 from pydantic import BaseModel, Field
 
 
-class AgentNodeInput(BaseModel):
+class AgentNodeBase(BaseModel):
     id: uuid.UUID
     name: str = "Agent"
     role: str = ""
@@ -18,6 +18,10 @@ class AgentNodeInput(BaseModel):
     rag_chunk_size: int = 1000
     position_x: float = 0
     position_y: float = 0
+
+
+class AgentNodeInput(AgentNodeBase):
+    pass
 
 
 class AgentDocumentInput(BaseModel):
@@ -37,7 +41,7 @@ class AgentDocumentResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
-class AgentNodeResponse(AgentNodeInput):
+class AgentNodeResponse(AgentNodeBase):
     canvas_id: uuid.UUID
 
 
@@ -72,6 +76,11 @@ class CanvasNodesInput(BaseModel):
     tools: list[ToolNodeInput] = Field(default_factory=list)
 
 
+class CanvasNodesResponse(BaseModel):
+    agents: list[AgentNodeResponse] = Field(default_factory=list)
+    tools: list[ToolNodeResponse] = Field(default_factory=list)
+
+
 class CanvasSaveRequest(BaseModel):
     name: str = "Untitled Canvas"
     nodes: CanvasNodesInput = Field(default_factory=CanvasNodesInput)
@@ -87,7 +96,7 @@ class CanvasResponse(BaseModel):
     name: str
     created_at: datetime
     updated_at: datetime
-    nodes: CanvasNodesInput
+    nodes: CanvasNodesResponse
     edges: list[EdgeResponse]
 
     model_config = {"from_attributes": True}

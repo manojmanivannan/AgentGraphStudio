@@ -5,8 +5,6 @@ services:
       POSTGRES_USER: canvas
       POSTGRES_PASSWORD: canvas
       POSTGRES_DB: canvas_db
-    ports:
-      - "5437:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     networks:
