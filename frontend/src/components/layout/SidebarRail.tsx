@@ -25,6 +25,7 @@ import {
   listConversations,
   createConversation,
 } from "@/lib/api";
+import { decodeCanvasResponse, encodeCanvasGraph } from "@/lib/canvasGraphCodec";
 import type { CanvasSavePayload } from "@/types";
 import { RailPopover } from "./RailPopover";
 
@@ -121,46 +122,11 @@ export function SidebarRail() {
     }
 
     const edges = useCanvasStore.getState().edges;
-    const payload: CanvasSavePayload = {
-      name: canvasName,
-      nodes: {
-        agents: nodes
-          .filter((n) => n.type === "agent")
-          .map((n) => ({
-            id: n.id,
-            name: (n.data as any).name as string,
-            role: ((n.data as any).role as string) || "",
-            instructions: ((n.data as any).instructions as string) || "",
-            model_name: ((n.data as any).modelName as string) || "ollama:llama3.1",
-            agent_type: ((n.data as any).agentType as string) || "worker",
-            enable_plotting: ((n.data as any).enablePlotting as boolean) ?? false,
-            enable_memory: ((n.data as any).enableMemory as boolean) ?? false,
-            enable_conversation_history:
-              ((n.data as any).enableConversationHistory as boolean) ?? false,
-            enable_rag: ((n.data as any).enableRag as boolean) ?? false,
-            rag_chunk_size: ((n.data as any).ragChunkSize as number) ?? 1000,
-            position_x: n.position.x,
-            position_y: n.position.y,
-          })),
-        tools: nodes
-          .filter((n) => n.type === "tool")
-          .map((n) => ({
-            id: n.id,
-            name: (n.data as any).name as string,
-            code: ((n.data as any).code as string) || "",
-            packages: ((n.data as any).packages as string) || "",
-            args: ((n.data as any).args as []) || [],
-            position_x: n.position.x,
-            position_y: n.position.y,
-          })),
-      },
-      edges: edges.map((e) => ({
-        id: e.id,
-        source_node_id: e.source,
-        target_node_id: e.target,
-        edge_type: ((e.data as any)?.edgeType as string) || "tool_access",
-      })),
-    };
+    const payload: CanvasSavePayload = encodeCanvasGraph({
+      canvasName,
+      nodes,
+      edges,
+    });
 
     const blob = new Blob([JSON.stringify(payload, null, 2)], {
       type: "application/json",
@@ -188,43 +154,9 @@ export function SidebarRail() {
 
       setCanvas(imported.id, imported.name);
 
-      const agentNodes = imported.nodes.agents.map((a) => ({
-        id: a.id,
-        type: "agent" as const,
-        position: { x: a.position_x, y: a.position_y },
-        style: { width: 280 },
-        data: {
-          id: a.id,
-          name: a.name,
-          role: a.role,
-          instructions: a.instructions,
-          modelName: a.model_name,
-          agentType: a.agent_type,
-          enablePlotting: a.enable_plotting,
-          enableMemory: a.enable_memory,
-          enableConversationHistory: a.enable_conversation_history,
-          enableRag: a.enable_rag,
-          ragChunkSize: a.rag_chunk_size,
-        },
-      }));
-
-      const toolNodes = imported.nodes.tools.map((t) => ({
-        id: t.id,
-        type: "tool" as const,
-        position: { x: t.position_x, y: t.position_y },
-        style: { width: 220 },
-        data: { id: t.id, name: t.name, code: t.code, packages: t.packages },
-      }));
-
-      setNodes([...agentNodes, ...toolNodes]);
-      setEdges(
-        imported.edges.map((e) => ({
-          id: e.id,
-          source: e.source_node_id,
-          target: e.target_node_id,
-          data: { edgeType: e.edge_type },
-        }))
-      );
+      const decoded = decodeCanvasResponse(imported);
+      setNodes(decoded.nodes);
+      setEdges(decoded.edges);
     } catch (err) {
       console.error("Failed to import canvas:", err);
     }

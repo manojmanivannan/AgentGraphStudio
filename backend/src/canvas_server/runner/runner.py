@@ -235,7 +235,15 @@ class CanvasRunner:
         await self._install_dependencies(self.canvas.tool_nodes)
 
         self._tool_registry = ToolRegistry()
-        await self._tool_registry.compile_all(self.canvas.tool_nodes)
+        runtime_session_id = (
+            str(self._conversation.conversation_id)
+            if self._conversation.conversation_id is not None
+            else None
+        )
+        await self._tool_registry.compile_all(
+            self.canvas.tool_nodes,
+            runtime_session_id=runtime_session_id,
+        )
         self.run_state.tool_registry = self._tool_registry
         # Sync tool state up to the runner for backward-compat access
         self.tools = self._tool_registry.tools

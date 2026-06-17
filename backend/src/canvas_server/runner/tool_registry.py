@@ -24,13 +24,20 @@ class ToolRegistry:
         self.tools: dict[uuid.UUID, object] = {}
         self._tool_name_to_id: dict[str, uuid.UUID] = {}
 
-    async def compile_all(self, tool_nodes: list) -> None:
+    async def compile_all(
+        self,
+        tool_nodes: list,
+        runtime_session_id: str | None = None,
+    ) -> None:
         """Compile every ``ToolNode`` in *tool_nodes*."""
         logger.debug("Building tools from %d tool nodes", len(tool_nodes))
         for tool_node in tool_nodes:
             try:
                 fn = await compile_tool_from_code(
-                    tool_node.name, tool_node.code, dependencies=tool_node.dependencies
+                    tool_node.name,
+                    tool_node.code,
+                    dependencies=tool_node.dependencies,
+                    runtime_session_id=runtime_session_id,
                 )
             except Exception as e:
                 logger.warning("Failed to compile tool %s: %s", tool_node.name, e)

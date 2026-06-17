@@ -1,4 +1,5 @@
 import shutil
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -81,6 +82,63 @@ class TestCompileToolFromCode:
         fn = await compile_tool_from_code("boom", code)
         with pytest.raises(ToolExecutionError):
             await fn()
+
+    async def test_runtime_uses_conversation_scoped_session_when_provided(self):
+        """Compiled runtime tools should use conversation-scoped session IDs."""
+        code = "def value() -> int:\n    return 123"
+
+        syntax_session = MagicMock()
+        syntax_session.__enter__.return_value = syntax_session
+        syntax_session.__exit__.return_value = None
+        syntax_compile_result = MagicMock(exit_code=0, stdout="", stderr="")
+        syntax_session.run.return_value = syntax_compile_result
+
+        runtime_session = MagicMock()
+        runtime_session.__enter__.return_value = runtime_session
+        runtime_session.__exit__.return_value = None
+        runtime_result = MagicMock(exit_code=0, stdout="123", stderr="")
+        runtime_session.run.return_value = runtime_result
+
+        manager = MagicMock()
+        manager.get_session.side_effect = [syntax_session, runtime_session]
+
+        with patch("canvas_server.tool_factory.get_sandbox", new=AsyncMock(return_value=manager)):
+            fn = await compile_tool_from_code(
+                "value_tool",
+                code,
+                runtime_session_id="conversation-123",
+            )
+            result = await fn()
+
+        assert result == 123
+        assert manager.get_session.call_args_list[0].args[0] == "syntax_check_global"
+        assert manager.get_session.call_args_list[1].args[0] == "conversation-123"
+
+    async def test_runtime_falls_back_to_global_session_without_conversation_id(self):
+        """Compiled tools should preserve backward compatibility when no runtime session is provided."""
+        code = "def value() -> int:\n    return 123"
+
+        syntax_session = MagicMock()
+        syntax_session.__enter__.return_value = syntax_session
+        syntax_session.__exit__.return_value = None
+        syntax_compile_result = MagicMock(exit_code=0, stdout="", stderr="")
+        syntax_session.run.return_value = syntax_compile_result
+
+        runtime_session = MagicMock()
+        runtime_session.__enter__.return_value = runtime_session
+        runtime_session.__exit__.return_value = None
+        runtime_result = MagicMock(exit_code=0, stdout="123", stderr="")
+        runtime_session.run.return_value = runtime_result
+
+        manager = MagicMock()
+        manager.get_session.side_effect = [syntax_session, runtime_session]
+
+        with patch("canvas_server.tool_factory.get_sandbox", new=AsyncMock(return_value=manager)):
+            fn = await compile_tool_from_code("value_tool", code)
+            result = await fn()
+
+        assert result == 123
+        assert manager.get_session.call_args_list[1].args[0] == "syntax_check_global"
 
 
 # ── inspect_tool_code ───────────────────────────────────────────────────────

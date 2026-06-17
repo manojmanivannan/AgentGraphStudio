@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { useCanvasStore } from "@/store/canvasStore";
 import { saveCanvas } from "@/lib/api";
-import type { CanvasSavePayload } from "@/types";
+import { encodeCanvasGraph } from "@/lib/canvasGraphCodec";
 
 export function useCanvasPersistence() {
   const canvasId = useCanvasStore((s) => s.canvasId);
@@ -15,45 +15,11 @@ export function useCanvasPersistence() {
   useEffect(() => {
     if (!canvasId) return;
 
-    const payload: CanvasSavePayload = {
-      name: canvasName,
-      nodes: {
-        agents: nodes
-          .filter((n) => n.type === "agent")
-          .map((n) => ({
-            id: n.id,
-            name: (n.data?.name as string) || "Agent",
-            role: (n.data?.role as string) || "",
-            instructions: (n.data?.instructions as string) || "",
-            model_name: (n.data?.modelName as string) || "ollama:llama3.1",
-            agent_type: (n.data?.agentType as string) || "worker",
-            enable_plotting: (n.data?.enablePlotting as boolean) ?? false,
-            enable_memory: (n.data?.enableMemory as boolean) ?? false,
-            enable_conversation_history: (n.data?.enableConversationHistory as boolean) ?? false,
-            enable_rag: (n.data?.enableRag as boolean) ?? false,
-            rag_chunk_size: (n.data?.ragChunkSize as number) ?? 1000,
-            position_x: n.position.x,
-            position_y: n.position.y,
-          })),
-        tools: nodes
-          .filter((n) => n.type === "tool")
-          .map((n) => ({
-            id: n.id,
-            name: (n.data?.name as string) || "Tool",
-            code: (n.data?.code as string) || "",
-            packages: (n.data?.packages as string) || "",
-            args: (n.data?.args as []) || [],
-            position_x: n.position.x,
-            position_y: n.position.y,
-          })),
-      },
-      edges: edges.map((e) => ({
-        id: e.id,
-        source_node_id: e.source,
-        target_node_id: e.target,
-        edge_type: (e.data?.edgeType as string) || "tool_access",
-      })),
-    };
+    const payload = encodeCanvasGraph({
+      canvasName,
+      nodes,
+      edges,
+    });
 
     const serialized = JSON.stringify(payload);
     if (serialized === prevDataRef.current) return;

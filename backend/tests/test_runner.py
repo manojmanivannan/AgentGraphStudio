@@ -340,6 +340,19 @@ class TestCanvasRunner:
             # Verify that install_packages was called with the sorted list of unique dependencies
             mock_pm.install_packages.assert_called_once_with(["numpy", "pandas"])
 
+    async def test_setup_passes_conversation_id_to_tool_registry(self):
+        canvas = FakeCanvas(agent_nodes=[])
+        conversation_id = uuid.uuid4()
+        runner = CanvasRunner(canvas, conversation_id=conversation_id)
+
+        with patch("canvas_server.runner.runner.ToolRegistry.compile_all", new_callable=AsyncMock) as compile_all_mock, \
+             patch("canvas_server.runner.agent_factory.AgentFactory.build_workers", new_callable=AsyncMock):
+            await runner.setup()
+
+        compile_all_mock.assert_awaited_once()
+        kwargs = compile_all_mock.await_args.kwargs
+        assert kwargs["runtime_session_id"] == str(conversation_id)
+
     async def test_llm_validation_failure_raises_configuration_error(self):
         import pytest
 
