@@ -150,34 +150,6 @@ Pre-built agent workflow examples are available in the [examples](./examples) di
 
 ---
 
-## 🛠️ Local Installation (Without Docker)
-
-### 1. Database Setup
-Requires PostgreSQL 17 with the `pgvector` extension running on localhost:5432:
-```bash
-createdb canvas_db
-```
-*Alternatively, you can test locally using SQLite by modifying your config to `DATABASE_URL=sqlite+aiosqlite:///dev.db`.*
-
-### 2. Backend Startup
-Ensure you have Docker installed and running on your system to run the secure Python tool sandbox.
-```bash
-cd backend
-python -m venv .venv && source .venv/bin/activate
-pip install uv && uv sync
-uv run alembic upgrade head
-uv run uvicorn canvas_server.main:app --reload
-```
-
-### 3. Frontend Startup
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
----
-
 ## ⚙️ Configuration Variables
 
 Create a `backend/.env` file. Refer to `backend/.env.example` for templated setups:
