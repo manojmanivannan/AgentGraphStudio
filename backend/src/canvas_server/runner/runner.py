@@ -162,7 +162,10 @@ class CanvasRunner:
 
         try:
             with dspy.context(lm=self._lm):
-                result = await self._lm.acall(prompt=prompt)
+                result = await self._lm.acall(
+                    prompt=prompt,
+                    timeout=settings.llm_title_timeout_seconds,
+                )
         except Exception as exc:
             logger.warning(
                 "Failed to generate conversation title: %s", exc, exc_info=True
@@ -208,13 +211,31 @@ class CanvasRunner:
         # Proactively validate LLM configuration (skipped in unit tests unless TEST_VALIDATE_LLM is set)
         if "pytest" not in sys.modules or os.environ.get("TEST_VALIDATE_LLM"):
             try:
-                await self._lm.acall(prompt="Test connection. Respond with 'ok'.", max_tokens=5)
+                await self._lm.acall(
+                    prompt="Test connection. Respond with 'ok'.",
+                    max_tokens=5,
+                    timeout=settings.llm_validation_timeout_seconds,
+                )
             except Exception as e:
                 err_details = str(e)
+                exc_type = type(e).__name__
+                is_401 = "401" in err_details or "Unauthorized" in err_details or "AuthenticationError" in exc_type
+                is_429 = "429" in err_details or "RateLimitError" in exc_type
                 if "<html" in err_details.lower() or "<!doctype" in err_details.lower():
                     err_details = (
                         "LLM/API returned an HTML error page. "
                         "Please check that your server URL, credentials, and settings are correct."
+                    )
+                elif is_401:
+                    err_details = (
+                        "401 Unauthorized — your API key may be invalid, expired, or over budget."
+                    )
+                elif is_429:
+                    err_details = "429 Too Many Requests — rate limit exceeded."
+                elif isinstance(e, TimeoutError):
+                    err_details = (
+                        f"LLM connectivity check timed out after "
+                        f"{settings.llm_validation_timeout_seconds}s."
                     )
                 elif len(err_details) > 300:
                     err_details = err_details[:300] + "..."

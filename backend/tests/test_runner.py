@@ -401,6 +401,25 @@ class TestCanvasRunner:
                 await runner.setup()
             assert "LLM configuration is incorrect" in str(exc_info.value)
 
+    async def test_llm_validation_timeout_raises_configuration_error(self):
+        import pytest
+
+        from canvas_server.exceptions import LLMConfigurationError
+
+        from canvas_server.config import settings
+
+        canvas = FakeCanvas()
+        runner = CanvasRunner(canvas)
+        runner._lm.acall = AsyncMock(side_effect=TimeoutError("validation timed out"))
+
+        import os
+        with patch.dict(os.environ, {"TEST_VALIDATE_LLM": "true"}), patch.object(
+            settings, "llm_validation_timeout_seconds", 0.1
+        ):
+            with pytest.raises(LLMConfigurationError) as exc_info:
+                await runner.setup()
+            assert "timed out" in str(exc_info.value)
+
     async def test_memory_validation_failure_emits_warning(self):
         from canvas_server.runner.memory import MemoryManager
         MemoryManager._shared_memory = None

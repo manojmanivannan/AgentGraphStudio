@@ -15,20 +15,20 @@ export function useCanvasPersistence() {
   useEffect(() => {
     if (!canvasId) return;
 
-    const payload = encodeCanvasGraph({
-      canvasName,
-      nodes,
-      edges,
-    });
-
-    const serialized = JSON.stringify(payload);
-    if (serialized === prevDataRef.current) return;
-    prevDataRef.current = serialized;
-
     if (debounceRef.current) clearTimeout(debounceRef.current);
     if (statusTimeoutRef.current) clearTimeout(statusTimeoutRef.current);
 
     debounceRef.current = setTimeout(async () => {
+      const payload = encodeCanvasGraph({
+        canvasName,
+        nodes,
+        edges,
+      });
+
+      const serialized = JSON.stringify(payload);
+      if (serialized === prevDataRef.current) return;
+      prevDataRef.current = serialized;
+
       useCanvasStore.getState().setSaveStatus("saving");
       try {
         await saveCanvas(canvasId, payload);

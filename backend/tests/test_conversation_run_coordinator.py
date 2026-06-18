@@ -92,9 +92,10 @@ async def test_coordinator_renames_new_conversation_and_runs_targeted_agent():
 
 
 @pytest.mark.asyncio
-async def test_coordinator_persists_runner_errors_and_emits_error_event():
+async def test_coordinator_persists_runner_errors_and_emits_final_answer_event():
     conversation_id = uuid.uuid4()
     canvas_id = uuid.uuid4()
+    master_agent_id = uuid.uuid4()
     failure = RuntimeError("runner exploded")
 
     conversation = SimpleNamespace(
@@ -103,7 +104,10 @@ async def test_coordinator_persists_runner_errors_and_emits_error_event():
         name="Existing Conversation",
         messages=[object()],
     )
-    canvas = SimpleNamespace(id=canvas_id)
+    canvas = SimpleNamespace(
+        id=canvas_id,
+        agent_nodes=[SimpleNamespace(id=master_agent_id, name="Master")],
+    )
     session = FakeSession()
     conv_repo = FakeConversationRepo(conversation)
     canvas_repo = FakeCanvasRepo(canvas)
@@ -131,9 +135,18 @@ async def test_coordinator_persists_runner_errors_and_emits_error_event():
     )
 
     persist_message.assert_awaited_once_with(
-        role="system",
+        role="assistant",
         content="runner exploded",
-        event_type="error",
+        agent_name="Master",
+        node_id=str(master_agent_id),
+        event_type="final_answer",
     )
-    send_event.assert_any_await({"type": "error", "message": "runner exploded"})
+    send_event.assert_any_await(
+        {
+            "type": "final_answer",
+            "content": "runner exploded",
+            "agent": "Master",
+            "node_id": str(master_agent_id),
+        }
+    )
     assert session.commit.await_count == 2

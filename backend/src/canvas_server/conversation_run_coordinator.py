@@ -51,8 +51,25 @@ class ConversationRunCoordinator:
                 target_agent_id=target_agent_id,
             )
         except Exception as exc:
-            await self._persist_error(runner=runner, error=exc)
-            await send_event({"type": "error", "message": str(exc)})
+            primary_agent = self._resolve_primary_agent(
+                canvas=canvas,
+                target_agent_id=target_agent_id,
+            )
+            await self._persist_error(
+                runner=runner,
+                error=exc,
+                agent_name=primary_agent["agent"],
+                node_id=primary_agent["node_id"],
+            )
+            event = {
+                "type": "final_answer",
+                "content": str(exc),
+            }
+            if primary_agent["agent"]:
+                event["agent"] = primary_agent["agent"]
+            if primary_agent["node_id"]:
+                event["node_id"] = primary_agent["node_id"]
+            await send_event(event)
         finally:
             await self.session.commit()
 
@@ -92,16 +109,48 @@ class ConversationRunCoordinator:
             }
         )
 
-    async def _persist_error(self, *, runner, error: Exception) -> None:
+    async def _persist_error(
+        self,
+        *,
+        runner,
+        error: Exception,
+        agent_name: str | None = None,
+        node_id: str | None = None,
+    ) -> None:
         try:
             await runner._conversation.persist_message(
-                role="system",
+                role="assistant",
                 content=str(error),
-                event_type="error",
+                agent_name=agent_name,
+                node_id=node_id,
+                event_type="final_answer",
             )
             await self.session.commit()
         except Exception:
             pass
+
+    def _resolve_primary_agent(
+        self,
+        *,
+        canvas,
+        target_agent_id: uuid.UUID | None,
+    ) -> dict[str, str | None]:
+        agent_nodes = getattr(canvas, "agent_nodes", None) or []
+        if not agent_nodes:
+            return {"agent": None, "node_id": None}
+
+        selected = None
+        if target_agent_id is not None:
+            selected = next((n for n in agent_nodes if getattr(n, "id", None) == target_agent_id), None)
+        if selected is None:
+            selected = agent_nodes[0]
+
+        agent_name = getattr(selected, "name", None)
+        node_id = getattr(selected, "id", None)
+        return {
+            "agent": agent_name,
+            "node_id": str(node_id) if node_id else None,
+        }
 
     def _fallback_title(self, user_prompt: str) -> str | None:
         try:

@@ -23,6 +23,18 @@ export const apiOrigin = configuredApiHost
 
 const API_BASE = `${apiOrigin}/api`;
 
+function isNetworkFetchError(error: unknown): error is Error {
+  return error instanceof Error && /fetch|network|load failed|failed to fetch/i.test(error.message);
+}
+
+async function readErrorDetail(
+  res: Response,
+  fallbackMessage: string
+): Promise<string> {
+  const error = await res.json().catch(() => null) as { detail?: string } | null;
+  return error?.detail || fallbackMessage;
+}
+
 export async function createCanvas(
   name = "Untitled Canvas"
 ): Promise<CanvasResponse> {
@@ -90,15 +102,44 @@ export async function importCanvas(
 }
 
 export async function importCanvasZip(file: File): Promise<CanvasResponse> {
-  const formData = new FormData();
-  formData.append("file", file);
+  const createRequestInit = (): RequestInit => {
+    const formData = new FormData();
+    formData.append("file", file);
+    return {
+      method: "POST",
+      body: formData,
+    };
+  };
 
-  const res = await fetch(`${API_BASE}/canvases/import-zip`, {
-    method: "POST",
-    body: formData,
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}/canvases/import-zip`, createRequestInit());
+  } catch {
 
-  if (!res.ok) throw new Error("Failed to import canvas ZIP");
+    try {
+      res = await fetch(`/api/canvases/import-zip`, createRequestInit());
+    } catch {
+      throw new Error(
+        "Failed to import canvas ZIP. Could not reach the backend import endpoint."
+      );
+    }
+  }
+
+  if (!res.ok) {
+    if (res.status >= 500) {
+      try {
+        const fallbackRes = await fetch(`/api/canvases/import-zip`, createRequestInit());
+        if (!fallbackRes.ok) {
+          throw new Error(await readErrorDetail(fallbackRes, "Failed to import canvas ZIP"));
+        }
+        return fallbackRes.json();
+      } catch (error) {
+        if (!isNetworkFetchError(error)) throw error;
+      }
+    }
+
+    throw new Error(await readErrorDetail(res, "Failed to import canvas ZIP"));
+  }
   return res.json();
 }
 

@@ -33,7 +33,6 @@ export function SidebarRail() {
   const canvasId = useCanvasStore((s) => s.canvasId);
   const theme = useThemeStore((s) => s.theme);
   const canvasName = useCanvasStore((s) => s.canvasName);
-  const nodes = useCanvasStore((s) => s.nodes);
   const setNodes = useCanvasStore((s) => s.setNodes);
   const setEdges = useCanvasStore((s) => s.setEdges);
   const setCanvas = useCanvasStore((s) => s.setCanvas);
@@ -65,6 +64,7 @@ export function SidebarRail() {
   };
 
   const addAgent = (agentType: "worker" | "router") => {
+    const nodes = useCanvasStore.getState().nodes;
     const newId = uuidv4();
     const newNode = {
       id: newId,
@@ -84,6 +84,7 @@ export function SidebarRail() {
   };
 
   const addTool = () => {
+    const nodes = useCanvasStore.getState().nodes;
     const newId = uuidv4();
     const newNode = {
       id: newId,
@@ -122,9 +123,10 @@ export function SidebarRail() {
     }
 
     const edges = useCanvasStore.getState().edges;
+    const currentNodes = useCanvasStore.getState().nodes;
     const payload: CanvasSavePayload = encodeCanvasGraph({
       canvasName,
-      nodes,
+      nodes: currentNodes,
       edges,
     });
 

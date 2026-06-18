@@ -49,6 +49,7 @@ services:
       - "5173:5173"
     environment:
       VITE_API_HOST: ${VITE_API_HOST:-}
+      VITE_API_PROXY_TARGET: http://backend:8000
       MLFLOW_PROXY_TARGET: http://mlflow:5000
     networks:
       - agent_network
