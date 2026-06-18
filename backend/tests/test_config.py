@@ -31,7 +31,7 @@ class TestMemoryConfig:
         from canvas_server.config import settings
         from canvas_server.memory_config import build_mem0_config
 
-        monkeypatch.setattr(settings, "mem0_provider", "ollama")
+        monkeypatch.setattr(settings, "llm_provider_type", "ollama")
         monkeypatch.setattr(settings, "llm_base_url", "http://ollama-host:11434")
         monkeypatch.setattr(settings, "llm_api_key", "test-key")
         monkeypatch.setattr(settings, "mem0_llm_model", "test-llm-model")
@@ -57,7 +57,7 @@ class TestMemoryConfig:
         from canvas_server.config import settings
         from canvas_server.memory_config import build_mem0_config
 
-        monkeypatch.setattr(settings, "mem0_provider", "openai")
+        monkeypatch.setattr(settings, "llm_provider_type", "openai")
         monkeypatch.setattr(settings, "llm_base_url", "https://openrouter.ai/api/v1")
         monkeypatch.setattr(settings, "llm_api_key", "sk-test-key")
         monkeypatch.setattr(settings, "mem0_llm_model", "test-openai-model")

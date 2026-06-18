@@ -4,7 +4,7 @@ from canvas_server.config import settings
 
 
 def build_mem0_config() -> dict:
-    provider = settings.mem0_provider
+    provider = settings.llm_provider_type
     llm_config = {
         "model": settings.mem0_llm_model,
         "api_key": settings.llm_api_key,

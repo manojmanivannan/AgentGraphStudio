@@ -160,7 +160,7 @@ Create a `backend/.env` file. Refer to `backend/.env.example` for templated setu
 | `DATABASE_URL` | `postgresql+asyncpg://...` | Database connection string. |
 | `LLM_BASE_URL` | `http://192.168.1.120:11434` | Ollama or provider LLM endpoint. |
 | `LLM_MODEL` | `ollama_chat/gemma4:31b` | Default inference LLM model for agents. |
-| `MEM0_PROVIDER` | `ollama` | Provider for memory indexing (`ollama`, `openai`). |
+| `LLM_PROVIDER_TYPE` | `ollama` | Provider for memory indexing (`ollama`, `openai`). |
 | `MEM0_LLM_MODEL` | `gemma4:31b` | Model used by the memory provider. |
 | `MEM0_EMBEDDER_MODEL`| `nomic-embed-text` | Embedding model for memory and RAG. |
 | `MEM0_EMBEDDER_DIMENSIONS`| `768` | Dimension count for embedding vector space. |

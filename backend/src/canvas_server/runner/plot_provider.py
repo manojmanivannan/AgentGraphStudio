@@ -19,6 +19,7 @@ class PlotProvider:
         """
         Generates a plot by executing the provided Python code in a sandboxed environment.
         The code MUST import either matplotlib.pyplot or plotly and call plt.show() or fig.show() to render the plot.
+        No other libraries are allowed.
         The output figure will be captured and returned to the chat UI automatically.
         Do NOT save the plot to a file inside the code; always use the library's show() method.
 

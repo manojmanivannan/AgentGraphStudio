@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     llm_validation_timeout_seconds: float = 12.0
 
     # Memory (mem0) settings
-    mem0_provider: str = "ollama"
+    llm_provider_type: str = "ollama"
     mem0_llm_model: str = "gemma4:31b"
     mem0_embedder_model: str = "nomic-embed-text"
     mem0_embedder_dimensions: int = 768
