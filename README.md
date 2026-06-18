@@ -136,6 +136,20 @@ Once running, access the interfaces at:
 
 ---
 
+## 📂 Examples
+
+Pre-built agent workflow examples are available in the [examples](./examples) directory to help you get started quickly:
+
+*   **[team_math_weather_with_plot_with_rag.zip](./examples/team_math_weather_with_plot_with_rag.zip)**: A complete portable ZIP package demonstrating a multi-agent routing system. It wires a Master Agent router to delegate weather queries to a Weather worker agent (using `get_weather` and dynamic plotting tools) and math queries to a Math router (which delegates further to Factorial and Square Root worker agents). Includes pre-loaded RAG documents.
+*   **[team_math_weather_with_plot_without_rag.json](./examples/team_math_weather_with_plot_without_rag.json)**: A JSON canvas manifest representation of the same math/weather agent workflow (without the attached RAG documents).
+
+### How to Import Examples:
+1.  Open the **AgentGraph Studio UI** (running at `http://localhost:5173`).
+2.  On the Landing Page, click the **Import Canvas** card or drag-and-drop the `.zip` or `.json` file from the `examples` directory directly into the drop zone.
+3.  The visual multi-agent workflow layout, custom tools, and instructions will be loaded and ready to execute.
+
+---
+
 ## 🛠️ Local Installation (Without Docker)
 
 ### 1. Database Setup

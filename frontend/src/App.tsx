@@ -9,6 +9,7 @@ import {
   listCanvases,
   getCanvas,
   deleteCanvas,
+  importCanvas,
   importCanvasZip,
 } from "@/lib/api";
 import {
@@ -23,7 +24,7 @@ import {
   HelpCircle,
   Check,
 } from "lucide-react";
-import type { CanvasListItem } from "@/types";
+import type { CanvasListItem, CanvasSavePayload } from "@/types";
 import type { Node } from "@xyflow/react";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { useThemeStore } from "@/store/themeStore";
@@ -224,14 +225,18 @@ function LandingPage({
 
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
       const file = e.dataTransfer.files[0];
-      if (
-        file.name.endsWith(".zip") ||
+      const isZip =
+        file.name.toLowerCase().endsWith(".zip") ||
         file.type === "application/zip" ||
-        file.type === "application/x-zip-compressed"
-      ) {
+        file.type === "application/x-zip-compressed";
+      const isJson =
+        file.name.toLowerCase().endsWith(".json") ||
+        file.type === "application/json";
+
+      if (isZip || isJson) {
         await handleImportFile(file);
       } else {
-        setError("Only ZIP archive files (.zip) are supported.");
+        setError("Only ZIP archives (.zip) and JSON files (.json) are supported.");
       }
     }
   };
@@ -252,7 +257,7 @@ function LandingPage({
       <input
         ref={fileInputRef}
         type="file"
-        accept=".zip"
+        accept=".zip,.json"
         data-testid="file-input"
         onChange={async (e) => {
           if (e.target.files && e.target.files[0]) {
@@ -341,7 +346,7 @@ function LandingPage({
             Import Canvas
           </h3>
           <p className="text-xs text-[var(--color-text-secondary)] leading-relaxed">
-            Upload a `.zip` archive containing agent configurations, custom tool code, and RAG document artifacts.
+            Upload a `.zip` archive or `.json` file containing agent configurations, custom tool code, and RAG document artifacts.
           </p>
           <div className="absolute bottom-4 right-4 text-xs text-[var(--color-secondary)] font-semibold opacity-0 group-hover:opacity-100 transition-opacity duration-300">
             Upload &rarr;
@@ -526,7 +531,7 @@ function LandingPage({
             <Upload className="w-10 h-10" />
           </div>
           <h2 className="text-2xl font-bold text-[var(--color-text-primary)] mb-2">
-            Drop ZIP to Import
+            Drop ZIP or JSON to Import
           </h2>
           <p className="text-sm text-[var(--color-text-secondary)]">
             Release to upload and load your agent graph canvas.
@@ -638,11 +643,14 @@ export default function App() {
     setLoading(true);
     setError(null);
     try {
-      const canvas = await importCanvasZip(file);
+      const isZip = file.name.toLowerCase().endsWith(".zip");
+      const canvas = isZip
+        ? await importCanvasZip(file)
+        : await importCanvas(JSON.parse(await file.text()) as CanvasSavePayload);
       navigate(`/canvas/${canvas.id}`);
     } catch (err: any) {
-      setError(err?.message || "Failed to import canvas ZIP package.");
-      console.error("ZIP import failure:", err);
+      setError(err?.message || "Failed to import canvas package.");
+      console.error("Import failure:", err);
     } finally {
       setLoading(false);
     }

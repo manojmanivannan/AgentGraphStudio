@@ -1,0 +1,127 @@
+{
+  "name": "team_math_weather_without_rag",
+  "nodes": {
+    "agents": [
+      {
+        "id": "19a3fbaa-d260-4f87-9806-77d0ee6a29da",
+        "name": "MasterAgent",
+        "role": "Routing Expert",
+        "instructions": "You route the questions to the sub agent for math or weather related queries.",
+        "model_name": "ollama:gemma4:31b-cloud",
+        "agent_type": "router",
+        "enable_plotting": false,
+        "enable_memory": true,
+        "enable_conversation_history": true,
+        "enable_rag": false,
+        "rag_chunk_size": 1000,
+        "position_x": 188.47760174983188,
+        "position_y": 305.42081381191036
+      },
+      {
+        "id": "6f32efe2-7c41-4e37-8f08-759bda570500",
+        "name": "WeatherAgent",
+        "role": "Weather specialist",
+        "instructions": "You are a mock weather agent for testing. You must use 'get_weather' tool to find the weather of a city. Return the result as a plot always using the plotting tool.",
+        "model_name": "ollama:gemma4:31b-cloud",
+        "agent_type": "worker",
+        "enable_plotting": true,
+        "enable_memory": false,
+        "enable_conversation_history": false,
+        "enable_rag": false,
+        "rag_chunk_size": 1000,
+        "position_x": 393.6940226161223,
+        "position_y": 504.8047976155327
+      },
+      {
+        "id": "982407ce-9e81-4865-9c59-6567860c8d36",
+        "name": "MathTeam",
+        "role": "Math expert team",
+        "instructions": "You are a math agent with special agents for factorial and square root",
+        "model_name": "ollama:gemma4:31b",
+        "agent_type": "router",
+        "enable_plotting": false,
+        "enable_memory": false,
+        "enable_conversation_history": false,
+        "enable_rag": false,
+        "rag_chunk_size": 1000,
+        "position_x": -12.128093671383567,
+        "position_y": 585.9669118536809
+      },
+      {
+        "id": "e056eb99-19c2-4012-b921-28f8ce6f409e",
+        "name": "FactorialAgent",
+        "role": "FactorialExpert",
+        "instructions": "You only answer requests regarding factorial of a number. you simply reponse with the factorial.\nEx. what is the factorial of 3\nAnswer: 6",
+        "model_name": "ollama:gemma4:31b",
+        "agent_type": "worker",
+        "enable_plotting": false,
+        "enable_memory": false,
+        "enable_conversation_history": false,
+        "enable_rag": false,
+        "rag_chunk_size": 1000,
+        "position_x": -85.85129931913178,
+        "position_y": 868.0240587612973
+      },
+      {
+        "id": "71c8e76e-8e47-427b-b778-3bcf1f807a57",
+        "name": "SquareRootAgent",
+        "role": "SquareRoot Expert",
+        "instructions": "You only answer requests regarding factorial of a number. you simply respond with the sqaure root.\nEx. what is the square root of 2\nAnswer: 1.414",
+        "model_name": "ollama:gemma4:31b",
+        "agent_type": "worker",
+        "enable_plotting": false,
+        "enable_memory": false,
+        "enable_conversation_history": false,
+        "enable_rag": false,
+        "rag_chunk_size": 1000,
+        "position_x": 220.4489944539368,
+        "position_y": 776.3567944215159
+      }
+    ],
+    "tools": [
+      {
+        "id": "02f23318-cbaa-456c-83a9-5066d46e2049",
+        "name": "get_weather",
+        "code": "from datetime import datetime, timedelta\nimport random\n\n\ndef get_weather_forecast(city: str) -> dict:\n    \"\"\"Generates a 10-hour temperature time series forecast for a given city.\"\"\"\n    forecast = []\n    current_time = datetime.now()\n\n    # Starting with a baseline temperature between 10\u00b0C and 20\u00b0C\n    current_temp = random.uniform(10.0, 20.0)\n\n    for hour in range(1, 11):\n        future_time = current_time + timedelta(hours=hour)\n\n        # Simulate slight hourly temperature fluctuations (-1.5\u00b0C to +1.5\u00b0C)\n        current_temp += random.uniform(-1.5, 1.5)\n\n        forecast.append(\n            {\n                \"timestamp\": future_time.strftime(\"%Y-%m-%d %H:00\"),\n                \"temperature_c\": round(current_temp, 1),\n            }\n        )\n\n    return {\"city\": city, \"forecast_series\": forecast}",
+        "packages": "",
+        "dependencies": [],
+        "args": [],
+        "position_x": 528.0329984542088,
+        "position_y": 730.7006119358191
+      }
+    ]
+  },
+  "edges": [
+    {
+      "id": "d77437d4-fbf7-47bd-b4d6-2f51c5c61ea5",
+      "source_node_id": "19a3fbaa-d260-4f87-9806-77d0ee6a29da",
+      "target_node_id": "6f32efe2-7c41-4e37-8f08-759bda570500",
+      "edge_type": "handoff"
+    },
+    {
+      "id": "bfe43586-000b-4f9a-9448-7af8f630e28b",
+      "source_node_id": "6f32efe2-7c41-4e37-8f08-759bda570500",
+      "target_node_id": "02f23318-cbaa-456c-83a9-5066d46e2049",
+      "edge_type": "tool_access"
+    },
+    {
+      "id": "18a09155-f57e-46f0-8457-de5126f9483b",
+      "source_node_id": "982407ce-9e81-4865-9c59-6567860c8d36",
+      "target_node_id": "e056eb99-19c2-4012-b921-28f8ce6f409e",
+      "edge_type": "handoff"
+    },
+    {
+      "id": "dafa3f5f-d9bb-4f97-bec2-ccf956b47348",
+      "source_node_id": "982407ce-9e81-4865-9c59-6567860c8d36",
+      "target_node_id": "71c8e76e-8e47-427b-b778-3bcf1f807a57",
+      "edge_type": "handoff"
+    },
+    {
+      "id": "159d7d24-73a4-4470-922a-069e8277a9a2",
+      "source_node_id": "19a3fbaa-d260-4f87-9806-77d0ee6a29da",
+      "target_node_id": "982407ce-9e81-4865-9c59-6567860c8d36",
+      "edge_type": "handoff"
+    }
+  ],
+  "documents": []
+}
