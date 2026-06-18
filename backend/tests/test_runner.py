@@ -23,6 +23,7 @@ class FakeAgentNode:
         instructions="",
         model_name="ollama:llama3.1",
         agent_type="worker",
+        is_entry_point=False,
     ):
         self.id = id or uuid.uuid4()
         self.name = name
@@ -30,6 +31,7 @@ class FakeAgentNode:
         self.instructions = instructions
         self.model_name = model_name
         self.agent_type = agent_type
+        self.is_entry_point = is_entry_point
         self.position_x = 0
         self.position_y = 0
 
@@ -236,6 +238,59 @@ class TestCanvasRunner:
 
         final_answers = [e for e in events if e["type"] == "final_answer"]
         assert len(final_answers) >= 1
+
+    async def test_run_defaults_to_entry_point_when_no_target_agent_id_specified(self):
+        worker = FakeAgentNode(
+            id=uuid.uuid4(),
+            name="MathAgent",
+            agent_type="worker",
+            is_entry_point=False,
+        )
+        master = FakeAgentNode(
+            id=uuid.uuid4(),
+            name="Master",
+            agent_type="router",
+            is_entry_point=True,
+        )
+
+        canvas = FakeCanvas(agent_nodes=[worker, master])
+        events = []
+
+        async def collect(event):
+            events.append(event)
+
+        runner = CanvasRunner(canvas)
+        runner.setup = AsyncMock()
+        runner.node_map = {worker.id: worker, master.id: master}
+        runner.agents[worker.id] = _make_agent_mock("2 + 3 = 5")
+
+        with patch.object(runner._agent_factory, "build_router") as mock_builder:
+            router_mock = _make_router_mock(
+                "The answer is 5",
+                trajectory={
+                    "thought_0": "Routing...",
+                    "tool_name_0": "transfer_to_MathAgent",
+                    "tool_args_0": {"task": "what is 2+3"},
+                    "observation_0": "2 + 3 = 5",
+                    "thought_1": "Finished",
+                    "tool_name_1": "finish",
+                    "tool_args_1": {},
+                },
+            )
+            mock_builder.return_value = router_mock
+
+            # Do not pass target_agent_id; should still select the router agent "master"
+            await runner.run("what is 2+3", collect)
+
+        event_types = [e["type"] for e in events]
+        assert "run_start" in event_types
+        assert "final_answer" in event_types
+        assert "run_complete" in event_types
+
+        # Ensure the final answer event indicates it was answered by Master (the entry point router)
+        final_answer_event = next(e for e in events if e["type"] == "final_answer")
+        assert final_answer_event["agent"] == "Master"
+        assert final_answer_event["node_id"] == str(master.id)
 
     async def test_make_handoff_tool_defers_agent_lookup(self):
         """Router→router handoff: target agent lookup is deferred to call time."""

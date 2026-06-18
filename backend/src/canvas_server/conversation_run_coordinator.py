@@ -143,6 +143,8 @@ class ConversationRunCoordinator:
         if target_agent_id is not None:
             selected = next((n for n in agent_nodes if getattr(n, "id", None) == target_agent_id), None)
         if selected is None:
+            selected = next((n for n in agent_nodes if getattr(n, "is_entry_point", False)), None)
+        if selected is None:
             selected = agent_nodes[0]
 
         agent_name = getattr(selected, "name", None)

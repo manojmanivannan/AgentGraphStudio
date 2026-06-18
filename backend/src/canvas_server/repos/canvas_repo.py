@@ -69,6 +69,7 @@ class CanvasRepo:
                 enable_conversation_history=a.enable_conversation_history,
                 enable_rag=a.enable_rag,
                 rag_chunk_size=a.rag_chunk_size,
+                is_entry_point=a.is_entry_point,
                 position_x=a.position_x,
                 position_y=a.position_y,
             )
@@ -204,6 +205,7 @@ class CanvasRepo:
                 node.enable_conversation_history = a.enable_conversation_history
                 node.enable_rag = a.enable_rag
                 node.rag_chunk_size = a.rag_chunk_size
+                node.is_entry_point = a.is_entry_point
                 node.position_x = a.position_x
                 node.position_y = a.position_y
             else:
@@ -222,6 +224,7 @@ class CanvasRepo:
                     enable_conversation_history=a.enable_conversation_history,
                     enable_rag=a.enable_rag,
                     rag_chunk_size=a.rag_chunk_size,
+                    is_entry_point=a.is_entry_point,
                     position_x=a.position_x,
                     position_y=a.position_y,
                 )

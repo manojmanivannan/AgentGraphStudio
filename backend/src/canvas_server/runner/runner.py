@@ -385,12 +385,14 @@ class CanvasRunner:
                 return RouterExecution(services)
             return WorkerExecution(services)
 
-        # No target agent: inspect the first agent's type
+        # No target agent: inspect the entry point agent's type
         # Routers aren't built during setup() — they're built lazily by
         # RouterExecution, so we must pick the right strategy here.
-        agent_ids = [n.id for n in self.canvas.agent_nodes]
-        first_node = self.node_map.get(agent_ids[0]) if agent_ids else None
-        if first_node and first_node.agent_type == "router":
+        entry_node = next((n for n in self.canvas.agent_nodes if getattr(n, "is_entry_point", False)), None)
+        if entry_node is None and self.canvas.agent_nodes:
+            entry_node = self.canvas.agent_nodes[0]
+
+        if entry_node and getattr(entry_node, "agent_type", None) == "router":
             return RouterExecution(services)
 
         # Legacy chain strategy for worker-only canvases
@@ -426,10 +428,13 @@ class CanvasRunner:
         history_messages = await self._conversation.load_messages()
         agent_ids = [n.id for n in self.canvas.agent_nodes]
 
+        entry_node = next((n for n in self.canvas.agent_nodes if getattr(n, "is_entry_point", False)), None)
+        default_agent_id = entry_node.id if entry_node else (agent_ids[0] if agent_ids else None)
+
         first_agent_id = (
             target_agent_id
             if target_agent_id
-            else (agent_ids[0] if agent_ids else None)
+            else default_agent_id
         )
 
         history_enabled_node_ids = {
@@ -473,7 +478,7 @@ class CanvasRunner:
         first_id = (
             target_agent_id
             if target_agent_id
-            else (agent_ids[0] if agent_ids else None)
+            else default_agent_id
         )
 
         final_text = None

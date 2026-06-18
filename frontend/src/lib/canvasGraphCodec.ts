@@ -52,6 +52,7 @@ export function encodeCanvasGraph({ canvasName, nodes, edges }: CanvasGraph): Ca
             enable_conversation_history: data.enableConversationHistory ?? false,
             enable_rag: data.enableRag ?? false,
             rag_chunk_size: data.ragChunkSize ?? DEFAULT_RAG_CHUNK_SIZE,
+            is_entry_point: data.isEntryPoint ?? false,
             position_x: node.position.x,
             position_y: node.position.y,
           };
@@ -100,6 +101,7 @@ export function decodeCanvasResponse(canvas: CanvasResponse): DecodedCanvasGraph
           enableConversationHistory: agent.enable_conversation_history,
           enableRag: agent.enable_rag,
           ragChunkSize: agent.rag_chunk_size,
+          isEntryPoint: agent.is_entry_point,
         },
       })),
       ...canvas.nodes.tools.map((tool) => ({

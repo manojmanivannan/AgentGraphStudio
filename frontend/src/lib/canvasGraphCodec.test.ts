@@ -56,6 +56,7 @@ describe("canvasGraphCodec", () => {
             enable_conversation_history: false,
             enable_rag: false,
             rag_chunk_size: 1000,
+            is_entry_point: false,
             position_x: 10,
             position_y: 20,
           },
@@ -104,6 +105,7 @@ describe("canvasGraphCodec", () => {
             enable_conversation_history: true,
             enable_rag: true,
             rag_chunk_size: 2048,
+            is_entry_point: true,
             position_x: 11,
             position_y: 22,
           },
@@ -150,6 +152,7 @@ describe("canvasGraphCodec", () => {
           enableConversationHistory: true,
           enableRag: true,
           ragChunkSize: 2048,
+          isEntryPoint: true,
         },
       },
       {
@@ -225,6 +228,7 @@ describe("canvasGraphCodec", () => {
         enableConversationHistory: false,
         enableRag: false,
         ragChunkSize: 1000,
+        isEntryPoint: false,
       },
     });
   });

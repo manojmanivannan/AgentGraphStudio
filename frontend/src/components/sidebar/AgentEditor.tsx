@@ -177,6 +177,42 @@ export function AgentEditor() {
           <label className="flex items-center gap-2.5 cursor-pointer group">
             <input
               type="checkbox"
+              checked={(data as any).isEntryPoint ?? false}
+              onChange={(e) => {
+                const checked = e.target.checked;
+                if (checked) {
+                  const otherEntryPointAgent = nodes.find(
+                    (n) =>
+                      n.id !== selectedNodeId &&
+                      n.type === "agent" &&
+                      n.data?.isEntryPoint === true
+                  );
+                  if (otherEntryPointAgent) {
+                    alert(`Agent '${otherEntryPointAgent.data.name}' is already selected as the entry point.`);
+                    return;
+                  }
+                }
+                const updatedNodes = nodes.map((n) =>
+                  n.id === selectedNodeId
+                    ? { ...n, data: { ...n.data, isEntryPoint: checked } }
+                    : n
+                );
+                setNodes(updatedNodes);
+              }}
+              data-testid="agent-is-entry-point"
+              className="rounded border-[var(--color-border-default)] text-[var(--color-accent)] focus:ring-[var(--color-accent)] bg-[var(--color-base)]"
+            />
+            <div>
+              <span className="text-[12px] font-medium text-[var(--color-text-secondary)] group-hover:text-[var(--color-text-primary)] transition-colors">Entry Point</span>
+              <p className="text-[10px] text-[var(--color-text-tertiary)] mt-0.5">Designate this agent as the conversation entry point</p>
+            </div>
+          </label>
+        </div>
+
+        <div>
+          <label className="flex items-center gap-2.5 cursor-pointer group">
+            <input
+              type="checkbox"
               checked={(data as any).enableMemory ?? false}
               onChange={(e) => {
                 const checked = e.target.checked;

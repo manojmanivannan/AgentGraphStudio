@@ -16,6 +16,7 @@ class AgentNodeBase(BaseModel):
     enable_conversation_history: bool = False
     enable_rag: bool = False
     rag_chunk_size: int = 1000
+    is_entry_point: bool = False
     position_x: float = 0
     position_y: float = 0
 
