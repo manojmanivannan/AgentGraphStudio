@@ -12,6 +12,7 @@ Three strategies, each extracted from the three-way branch in the original
 from __future__ import annotations
 
 import logging
+import re
 import uuid
 from abc import ABC, abstractmethod
 
@@ -20,6 +21,33 @@ from canvas_server.exceptions import (
     RAGEmbeddingError,
 )
 from canvas_server.runner.config import RunContext
+
+
+def ensure_plots_in_result(result, text: str) -> str:
+    """Scan the trajectory for any markdown plot links and append them if missing."""
+    if not hasattr(result, "trajectory") or not result.trajectory:
+        return text
+
+    image_regex = r"!\[.*?\]\(.*?\)"
+    links_found = []
+
+    # Check all observations in the ReAct loop trajectory
+    for key, val in result.trajectory.items():
+        if key.startswith("observation_") and isinstance(val, str):
+            matches = re.findall(image_regex, val)
+            for m in matches:
+                if m not in links_found:
+                    links_found.append(m)
+
+    if not links_found:
+        return text
+
+    # Append any links that the LLM forgot to copy
+    missing_links = [link for link in links_found if link not in text]
+    if missing_links:
+        text = text.rstrip() + "\n\n" + "\n".join(missing_links)
+
+    return text
 
 
 def _friendly_error_message(exc: Exception) -> str:
@@ -148,6 +176,7 @@ class ExecutionStrategy(ABC):
             else:
                 result = await agent.aforward(user_request=prompt)
             text = result.process_result
+            text = ensure_plots_in_result(result, text)
             logger.info("Agent %s completed: result=%s", agent_node.name, text[:200])
             await self._services.conversation_service.persist_message(
                 role="assistant",

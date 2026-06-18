@@ -142,3 +142,28 @@ async def test_plot_provider_success_db():
         assert "Plot generated" in result_str
         assert "![Plot](/api/plots/mocked-plot-uuid)" in result_str
 
+
+def test_ensure_plots_in_result():
+    """Test ensure_plots_in_result extracts plot markdown and appends it if missing."""
+    from canvas_server.runner.execution import ensure_plots_in_result
+
+    # Case 1: Trajectory with no plots / no trajectory
+    assert ensure_plots_in_result(None, "no change") == "no change"
+
+    # Case 2: Plot present in trajectory, already in response
+    mock_prediction = MagicMock()
+    mock_prediction.trajectory = {
+        "observation_0": "matplotlib output\n\n![Plot](/api/plots/uuid123)"
+    }
+    assert ensure_plots_in_result(mock_prediction, "Check out the plot: ![Plot](/api/plots/uuid123)") == "Check out the plot: ![Plot](/api/plots/uuid123)"
+
+    # Case 3: Plot present in trajectory, missing in response -> should be appended
+    assert ensure_plots_in_result(mock_prediction, "Here is the summary of the plot.") == "Here is the summary of the plot.\n\n![Plot](/api/plots/uuid123)"
+
+    # Case 4: Multiple plots present in trajectory, missing in response -> all should be appended
+    mock_prediction.trajectory = {
+        "observation_0": "First plot: ![Plot](/api/plots/1)",
+        "observation_1": "Second plot: ![Plot](/api/plots/2)"
+    }
+    assert ensure_plots_in_result(mock_prediction, "Done.") == "Done.\n\n![Plot](/api/plots/1)\n![Plot](/api/plots/2)"
+

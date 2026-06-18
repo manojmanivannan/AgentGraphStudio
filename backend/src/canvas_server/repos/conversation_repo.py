@@ -128,6 +128,7 @@ class ConversationRepo:
         if conv:
             conv.updated_at = datetime.now(UTC)
 
+        await self.session.commit()
         return plot
 
     async def get_plot(self, plot_id: uuid.UUID) -> ConversationPlot | None:

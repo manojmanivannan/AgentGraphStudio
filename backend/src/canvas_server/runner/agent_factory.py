@@ -101,6 +101,14 @@ class AgentFactory:
                 "in your final answer/response to the user. Do not omit, summarize, or modify the image link."
             )
 
+        if getattr(agent_node, "enable_plotting", False):
+            full_instructions += (
+                "\n\n[CRITICAL SYSTEM RULE] If you call the plotting tool `generate_plot` and it returns "
+                "a markdown image link (e.g. `![Plot](/api/plots/...)`), you MUST preserve this image "
+                "markdown link exactly and include it in your final answer/response (process_result). "
+                "Do not omit, summarize, or modify the image link."
+            )
+
         if self._memory_manager.needs_memory(agent_node):
             if self._memory_manager.initialization_error is not None:
                 err_details = str(self._memory_manager.initialization_error)
