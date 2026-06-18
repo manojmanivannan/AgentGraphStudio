@@ -11,13 +11,15 @@ logger = logging.getLogger(__name__)
 class PlotProvider:
     """Wraps SandboxManager to expose generate_plot tool function to agents."""
 
-    def __init__(self, conversation_id: str):
+    def __init__(self, conversation_id: str, conversation_repo = None):
         self.conversation_id = conversation_id
+        self.conversation_repo = conversation_repo
 
     async def generate_plot(self, python_code: str) -> str:
         """
         Generates a plot by executing the provided Python code in a sandboxed environment.
         The code MUST import either matplotlib.pyplot or plotly and call plt.show() or fig.show() to render the plot.
+        No other libraries are allowed.
         The output figure will be captured and returned to the chat UI automatically.
         Do NOT save the plot to a file inside the code; always use the library's show() method.
 
@@ -57,12 +59,25 @@ class PlotProvider:
                         else:
                             ext = str(plot.format).lower()
 
-                    filename = f"{uuid.uuid4().hex}.{ext}"
-                    filepath = os.path.join(plots_dir, filename)
-                    with open(filepath, "wb") as f:
-                        f.write(base64.b64decode(plot.content_base64))
-
-                    markdown_links.append(f"![Plot](/api/static/plots/{filename})")
+                    plot_bytes = base64.b64decode(plot.content_base64)
+                    if self.conversation_repo:
+                        conv_id = (
+                            uuid.UUID(self.conversation_id)
+                            if isinstance(self.conversation_id, str)
+                            else self.conversation_id
+                        )
+                        plot_record = await self.conversation_repo.save_plot(
+                            conversation_id=conv_id,
+                            content=plot_bytes,
+                            format=ext,
+                        )
+                        markdown_links.append(f"![Plot](/api/plots/{plot_record.id})")
+                    else:
+                        filename = f"{uuid.uuid4().hex}.{ext}"
+                        filepath = os.path.join(plots_dir, filename)
+                        with open(filepath, "wb") as f:
+                            f.write(plot_bytes)
+                        markdown_links.append(f"![Plot](/api/static/plots/{filename})")
 
             if not markdown_links:
                 return (

@@ -12,6 +12,7 @@ Three strategies, each extracted from the three-way branch in the original
 from __future__ import annotations
 
 import logging
+import re
 import uuid
 from abc import ABC, abstractmethod
 
@@ -20,6 +21,66 @@ from canvas_server.exceptions import (
     RAGEmbeddingError,
 )
 from canvas_server.runner.config import RunContext
+
+
+def ensure_plots_in_result(result, text: str) -> str:
+    """Scan the trajectory for any markdown plot links and append them if missing."""
+    if not hasattr(result, "trajectory") or not result.trajectory:
+        return text
+
+    image_regex = r"!\[.*?\]\(.*?\)"
+    links_found = []
+
+    # Check all observations in the ReAct loop trajectory
+    for key, val in result.trajectory.items():
+        if key.startswith("observation_") and isinstance(val, str):
+            matches = re.findall(image_regex, val)
+            for m in matches:
+                if m not in links_found:
+                    links_found.append(m)
+
+    if not links_found:
+        return text
+
+    # Append any links that the LLM forgot to copy
+    missing_links = [link for link in links_found if link not in text]
+    if missing_links:
+        text = text.rstrip() + "\n\n" + "\n".join(missing_links)
+
+    return text
+
+
+def _friendly_error_message(exc: Exception) -> str:
+    """Return a human-readable error message for common LLM/network failures."""
+    exc_str = str(exc)
+    exc_type = type(exc).__name__
+
+    # Detect HTTP 401 Unauthorized (auth/budget errors from OpenAI-compatible gateways)
+    is_401 = "401" in exc_str or "Unauthorized" in exc_str or "AuthenticationError" in exc_type
+    is_403 = "403" in exc_str or "Forbidden" in exc_str
+    is_429 = "429" in exc_str or "RateLimitError" in exc_type or "Too Many Requests" in exc_str
+    is_503 = "503" in exc_str or "ServiceUnavailable" in exc_type
+
+    if is_401:
+        return (
+            "LLM access unauthorized (401). "
+            "Your API key may be invalid, expired, or over budget. "
+            "Please check your LLM credentials and budget."
+        )
+    if is_403:
+        return (
+            "LLM access forbidden (403). "
+            "You may not have permission to use this model or endpoint."
+        )
+    if is_429:
+        return "LLM rate limit exceeded (429). Please wait a moment and try again."
+    if is_503:
+        return "LLM service unavailable (503). The LLM endpoint may be down or overloaded."
+
+    # Truncate very long messages to avoid flooding the UI
+    if len(exc_str) > 400:
+        exc_str = exc_str[:400] + "..."
+    return exc_str
 
 logger = logging.getLogger("canvas_server.runner.execution")
 
@@ -115,6 +176,7 @@ class ExecutionStrategy(ABC):
             else:
                 result = await agent.aforward(user_request=prompt)
             text = result.process_result
+            text = ensure_plots_in_result(result, text)
             logger.info("Agent %s completed: result=%s", agent_node.name, text[:200])
             await self._services.conversation_service.persist_message(
                 role="assistant",
@@ -129,12 +191,21 @@ class ExecutionStrategy(ABC):
             raise
         except Exception as e:
             logger.error("Agent %s failed: %s", agent_node.name, e, exc_info=True)
+            friendly_msg = _friendly_error_message(e)
             await self._services.conversation_service.persist_message(
-                role="system",
-                content=f"Error: {e}",
+                role="assistant",
+                content=friendly_msg,
                 agent_name=agent_node.name,
                 node_id=agent_id,
-                event_type="error",
+                event_type="final_answer",
+            )
+            await send_event(
+                self._event(
+                    "final_answer",
+                    content=friendly_msg,
+                    agent=agent_node.name,
+                    node_id=str(agent_id),
+                )
             )
             return None
 
@@ -217,6 +288,22 @@ class RouterExecution(ExecutionStrategy):
         except Exception as e:
             logger.error(
                 "Router agent %s failed: %s", agent_node.name, e, exc_info=True
+            )
+            friendly_msg = _friendly_error_message(e)
+            await self._services.conversation_service.persist_message(
+                role="assistant",
+                content=friendly_msg,
+                agent_name=agent_node.name,
+                node_id=agent_id,
+                event_type="final_answer",
+            )
+            await ctx.send_event(
+                self._event(
+                    "final_answer",
+                    content=friendly_msg,
+                    agent=agent_node.name,
+                    node_id=str(agent_id),
+                )
             )
             return None
 

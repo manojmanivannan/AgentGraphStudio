@@ -8,26 +8,34 @@ from __future__ import annotations
 
 import logging
 
+from canvas_server.sandbox import get_sandbox
+
 logger = logging.getLogger("canvas_server.package_manager")
 
 
 class PackageManager:
     """Service for validating and cleaning Python package requirements."""
 
-    async def install_packages(self, packages: list[str]) -> None:
-        """Installs the specified Python packages in the global sandbox session.
+    async def install_packages(
+        self,
+        packages: list[str],
+        runtime_session_id: str | None = None,
+    ) -> None:
+        """Installs the specified Python packages in the sandbox session.
 
         Args:
             packages: A list of package names to install.
+            runtime_session_id: Optional conversation-scoped session ID.
+                Falls back to the global syntax-check session when omitted.
         """
         cleaned_packages = self.validate_packages(packages)
         if not cleaned_packages:
             logger.info("No valid packages to install.")
             return
 
-        from canvas_server.sandbox import get_sandbox
         manager = await get_sandbox()
-        session = manager.get_session("syntax_check_global")
+        session_id = runtime_session_id or "syntax_check_global"
+        session = manager.get_session(session_id, enable_plotting=False)
         try:
             logger.info(f"Installing packages in sandbox: {cleaned_packages}")
             with session:

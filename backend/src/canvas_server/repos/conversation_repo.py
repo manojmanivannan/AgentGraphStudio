@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from canvas_server.exceptions import ConversationNotFoundError
-from canvas_server.models.canvas import Conversation, Message
+from canvas_server.models.canvas import Conversation, ConversationPlot, Message
 
 
 class ConversationRepo:
@@ -106,3 +106,34 @@ class ConversationRepo:
         conv.updated_at = datetime.now(UTC)
         await self.session.flush()
         return conv
+
+    async def save_plot(
+        self,
+        conversation_id: uuid.UUID,
+        content: bytes,
+        format: str = "png",
+    ) -> ConversationPlot:
+        plot = ConversationPlot(
+            conversation_id=conversation_id,
+            content=content,
+            format=format,
+        )
+        self.session.add(plot)
+        await self.session.flush()
+
+        conv_result = await self.session.execute(
+            select(Conversation).where(Conversation.id == conversation_id)
+        )
+        conv = conv_result.scalar_one_or_none()
+        if conv:
+            conv.updated_at = datetime.now(UTC)
+
+        await self.session.commit()
+        return plot
+
+    async def get_plot(self, plot_id: uuid.UUID) -> ConversationPlot | None:
+        result = await self.session.execute(
+            select(ConversationPlot).where(ConversationPlot.id == plot_id)
+        )
+        return result.scalar_one_or_none()
+

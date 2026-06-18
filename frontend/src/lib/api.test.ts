@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { http, HttpResponse } from "msw";
 import { server } from "@/test/mocks/server";
 import {
@@ -23,6 +23,11 @@ import {
 } from "./api";
 
 const API = "http://localhost:8000/api";
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
 
 describe("api", () => {
   describe("createCanvas", () => {
@@ -194,10 +199,69 @@ describe("api", () => {
       server.use(
         http.post(`${API}/canvases/import-zip`, () => {
           return new HttpResponse(null, { status: 500 });
+        }),
+        http.post("/api/canvases/import-zip", () => {
+          return new HttpResponse(null, { status: 500 });
         })
       );
       const file = new File(["zipdata"], "canvas.zip", { type: "application/zip" });
       await expect(importCanvasZip(file)).rejects.toThrow("Failed to import canvas ZIP");
+    });
+
+    it("retries against relative /api when the absolute backend origin fetch fails", async () => {
+      const realFetch = global.fetch.bind(globalThis);
+      const fetchSpy = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+
+        if (url === `${API}/canvases/import-zip`) {
+          throw new TypeError("Operation failed to fetch");
+        }
+
+        if (url === "/api/canvases/import-zip") {
+          return new Response(
+            JSON.stringify({ id: "canvas-zip", name: "Imported Zip Canvas" }),
+            {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            }
+          );
+        }
+
+        return realFetch(input, init);
+      });
+
+      vi.stubGlobal("fetch", fetchSpy);
+
+      const file = new File(["zipdata"], "canvas.zip", { type: "application/zip" });
+      const res = await importCanvasZip(file);
+
+      expect(res.name).toBe("Imported Zip Canvas");
+      expect(fetchSpy).toHaveBeenNthCalledWith(
+        1,
+        `${API}/canvases/import-zip`,
+        expect.objectContaining({ method: "POST" })
+      );
+      expect(fetchSpy).toHaveBeenNthCalledWith(
+        2,
+        "/api/canvases/import-zip",
+        expect.objectContaining({ method: "POST" })
+      );
+    });
+
+    it("shows a backend reachability error when both ZIP import endpoints fail", async () => {
+      const fetchSpy = vi.fn(async () => {
+        throw new TypeError("Failed to fetch");
+      });
+
+      vi.stubGlobal("fetch", fetchSpy);
+
+      const file = new File(["zipdata"], "canvas.zip", { type: "application/zip" });
+
+      await expect(importCanvasZip(file)).rejects.toThrow(
+        "Failed to import canvas ZIP. Could not reach the backend import endpoint."
+      );
+
+      expect(fetchSpy).toHaveBeenCalledTimes(2);
     });
   });
 

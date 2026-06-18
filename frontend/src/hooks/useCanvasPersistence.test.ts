@@ -4,6 +4,7 @@ import { http, HttpResponse } from "msw";
 import { server } from "@/test/mocks/server";
 import { useCanvasStore } from "@/store/canvasStore";
 import { useCanvasPersistence } from "./useCanvasPersistence";
+import * as canvasGraphCodec from "@/lib/canvasGraphCodec";
 
 const store = () => useCanvasStore.getState();
 
@@ -147,5 +148,34 @@ describe("useCanvasPersistence", () => {
     expect(saveSpy).toHaveBeenCalledOnce();
 
     consoleSpy.mockRestore();
+  });
+
+  it("defers encoding until debounce window elapses", async () => {
+    const encodeSpy = vi.spyOn(canvasGraphCodec, "encodeCanvasGraph");
+
+    renderHook(() => useCanvasPersistence());
+    encodeSpy.mockClear();
+
+    // Simulate rapid canvas updates (e.g., dragging nodes).
+    act(() => {
+      store().setNodes([
+        { id: "n1", type: "agent", position: { x: 0, y: 0 }, data: {} as any },
+      ]);
+      store().setNodes([
+        { id: "n1", type: "agent", position: { x: 10, y: 10 }, data: {} as any },
+      ]);
+      store().setNodes([
+        { id: "n1", type: "agent", position: { x: 20, y: 20 }, data: {} as any },
+      ]);
+    });
+
+    // Heavy encoding should not run while updates are still being debounced.
+    expect(encodeSpy).not.toHaveBeenCalled();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(500);
+    });
+
+    expect(encodeSpy).toHaveBeenCalledTimes(1);
   });
 });

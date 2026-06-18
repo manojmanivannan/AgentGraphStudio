@@ -87,6 +87,20 @@ export function AgentEditor() {
     setNodes(updatedNodes);
   };
 
+  const handleAgentTypeChange = (value: string) => {
+    const updatedNodes = nodes.map((n) => {
+      if (n.id === selectedNodeId) {
+        const newData = { ...n.data, agentType: value } as any;
+        if (value === "router") {
+          newData.enablePlotting = false;
+        }
+        return { ...n, data: newData };
+      }
+      return n;
+    });
+    setNodes(updatedNodes);
+  };
+
   const edges = useCanvasStore((s) => s.edges);
   const selectNode = useCanvasStore((s) => s.selectNode);
 
@@ -111,7 +125,7 @@ export function AgentEditor() {
         <label className="block text-[11px] font-semibold text-[var(--color-text-tertiary)] mb-1.5 uppercase tracking-[0.06em]">Type</label>
         <select
           value={(data as any).agentType ?? "worker"}
-          onChange={(e) => updateField("agentType", e.target.value)}
+          onChange={(e) => handleAgentTypeChange(e.target.value)}
           data-testid="agent-type-select"
           className="input-base w-full"
         >
@@ -163,6 +177,42 @@ export function AgentEditor() {
           <label className="flex items-center gap-2.5 cursor-pointer group">
             <input
               type="checkbox"
+              checked={(data as any).isEntryPoint ?? false}
+              onChange={(e) => {
+                const checked = e.target.checked;
+                if (checked) {
+                  const otherEntryPointAgent = nodes.find(
+                    (n) =>
+                      n.id !== selectedNodeId &&
+                      n.type === "agent" &&
+                      n.data?.isEntryPoint === true
+                  );
+                  if (otherEntryPointAgent) {
+                    alert(`Agent '${otherEntryPointAgent.data.name}' is already selected as the entry point.`);
+                    return;
+                  }
+                }
+                const updatedNodes = nodes.map((n) =>
+                  n.id === selectedNodeId
+                    ? { ...n, data: { ...n.data, isEntryPoint: checked } }
+                    : n
+                );
+                setNodes(updatedNodes);
+              }}
+              data-testid="agent-is-entry-point"
+              className="rounded border-[var(--color-border-default)] text-[var(--color-accent)] focus:ring-[var(--color-accent)] bg-[var(--color-base)]"
+            />
+            <div>
+              <span className="text-[12px] font-medium text-[var(--color-text-secondary)] group-hover:text-[var(--color-text-primary)] transition-colors">Entry Point</span>
+              <p className="text-[10px] text-[var(--color-text-tertiary)] mt-0.5">Designate this agent as the conversation entry point</p>
+            </div>
+          </label>
+        </div>
+
+        <div>
+          <label className="flex items-center gap-2.5 cursor-pointer group">
+            <input
+              type="checkbox"
               checked={(data as any).enableMemory ?? false}
               onChange={(e) => {
                 const checked = e.target.checked;
@@ -183,29 +233,32 @@ export function AgentEditor() {
           </label>
         </div>
 
-        <div>
-          <label className="flex items-center gap-2.5 cursor-pointer group">
-            <input
-              type="checkbox"
-              checked={(data as any).enablePlotting ?? false}
-              onChange={(e) => {
-                const checked = e.target.checked;
-                const updatedNodes = nodes.map((n) =>
-                  n.id === selectedNodeId
-                    ? { ...n, data: { ...n.data, enablePlotting: checked } }
-                    : n
-                );
-                setNodes(updatedNodes);
-              }}
-              data-testid="agent-enable-plotting"
-              className="rounded border-[var(--color-border-default)] text-[var(--color-accent)] focus:ring-[var(--color-accent)] bg-[var(--color-base)]"
-            />
-            <div>
-              <span className="text-[12px] font-medium text-[var(--color-text-secondary)] group-hover:text-[var(--color-text-primary)] transition-colors">Enable Plotting</span>
-              <p className="text-[10px] text-[var(--color-text-tertiary)] mt-0.5">Agent can generate charts and plots</p>
-            </div>
-          </label>
-        </div>
+        {(data as any).agentType !== "router" && (
+          <div>
+            <label className="flex items-center gap-2.5 cursor-pointer group">
+              <input
+                type="checkbox"
+                checked={(data as any).enablePlotting ?? false}
+                onChange={(e) => {
+                  const checked = e.target.checked;
+                  const updatedNodes = nodes.map((n) =>
+                    n.id === selectedNodeId
+                      ? { ...n, data: { ...n.data, enablePlotting: checked } }
+                      : n
+                  );
+                  setNodes(updatedNodes);
+                }}
+                data-testid="agent-enable-plotting"
+                className="rounded border-[var(--color-border-default)] text-[var(--color-accent)] focus:ring-[var(--color-accent)] bg-[var(--color-base)]"
+              />
+              <div>
+                <span className="text-[12px] font-medium text-[var(--color-text-secondary)] group-hover:text-[var(--color-text-primary)] transition-colors">Enable Plotting</span>
+                <p className="text-[10px] text-[var(--color-text-tertiary)] mt-0.5">Agent can generate charts and plots</p>
+              </div>
+            </label>
+          </div>
+        )}
+
 
         {(data as any).agentType === "worker" && (
           <div>

@@ -1,0 +1,47 @@
+{
+  "name": "math_team",
+  "nodes": {
+    "agents": [
+      {
+        "id": "635f4a19-f60c-487b-a05a-611ce164ab40",
+        "name": "MainAgent",
+        "role": "Routing specialist",
+        "instructions": "You sole job is to route to the correct agent based on user intent. ",
+        "model_name": "ollama:llama3.1",
+        "agent_type": "router",
+        "enable_plotting": false,
+        "enable_memory": true,
+        "enable_conversation_history": true,
+        "enable_rag": false,
+        "rag_chunk_size": 1000,
+        "position_x": 637.1527359533371,
+        "position_y": 204.07808707996583
+      },
+      {
+        "id": "20104cab-7d11-4706-8b85-e769598ec408",
+        "name": "MathAgent",
+        "role": "Math specialist",
+        "instructions": "You answer any math question.\nGenerate visual plots to aid in answering the query.",
+        "model_name": "ollama:llama3.1",
+        "agent_type": "worker",
+        "enable_plotting": true,
+        "enable_memory": false,
+        "enable_conversation_history": false,
+        "enable_rag": false,
+        "rag_chunk_size": 1000,
+        "position_x": 581.4278989455419,
+        "position_y": 386.67491008878596
+      }
+    ],
+    "tools": []
+  },
+  "edges": [
+    {
+      "id": "e6c7035a-b4e1-4930-9868-3e8656cb8c41",
+      "source_node_id": "635f4a19-f60c-487b-a05a-611ce164ab40",
+      "target_node_id": "20104cab-7d11-4706-8b85-e769598ec408",
+      "edge_type": "handoff"
+    }
+  ],
+  "documents": []
+}

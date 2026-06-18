@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { SidebarRail } from "./SidebarRail";
 import { useCanvasStore } from "@/store/canvasStore";
@@ -174,5 +174,18 @@ describe("SidebarRail", () => {
     await waitFor(() => {
       expect(listConversations).toHaveBeenCalledWith("canvas-1");
     });
+  });
+
+  it("collapses and expands the sidebar on clicking the app logo/icon", async () => {
+    const user = userEvent.setup();
+    act(() => {
+      useCanvasStore.getState().setCanvas("canvas-1", "Test Canvas");
+      useCanvasStore.setState({ sidebarCollapsed: false });
+    });
+    renderSidebar();
+
+    const logoBtn = screen.getByTestId("collapse-sidebar");
+    await user.click(logoBtn);
+    expect(useCanvasStore.getState().sidebarCollapsed).toBe(true);
   });
 });

@@ -23,6 +23,7 @@ class FakeAgentNode:
         instructions="",
         model_name="ollama:llama3.1",
         agent_type="worker",
+        is_entry_point=False,
     ):
         self.id = id or uuid.uuid4()
         self.name = name
@@ -30,6 +31,7 @@ class FakeAgentNode:
         self.instructions = instructions
         self.model_name = model_name
         self.agent_type = agent_type
+        self.is_entry_point = is_entry_point
         self.position_x = 0
         self.position_y = 0
 
@@ -237,6 +239,59 @@ class TestCanvasRunner:
         final_answers = [e for e in events if e["type"] == "final_answer"]
         assert len(final_answers) >= 1
 
+    async def test_run_defaults_to_entry_point_when_no_target_agent_id_specified(self):
+        worker = FakeAgentNode(
+            id=uuid.uuid4(),
+            name="MathAgent",
+            agent_type="worker",
+            is_entry_point=False,
+        )
+        master = FakeAgentNode(
+            id=uuid.uuid4(),
+            name="Master",
+            agent_type="router",
+            is_entry_point=True,
+        )
+
+        canvas = FakeCanvas(agent_nodes=[worker, master])
+        events = []
+
+        async def collect(event):
+            events.append(event)
+
+        runner = CanvasRunner(canvas)
+        runner.setup = AsyncMock()
+        runner.node_map = {worker.id: worker, master.id: master}
+        runner.agents[worker.id] = _make_agent_mock("2 + 3 = 5")
+
+        with patch.object(runner._agent_factory, "build_router") as mock_builder:
+            router_mock = _make_router_mock(
+                "The answer is 5",
+                trajectory={
+                    "thought_0": "Routing...",
+                    "tool_name_0": "transfer_to_MathAgent",
+                    "tool_args_0": {"task": "what is 2+3"},
+                    "observation_0": "2 + 3 = 5",
+                    "thought_1": "Finished",
+                    "tool_name_1": "finish",
+                    "tool_args_1": {},
+                },
+            )
+            mock_builder.return_value = router_mock
+
+            # Do not pass target_agent_id; should still select the router agent "master"
+            await runner.run("what is 2+3", collect)
+
+        event_types = [e["type"] for e in events]
+        assert "run_start" in event_types
+        assert "final_answer" in event_types
+        assert "run_complete" in event_types
+
+        # Ensure the final answer event indicates it was answered by Master (the entry point router)
+        final_answer_event = next(e for e in events if e["type"] == "final_answer")
+        assert final_answer_event["agent"] == "Master"
+        assert final_answer_event["node_id"] == str(master.id)
+
     async def test_make_handoff_tool_defers_agent_lookup(self):
         """Router→router handoff: target agent lookup is deferred to call time."""
         master = FakeAgentNode(
@@ -338,7 +393,54 @@ class TestCanvasRunner:
             await runner.setup()
 
             # Verify that install_packages was called with the sorted list of unique dependencies
-            mock_pm.install_packages.assert_called_once_with(["numpy", "pandas"])
+            mock_pm.install_packages.assert_called_once_with(
+                ["numpy", "pandas"],
+                runtime_session_id=None,
+            )
+
+    async def test_setup_passes_conversation_id_to_tool_registry(self):
+        canvas = FakeCanvas(agent_nodes=[])
+        conversation_id = uuid.uuid4()
+        runner = CanvasRunner(canvas, conversation_id=conversation_id)
+
+        with patch("canvas_server.runner.runner.ToolRegistry.compile_all", new_callable=AsyncMock) as compile_all_mock, \
+             patch("canvas_server.runner.agent_factory.AgentFactory.build_workers", new_callable=AsyncMock):
+            await runner.setup()
+
+        compile_all_mock.assert_awaited_once()
+        kwargs = compile_all_mock.await_args.kwargs
+        assert kwargs["runtime_session_id"] == str(conversation_id)
+
+    async def test_setup_installs_dependencies_in_conversation_session(self):
+        class FakeToolNode:
+            def __init__(self, name, code, dependencies=None):
+                self.id = uuid.uuid4()
+                self.name = name
+                self.code = code
+                self.dependencies = dependencies or []
+
+        conversation_id = uuid.uuid4()
+        tool = FakeToolNode(
+            name="dummy_tool",
+            code="def dummy_tool():\n    pass",
+            dependencies=["numpy"],
+        )
+        canvas = FakeCanvas(tool_nodes=[tool])
+        runner = CanvasRunner(canvas, conversation_id=conversation_id)
+
+        with patch("canvas_server.runner.runner.PackageManager") as mock_pm_class, \
+             patch("canvas_server.runner.tool_registry.compile_tool_from_code", new_callable=AsyncMock), \
+             patch("canvas_server.runner.agent_factory.AgentFactory.build_workers", new_callable=AsyncMock):
+            mock_pm = MagicMock()
+            mock_pm.install_packages = AsyncMock()
+            mock_pm_class.return_value = mock_pm
+
+            await runner.setup()
+
+            mock_pm.install_packages.assert_awaited_once_with(
+                ["numpy"],
+                runtime_session_id=str(conversation_id),
+            )
 
     async def test_llm_validation_failure_raises_configuration_error(self):
         import pytest
@@ -353,6 +455,24 @@ class TestCanvasRunner:
             with pytest.raises(LLMConfigurationError) as exc_info:
                 await runner.setup()
             assert "LLM configuration is incorrect" in str(exc_info.value)
+
+    async def test_llm_validation_timeout_raises_configuration_error(self):
+        import pytest
+
+        from canvas_server.config import settings
+        from canvas_server.exceptions import LLMConfigurationError
+
+        canvas = FakeCanvas()
+        runner = CanvasRunner(canvas)
+        runner._lm.acall = AsyncMock(side_effect=TimeoutError("validation timed out"))
+
+        import os
+        with patch.dict(os.environ, {"TEST_VALIDATE_LLM": "true"}), patch.object(
+            settings, "llm_validation_timeout_seconds", 0.1
+        ):
+            with pytest.raises(LLMConfigurationError) as exc_info:
+                await runner.setup()
+            assert "timed out" in str(exc_info.value)
 
     async def test_memory_validation_failure_emits_warning(self):
         from canvas_server.runner.memory import MemoryManager

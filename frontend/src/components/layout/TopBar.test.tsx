@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, act } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { useCanvasStore } from "@/store/canvasStore";
@@ -181,5 +181,32 @@ describe("TopBar", () => {
     );
 
     expect(screen.getByTestId("home-button")).toBeInTheDocument();
+  });
+
+  it("adjusts left offset based on sidebarCollapsed state", () => {
+    act(() => {
+      useCanvasStore.getState().setCanvas("canvas-1", "Test Canvas");
+      useCanvasStore.setState({ sidebarCollapsed: false });
+    });
+
+    const { rerender } = render(
+      <MemoryRouter>
+        <TopBar />
+      </MemoryRouter>
+    );
+
+    const topBar = screen.getByTestId("top-bar");
+    expect(topBar).toHaveStyle({ left: "256px" });
+
+    act(() => {
+      useCanvasStore.setState({ sidebarCollapsed: true });
+    });
+    rerender(
+      <MemoryRouter>
+        <TopBar />
+      </MemoryRouter>
+    );
+
+    expect(topBar).toHaveStyle({ left: "64px" });
   });
 });

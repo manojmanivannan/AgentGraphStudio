@@ -1,10 +1,10 @@
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
-class AgentNodeInput(BaseModel):
+class AgentNodeBase(BaseModel):
     id: uuid.UUID
     name: str = "Agent"
     role: str = ""
@@ -16,8 +16,19 @@ class AgentNodeInput(BaseModel):
     enable_conversation_history: bool = False
     enable_rag: bool = False
     rag_chunk_size: int = 1000
+    is_entry_point: bool = False
     position_x: float = 0
     position_y: float = 0
+
+    @model_validator(mode="after")
+    def validate_plotting_for_workers_only(self) -> "AgentNodeBase":
+        if self.agent_type == "router" and self.enable_plotting:
+            raise ValueError("Plotting is only supported for worker agents, not Router agents.")
+        return self
+
+
+class AgentNodeInput(AgentNodeBase):
+    pass
 
 
 class AgentDocumentInput(BaseModel):
@@ -37,7 +48,7 @@ class AgentDocumentResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
-class AgentNodeResponse(AgentNodeInput):
+class AgentNodeResponse(AgentNodeBase):
     canvas_id: uuid.UUID
 
 
@@ -72,6 +83,11 @@ class CanvasNodesInput(BaseModel):
     tools: list[ToolNodeInput] = Field(default_factory=list)
 
 
+class CanvasNodesResponse(BaseModel):
+    agents: list[AgentNodeResponse] = Field(default_factory=list)
+    tools: list[ToolNodeResponse] = Field(default_factory=list)
+
+
 class CanvasSaveRequest(BaseModel):
     name: str = "Untitled Canvas"
     nodes: CanvasNodesInput = Field(default_factory=CanvasNodesInput)
@@ -87,7 +103,7 @@ class CanvasResponse(BaseModel):
     name: str
     created_at: datetime
     updated_at: datetime
-    nodes: CanvasNodesInput
+    nodes: CanvasNodesResponse
     edges: list[EdgeResponse]
 
     model_config = {"from_attributes": True}

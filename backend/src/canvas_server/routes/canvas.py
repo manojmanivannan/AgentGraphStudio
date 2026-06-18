@@ -32,7 +32,7 @@ canvas_router = APIRouter(prefix="/api/canvases", tags=["canvases"])
 def _canvas_to_response(canvas) -> CanvasResponse:
     from canvas_server.models.api import (
         AgentNodeResponse,
-        CanvasNodesInput,
+        CanvasNodesResponse,
         EdgeResponse,
         ToolNodeResponse,
     )
@@ -42,7 +42,7 @@ def _canvas_to_response(canvas) -> CanvasResponse:
         name=canvas.name,
         created_at=canvas.created_at,
         updated_at=canvas.updated_at,
-        nodes=CanvasNodesInput(
+        nodes=CanvasNodesResponse(
             agents=[
                 AgentNodeResponse(
                     id=n.id,
@@ -56,6 +56,7 @@ def _canvas_to_response(canvas) -> CanvasResponse:
                     enable_memory=n.enable_memory,
                     enable_conversation_history=n.enable_conversation_history,
                     enable_rag=n.enable_rag,
+                    rag_chunk_size=n.rag_chunk_size,
                     position_x=n.position_x,
                     position_y=n.position_y,
                 )

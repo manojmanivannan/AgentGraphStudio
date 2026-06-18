@@ -82,7 +82,7 @@ def chunk_text(text: str, max_chars: int) -> list[str]:
 
 
 def get_embedder() -> dspy.Embedder:
-    provider = settings.mem0_provider
+    provider = settings.llm_provider_type
     model_name = settings.mem0_embedder_model
 
     if provider and not model_name.startswith(f"{provider}/"):
@@ -290,7 +290,7 @@ async def _run_rag_search_impl(
     except Exception as e:
         err_msg = (
             f"RAG embedding generation failed. Please check your embedder configuration "
-            f"(provider: '{settings.mem0_provider}', model: '{settings.mem0_embedder_model}', "
+            f"(provider: '{settings.llm_provider_type}', model: '{settings.mem0_embedder_model}', "
             f"base URL: '{settings.llm_base_url}').\n"
             f"Details: {e}"
         )

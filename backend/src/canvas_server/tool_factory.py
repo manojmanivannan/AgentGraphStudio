@@ -218,7 +218,10 @@ def _ast_node_to_type_str(node: ast.expr) -> str:
 
 
 async def compile_tool_from_code(
-    name: str, code: str, dependencies: list[str] | None = None
+    name: str,
+    code: str,
+    dependencies: list[str] | None = None,
+    runtime_session_id: str | None = None,
 ):
     """Compile user tool code and return an async callable that executes in the sandbox.
 
@@ -260,14 +263,8 @@ async def compile_tool_from_code(
         """Executes the user's function in the Docker sandbox."""
         manager = await get_sandbox()
 
-        # IMPORTANT: The conversation_id should be passed here.
-        # Since this wrapper is created during setup(), we don't have the conversation_id yet.
-        # We rely on the fact that the CanvasRunner/ExecutionStrategy handles
-        # the session for the current conversation.
-
-        # For backward compatibility or standalone calls, we use "global".
-        # In production, the system should be refactored to pass the conversation_id.
-        session = manager.get_session("syntax_check_global", enable_plotting=False)
+        session_id = runtime_session_id or "syntax_check_global"
+        session = manager.get_session(session_id, enable_plotting=False)
         args_repr = ", ".join(f"{k}={repr(v)}" for k, v in kwargs.items())
 
         # JSON harness to capture the return value of the function

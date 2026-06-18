@@ -103,3 +103,67 @@ async def test_plot_provider_exception():
         result = await provider.generate_plot("plt.show()")
 
         assert "Error generating plot: Connection failed" in result
+
+
+@pytest.mark.asyncio
+async def test_plot_provider_success_db():
+    """Test plot generation successfully saves to database when conversation_repo is provided."""
+    mock_sandbox_manager = MagicMock()
+    mock_session = MagicMock()
+    mock_sandbox_manager.get_session.return_value = mock_session
+
+    mock_plot = PlotOutput(format=FileType.PNG, content_base64="bW9ja19iYXNlNjRfZGF0YQ==")
+    mock_result = ExecutionResult(
+        exit_code=0,
+        stdout="Plot generated",
+        stderr="",
+        plots=[mock_plot]
+    )
+    mock_session.run.return_value = mock_result
+
+    mock_repo = AsyncMock()
+    mock_record = MagicMock()
+    mock_record.id = "mocked-plot-uuid"
+    mock_repo.save_plot.return_value = mock_record
+
+    with patch("canvas_server.runner.plot_provider.get_sandbox", new_callable=AsyncMock) as mock_get_sandbox:
+        mock_get_sandbox.return_value = mock_sandbox_manager
+
+        provider = PlotProvider(conversation_id="8cf53a28-98cc-4d37-88eb-116dbec8e2cb", conversation_repo=mock_repo)
+        result_str = await provider.generate_plot("import matplotlib.pyplot as plt; plt.show()")
+
+        mock_get_sandbox.assert_called_once()
+        mock_sandbox_manager.get_session.assert_called_once_with("8cf53a28-98cc-4d37-88eb-116dbec8e2cb")
+        mock_session.__enter__.assert_called_once()
+        mock_session.run.assert_called_once_with("import matplotlib.pyplot as plt; plt.show()")
+        mock_session.__exit__.assert_called_once()
+
+        mock_repo.save_plot.assert_called_once()
+        assert "Plot generated" in result_str
+        assert "![Plot](/api/plots/mocked-plot-uuid)" in result_str
+
+
+def test_ensure_plots_in_result():
+    """Test ensure_plots_in_result extracts plot markdown and appends it if missing."""
+    from canvas_server.runner.execution import ensure_plots_in_result
+
+    # Case 1: Trajectory with no plots / no trajectory
+    assert ensure_plots_in_result(None, "no change") == "no change"
+
+    # Case 2: Plot present in trajectory, already in response
+    mock_prediction = MagicMock()
+    mock_prediction.trajectory = {
+        "observation_0": "matplotlib output\n\n![Plot](/api/plots/uuid123)"
+    }
+    assert ensure_plots_in_result(mock_prediction, "Check out the plot: ![Plot](/api/plots/uuid123)") == "Check out the plot: ![Plot](/api/plots/uuid123)"
+
+    # Case 3: Plot present in trajectory, missing in response -> should be appended
+    assert ensure_plots_in_result(mock_prediction, "Here is the summary of the plot.") == "Here is the summary of the plot.\n\n![Plot](/api/plots/uuid123)"
+
+    # Case 4: Multiple plots present in trajectory, missing in response -> all should be appended
+    mock_prediction.trajectory = {
+        "observation_0": "First plot: ![Plot](/api/plots/1)",
+        "observation_1": "Second plot: ![Plot](/api/plots/2)"
+    }
+    assert ensure_plots_in_result(mock_prediction, "Done.") == "Done.\n\n![Plot](/api/plots/1)\n![Plot](/api/plots/2)"
+

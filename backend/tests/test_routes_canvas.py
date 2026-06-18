@@ -67,6 +67,8 @@ class TestSaveCanvas:
                         "name": "AgentA",
                         "model_name": "ollama:llama3.1",
                         "agent_type": "worker",
+                        "enable_rag": True,
+                        "rag_chunk_size": 1337,
                         "position_x": 100,
                         "position_y": 200,
                     },
@@ -93,6 +95,11 @@ class TestSaveCanvas:
         assert len(data["nodes"]["tools"]) == 1
         assert len(data["edges"]) == 1
         assert data["nodes"]["agents"][0]["name"] == "AgentA"
+        assert data["nodes"]["agents"][0]["rag_chunk_size"] == 1337
+
+        get_resp = await test_client.get(f"/api/canvases/{cid}")
+        assert get_resp.status_code == 200
+        assert get_resp.json()["nodes"]["agents"][0]["rag_chunk_size"] == 1337
 
     async def test_save_missing_canvas(self, test_client, fresh_db):
         resp = await test_client.put(

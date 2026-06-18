@@ -38,6 +38,7 @@ class AgentFactory:
         edges: list,
         agent_names: dict[uuid.UUID, str] | None = None,
         conversation_id: str | None = None,
+        conversation_repo = None,
     ):
         self._lm = lm
         self._tool_registry = tool_registry
@@ -45,6 +46,7 @@ class AgentFactory:
         self._edges = edges
         self._agent_names = agent_names or {}
         self._conversation_id = conversation_id
+        self._conversation_repo = conversation_repo
 
     # ------------------------------------------------------------------
     # DSPy signature
@@ -97,6 +99,14 @@ class AgentFactory:
                 "or returns a markdown image link (e.g. `![Plot](/api/static/plots/...)`), "
                 "you MUST preserve this image markdown link exactly and include it "
                 "in your final answer/response to the user. Do not omit, summarize, or modify the image link."
+            )
+
+        if getattr(agent_node, "enable_plotting", False):
+            full_instructions += (
+                "\n\n[CRITICAL SYSTEM RULE] If you call the plotting tool `generate_plot` and it returns "
+                "a markdown image link (e.g. `![Plot](/api/plots/...)`), you MUST preserve this image "
+                "markdown link exactly and include it in your final answer/response (process_result). "
+                "Do not omit, summarize, or modify the image link."
             )
 
         if self._memory_manager.needs_memory(agent_node):
@@ -172,7 +182,7 @@ class AgentFactory:
             )
 
         if getattr(agent_node, "enable_plotting", False) and self._conversation_id:
-            plot_provider = PlotProvider(self._conversation_id)
+            plot_provider = PlotProvider(self._conversation_id, self._conversation_repo)
             tools.append(plot_provider.generate_plot)
 
 
@@ -248,10 +258,6 @@ class AgentFactory:
                     memory_provider.get_all_memories,
                 ]
             )
-
-        if getattr(agent_node, "enable_plotting", False) and self._conversation_id:
-            plot_provider = PlotProvider(self._conversation_id)
-            tools.append(plot_provider.generate_plot)
 
 
         handoff_targets = await self._get_handoff_target_ids(agent_node.id)

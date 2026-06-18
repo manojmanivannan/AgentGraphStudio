@@ -13,7 +13,6 @@ import {
   AlertCircle,
   FolderKanban,
   Activity,
-  ChevronLeft,
 } from "lucide-react";
 import { useCanvasStore } from "@/store/canvasStore";
 import { useThemeStore } from "@/store/themeStore";
@@ -27,6 +26,7 @@ import {
   apiOrigin,
 } from "@/lib/api";
 import type { ConversationSummary, Message, ExecutionEvent, CanvasResponse } from "@/types";
+import { executionEventToMessage } from "./executionEventMessage";
 
 const WS_BASE = `ws://${import.meta.env.VITE_API_HOST || "localhost:8000"}`;
 
@@ -456,97 +456,32 @@ export default function ChatPage() {
         }
 
         if (event.type === "error") {
-          const errMsg: Message = {
-            id: crypto.randomUUID(),
-            conversation_id: convId,
-            role: "system",
-            content: event.message,
-            agent_name: event.agent ?? null,
-            node_id: event.node_id ?? null,
-            event_type: "error",
-            created_at: new Date().toISOString(),
-          };
-          addMessageLocal(errMsg);
+          const errMsg = executionEventToMessage(event, {
+            conversationId: convId,
+            messageId: crypto.randomUUID(),
+            createdAt: new Date().toISOString(),
+          });
+          if (errMsg) {
+            addMessageLocal(errMsg);
+          }
           setRunning(false);
           setActiveNodeId(null);
           return;
         }
 
-        if (event.type === "warning") {
-          const warnMsg: Message = {
-            id: crypto.randomUUID(),
-            conversation_id: convId,
-            role: "system",
-            content: event.message,
-            agent_name: event.agent ?? null,
-            node_id: event.node_id ?? null,
-            event_type: "warning",
-            created_at: new Date().toISOString(),
-          };
-          addMessageLocal(warnMsg);
+        const message = executionEventToMessage(event, {
+          conversationId: convId,
+          messageId: crypto.randomUUID(),
+          createdAt: new Date().toISOString(),
+        });
+        if (message) {
+          addMessageLocal(message);
         }
 
         if (event.node_id) {
           setActiveNodeId(event.node_id);
         }
 
-        if (event.type === "final_answer") {
-          const msg: Message = {
-            id: crypto.randomUUID(),
-            conversation_id: convId,
-            role: "assistant",
-            content: event.content,
-            agent_name: event.agent ?? null,
-            node_id: event.node_id ?? null,
-            event_type: "final_answer",
-            created_at: new Date().toISOString(),
-          };
-          addMessageLocal(msg);
-        }
-
-        if (event.type === "thought") {
-          const msg: Message = {
-            id: crypto.randomUUID(),
-            conversation_id: convId,
-            role: "assistant",
-            content: event.content,
-            agent_name: event.agent,
-            node_id: event.node_id ?? null,
-            event_type: "thought",
-            created_at: new Date().toISOString(),
-          };
-          addMessageLocal(msg);
-        }
-
-        if (event.type === "handoff") {
-          const msg: Message = {
-            id: crypto.randomUUID(),
-            conversation_id: convId,
-            role: "system",
-            content: `Delegating to ${event.to}...`,
-            agent_name: event.from,
-            node_id: event.node_id ?? null,
-            event_type: "handoff",
-            created_at: new Date().toISOString(),
-          };
-          addMessageLocal(msg);
-        }
-
-        if (event.type === "tool_result") {
-          const toolName = event.tool ?? "";
-          const isHandoffTool = toolName.startsWith("transfer_to_");
-          const msg: Message = {
-            id: crypto.randomUUID(),
-            conversation_id: convId,
-            role: "assistant",
-            content: event.output,
-            agent_name: event.tool?.replace("transfer_to_", "") ?? event.agent,
-            node_id: event.node_id ?? null,
-            event_type: isHandoffTool ? "response" : "tool_result",
-            created_at: new Date().toISOString(),
-          };
-          addMessageLocal(msg);
-        }
       };
 
       ws.onerror = () => {
@@ -597,12 +532,12 @@ export default function ChatPage() {
       ? `flex items-center justify-center w-10 h-10 mx-auto rounded-lg transition-all ${
           isActive
             ? "bg-[var(--color-elevated)] text-[var(--color-text-primary)] border border-[var(--color-border-default)]"
-            : "text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-elevated)]"
+            : "text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-elevated)] border border-transparent"
         }`
-      : `flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+      : `w-full flex items-center gap-2.5 px-3 h-10 rounded-lg text-xs font-medium transition-all whitespace-nowrap ${
           isActive
             ? "bg-[var(--color-elevated)] text-[var(--color-text-primary)] border border-[var(--color-border-default)]"
-            : "text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-elevated)]"
+            : "text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-elevated)] border border-transparent"
         }`;
   };
 
@@ -617,10 +552,15 @@ export default function ChatPage() {
         sidebarCollapsed ? "w-16" : "w-64"
       }`}>
         {/* Sidebar Header */}
-        <div className={`p-4 border-b border-[var(--color-border-subtle)] flex flex-col gap-2 ${sidebarCollapsed ? "items-center" : ""}`}>
+        <div className="pt-4 pb-4 px-3 border-b border-[var(--color-border-subtle)] flex flex-col gap-2">
           {!sidebarCollapsed ? (
             <div className="flex items-center justify-between mb-2 w-full">
-              <div className="flex items-center gap-2">
+              <button
+                onClick={() => setSidebarCollapsed(true)}
+                data-testid="collapse-sidebar"
+                className="flex items-center gap-2 cursor-pointer hover:opacity-80 active:scale-95 transition-all duration-200 w-full text-left"
+                title="Collapse Sidebar"
+              >
                 <img
                   src={theme === "dark" ? "/agent_graph_studio_logo_white.png" : "/agent_graph_studio_logo_dark.png"}
                   alt="Logo"
@@ -629,41 +569,32 @@ export default function ChatPage() {
                 <span className="font-bold text-[14px] tracking-tight text-[var(--color-text-primary)]">
                   AgentGraph Studio
                 </span>
-              </div>
-              <button
-                onClick={() => setSidebarCollapsed(true)}
-                data-testid="collapse-sidebar"
-                className="p-1 rounded hover:bg-[var(--color-elevated)] text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)] transition-colors cursor-pointer"
-                title="Collapse Sidebar"
-              >
-                <ChevronLeft className="w-4 h-4" />
               </button>
             </div>
           ) : (
-            <div className="flex flex-col items-center gap-3 mb-2 w-full">
-              <img
-                src={theme === "dark" ? "/agent_graph_studio_logo_white.png" : "/agent_graph_studio_logo_dark.png"}
-                alt="Logo"
-                className="h-6 w-auto object-contain"
-              />
+            <div className="flex justify-center mb-2 w-full">
               <button
                 onClick={() => setSidebarCollapsed(false)}
                 data-testid="expand-sidebar"
-                className="p-1.5 rounded hover:bg-[var(--color-elevated)] text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)] transition-colors cursor-pointer"
+                className="cursor-pointer hover:opacity-80 active:scale-95 transition-all duration-200"
                 title="Expand Sidebar"
               >
-                <ChevronRight className="w-4 h-4" />
+                <img
+                  src={theme === "dark" ? "/agent_graph_studio_logo_white.png" : "/agent_graph_studio_logo_dark.png"}
+                  alt="Logo"
+                  className="h-6 w-auto object-contain"
+                />
               </button>
             </div>
           )}
 
-          <div className="space-y-1 w-full">
+          <div className="space-y-1.5 w-full">
             <Link
               to="/"
               className={navItemClass("/")}
               title="Home"
             >
-              <Home className="w-4 h-4 text-[var(--color-text-tertiary)] shrink-0" />
+              <Home className="w-4 h-4 text-[var(--color-info)] shrink-0" />
               {!sidebarCollapsed && "Home"}
             </Link>
             {canvasId && (
@@ -672,7 +603,7 @@ export default function ChatPage() {
                 className={navItemClass(`/canvas/${canvasId}`)}
                 title="Canvas Editor"
               >
-                <Layout className="w-4 h-4 text-[var(--color-text-tertiary)] shrink-0" />
+                <Layout className="w-4 h-4 text-[var(--color-accent)] shrink-0" />
                 {!sidebarCollapsed && "Visual Canvas"}
               </Link>
             )}
@@ -680,7 +611,7 @@ export default function ChatPage() {
               className={navItemClass("/chat")}
               title="Agent Chat"
             >
-              <MessageSquare className="w-4 h-4 text-[var(--color-text-tertiary)] shrink-0" />
+              <MessageSquare className="w-4 h-4 text-[var(--color-agent)] shrink-0" />
               {!sidebarCollapsed && "Agent Chat"}
             </button>
             <button
@@ -688,18 +619,18 @@ export default function ChatPage() {
               className={navItemClass("/mlflow")}
               title="Observability"
             >
-              <Activity className="w-4 h-4 text-[var(--color-text-tertiary)] shrink-0" />
+              <Activity className="w-4 h-4 text-[var(--color-success)] shrink-0" />
               {!sidebarCollapsed && "Observability"}
             </button>
           </div>
         </div>
 
         {/* Sidebar Middle - Conversations List */}
-        <div className="flex-1 overflow-y-auto p-2 space-y-1 w-full">
+        <div className="flex-1 overflow-y-auto p-3 space-y-1.5 w-full">
           {sidebarCollapsed ? (
             <div className="border-t border-[var(--color-border-subtle)] my-2" />
           ) : (
-            <div className="px-2 py-1.5 text-[10px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-[0.08em]">
+            <div className="px-2 py-1.5 text-[10px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-[0.08em] whitespace-nowrap">
               Recent Chats
             </div>
           )}
@@ -717,11 +648,11 @@ export default function ChatPage() {
                 className={sidebarCollapsed
                   ? `flex items-center justify-center w-10 h-10 mx-auto rounded-lg cursor-pointer transition-all duration-150 ${isActive
                       ? "bg-[var(--color-elevated)] border border-[var(--color-border-default)] text-[var(--color-text-primary)]"
-                      : "hover:bg-[var(--color-overlay)]/40 text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
+                      : "hover:bg-[var(--color-overlay)]/40 text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] border border-transparent"
                     }`
-                  : `group flex items-center justify-between px-2 py-1.5 rounded-lg cursor-pointer transition-all duration-150 ${isActive
+                  : `group flex items-center justify-between px-3 h-10 rounded-lg cursor-pointer transition-all duration-150 ${isActive
                       ? "bg-[var(--color-elevated)] border border-[var(--color-border-default)] text-[var(--color-text-primary)]"
-                      : "hover:bg-[var(--color-overlay)]/40 text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
+                      : "hover:bg-[var(--color-overlay)]/40 text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] border border-transparent"
                     }`
                 }
                 onClick={() => navigate(`/chat/${c.id}`)}
@@ -758,12 +689,12 @@ export default function ChatPage() {
             disabled={!canvasId}
             className={sidebarCollapsed
               ? "btn-primary w-10 h-10 p-0 flex items-center justify-center rounded-lg"
-              : "w-full btn-primary flex items-center justify-center gap-1.5 py-2 text-xs"
+              : "w-full btn-primary flex items-center justify-center gap-1.5 h-10 text-xs whitespace-nowrap"
             }
             title="New Conversation"
           >
             <Plus className="w-3.5 h-3.5 shrink-0" />
-            {!sidebarCollapsed && <span>New Conversation</span>}
+            {!sidebarCollapsed && <span className="whitespace-nowrap">New Conversation</span>}
           </button>
         </div>
       </aside>

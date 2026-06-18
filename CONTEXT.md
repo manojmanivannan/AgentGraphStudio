@@ -8,6 +8,8 @@ A visual tool for composing AI agent workflows. Users wire agents and tools toge
 A named, persisted workspace containing a graph of nodes and edges. A user works on one Canvas at a time.
 _Avoid_: Board, diagram, flow, graph, workspace
 
+Canvas responses use a separate response envelope from canvas save requests, so node capability fields are returned explicitly instead of being implied by the input shape.
+
 **Agent Node**:
 A visual block on the Canvas representing an AI agent with a name, role, instructions, and agent type (worker or router).
 _Avoid_: Agent, block, step

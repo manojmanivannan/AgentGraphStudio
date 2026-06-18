@@ -13,8 +13,6 @@ import {
   MessageSquare,
   Home,
   Activity,
-  ChevronLeft,
-  ChevronRight,
 } from "lucide-react";
 import { useCanvasStore } from "@/store/canvasStore";
 import { useThemeStore } from "@/store/themeStore";
@@ -25,6 +23,7 @@ import {
   listConversations,
   createConversation,
 } from "@/lib/api";
+import { decodeCanvasResponse, encodeCanvasGraph } from "@/lib/canvasGraphCodec";
 import type { CanvasSavePayload } from "@/types";
 import { RailPopover } from "./RailPopover";
 
@@ -32,7 +31,6 @@ export function SidebarRail() {
   const canvasId = useCanvasStore((s) => s.canvasId);
   const theme = useThemeStore((s) => s.theme);
   const canvasName = useCanvasStore((s) => s.canvasName);
-  const nodes = useCanvasStore((s) => s.nodes);
   const setNodes = useCanvasStore((s) => s.setNodes);
   const setEdges = useCanvasStore((s) => s.setEdges);
   const setCanvas = useCanvasStore((s) => s.setCanvas);
@@ -64,6 +62,7 @@ export function SidebarRail() {
   };
 
   const addAgent = (agentType: "worker" | "router") => {
+    const nodes = useCanvasStore.getState().nodes;
     const newId = uuidv4();
     const newNode = {
       id: newId,
@@ -83,6 +82,7 @@ export function SidebarRail() {
   };
 
   const addTool = () => {
+    const nodes = useCanvasStore.getState().nodes;
     const newId = uuidv4();
     const newNode = {
       id: newId,
@@ -121,46 +121,12 @@ export function SidebarRail() {
     }
 
     const edges = useCanvasStore.getState().edges;
-    const payload: CanvasSavePayload = {
-      name: canvasName,
-      nodes: {
-        agents: nodes
-          .filter((n) => n.type === "agent")
-          .map((n) => ({
-            id: n.id,
-            name: (n.data as any).name as string,
-            role: ((n.data as any).role as string) || "",
-            instructions: ((n.data as any).instructions as string) || "",
-            model_name: ((n.data as any).modelName as string) || "ollama:llama3.1",
-            agent_type: ((n.data as any).agentType as string) || "worker",
-            enable_plotting: ((n.data as any).enablePlotting as boolean) ?? false,
-            enable_memory: ((n.data as any).enableMemory as boolean) ?? false,
-            enable_conversation_history:
-              ((n.data as any).enableConversationHistory as boolean) ?? false,
-            enable_rag: ((n.data as any).enableRag as boolean) ?? false,
-            rag_chunk_size: ((n.data as any).ragChunkSize as number) ?? 1000,
-            position_x: n.position.x,
-            position_y: n.position.y,
-          })),
-        tools: nodes
-          .filter((n) => n.type === "tool")
-          .map((n) => ({
-            id: n.id,
-            name: (n.data as any).name as string,
-            code: ((n.data as any).code as string) || "",
-            packages: ((n.data as any).packages as string) || "",
-            args: ((n.data as any).args as []) || [],
-            position_x: n.position.x,
-            position_y: n.position.y,
-          })),
-      },
-      edges: edges.map((e) => ({
-        id: e.id,
-        source_node_id: e.source,
-        target_node_id: e.target,
-        edge_type: ((e.data as any)?.edgeType as string) || "tool_access",
-      })),
-    };
+    const currentNodes = useCanvasStore.getState().nodes;
+    const payload: CanvasSavePayload = encodeCanvasGraph({
+      canvasName,
+      nodes: currentNodes,
+      edges,
+    });
 
     const blob = new Blob([JSON.stringify(payload, null, 2)], {
       type: "application/json",
@@ -188,43 +154,9 @@ export function SidebarRail() {
 
       setCanvas(imported.id, imported.name);
 
-      const agentNodes = imported.nodes.agents.map((a) => ({
-        id: a.id,
-        type: "agent" as const,
-        position: { x: a.position_x, y: a.position_y },
-        style: { width: 280 },
-        data: {
-          id: a.id,
-          name: a.name,
-          role: a.role,
-          instructions: a.instructions,
-          modelName: a.model_name,
-          agentType: a.agent_type,
-          enablePlotting: a.enable_plotting,
-          enableMemory: a.enable_memory,
-          enableConversationHistory: a.enable_conversation_history,
-          enableRag: a.enable_rag,
-          ragChunkSize: a.rag_chunk_size,
-        },
-      }));
-
-      const toolNodes = imported.nodes.tools.map((t) => ({
-        id: t.id,
-        type: "tool" as const,
-        position: { x: t.position_x, y: t.position_y },
-        style: { width: 220 },
-        data: { id: t.id, name: t.name, code: t.code, packages: t.packages },
-      }));
-
-      setNodes([...agentNodes, ...toolNodes]);
-      setEdges(
-        imported.edges.map((e) => ({
-          id: e.id,
-          source: e.source_node_id,
-          target: e.target_node_id,
-          data: { edgeType: e.edge_type },
-        }))
-      );
+      const decoded = decodeCanvasResponse(imported);
+      setNodes(decoded.nodes);
+      setEdges(decoded.edges);
     } catch (err) {
       console.error("Failed to import canvas:", err);
     }
@@ -262,34 +194,34 @@ export function SidebarRail() {
       ? `flex items-center justify-center w-10 h-10 mx-auto rounded-lg transition-all ${
           isActive
             ? "bg-[var(--color-elevated)] text-[var(--color-text-primary)] border border-[var(--color-border-default)]"
-            : "text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-elevated)]"
+            : "text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-elevated)] border border-transparent"
         }`
-      : `flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+      : `w-full flex items-center gap-2.5 px-3 h-10 rounded-lg text-xs font-medium transition-all whitespace-nowrap ${
           isActive
             ? "bg-[var(--color-elevated)] text-[var(--color-text-primary)] border border-[var(--color-border-default)]"
-            : "text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-elevated)]"
+            : "text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-elevated)] border border-transparent"
         }`;
   };
 
   const workerBtnClass = sidebarCollapsed
     ? "flex items-center justify-center w-10 h-10 mx-auto rounded-lg text-[var(--color-text-secondary)] hover:text-[var(--color-accent)] hover:bg-[var(--color-accent-subtle)] transition-all cursor-pointer"
-    : "w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium text-[var(--color-text-secondary)] hover:text-[var(--color-accent)] hover:bg-[var(--color-accent-subtle)] transition-colors text-left cursor-pointer";
+    : "w-full flex items-center gap-2.5 px-3 h-10 rounded-lg text-xs font-medium text-[var(--color-text-secondary)] hover:text-[var(--color-accent)] hover:bg-[var(--color-accent-subtle)] transition-all text-left cursor-pointer whitespace-nowrap";
 
   const routerBtnClass = sidebarCollapsed
     ? "flex items-center justify-center w-10 h-10 mx-auto rounded-lg text-[var(--color-text-secondary)] hover:text-[var(--color-agent)] hover:bg-[var(--color-agent-subtle)] transition-all cursor-pointer"
-    : "w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium text-[var(--color-text-secondary)] hover:text-[var(--color-agent)] hover:bg-[var(--color-agent-subtle)] transition-colors text-left cursor-pointer";
+    : "w-full flex items-center gap-2.5 px-3 h-10 rounded-lg text-xs font-medium text-[var(--color-text-secondary)] hover:text-[var(--color-agent)] hover:bg-[var(--color-agent-subtle)] transition-all text-left cursor-pointer whitespace-nowrap";
 
   const toolBtnClass = sidebarCollapsed
     ? "flex items-center justify-center w-10 h-10 mx-auto rounded-lg text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-elevated)] transition-all cursor-pointer"
-    : "w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-elevated)] transition-colors text-left cursor-pointer";
+    : "w-full flex items-center gap-2.5 px-3 h-10 rounded-lg text-xs font-medium text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-elevated)] transition-all text-left cursor-pointer whitespace-nowrap";
 
   const importExportBtnClass = sidebarCollapsed
     ? "flex items-center justify-center w-10 h-10 mx-auto rounded-lg text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-elevated)] transition-all cursor-pointer"
-    : "w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-elevated)] transition-colors text-left cursor-pointer";
+    : "w-full flex items-center gap-2.5 px-3 h-10 rounded-lg text-xs font-medium text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-elevated)] transition-all text-left cursor-pointer whitespace-nowrap";
 
   const clearBtnClass = sidebarCollapsed
     ? "flex items-center justify-center w-10 h-10 mx-auto rounded-lg text-[var(--color-text-secondary)] hover:text-[var(--color-danger)] hover:bg-[var(--color-danger-subtle)] transition-all cursor-pointer"
-    : "w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium text-[var(--color-text-secondary)] hover:text-[var(--color-danger)] hover:bg-[var(--color-danger-subtle)] transition-colors text-left cursor-pointer";
+    : "w-full flex items-center gap-2.5 px-3 h-10 rounded-lg text-xs font-medium text-[var(--color-text-secondary)] hover:text-[var(--color-danger)] hover:bg-[var(--color-danger-subtle)] transition-all text-left cursor-pointer whitespace-nowrap";
 
   return (
     <aside
@@ -299,10 +231,15 @@ export function SidebarRail() {
       } border-r border-[var(--color-border-subtle)] bg-[var(--color-surface)] flex flex-col z-40 transition-[width] duration-300 ease-in-out overflow-hidden`}
     >
       {/* Sidebar Header */}
-      <div className={`p-4 border-b border-[var(--color-border-subtle)] flex flex-col gap-2 ${sidebarCollapsed ? "items-center" : ""}`}>
+      <div className="pt-4 pb-4 px-3 border-b border-[var(--color-border-subtle)] flex flex-col gap-2">
         {!sidebarCollapsed ? (
           <div className="flex items-center justify-between mb-2 w-full">
-            <div className="flex items-center gap-2">
+            <button
+              onClick={() => setSidebarCollapsed(true)}
+              data-testid="collapse-sidebar"
+              className="flex items-center gap-2 cursor-pointer hover:opacity-80 active:scale-95 transition-all duration-200 w-full text-left"
+              title="Collapse Sidebar"
+            >
               <img
                 src={theme === "dark" ? "/agent_graph_studio_logo_white.png" : "/agent_graph_studio_logo_dark.png"}
                 alt="Logo"
@@ -311,41 +248,32 @@ export function SidebarRail() {
               <span className="font-bold text-[14px] tracking-tight text-[var(--color-text-primary)]">
                 AgentGraph Studio
               </span>
-            </div>
-            <button
-              onClick={() => setSidebarCollapsed(true)}
-              data-testid="collapse-sidebar"
-              className="p-1 rounded hover:bg-[var(--color-elevated)] text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)] transition-colors cursor-pointer"
-              title="Collapse Sidebar"
-            >
-              <ChevronLeft className="w-4 h-4" />
             </button>
           </div>
         ) : (
-          <div className="flex flex-col items-center gap-3 mb-2 w-full">
-            <img
-              src={theme === "dark" ? "/agent_graph_studio_logo_white.png" : "/agent_graph_studio_logo_dark.png"}
-              alt="Logo"
-              className="h-6 w-auto object-contain"
-            />
+          <div className="flex justify-center mb-2 w-full">
             <button
               onClick={() => setSidebarCollapsed(false)}
               data-testid="expand-sidebar"
-              className="p-1.5 rounded hover:bg-[var(--color-elevated)] text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)] transition-colors cursor-pointer"
+              className="cursor-pointer hover:opacity-80 active:scale-95 transition-all duration-200"
               title="Expand Sidebar"
             >
-              <ChevronRight className="w-4 h-4" />
+              <img
+                src={theme === "dark" ? "/agent_graph_studio_logo_white.png" : "/agent_graph_studio_logo_dark.png"}
+                alt="Logo"
+                className="h-6 w-auto object-contain"
+              />
             </button>
           </div>
         )}
 
-        <div className="space-y-1 w-full">
+        <div className="space-y-1.5 w-full">
           <Link
             to="/"
             className={navItemClass("/")}
             title="Home"
           >
-            <Home className="w-4 h-4 text-[var(--color-text-tertiary)] shrink-0" />
+            <Home className="w-4 h-4 text-[var(--color-info)] shrink-0" />
             {!sidebarCollapsed && "Home"}
           </Link>
           {canvasId && (
@@ -354,7 +282,7 @@ export function SidebarRail() {
               className={navItemClass(`/canvas/${canvasId}`)}
               title="Canvas Editor"
             >
-              <Layout className="w-4 h-4 text-[var(--color-text-tertiary)] shrink-0" />
+              <Layout className="w-4 h-4 text-[var(--color-accent)] shrink-0" />
               {!sidebarCollapsed && "Visual Canvas"}
             </Link>
           )}
@@ -364,7 +292,7 @@ export function SidebarRail() {
             className={navItemClass("/chat", "chat-toggle")}
             title="Agent Chat"
           >
-            <MessageSquare className="w-4 h-4 text-[var(--color-text-tertiary)] shrink-0" />
+            <MessageSquare className="w-4 h-4 text-[var(--color-agent)] shrink-0" />
             {!sidebarCollapsed && "Agent Chat"}
           </button>
           <button
@@ -373,20 +301,20 @@ export function SidebarRail() {
             className={navItemClass("/mlflow")}
             title="Observability"
           >
-            <Activity className="w-4 h-4 text-[var(--color-text-tertiary)] shrink-0" />
+            <Activity className="w-4 h-4 text-[var(--color-success)] shrink-0" />
             {!sidebarCollapsed && "Observability"}
           </button>
         </div>
       </div>
 
       {/* Sidebar Content (Middle actions) */}
-      <div className="flex-1 p-4 space-y-4 overflow-y-auto w-full">
+      <div className="flex-1 pt-4 pb-4 px-3 space-y-4 overflow-y-auto w-full">
         {/* Build Section */}
         <div>
           {sidebarCollapsed ? (
             <div className="border-t border-[var(--color-border-subtle)] my-2" />
           ) : (
-            <h3 className="text-[10px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-wider mb-2">
+            <h3 className="text-[10px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-wider mb-2 whitespace-nowrap">
               Build
             </h3>
           )}
@@ -415,7 +343,7 @@ export function SidebarRail() {
               className={toolBtnClass}
               title="Add Custom Tool"
             >
-              <Wrench className="w-4 h-4 text-[var(--color-text-tertiary)] shrink-0" />
+              <Wrench className="w-4 h-4 text-[var(--color-secondary)] shrink-0" />
               {!sidebarCollapsed && "Add Custom Tool"}
             </button>
           </div>
@@ -426,7 +354,7 @@ export function SidebarRail() {
           {sidebarCollapsed ? (
             <div className="border-t border-[var(--color-border-subtle)] my-2" />
           ) : (
-            <h3 className="text-[10px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-wider mb-2">
+            <h3 className="text-[10px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-wider mb-2 whitespace-nowrap">
               Manage Canvas
             </h3>
           )}
@@ -437,7 +365,7 @@ export function SidebarRail() {
               className={importExportBtnClass}
               title="Import Agent Canvas"
             >
-              <Upload className="w-4 h-4 text-[var(--color-text-tertiary)] shrink-0" />
+              <Upload className="w-4 h-4 text-[var(--color-text-secondary)] shrink-0" />
               {!sidebarCollapsed && "Import Agent Canvas"}
             </button>
             <button
@@ -446,7 +374,7 @@ export function SidebarRail() {
               className={importExportBtnClass}
               title="Export Agent Canvas"
             >
-              <Download className="w-4 h-4 text-[var(--color-text-tertiary)] shrink-0" />
+              <Download className="w-4 h-4 text-[var(--color-text-secondary)] shrink-0" />
               {!sidebarCollapsed && "Export Agent Canvas"}
             </button>
 

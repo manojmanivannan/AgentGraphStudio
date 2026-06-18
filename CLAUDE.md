@@ -107,8 +107,9 @@ and edges on a ReactFlow canvas, then run workflows against a FastAPI + DSPy bac
 **Backend:**
 1. Add column in `models/canvas.py` (e.g., `temperature: Mapped[float]`)
 2. Run `uv run alembic revision --autogenerate -m "add temperature to agent_nodes"`
-3. Add field to `AgentNodeInput` / `AgentNodeResponse` in `models/api.py`
+3. Add field to the shared agent node base plus `AgentNodeResponse` in `models/api.py`
 4. Include in `save_nodes_and_edges()` in `repos/canvas_repo.py`
+5. Update `routes/canvas.py` so GET / PUT canvas responses return the new field
 
 **Frontend:**
 1. Add field to `AgentNodeData` in `types/index.ts`

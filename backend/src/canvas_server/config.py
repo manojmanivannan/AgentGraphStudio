@@ -7,9 +7,11 @@ class Settings(BaseSettings):
     llm_base_url: str = "http://192.168.1.120:11434"
     llm_api_key: str = ""
     llm_model: str = "ollama_chat/gemma4:31b"
+    llm_title_timeout_seconds: float = 8.0
+    llm_validation_timeout_seconds: float = 12.0
 
     # Memory (mem0) settings
-    mem0_provider: str = "ollama"
+    llm_provider_type: str = "ollama"
     mem0_llm_model: str = "gemma4:31b"
     mem0_embedder_model: str = "nomic-embed-text"
     mem0_embedder_dimensions: int = 768

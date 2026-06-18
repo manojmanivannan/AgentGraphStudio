@@ -66,6 +66,7 @@ graph TD
 *   **💾 Agent Memory (mem0 + Qdrant)**: Maintain context across messages. Leverages a thread-safe, in-process shared `mem0` instance connected to a local Qdrant vector store.
 *   **WebSocket Streaming**: Watch thoughts, tool starts, tool results, handoffs, and final answers stream live. Canvas nodes glow green dynamically as they trigger.
 *   **📦 Portable ZIP Packages**: Export an entire canvas (layout, agent states, tool scripts, and attached RAG documents) as a single portable `.zip` bundle, or import it back to share it.
+*   **🧩 Explicit Canvas Response Shape**: Canvas GET and save responses use a distinct response envelope so agent capability fields like `rag_chunk_size` stay visible at the API seam.
 *   **📈 MLflow Observability**: Full execution transparency. Automatically trace DSPy pipelines, LLM prompt signatures, and tool outputs using integrated MLflow tracking.
 *   **🏷️ Automatic Conversation Naming**: Automatically titles new threads using a quick LLM call on the first message, with a fallback to the user's initial prompt.
 
@@ -159,7 +160,7 @@ Create a `backend/.env` file. Refer to `backend/.env.example` for templated setu
 | `DATABASE_URL` | `postgresql+asyncpg://...` | Database connection string. |
 | `LLM_BASE_URL` | `http://192.168.1.120:11434` | Ollama or provider LLM endpoint. |
 | `LLM_MODEL` | `ollama_chat/gemma4:31b` | Default inference LLM model for agents. |
-| `MEM0_PROVIDER` | `ollama` | Provider for memory indexing (`ollama`, `openai`). |
+| `LLM_PROVIDER_TYPE` | `ollama` | Provider for memory indexing (`ollama`, `openai`). |
 | `MEM0_LLM_MODEL` | `gemma4:31b` | Model used by the memory provider. |
 | `MEM0_EMBEDDER_MODEL`| `nomic-embed-text` | Embedding model for memory and RAG. |
 | `MEM0_EMBEDDER_DIMENSIONS`| `768` | Dimension count for embedding vector space. |

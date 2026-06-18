@@ -77,6 +77,7 @@ class CanvasRunner:
             edges=self.canvas.edges if self.canvas else [],
             agent_names={node.id: node.name for node in self.canvas.agent_nodes} if self.canvas else {},
             conversation_id=self._conversation.conversation_id,
+            conversation_repo=self.conversation_repo,
         )
 
         # ---- runtime context and state management ----
@@ -162,7 +163,10 @@ class CanvasRunner:
 
         try:
             with dspy.context(lm=self._lm):
-                result = await self._lm.acall(prompt=prompt)
+                result = await self._lm.acall(
+                    prompt=prompt,
+                    timeout=settings.llm_title_timeout_seconds,
+                )
         except Exception as exc:
             logger.warning(
                 "Failed to generate conversation title: %s", exc, exc_info=True
@@ -208,13 +212,31 @@ class CanvasRunner:
         # Proactively validate LLM configuration (skipped in unit tests unless TEST_VALIDATE_LLM is set)
         if "pytest" not in sys.modules or os.environ.get("TEST_VALIDATE_LLM"):
             try:
-                await self._lm.acall(prompt="Test connection. Respond with 'ok'.", max_tokens=5)
+                await self._lm.acall(
+                    prompt="Test connection. Respond with 'ok'.",
+                    max_tokens=5,
+                    timeout=settings.llm_validation_timeout_seconds,
+                )
             except Exception as e:
                 err_details = str(e)
+                exc_type = type(e).__name__
+                is_401 = "401" in err_details or "Unauthorized" in err_details or "AuthenticationError" in exc_type
+                is_429 = "429" in err_details or "RateLimitError" in exc_type
                 if "<html" in err_details.lower() or "<!doctype" in err_details.lower():
                     err_details = (
                         "LLM/API returned an HTML error page. "
                         "Please check that your server URL, credentials, and settings are correct."
+                    )
+                elif is_401:
+                    err_details = (
+                        "401 Unauthorized — your API key may be invalid, expired, or over budget."
+                    )
+                elif is_429:
+                    err_details = "429 Too Many Requests — rate limit exceeded."
+                elif isinstance(e, TimeoutError):
+                    err_details = (
+                        f"LLM connectivity check timed out after "
+                        f"{settings.llm_validation_timeout_seconds}s."
                     )
                 elif len(err_details) > 300:
                     err_details = err_details[:300] + "..."
@@ -235,7 +257,15 @@ class CanvasRunner:
         await self._install_dependencies(self.canvas.tool_nodes)
 
         self._tool_registry = ToolRegistry()
-        await self._tool_registry.compile_all(self.canvas.tool_nodes)
+        runtime_session_id = (
+            str(self._conversation.conversation_id)
+            if self._conversation.conversation_id is not None
+            else None
+        )
+        await self._tool_registry.compile_all(
+            self.canvas.tool_nodes,
+            runtime_session_id=runtime_session_id,
+        )
         self.run_state.tool_registry = self._tool_registry
         # Sync tool state up to the runner for backward-compat access
         self.tools = self._tool_registry.tools
@@ -256,6 +286,7 @@ class CanvasRunner:
             edges=self.canvas.edges,
             agent_names={node.id: node.name for node in self.canvas.agent_nodes},
             conversation_id=self._conversation.conversation_id,
+            conversation_repo=self.conversation_repo,
         )
         self.run_state.agent_factory = self._agent_factory
 
@@ -302,12 +333,20 @@ class CanvasRunner:
 
         if all_packages:
             pm = PackageManager()
+            runtime_session_id = (
+                str(self._conversation.conversation_id)
+                if self._conversation.conversation_id is not None
+                else None
+            )
             logger.info(
                 "Installing tool dependencies: %s",
                 sorted(all_packages),
             )
             try:
-                await pm.install_packages(sorted(all_packages))
+                await pm.install_packages(
+                    sorted(all_packages),
+                    runtime_session_id=runtime_session_id,
+                )
                 logger.info("Tool dependencies installed successfully")
             except Exception as e:
                 logger.error("Failed to install tool dependencies: %s", e)
@@ -346,12 +385,14 @@ class CanvasRunner:
                 return RouterExecution(services)
             return WorkerExecution(services)
 
-        # No target agent: inspect the first agent's type
+        # No target agent: inspect the entry point agent's type
         # Routers aren't built during setup() — they're built lazily by
         # RouterExecution, so we must pick the right strategy here.
-        agent_ids = [n.id for n in self.canvas.agent_nodes]
-        first_node = self.node_map.get(agent_ids[0]) if agent_ids else None
-        if first_node and first_node.agent_type == "router":
+        entry_node = next((n for n in self.canvas.agent_nodes if getattr(n, "is_entry_point", False)), None)
+        if entry_node is None and self.canvas.agent_nodes:
+            entry_node = self.canvas.agent_nodes[0]
+
+        if entry_node and getattr(entry_node, "agent_type", None) == "router":
             return RouterExecution(services)
 
         # Legacy chain strategy for worker-only canvases
@@ -387,10 +428,13 @@ class CanvasRunner:
         history_messages = await self._conversation.load_messages()
         agent_ids = [n.id for n in self.canvas.agent_nodes]
 
+        entry_node = next((n for n in self.canvas.agent_nodes if getattr(n, "is_entry_point", False)), None)
+        default_agent_id = entry_node.id if entry_node else (agent_ids[0] if agent_ids else None)
+
         first_agent_id = (
             target_agent_id
             if target_agent_id
-            else (agent_ids[0] if agent_ids else None)
+            else default_agent_id
         )
 
         history_enabled_node_ids = {
@@ -434,7 +478,7 @@ class CanvasRunner:
         first_id = (
             target_agent_id
             if target_agent_id
-            else (agent_ids[0] if agent_ids else None)
+            else default_agent_id
         )
 
         final_text = None

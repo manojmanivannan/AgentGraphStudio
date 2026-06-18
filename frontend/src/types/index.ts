@@ -10,6 +10,7 @@ export interface AgentNodeData {
   enableConversationHistory?: boolean;
   enableRag?: boolean;
   ragChunkSize?: number;
+  isEntryPoint?: boolean;
 }
 
 export interface AgentDocument {
@@ -60,6 +61,7 @@ export interface CanvasSavePayload {
       enable_conversation_history: boolean;
       enable_rag: boolean;
       rag_chunk_size: number;
+      is_entry_point: boolean;
       position_x: number;
       position_y: number;
     }[];
@@ -100,6 +102,7 @@ export interface CanvasResponse {
       enable_conversation_history: boolean;
       enable_rag: boolean;
       rag_chunk_size: number;
+      is_entry_point: boolean;
       position_x: number;
       position_y: number;
     }>;
