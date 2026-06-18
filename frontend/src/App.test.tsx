@@ -258,6 +258,35 @@ describe("App — landing page", () => {
     expect(useCanvasStore.getState().canvasId).toBe("imported-zip");
   });
 
+  it("imports canvas JSON file and opens it", async () => {
+    const user = userEvent.setup();
+    server.use(
+      http.get("http://localhost:8000/api/canvases", () => HttpResponse.json([])),
+      http.post("http://localhost:8000/api/canvases/import", () =>
+        HttpResponse.json(mockCanvas({ id: "imported-json", name: "Imported JSON Canvas" }), { status: 201 })
+      ),
+      http.get("http://localhost:8000/api/canvases/imported-json", () =>
+        HttpResponse.json(mockCanvas({ id: "imported-json", name: "Imported JSON Canvas" }))
+      )
+    );
+
+    render(
+      <MemoryRouter initialEntries={["/"]}>
+        <App />
+      </MemoryRouter>
+    );
+
+    const file = new File(['{"name":"Imported JSON Canvas"}'], "canvas.json", { type: "application/json" });
+    const fileInput = screen.getByTestId("file-input");
+    await user.upload(fileInput, file);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("app-shell")).toBeInTheDocument();
+    });
+
+    expect(useCanvasStore.getState().canvasId).toBe("imported-json");
+  });
+
   it("supports multi-select mode and batch deletion", async () => {
     const user = userEvent.setup();
     const deletedIds: string[] = [];
