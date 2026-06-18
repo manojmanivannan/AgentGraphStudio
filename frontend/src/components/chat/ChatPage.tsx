@@ -594,7 +594,7 @@ export default function ChatPage() {
               className={navItemClass("/")}
               title="Home"
             >
-              <Home className="w-4 h-4 text-[var(--color-text-tertiary)] shrink-0" />
+              <Home className="w-4 h-4 text-[var(--color-info)] shrink-0" />
               {!sidebarCollapsed && "Home"}
             </Link>
             {canvasId && (
@@ -603,7 +603,7 @@ export default function ChatPage() {
                 className={navItemClass(`/canvas/${canvasId}`)}
                 title="Canvas Editor"
               >
-                <Layout className="w-4 h-4 text-[var(--color-text-tertiary)] shrink-0" />
+                <Layout className="w-4 h-4 text-[var(--color-accent)] shrink-0" />
                 {!sidebarCollapsed && "Visual Canvas"}
               </Link>
             )}
@@ -611,7 +611,7 @@ export default function ChatPage() {
               className={navItemClass("/chat")}
               title="Agent Chat"
             >
-              <MessageSquare className="w-4 h-4 text-[var(--color-text-tertiary)] shrink-0" />
+              <MessageSquare className="w-4 h-4 text-[var(--color-agent)] shrink-0" />
               {!sidebarCollapsed && "Agent Chat"}
             </button>
             <button
@@ -619,7 +619,7 @@ export default function ChatPage() {
               className={navItemClass("/mlflow")}
               title="Observability"
             >
-              <Activity className="w-4 h-4 text-[var(--color-text-tertiary)] shrink-0" />
+              <Activity className="w-4 h-4 text-[var(--color-success)] shrink-0" />
               {!sidebarCollapsed && "Observability"}
             </button>
           </div>

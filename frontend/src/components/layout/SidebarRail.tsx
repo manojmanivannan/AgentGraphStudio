@@ -273,7 +273,7 @@ export function SidebarRail() {
             className={navItemClass("/")}
             title="Home"
           >
-            <Home className="w-4 h-4 text-[var(--color-text-tertiary)] shrink-0" />
+            <Home className="w-4 h-4 text-[var(--color-info)] shrink-0" />
             {!sidebarCollapsed && "Home"}
           </Link>
           {canvasId && (
@@ -282,7 +282,7 @@ export function SidebarRail() {
               className={navItemClass(`/canvas/${canvasId}`)}
               title="Canvas Editor"
             >
-              <Layout className="w-4 h-4 text-[var(--color-text-tertiary)] shrink-0" />
+              <Layout className="w-4 h-4 text-[var(--color-accent)] shrink-0" />
               {!sidebarCollapsed && "Visual Canvas"}
             </Link>
           )}
@@ -292,7 +292,7 @@ export function SidebarRail() {
             className={navItemClass("/chat", "chat-toggle")}
             title="Agent Chat"
           >
-            <MessageSquare className="w-4 h-4 text-[var(--color-text-tertiary)] shrink-0" />
+            <MessageSquare className="w-4 h-4 text-[var(--color-agent)] shrink-0" />
             {!sidebarCollapsed && "Agent Chat"}
           </button>
           <button
@@ -301,7 +301,7 @@ export function SidebarRail() {
             className={navItemClass("/mlflow")}
             title="Observability"
           >
-            <Activity className="w-4 h-4 text-[var(--color-text-tertiary)] shrink-0" />
+            <Activity className="w-4 h-4 text-[var(--color-success)] shrink-0" />
             {!sidebarCollapsed && "Observability"}
           </button>
         </div>
@@ -343,7 +343,7 @@ export function SidebarRail() {
               className={toolBtnClass}
               title="Add Custom Tool"
             >
-              <Wrench className="w-4 h-4 text-[var(--color-text-tertiary)] shrink-0" />
+              <Wrench className="w-4 h-4 text-[var(--color-secondary)] shrink-0" />
               {!sidebarCollapsed && "Add Custom Tool"}
             </button>
           </div>
@@ -365,7 +365,7 @@ export function SidebarRail() {
               className={importExportBtnClass}
               title="Import Agent Canvas"
             >
-              <Upload className="w-4 h-4 text-[var(--color-text-tertiary)] shrink-0" />
+              <Upload className="w-4 h-4 text-[var(--color-text-secondary)] shrink-0" />
               {!sidebarCollapsed && "Import Agent Canvas"}
             </button>
             <button
@@ -374,7 +374,7 @@ export function SidebarRail() {
               className={importExportBtnClass}
               title="Export Agent Canvas"
             >
-              <Download className="w-4 h-4 text-[var(--color-text-tertiary)] shrink-0" />
+              <Download className="w-4 h-4 text-[var(--color-text-secondary)] shrink-0" />
               {!sidebarCollapsed && "Export Agent Canvas"}
             </button>
 
