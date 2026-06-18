@@ -152,6 +152,37 @@ describe("AgentEditor", () => {
     expect(screen.getByTestId("agent-enable-plotting")).toBeInTheDocument();
   });
 
+  it("does not show plotting toggle for router agents", async () => {
+    const user = userEvent.setup();
+    useCanvasStore.getState().setNodes([agentNode]);
+    useCanvasStore.getState().selectNode("agent-1");
+    render(<AgentEditor />);
+
+    // Worker: plotting toggle should be visible
+    expect(screen.getByTestId("agent-enable-plotting")).toBeInTheDocument();
+
+    // Switch to router: plotting toggle should disappear
+    await user.selectOptions(screen.getByTestId("agent-type-select"), "router");
+
+    expect(screen.queryByTestId("agent-enable-plotting")).not.toBeInTheDocument();
+  });
+
+  it("resets enablePlotting to false when agentType is changed to router", async () => {
+    const user = userEvent.setup();
+    const withPlotting = {
+      ...agentNode,
+      data: { ...agentNode.data, enablePlotting: true }
+    };
+    useCanvasStore.getState().setNodes([withPlotting]);
+    useCanvasStore.getState().selectNode("agent-1");
+    render(<AgentEditor />);
+
+    await user.selectOptions(screen.getByTestId("agent-type-select"), "router");
+
+    const stored = useCanvasStore.getState().nodes.find((n) => n.id === "agent-1");
+    expect(stored?.data.enablePlotting).toBe(false);
+  });
+
   it("plotting toggle updates store", async () => {
     const user = userEvent.setup();
     useCanvasStore.getState().setNodes([agentNode]);

@@ -251,10 +251,6 @@ class AgentFactory:
                 ]
             )
 
-        if getattr(agent_node, "enable_plotting", False) and self._conversation_id:
-            plot_provider = PlotProvider(self._conversation_id, self._conversation_repo)
-            tools.append(plot_provider.generate_plot)
-
 
         handoff_targets = await self._get_handoff_target_ids(agent_node.id)
         handoff_tools = [

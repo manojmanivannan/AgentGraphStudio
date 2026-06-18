@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class AgentNodeBase(BaseModel):
@@ -18,6 +18,12 @@ class AgentNodeBase(BaseModel):
     rag_chunk_size: int = 1000
     position_x: float = 0
     position_y: float = 0
+
+    @model_validator(mode="after")
+    def validate_plotting_for_workers_only(self) -> "AgentNodeBase":
+        if self.agent_type == "router" and self.enable_plotting:
+            raise ValueError("Plotting is only supported for worker agents, not Router agents.")
+        return self
 
 
 class AgentNodeInput(AgentNodeBase):

@@ -51,6 +51,16 @@ class TestAgentNodeInput:
         with pytest.raises(ValidationError):
             AgentNodeInput()
 
+    def test_router_cannot_enable_plotting(self):
+        with pytest.raises(ValidationError) as exc_info:
+            AgentNodeInput(id=uuid.uuid4(), agent_type="router", enable_plotting=True)
+        assert "Plotting is only supported for worker agents, not Router agents." in str(exc_info.value)
+
+    def test_worker_can_enable_plotting(self):
+        agent = AgentNodeInput(id=uuid.uuid4(), agent_type="worker", enable_plotting=True)
+        assert agent.enable_plotting is True
+
+
 
 class TestAgentNodeResponse:
     def test_is_not_input_subclass(self):
@@ -67,7 +77,7 @@ class TestAgentNodeResponse:
             instructions="Answer weather queries",
             model_name="ollama:mistral",
             agent_type="router",
-            enable_plotting=True,
+            enable_plotting=False,
             enable_memory=True,
             enable_conversation_history=True,
             enable_rag=True,
