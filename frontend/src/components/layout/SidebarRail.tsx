@@ -13,8 +13,6 @@ import {
   MessageSquare,
   Home,
   Activity,
-  ChevronLeft,
-  ChevronRight,
 } from "lucide-react";
 import { useCanvasStore } from "@/store/canvasStore";
 import { useThemeStore } from "@/store/themeStore";
@@ -196,34 +194,34 @@ export function SidebarRail() {
       ? `flex items-center justify-center w-10 h-10 mx-auto rounded-lg transition-all ${
           isActive
             ? "bg-[var(--color-elevated)] text-[var(--color-text-primary)] border border-[var(--color-border-default)]"
-            : "text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-elevated)]"
+            : "text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-elevated)] border border-transparent"
         }`
-      : `flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+      : `w-full flex items-center gap-2.5 px-3 h-10 rounded-lg text-xs font-medium transition-all whitespace-nowrap ${
           isActive
             ? "bg-[var(--color-elevated)] text-[var(--color-text-primary)] border border-[var(--color-border-default)]"
-            : "text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-elevated)]"
+            : "text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-elevated)] border border-transparent"
         }`;
   };
 
   const workerBtnClass = sidebarCollapsed
     ? "flex items-center justify-center w-10 h-10 mx-auto rounded-lg text-[var(--color-text-secondary)] hover:text-[var(--color-accent)] hover:bg-[var(--color-accent-subtle)] transition-all cursor-pointer"
-    : "w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium text-[var(--color-text-secondary)] hover:text-[var(--color-accent)] hover:bg-[var(--color-accent-subtle)] transition-colors text-left cursor-pointer";
+    : "w-full flex items-center gap-2.5 px-3 h-10 rounded-lg text-xs font-medium text-[var(--color-text-secondary)] hover:text-[var(--color-accent)] hover:bg-[var(--color-accent-subtle)] transition-all text-left cursor-pointer whitespace-nowrap";
 
   const routerBtnClass = sidebarCollapsed
     ? "flex items-center justify-center w-10 h-10 mx-auto rounded-lg text-[var(--color-text-secondary)] hover:text-[var(--color-agent)] hover:bg-[var(--color-agent-subtle)] transition-all cursor-pointer"
-    : "w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium text-[var(--color-text-secondary)] hover:text-[var(--color-agent)] hover:bg-[var(--color-agent-subtle)] transition-colors text-left cursor-pointer";
+    : "w-full flex items-center gap-2.5 px-3 h-10 rounded-lg text-xs font-medium text-[var(--color-text-secondary)] hover:text-[var(--color-agent)] hover:bg-[var(--color-agent-subtle)] transition-all text-left cursor-pointer whitespace-nowrap";
 
   const toolBtnClass = sidebarCollapsed
     ? "flex items-center justify-center w-10 h-10 mx-auto rounded-lg text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-elevated)] transition-all cursor-pointer"
-    : "w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-elevated)] transition-colors text-left cursor-pointer";
+    : "w-full flex items-center gap-2.5 px-3 h-10 rounded-lg text-xs font-medium text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-elevated)] transition-all text-left cursor-pointer whitespace-nowrap";
 
   const importExportBtnClass = sidebarCollapsed
     ? "flex items-center justify-center w-10 h-10 mx-auto rounded-lg text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-elevated)] transition-all cursor-pointer"
-    : "w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-elevated)] transition-colors text-left cursor-pointer";
+    : "w-full flex items-center gap-2.5 px-3 h-10 rounded-lg text-xs font-medium text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-elevated)] transition-all text-left cursor-pointer whitespace-nowrap";
 
   const clearBtnClass = sidebarCollapsed
     ? "flex items-center justify-center w-10 h-10 mx-auto rounded-lg text-[var(--color-text-secondary)] hover:text-[var(--color-danger)] hover:bg-[var(--color-danger-subtle)] transition-all cursor-pointer"
-    : "w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium text-[var(--color-text-secondary)] hover:text-[var(--color-danger)] hover:bg-[var(--color-danger-subtle)] transition-colors text-left cursor-pointer";
+    : "w-full flex items-center gap-2.5 px-3 h-10 rounded-lg text-xs font-medium text-[var(--color-text-secondary)] hover:text-[var(--color-danger)] hover:bg-[var(--color-danger-subtle)] transition-all text-left cursor-pointer whitespace-nowrap";
 
   return (
     <aside
@@ -233,10 +231,15 @@ export function SidebarRail() {
       } border-r border-[var(--color-border-subtle)] bg-[var(--color-surface)] flex flex-col z-40 transition-[width] duration-300 ease-in-out overflow-hidden`}
     >
       {/* Sidebar Header */}
-      <div className={`p-4 border-b border-[var(--color-border-subtle)] flex flex-col gap-2 ${sidebarCollapsed ? "items-center" : ""}`}>
+      <div className="pt-4 pb-4 px-3 border-b border-[var(--color-border-subtle)] flex flex-col gap-2">
         {!sidebarCollapsed ? (
           <div className="flex items-center justify-between mb-2 w-full">
-            <div className="flex items-center gap-2">
+            <button
+              onClick={() => setSidebarCollapsed(true)}
+              data-testid="collapse-sidebar"
+              className="flex items-center gap-2 cursor-pointer hover:opacity-80 active:scale-95 transition-all duration-200 w-full text-left"
+              title="Collapse Sidebar"
+            >
               <img
                 src={theme === "dark" ? "/agent_graph_studio_logo_white.png" : "/agent_graph_studio_logo_dark.png"}
                 alt="Logo"
@@ -245,35 +248,26 @@ export function SidebarRail() {
               <span className="font-bold text-[14px] tracking-tight text-[var(--color-text-primary)]">
                 AgentGraph Studio
               </span>
-            </div>
-            <button
-              onClick={() => setSidebarCollapsed(true)}
-              data-testid="collapse-sidebar"
-              className="p-1 rounded hover:bg-[var(--color-elevated)] text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)] transition-colors cursor-pointer"
-              title="Collapse Sidebar"
-            >
-              <ChevronLeft className="w-4 h-4" />
             </button>
           </div>
         ) : (
-          <div className="flex flex-col items-center gap-3 mb-2 w-full">
-            <img
-              src={theme === "dark" ? "/agent_graph_studio_logo_white.png" : "/agent_graph_studio_logo_dark.png"}
-              alt="Logo"
-              className="h-6 w-auto object-contain"
-            />
+          <div className="flex justify-center mb-2 w-full">
             <button
               onClick={() => setSidebarCollapsed(false)}
               data-testid="expand-sidebar"
-              className="p-1.5 rounded hover:bg-[var(--color-elevated)] text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)] transition-colors cursor-pointer"
+              className="cursor-pointer hover:opacity-80 active:scale-95 transition-all duration-200"
               title="Expand Sidebar"
             >
-              <ChevronRight className="w-4 h-4" />
+              <img
+                src={theme === "dark" ? "/agent_graph_studio_logo_white.png" : "/agent_graph_studio_logo_dark.png"}
+                alt="Logo"
+                className="h-6 w-auto object-contain"
+              />
             </button>
           </div>
         )}
 
-        <div className="space-y-1 w-full">
+        <div className="space-y-1.5 w-full">
           <Link
             to="/"
             className={navItemClass("/")}
@@ -314,13 +308,13 @@ export function SidebarRail() {
       </div>
 
       {/* Sidebar Content (Middle actions) */}
-      <div className="flex-1 p-4 space-y-4 overflow-y-auto w-full">
+      <div className="flex-1 pt-4 pb-4 px-3 space-y-4 overflow-y-auto w-full">
         {/* Build Section */}
         <div>
           {sidebarCollapsed ? (
             <div className="border-t border-[var(--color-border-subtle)] my-2" />
           ) : (
-            <h3 className="text-[10px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-wider mb-2">
+            <h3 className="text-[10px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-wider mb-2 whitespace-nowrap">
               Build
             </h3>
           )}
@@ -360,7 +354,7 @@ export function SidebarRail() {
           {sidebarCollapsed ? (
             <div className="border-t border-[var(--color-border-subtle)] my-2" />
           ) : (
-            <h3 className="text-[10px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-wider mb-2">
+            <h3 className="text-[10px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-wider mb-2 whitespace-nowrap">
               Manage Canvas
             </h3>
           )}

@@ -11,12 +11,13 @@ export function TopBar() {
   const selectedNodeId = useCanvasStore((s) => s.selectedNodeId);
   const propertiesWidth = useCanvasStore((s) => s.propertiesWidth);
   const isDraggingPanel = useCanvasStore((s) => s.isDraggingPanel);
+  const sidebarCollapsed = useCanvasStore((s) => s.sidebarCollapsed);
 
   const navigate = useNavigate();
 
   const propertiesOpen = selectedNodeId !== null;
 
-  const leftOffset = "left-64";
+  const leftOffset = sidebarCollapsed ? 64 : 256;
 
   // Shift right edge to avoid being covered by overlay panels
   const rightOffset = propertiesOpen ? propertiesWidth : 0;
@@ -24,10 +25,10 @@ export function TopBar() {
   return (
     <div
       data-testid="top-bar"
-      className={`absolute top-0 ${leftOffset} h-10 chrome-glass border-b border-[var(--color-border-subtle)] flex items-center px-4 gap-3 z-30 ${
-        isDraggingPanel ? "" : "transition-[right] duration-300 ease-out"
+      className={`absolute top-0 h-10 chrome-glass border-b border-[var(--color-border-subtle)] flex items-center px-4 gap-3 z-30 ${
+        isDraggingPanel ? "" : "transition-all duration-300 ease-out"
       }`}
-      style={{ right: rightOffset }}
+      style={{ left: leftOffset, right: rightOffset }}
     >
       {/* Home button */}
       <button

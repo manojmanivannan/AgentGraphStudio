@@ -90,7 +90,7 @@ export function AgentEditor() {
   const handleAgentTypeChange = (value: string) => {
     const updatedNodes = nodes.map((n) => {
       if (n.id === selectedNodeId) {
-        const newData = { ...n.data, agentType: value };
+        const newData = { ...n.data, agentType: value } as any;
         if (value === "router") {
           newData.enablePlotting = false;
         }
