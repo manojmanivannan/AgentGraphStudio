@@ -111,7 +111,10 @@ class CanvasRepo:
             if target_agent_id is None:
                 continue
             if d.content is None:
-                raise ValueError("Document content is required for import")
+                logger.warning(
+                    f"Document '{d.name}' (id={d.id}) has no content. Skipping document import."
+                )
+                continue
             doc = AgentDocument(
                 id=uuid.uuid4(),
                 canvas_id=canvas_id,

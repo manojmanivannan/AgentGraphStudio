@@ -274,6 +274,48 @@ class TestImportCanvas:
         assert resp.status_code == 200
         assert resp.json()["name"] == "Untitled Canvas"
 
+    async def test_import_canvas_with_contentless_documents(self, test_client, fresh_db):
+        aid = str(uuid.uuid4())
+        doc_id = str(uuid.uuid4())
+        payload = {
+            "name": "Canvas with Empty Doc",
+            "nodes": {
+                "agents": [
+                    {
+                        "id": aid,
+                        "name": "AgentA",
+                        "model_name": "ollama:llama3.1",
+                        "agent_type": "worker",
+                    }
+                ],
+                "tools": [],
+            },
+            "edges": [],
+            "documents": [
+                {
+                    "id": doc_id,
+                    "agent_node_id": aid,
+                    "name": "missing_content.txt",
+                    "content": None,
+                }
+            ],
+        }
+        resp = await test_client.post("/api/canvases/import", json=payload)
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["name"] == "Canvas with Empty Doc"
+        # The canvas should import fine, and we should be able to fetch it
+        cid = data["id"]
+
+        # Verify the agent node was imported
+        assert len(data["nodes"]["agents"]) == 1
+        imported_agent_id = data["nodes"]["agents"][0]["id"]
+
+        # Fetching documents for the agent should return empty, as the contentless document was skipped
+        docs_resp = await test_client.get(f"/api/canvases/{cid}/agents/{imported_agent_id}/documents")
+        assert docs_resp.status_code == 200
+        assert docs_resp.json() == []
+
 
 class TestExportImportRoundTrip:
     async def test_export_then_import(self, test_client, fresh_db):
