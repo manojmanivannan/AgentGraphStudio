@@ -6,8 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from canvas_server.exceptions import ConversationNotFoundError
-from canvas_server.models.canvas import Conversation, Message, ConversationPlot
-
+from canvas_server.models.canvas import Conversation, ConversationPlot, Message
 
 
 class ConversationRepo:

@@ -404,9 +404,8 @@ class TestCanvasRunner:
     async def test_llm_validation_timeout_raises_configuration_error(self):
         import pytest
 
-        from canvas_server.exceptions import LLMConfigurationError
-
         from canvas_server.config import settings
+        from canvas_server.exceptions import LLMConfigurationError
 
         canvas = FakeCanvas()
         runner = CanvasRunner(canvas)

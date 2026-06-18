@@ -2,7 +2,7 @@ import asyncio
 import json
 import uuid
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Response, HTTPException
+from fastapi import APIRouter, HTTPException, Response, WebSocket, WebSocketDisconnect
 
 from canvas_server.conversation_run_coordinator import ConversationRunCoordinator
 from canvas_server.database import get_session_factory

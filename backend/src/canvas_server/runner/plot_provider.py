@@ -60,7 +60,11 @@ class PlotProvider:
 
                     plot_bytes = base64.b64decode(plot.content_base64)
                     if self.conversation_repo:
-                        conv_id = uuid.UUID(self.conversation_id) if isinstance(self.conversation_id, str) else self.conversation_id
+                        conv_id = (
+                            uuid.UUID(self.conversation_id)
+                            if isinstance(self.conversation_id, str)
+                            else self.conversation_id
+                        )
                         plot_record = await self.conversation_repo.save_plot(
                             conversation_id=conv_id,
                             content=plot_bytes,
