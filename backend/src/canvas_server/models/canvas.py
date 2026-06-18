@@ -295,6 +295,11 @@ class Conversation(Base):
         cascade="all, delete-orphan",
         order_by="Message.created_at",
     )
+    plots: Mapped[list[ConversationPlot]] = relationship(
+        "ConversationPlot",
+        back_populates="conversation",
+        cascade="all, delete-orphan",
+    )
 
 
 class Message(Base):
@@ -327,3 +332,29 @@ class Message(Base):
     conversation: Mapped[Conversation] = relationship(
         "Conversation", back_populates="messages"
     )
+
+
+class ConversationPlot(Base):
+    __tablename__ = "conversation_plots"
+    __table_args__ = (Index("idx_conversation_plots_conversation", "conversation_id"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        Uuid,
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+    conversation_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid,
+        ForeignKey("conversations.id", ondelete="CASCADE"),
+    )
+    format: Mapped[str] = mapped_column(String(10), default="png")
+    content: Mapped[bytes] = mapped_column(sa.LargeBinary)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=_utcnow,
+    )
+
+    conversation: Mapped[Conversation] = relationship(
+        "Conversation", back_populates="plots"
+    )
+

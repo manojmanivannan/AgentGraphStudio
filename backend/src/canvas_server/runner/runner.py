@@ -77,6 +77,7 @@ class CanvasRunner:
             edges=self.canvas.edges if self.canvas else [],
             agent_names={node.id: node.name for node in self.canvas.agent_nodes} if self.canvas else {},
             conversation_id=self._conversation.conversation_id,
+            conversation_repo=self.conversation_repo,
         )
 
         # ---- runtime context and state management ----
@@ -285,6 +286,7 @@ class CanvasRunner:
             edges=self.canvas.edges,
             agent_names={node.id: node.name for node in self.canvas.agent_nodes},
             conversation_id=self._conversation.conversation_id,
+            conversation_repo=self.conversation_repo,
         )
         self.run_state.agent_factory = self._agent_factory
 

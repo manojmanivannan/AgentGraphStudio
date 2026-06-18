@@ -72,3 +72,58 @@ def test_websocket_run_delegates_to_coordinator_and_forwards_events(monkeypatch)
     assert captured["target_agent_id"] == target_agent_id
     assert captured["conversation_repo_type"] == "ConversationRepo"
     assert captured["canvas_repo_type"] == "CanvasRepo"
+
+
+def test_get_plot_route_success(monkeypatch):
+    plot_id = uuid.uuid4()
+
+    class FakePlot:
+        id = plot_id
+        content = b"fake-binary-content"
+        format = "png"
+
+    class FakeConversationRepo:
+        def __init__(self, session):
+            pass
+        async def get_plot(self, pid):
+            assert pid == plot_id
+            return FakePlot()
+
+    monkeypatch.setattr(
+        "canvas_server.routes.execute.get_session_factory",
+        lambda: (lambda: FakeSessionContext()),
+    )
+    monkeypatch.setattr(
+        "canvas_server.routes.execute.ConversationRepo",
+        FakeConversationRepo,
+    )
+
+    client = TestClient(app)
+    response = client.get(f"/api/plots/{plot_id}")
+    assert response.status_code == 200
+    assert response.content == b"fake-binary-content"
+    assert response.headers["content-type"] == "image/png"
+
+
+def test_get_plot_route_not_found(monkeypatch):
+    plot_id = uuid.uuid4()
+
+    class FakeConversationRepo:
+        def __init__(self, session):
+            pass
+        async def get_plot(self, pid):
+            return None
+
+    monkeypatch.setattr(
+        "canvas_server.routes.execute.get_session_factory",
+        lambda: (lambda: FakeSessionContext()),
+    )
+    monkeypatch.setattr(
+        "canvas_server.routes.execute.ConversationRepo",
+        FakeConversationRepo,
+    )
+
+    client = TestClient(app)
+    response = client.get(f"/api/plots/{plot_id}")
+    assert response.status_code == 404
+

@@ -103,3 +103,42 @@ async def test_plot_provider_exception():
         result = await provider.generate_plot("plt.show()")
 
         assert "Error generating plot: Connection failed" in result
+
+
+@pytest.mark.asyncio
+async def test_plot_provider_success_db():
+    """Test plot generation successfully saves to database when conversation_repo is provided."""
+    mock_sandbox_manager = MagicMock()
+    mock_session = MagicMock()
+    mock_sandbox_manager.get_session.return_value = mock_session
+
+    mock_plot = PlotOutput(format=FileType.PNG, content_base64="bW9ja19iYXNlNjRfZGF0YQ==")
+    mock_result = ExecutionResult(
+        exit_code=0,
+        stdout="Plot generated",
+        stderr="",
+        plots=[mock_plot]
+    )
+    mock_session.run.return_value = mock_result
+
+    mock_repo = AsyncMock()
+    mock_record = MagicMock()
+    mock_record.id = "mocked-plot-uuid"
+    mock_repo.save_plot.return_value = mock_record
+
+    with patch("canvas_server.runner.plot_provider.get_sandbox", new_callable=AsyncMock) as mock_get_sandbox:
+        mock_get_sandbox.return_value = mock_sandbox_manager
+
+        provider = PlotProvider(conversation_id="8cf53a28-98cc-4d37-88eb-116dbec8e2cb", conversation_repo=mock_repo)
+        result_str = await provider.generate_plot("import matplotlib.pyplot as plt; plt.show()")
+
+        mock_get_sandbox.assert_called_once()
+        mock_sandbox_manager.get_session.assert_called_once_with("8cf53a28-98cc-4d37-88eb-116dbec8e2cb")
+        mock_session.__enter__.assert_called_once()
+        mock_session.run.assert_called_once_with("import matplotlib.pyplot as plt; plt.show()")
+        mock_session.__exit__.assert_called_once()
+
+        mock_repo.save_plot.assert_called_once()
+        assert "Plot generated" in result_str
+        assert "![Plot](/api/plots/mocked-plot-uuid)" in result_str
+

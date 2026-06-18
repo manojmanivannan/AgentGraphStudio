@@ -2,7 +2,7 @@ import asyncio
 import json
 import uuid
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Response, HTTPException
 
 from canvas_server.conversation_run_coordinator import ConversationRunCoordinator
 from canvas_server.database import get_session_factory
@@ -10,6 +10,18 @@ from canvas_server.repos.canvas_repo import CanvasRepo
 from canvas_server.repos.conversation_repo import ConversationRepo
 
 execute_router = APIRouter()
+
+
+@execute_router.get("/api/plots/{plot_id}", response_class=Response)
+async def get_plot(plot_id: uuid.UUID):
+    factory = get_session_factory()
+    async with factory() as session:
+        conv_repo = ConversationRepo(session)
+        plot = await conv_repo.get_plot(plot_id)
+        if not plot:
+            raise HTTPException(status_code=404, detail="Plot not found")
+        return Response(content=plot.content, media_type=f"image/{plot.format}")
+
 
 
 @execute_router.websocket("/ws/conversations/{conversation_id}/run")

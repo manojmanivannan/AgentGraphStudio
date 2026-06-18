@@ -38,6 +38,7 @@ class AgentFactory:
         edges: list,
         agent_names: dict[uuid.UUID, str] | None = None,
         conversation_id: str | None = None,
+        conversation_repo = None,
     ):
         self._lm = lm
         self._tool_registry = tool_registry
@@ -45,6 +46,7 @@ class AgentFactory:
         self._edges = edges
         self._agent_names = agent_names or {}
         self._conversation_id = conversation_id
+        self._conversation_repo = conversation_repo
 
     # ------------------------------------------------------------------
     # DSPy signature
@@ -172,7 +174,7 @@ class AgentFactory:
             )
 
         if getattr(agent_node, "enable_plotting", False) and self._conversation_id:
-            plot_provider = PlotProvider(self._conversation_id)
+            plot_provider = PlotProvider(self._conversation_id, self._conversation_repo)
             tools.append(plot_provider.generate_plot)
 
 
@@ -250,7 +252,7 @@ class AgentFactory:
             )
 
         if getattr(agent_node, "enable_plotting", False) and self._conversation_id:
-            plot_provider = PlotProvider(self._conversation_id)
+            plot_provider = PlotProvider(self._conversation_id, self._conversation_repo)
             tools.append(plot_provider.generate_plot)
 
 
