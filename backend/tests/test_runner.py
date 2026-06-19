@@ -850,7 +850,7 @@ class TestCanvasRunner:
 
         # Standard worker has no RAG, but has handoff targets
         agent = await runner.run_state.get_or_build_agent(worker.id)
-        
+
         # Verify that the tools of the built agent include the handoff tool
         assert "transfer_to_WeatherRouter" in agent.tools
 
