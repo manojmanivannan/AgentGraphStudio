@@ -316,13 +316,15 @@ dependencies = [
 ]
 
 [package.dev-dependencies]
+dev = [
+    { name = "ruff" },
+]
 test = [
     { name = "aiosqlite" },
     { name = "httpx" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "pytest-cov" },
-    { name = "ruff" },
 ]
 
 [package.metadata]
@@ -350,13 +352,13 @@ requires-dist = [
 ]
 
 [package.metadata.requires-dev]
+dev = [{ name = "ruff", specifier = ">=0.15.12" }]
 test = [
     { name = "aiosqlite", specifier = ">=0.20" },
     { name = "httpx", specifier = ">=0.28" },
     { name = "pytest", specifier = ">=8.0" },
     { name = "pytest-asyncio", specifier = ">=0.24" },
     { name = "pytest-cov", specifier = ">=6.0" },
-    { name = "ruff", specifier = ">=0.12" },
 ]
 
 [[package]]

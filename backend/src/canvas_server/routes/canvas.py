@@ -1,11 +1,10 @@
 import io
 import json
 import logging
-from typing import Any
 import uuid
 import zipfile
+from typing import Any
 
-from canvas_server.models.canvas import Canvas
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -24,6 +23,7 @@ from canvas_server.models.api import (
     CreateCanvasRequest,
     CreateConversationRequest,
 )
+from canvas_server.models.canvas import Canvas
 from canvas_server.repos.canvas_repo import CanvasRepo
 from canvas_server.repos.conversation_repo import ConversationRepo
 
@@ -123,9 +123,7 @@ async def list_canvases(session: AsyncSession = Depends(get_session)):
 
 
 @canvas_router.get("/{canvas_id}", response_model=CanvasResponse)
-async def get_canvas(
-    canvas_id: uuid.UUID, session: AsyncSession = Depends(get_session)
-):
+async def get_canvas(canvas_id: uuid.UUID, session: AsyncSession = Depends(get_session)):
     logger.debug(f"Getting canvas: id={canvas_id}")
     repo = CanvasRepo(session)
     try:
@@ -156,9 +154,7 @@ async def save_canvas(
     for t in body.nodes.tools:
         logger.debug(f"  tool: id={t.id}, name={t.name}")
     for e in body.edges:
-        logger.debug(
-            f"  edge: id={e.id}, {e.source_node_id} -> {e.target_node_id} [{e.edge_type}]"
-        )
+        logger.debug(f"  edge: id={e.id}, {e.source_node_id} -> {e.target_node_id} [{e.edge_type}]")
     repo = CanvasRepo(session)
     try:
         canvas = await repo.save_nodes_and_edges(
@@ -176,9 +172,7 @@ async def save_canvas(
 
 
 @canvas_router.delete("/{canvas_id}", status_code=204)
-async def delete_canvas(
-    canvas_id: uuid.UUID, session: AsyncSession = Depends(get_session)
-):
+async def delete_canvas(canvas_id: uuid.UUID, session: AsyncSession = Depends(get_session)):
     logger.info(f"Deleting canvas: id={canvas_id}")
     repo = CanvasRepo(session)
     deleted = await repo.delete(canvas_id)
@@ -252,9 +246,7 @@ def _canvas_to_import_payload(canvas: Canvas) -> dict[str, Any]:
 
 
 @canvas_router.get("/{canvas_id}/export")
-async def export_canvas(
-    canvas_id: uuid.UUID, session: AsyncSession = Depends(get_session)
-):
+async def export_canvas(canvas_id: uuid.UUID, session: AsyncSession = Depends(get_session)):
     logger.info(f"Exporting canvas: id={canvas_id}")
     repo = CanvasRepo(session)
     try:
@@ -269,16 +261,12 @@ async def export_canvas(
     return Response(
         content=content,
         media_type="application/json",
-        headers={
-            "Content-Disposition": f'attachment; filename="canvas-{safe_name}.json"'
-        },
+        headers={"Content-Disposition": f'attachment; filename="canvas-{safe_name}.json"'},
     )
 
 
 @canvas_router.get("/{canvas_id}/export-zip")
-async def export_canvas_zip(
-    canvas_id: uuid.UUID, session: AsyncSession = Depends(get_session)
-):
+async def export_canvas_zip(canvas_id: uuid.UUID, session: AsyncSession = Depends(get_session)):
     logger.info(f"Exporting canvas ZIP: id={canvas_id}")
     repo = CanvasRepo(session)
     try:
@@ -302,16 +290,12 @@ async def export_canvas_zip(
     return Response(
         content=buffer.read(),
         media_type="application/zip",
-        headers={
-            "Content-Disposition": f'attachment; filename="canvas-{safe_name}.zip"'
-        },
+        headers={"Content-Disposition": f'attachment; filename="canvas-{safe_name}.zip"'},
     )
 
 
 @canvas_router.post("/import", response_model=CanvasResponse)
-async def import_canvas(
-    body: CanvasImportRequest, session: AsyncSession = Depends(get_session)
-):
+async def import_canvas(body: CanvasImportRequest, session: AsyncSession = Depends(get_session)):
     logger.info(
         f"Importing canvas: name={body.name}, "
         f"agents={len(body.nodes.agents)}, "
@@ -330,9 +314,7 @@ async def import_canvas(
 
 
 @canvas_router.post("/import-zip", response_model=CanvasResponse)
-async def import_canvas_zip(
-    file: UploadFile = File(...), session: AsyncSession = Depends(get_session)
-):
+async def import_canvas_zip(file: UploadFile = File(...), session: AsyncSession = Depends(get_session)):
     logger.info("Importing canvas ZIP file")
     content_bytes = await file.read()
     try:
@@ -353,15 +335,11 @@ async def import_canvas_zip(
     for item in manifest.get("documents", []):
         path = item.get("path")
         if not path:
-            raise HTTPException(
-                status_code=400, detail="Document metadata must include path"
-            )
+            raise HTTPException(status_code=400, detail="Document metadata must include path")
         try:
             doc_bytes = archive.read(path)
         except KeyError:
-            raise HTTPException(
-                status_code=400, detail=f"Missing document file: {path}"
-            ) from None
+            raise HTTPException(status_code=400, detail=f"Missing document file: {path}") from None
         try:
             content_text = doc_bytes.decode("utf-8")
         except UnicodeDecodeError:
@@ -413,9 +391,7 @@ async def create_conversation(
     return conv
 
 
-@canvas_router.get(
-    "/{canvas_id}/conversations", response_model=list[ConversationListResponse]
-)
+@canvas_router.get("/{canvas_id}/conversations", response_model=list[ConversationListResponse])
 async def list_conversations(
     canvas_id: uuid.UUID,
     session: AsyncSession = Depends(get_session),
@@ -506,15 +482,13 @@ async def list_agent_documents(
     from canvas_server.models.canvas import AgentDocument, AgentNode
 
     logger.info("Listing documents for canvas=%s agent=%s", canvas_id, agent_id)
-    stmt = select(AgentNode).where(
-        AgentNode.id == agent_id, AgentNode.canvas_id == canvas_id
-    )
+    stmt = select(AgentNode).where(AgentNode.id == agent_id, AgentNode.canvas_id == canvas_id)
     res = await session.execute(stmt)
     agent = res.scalar_one_or_none()
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
 
-    stmt = (
+    doc_stmt = (
         select(AgentDocument)
         .where(
             AgentDocument.agent_node_id == agent_id,
@@ -522,14 +496,12 @@ async def list_agent_documents(
         )
         .order_by(AgentDocument.created_at.desc())
     )
-    res = await session.execute(stmt)
+    res = await session.execute(doc_stmt)
     docs = res.scalars().all()
     return docs
 
 
-@canvas_router.post(
-    "/{canvas_id}/agents/{agent_id}/documents", response_model=AgentDocumentResponse
-)
+@canvas_router.post("/{canvas_id}/agents/{agent_id}/documents", response_model=AgentDocumentResponse)
 async def upload_agent_document(
     canvas_id: uuid.UUID,
     agent_id: uuid.UUID,
@@ -546,9 +518,7 @@ async def upload_agent_document(
         agent_id,
         file.filename,
     )
-    stmt = select(AgentNode).where(
-        AgentNode.id == agent_id, AgentNode.canvas_id == canvas_id
-    )
+    stmt = select(AgentNode).where(AgentNode.id == agent_id, AgentNode.canvas_id == canvas_id)
     res = await session.execute(stmt)
     agent = res.scalar_one_or_none()
     if not agent:
@@ -578,9 +548,7 @@ async def upload_agent_document(
     return doc
 
 
-@canvas_router.delete(
-    "/{canvas_id}/agents/{agent_id}/documents/{document_id}", status_code=204
-)
+@canvas_router.delete("/{canvas_id}/agents/{agent_id}/documents/{document_id}", status_code=204)
 async def delete_agent_document(
     canvas_id: uuid.UUID,
     agent_id: uuid.UUID,
@@ -591,9 +559,7 @@ async def delete_agent_document(
 
     from canvas_server.models.canvas import AgentDocument
 
-    logger.info(
-        "Deleting document canvas=%s agent=%s doc=%s", canvas_id, agent_id, document_id
-    )
+    logger.info("Deleting document canvas=%s agent=%s doc=%s", canvas_id, agent_id, document_id)
     stmt = select(AgentDocument).where(
         AgentDocument.id == document_id,
         AgentDocument.agent_node_id == agent_id,
