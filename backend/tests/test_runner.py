@@ -808,5 +808,86 @@ class TestCanvasRunner:
         assert "Agent 'WorkerA' findings:\nResult A" in result
         assert "Agent 'WorkerB' findings:\nError: Connection refused" in result
 
+    async def test_worker_agent_with_handoff_targets(self):
+        """Worker agent with outgoing handoff edges is correctly compiled with handoff tools at runtime."""
+        # 1. Setup standard worker with handoff
+        worker = FakeAgentNode(
+            id=uuid.uuid4(),
+            name="WeatherAgent",
+            role="Weather expert",
+            agent_type="worker",
+        )
+        router = FakeAgentNode(
+            id=uuid.uuid4(),
+            name="WeatherRouter",
+            role="Routing expert",
+            agent_type="router",
+        )
+
+        class FakeEdge:
+            def __init__(self, source, target, edge_type):
+                self.source_node_id = source
+                self.target_node_id = target
+                self.edge_type = edge_type
+
+        canvas = FakeCanvas(
+            agent_nodes=[worker, router],
+            edges=[
+                FakeEdge(worker.id, router.id, "handoff"),
+            ],
+        )
+
+        runner = CanvasRunner(canvas)
+        runner.node_map = {worker.id: worker, router.id: router}
+        runner._conversation.persist_message = AsyncMock()
+
+        runner.run_state.set_run_context(
+            user_prompt="what is the humidity",
+            send_event=AsyncMock(),
+            history_text="",
+            dspy_history=None,
+        )
+
+        # Standard worker has no RAG, but has handoff targets
+        agent = await runner.run_state.get_or_build_agent(worker.id)
+        
+        # Verify that the tools of the built agent include the handoff tool
+        assert "transfer_to_WeatherRouter" in agent.tools
+
+        # 2. Setup RAG worker with handoff
+        worker_rag = FakeAgentNode(
+            id=uuid.uuid4(),
+            name="RAGWeatherAgent",
+            role="Weather expert",
+            agent_type="worker",
+        )
+        worker_rag.enable_rag = True
+
+        canvas_rag = FakeCanvas(
+            agent_nodes=[worker_rag, router],
+            edges=[
+                FakeEdge(worker_rag.id, router.id, "handoff"),
+            ],
+        )
+        runner_rag = CanvasRunner(canvas_rag)
+        runner_rag.node_map = {worker_rag.id: worker_rag, router.id: router}
+        runner_rag._conversation.persist_message = AsyncMock()
+        runner_rag.run_state.set_run_context(
+            user_prompt="what is the humidity",
+            send_event=AsyncMock(),
+            history_text="",
+            dspy_history=None,
+        )
+
+        # Mock run_rag_search to return dummy passages
+        from unittest.mock import patch
+        with patch("canvas_server.runner.rag_helper.run_rag_search", return_value="dummy passages") as mock_rag:
+            agent_rag = await runner_rag.run_state.get_or_build_agent(worker_rag.id)
+            mock_rag.assert_called_once()
+
+        # Verify that the tools of the built RAG agent include the handoff tool
+        assert "transfer_to_WeatherRouter" in agent_rag.tools
+
+
 
 

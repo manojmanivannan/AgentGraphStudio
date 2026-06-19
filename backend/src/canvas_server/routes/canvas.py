@@ -1,9 +1,11 @@
 import io
 import json
 import logging
+from typing import Any
 import uuid
 import zipfile
 
+from canvas_server.models.canvas import Canvas
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -29,7 +31,7 @@ logger = logging.getLogger("canvas_server.routes.canvas")
 canvas_router = APIRouter(prefix="/api/canvases", tags=["canvases"])
 
 
-def _canvas_to_response(canvas) -> CanvasResponse:
+def _canvas_to_response(canvas: Canvas) -> CanvasResponse:
     from canvas_server.models.api import (
         AgentNodeResponse,
         CanvasNodesResponse,
@@ -57,6 +59,7 @@ def _canvas_to_response(canvas) -> CanvasResponse:
                     enable_conversation_history=n.enable_conversation_history,
                     enable_rag=n.enable_rag,
                     rag_chunk_size=n.rag_chunk_size,
+                    is_entry_point=n.is_entry_point,
                     position_x=n.position_x,
                     position_y=n.position_y,
                 )
@@ -185,8 +188,8 @@ async def delete_canvas(
     logger.info(f"Canvas deleted: id={canvas_id}")
 
 
-def _canvas_to_import_payload(canvas) -> dict:
-    documents = []
+def _canvas_to_import_payload(canvas: Canvas) -> dict[str, Any]:
+    documents: list[dict[str, Any]] = []
     for agent in canvas.agent_nodes:
         for doc in agent.documents:
             documents.append(
@@ -215,6 +218,7 @@ def _canvas_to_import_payload(canvas) -> dict:
                     "enable_conversation_history": n.enable_conversation_history,
                     "enable_rag": n.enable_rag,
                     "rag_chunk_size": n.rag_chunk_size,
+                    "is_entry_point": n.is_entry_point,
                     "position_x": n.position_x,
                     "position_y": n.position_y,
                 }

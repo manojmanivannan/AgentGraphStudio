@@ -75,12 +75,12 @@ class AgentFactory:
         else:
             full_instructions = instructions or "You are a helpful AI agent."
 
-        if agent_node.agent_type == "router":
-            handoff_targets = [
-                edge.target_node_id
-                for edge in self._edges
-                if edge.source_node_id == agent_node.id and edge.edge_type == "handoff"
-            ]
+        handoff_targets = [
+            edge.target_node_id
+            for edge in self._edges
+            if edge.source_node_id == agent_node.id and edge.edge_type == "handoff"
+        ]
+        if handoff_targets:
             if len(handoff_targets) >= 2:
                 target_names = [
                     self._agent_names.get(tid, f"Agent-{str(tid)[:8]}")
@@ -166,8 +166,16 @@ class AgentFactory:
         logger.info("Built %d worker agents", len(agents))
         return agents
 
-    async def build_worker(self, agent_node, passages: str | None = None) -> StreamingReAct:
-        """Build a single worker agent, optionally with retrieved RAG passages."""
+    async def build_worker(
+        self,
+        agent_node,
+        passages: str | None = None,
+        handoff_tool_builder: HandoffToolBuilder | None = None,
+        send_event=None,
+        history_text: str = "",
+        dspy_history=None,
+    ) -> StreamingReAct:
+        """Build a single worker agent, optionally with retrieved RAG passages and handoff tools."""
         tools = list(
             self._tool_registry.get_tools_for_agent(agent_node.id, self._edges)
         )
@@ -185,6 +193,21 @@ class AgentFactory:
             plot_provider = PlotProvider(self._conversation_id, self._conversation_repo)
             tools.append(plot_provider.generate_plot)
 
+        if handoff_tool_builder and send_event:
+            handoff_targets = await self._get_handoff_target_ids(agent_node.id)
+            handoff_tools = [
+                handoff_tool_builder.make_handoff_tool(
+                    tid, agent_node.name, send_event, history_text, dspy_history
+                )
+                for tid in handoff_targets
+            ]
+            tools.extend(handoff_tools)
+
+            if len(handoff_targets) >= 2:
+                parallel_tool = handoff_tool_builder.make_parallel_handoff_tool(
+                    handoff_targets, agent_node.name, send_event, history_text, dspy_history
+                )
+                tools.append(parallel_tool)
 
         signature = self.build_signature(agent_node, passages=passages)
         agent = StreamingReAct(signature, tools=tools)
@@ -202,6 +225,9 @@ class AgentFactory:
         task: str,
         conversation_service,
         send_event=None,
+        handoff_tool_builder: HandoffToolBuilder | None = None,
+        history_text: str = "",
+        dspy_history=None,
     ) -> StreamingReAct:
         """Fetch RAG documents, perform similarity search, handle warnings/errors, and compile the worker agent."""
         from canvas_server.runner.rag_helper import run_rag_search
@@ -225,7 +251,14 @@ class AgentFactory:
                 )
             passages = "Here context retrieval failed and you see this line. You are unable to leverage context."
 
-        return await self.build_worker(agent_node, passages=passages)
+        return await self.build_worker(
+            agent_node,
+            passages=passages,
+            handoff_tool_builder=handoff_tool_builder,
+            send_event=send_event,
+            history_text=history_text,
+            dspy_history=dspy_history,
+        )
 
     # ------------------------------------------------------------------
     # Building router agents (lazy, at run time)
