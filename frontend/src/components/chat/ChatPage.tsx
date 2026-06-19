@@ -258,6 +258,7 @@ export default function ChatPage() {
   const [loadingConv, setLoadingConv] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [expandedTurns, setExpandedTurns] = useState<Set<string>>(() => new Set());
+  const [collapsedSteps, setCollapsedSteps] = useState<Set<string>>(() => new Set());
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -275,6 +276,7 @@ export default function ChatPage() {
   // Reset expand state when switching conversations
   useEffect(() => {
     setExpandedTurns(new Set());
+    setCollapsedSteps(new Set());
   }, [conversation_id]);
 
   // Support loading canvas_id from query param for empty state
@@ -379,6 +381,18 @@ export default function ChatPage() {
         next.delete(turnId);
       } else {
         next.add(turnId);
+      }
+      return next;
+    });
+  }, []);
+
+  const toggleStepExpand = useCallback((stepId: string) => {
+    setCollapsedSteps((prev) => {
+      const next = new Set(prev);
+      if (next.has(stepId)) {
+        next.delete(stepId);
+      } else {
+        next.add(stepId);
       }
       return next;
     });
@@ -841,6 +855,7 @@ export default function ChatPage() {
                               const isResponse = stepMsg.event_type === "response";
 
                               const level = getMessageNestingLevel(stepMsg);
+                              const isStepCollapsed = collapsedSteps.has(stepMsg.id);
                               return (
                                 <div
                                   key={stepMsg.id}
@@ -851,34 +866,45 @@ export default function ChatPage() {
                                     transition: "padding-left 0.2s ease-out",
                                   }}
                                 >
-                                  {stepMsg.agent_name && !isHandoff && !isError && !isWarning && (
-                                    <span className="text-[10px] text-[var(--color-text-tertiary)] mb-0.5 px-1 font-semibold tracking-wide">
-                                      {stepMsg.agent_name}
+                                  <button
+                                    onClick={() => toggleStepExpand(stepMsg.id)}
+                                    className="flex items-center gap-1.5 text-[10px] text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)] transition-colors cursor-pointer px-1 font-semibold tracking-wide mb-0.5"
+                                  >
+                                    {isStepCollapsed ? (
+                                      <ChevronRight className="w-3 h-3" />
+                                    ) : (
+                                      <ChevronDown className="w-3 h-3" />
+                                    )}
+                                    <span>
+                                      {stepMsg.agent_name || (isError || isWarning || isHandoff ? "System" : "Agent")}
                                       {stepMsg.event_type &&
                                         stepMsg.event_type !== "final_answer" &&
                                         ` · ${stepMsg.event_type}`}
                                     </span>
+                                  </button>
+
+                                  {!isStepCollapsed && (
+                                    <div
+                                      className={`max-w-[85%] rounded-xl px-3 py-2 text-[12px] leading-relaxed shadow-sm ${isHandoff
+                                        ? "bg-[var(--color-info-subtle)] text-[var(--color-info)] border border-[var(--color-info)]/20 rounded-bl-sm"
+                                        : isError
+                                          ? "bg-[var(--color-danger-subtle)] text-[var(--color-danger)] border border-[var(--color-danger)]/20 rounded-bl-sm"
+                                          : isWarning
+                                            ? "bg-[var(--color-warning-subtle)] text-[var(--color-warning)] border border-[var(--color-warning)]/20 rounded-bl-sm"
+                                            : isThought
+                                              ? "bg-[var(--color-agent-subtle)] text-[var(--color-agent)] border border-[var(--color-agent)]/20 rounded-bl-sm font-mono whitespace-pre-wrap text-[11px]"
+                                              : isToolResult
+                                                ? "bg-[var(--color-success-subtle)] text-[var(--color-success)] border border-[var(--color-success)]/20 rounded-bl-sm font-mono"
+                                                : isResponse
+                                                  ? "bg-[var(--color-agent-subtle)] text-[var(--color-agent)] border border-[var(--color-agent)]/20 rounded-bl-sm"
+                                                  : isSubAnswer
+                                                    ? "bg-[var(--color-elevated)] text-[var(--color-text-secondary)] border border-[var(--color-border-subtle)] rounded-bl-sm"
+                                                    : "bg-[var(--color-elevated)] text(--color-text-primary)] border border-[var(--color-border-subtle)] rounded-bl-sm"
+                                        }`}
+                                    >
+                                      {renderMessageContent(stepMsg.content, true)}
+                                    </div>
                                   )}
-                                  <div
-                                    className={`max-w-[85%] rounded-xl px-3 py-2 text-[12px] leading-relaxed shadow-sm ${isHandoff
-                                      ? "bg-[var(--color-info-subtle)] text-[var(--color-info)] border border-[var(--color-info)]/20 rounded-bl-sm"
-                                      : isError
-                                        ? "bg-[var(--color-danger-subtle)] text-[var(--color-danger)] border border-[var(--color-danger)]/20 rounded-bl-sm"
-                                        : isWarning
-                                          ? "bg-[var(--color-warning-subtle)] text-[var(--color-warning)] border border-[var(--color-warning)]/20 rounded-bl-sm"
-                                          : isThought
-                                            ? "bg-[var(--color-agent-subtle)] text-[var(--color-agent)] border border-[var(--color-agent)]/20 rounded-bl-sm font-mono whitespace-pre-wrap text-[11px]"
-                                            : isToolResult
-                                              ? "bg-[var(--color-success-subtle)] text-[var(--color-success)] border border-[var(--color-success)]/20 rounded-bl-sm font-mono"
-                                              : isResponse
-                                                ? "bg-[var(--color-agent-subtle)] text-[var(--color-agent)] border border-[var(--color-agent)]/20 rounded-bl-sm"
-                                                : isSubAnswer
-                                                  ? "bg-[var(--color-elevated)] text-[var(--color-text-secondary)] border border-[var(--color-border-subtle)] rounded-bl-sm"
-                                                  : "bg-[var(--color-elevated)] text-[var(--color-text-primary)] border border-[var(--color-border-subtle)] rounded-bl-sm"
-                                      }`}
-                                  >
-                                    {renderMessageContent(stepMsg.content, true)}
-                                  </div>
                                 </div>
                               );
                             })}

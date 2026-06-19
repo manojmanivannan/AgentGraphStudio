@@ -792,5 +792,78 @@ describe("ChatPage component", () => {
         expect(imagesAfterExpand.length).toBe(2);
         expect(imagesAfterExpand[1].src).toContain("/api/static/plots/test-image.png");
     });
+
+    it("collapses and expands individual steps on click", async () => {
+        const user = userEvent.setup();
+        server.use(
+            http.get(`${API}/canvases/conversations/conv-1`, () =>
+                HttpResponse.json(
+                    mockConversation({
+                        id: "conv-1",
+                        canvas_id: "canvas-1",
+                        name: "Test Chat",
+                        messages: [
+                            {
+                                id: "m1", conversation_id: "conv-1", role: "user",
+                                content: "Run task", created_at: "2026-01-01T00:00:00.000Z",
+                            },
+                            {
+                                id: "m2", conversation_id: "conv-1", role: "assistant",
+                                content: "Worker thought message", event_type: "thought",
+                                agent_name: "Worker", created_at: "2026-01-01T00:00:01.000Z",
+                            },
+                            {
+                                id: "m3", conversation_id: "conv-1", role: "assistant",
+                                content: "Worker answer", event_type: "final_answer",
+                                agent_name: "Worker", created_at: "2026-01-01T00:00:02.000Z",
+                            },
+                        ],
+                    })
+                )
+            ),
+            http.get(`${API}/canvases/canvas-1`, () =>
+                HttpResponse.json({ id: "canvas-1", name: "My Canvas" })
+            ),
+            http.get(`${API}/canvases/canvas-1/conversations`, () =>
+                HttpResponse.json([mockConversationSummary({ id: "conv-1", name: "Test Chat" })])
+            )
+        );
+
+        renderChatPage("conv-1");
+
+        // Wait for main answer
+        await waitFor(() => {
+            expect(screen.getByText("Worker answer")).toBeInTheDocument();
+        });
+
+        // Expand execution steps
+        const toggleBtn = screen.getByText(/Show.*execution step/);
+        await user.click(toggleBtn);
+
+        // Verify thought step content is rendered
+        await waitFor(() => {
+            expect(screen.getByText("Worker thought message")).toBeInTheDocument();
+        });
+
+        // Now, find the individual step header button (Worker · thought) and click it
+        const stepHeaderBtn = screen.getByText("Worker · thought");
+        expect(stepHeaderBtn).toBeInTheDocument();
+
+        // Click it to collapse
+        await user.click(stepHeaderBtn);
+
+        // Verify that the step content is no longer in the document
+        await waitFor(() => {
+            expect(screen.queryByText("Worker thought message")).not.toBeInTheDocument();
+        });
+
+        // Click it again to expand
+        await user.click(stepHeaderBtn);
+
+        // Verify it is back
+        await waitFor(() => {
+            expect(screen.getByText("Worker thought message")).toBeInTheDocument();
+        });
+    });
 });
 

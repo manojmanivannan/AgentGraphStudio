@@ -21,10 +21,17 @@
   AgentGraph Studio is a next-generation visual IDE designed to build, test, and run complex multi-agent AI networks. Wire worker and router nodes on a beautiful ReactFlow canvas, write custom Python tools that execute securely in a WASM sandbox, attach local document resources for in-memory RAG, and interact with your creation in a real-time streaming chat.
 </p>
 
-<p align="center">
-  <img src="docs/canvas_example.png" alt="ReactFlow Workflow Builder" width="55%" />
-  <img src="docs/chat_example.png" alt="Real-time Streaming Chat" width="44%" />
-</p>
+<table>
+  <tr>
+    <td width="72%">
+      <img src="docs/canvas_example.png" alt="ReactFlow Workflow Builder" />
+    </td>
+    <td width="28%">
+      <img src="docs/chat_example1.png" alt="Real-time Streaming Chat" /><br/><br/>
+      <img src="docs/chat_example2.png" alt="Real-time Streaming Chat" />
+    </td>
+  </tr>
+</table>
 
 ---
 
