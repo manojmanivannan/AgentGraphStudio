@@ -12,6 +12,7 @@ import {
   importCanvas,
   importCanvasZip,
 } from "@/lib/api";
+import { decodeCanvasResponse } from "@/lib/canvasGraphCodec";
 import {
   Plus,
   FileText,
@@ -74,48 +75,9 @@ function CanvasEditorPage({
       const canvas = await getCanvas(id);
       setCanvas(canvas.id, canvas.name);
 
-      const agentNodes: Node[] = canvas.nodes.agents.map((a) => ({
-        id: a.id,
-        type: "agent" as const,
-        position: { x: a.position_x, y: a.position_y },
-        style: { width: 280 },
-        data: {
-          id: a.id,
-          name: a.name,
-          role: a.role,
-          instructions: a.instructions,
-          modelName: a.model_name,
-          agentType: a.agent_type,
-          enablePlotting: a.enable_plotting,
-          enableMemory: a.enable_memory,
-          enableConversationHistory: a.enable_conversation_history,
-          enableRag: a.enable_rag,
-          ragChunkSize: a.rag_chunk_size,
-        } as any,
-      }));
-
-      const toolNodes: Node[] = canvas.nodes.tools.map((t) => ({
-        id: t.id,
-        type: "tool" as const,
-        position: { x: t.position_x, y: t.position_y },
-        style: { width: 220 },
-        data: {
-          id: t.id,
-          name: t.name,
-          code: t.code,
-          packages: t.packages,
-        } as any,
-      }));
-
-      setNodes([...agentNodes, ...toolNodes]);
-      setEdges(
-        canvas.edges.map((e) => ({
-          id: e.id,
-          source: e.source_node_id,
-          target: e.target_node_id,
-          data: { edgeType: e.edge_type },
-        }))
-      );
+      const decoded = decodeCanvasResponse(canvas);
+      setNodes(decoded.nodes);
+      setEdges(decoded.edges);
     } catch (err: any) {
       setError(err?.message || "Failed to open canvas.");
       console.error("Failed to open canvas:", err);

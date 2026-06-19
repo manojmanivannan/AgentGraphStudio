@@ -76,6 +76,8 @@ class CanvasRunState:
         if not agent_node:
             raise ValueError(f"Agent node not found: id={agent_id}")
 
+        handoff_targets = await self.agent_factory._get_handoff_target_ids(agent_id)
+
         # If RAG is enabled on a worker agent, assemble it dynamically
         if getattr(agent_node, "enable_rag", False):
             query = task if task is not None else self.user_prompt
@@ -84,6 +86,9 @@ class CanvasRunState:
                 task=query,
                 conversation_service=self.conversation_service,
                 send_event=self.send_event,
+                handoff_tool_builder=self.handoff_tool_builder,
+                history_text=self.history_text,
+                dspy_history=self.dspy_history,
             )
             self.agents[agent_id] = agent
             self.attach_events(agent_id, force=True)
@@ -106,6 +111,21 @@ class CanvasRunState:
                 self.agents[agent_id] = agent
             self.attach_events(agent_id)
             return self.agents[agent_id]
+
+        # Standard worker agent with handoff targets needs to be rebuilt dynamically to bind handoff tools
+        if handoff_targets:
+            if not self.handoff_tool_builder:
+                raise RuntimeError("HandoffToolBuilder must be set on run state before resolving handoff targets")
+            agent = await self.agent_factory.build_worker(
+                agent_node=agent_node,
+                handoff_tool_builder=self.handoff_tool_builder,
+                send_event=self.send_event,
+                history_text=self.history_text,
+                dspy_history=self.dspy_history,
+            )
+            self.agents[agent_id] = agent
+            self.attach_events(agent_id, force=True)
+            return agent
 
         # Standard worker agent (eagerly compiled during setup)
         agent = self.agents.get(agent_id)

@@ -159,10 +159,11 @@ class AgentDocument(Base):
 
 
 try:
-    from pgvector.sqlalchemy import Vector
+    from pgvector.sqlalchemy import Vector  # type: ignore[import-untyped]
 
     HAS_PGVECTOR = True
 except ImportError:
+    Vector = None  # type: ignore
     HAS_PGVECTOR = False
 
 
@@ -176,7 +177,7 @@ class SafeVector(TypeDecorator):
 
     def load_dialect_impl(self, dialect):
         if dialect.name == "postgresql":
-            if HAS_PGVECTOR:
+            if HAS_PGVECTOR and Vector is not None:
                 return dialect.type_descriptor(Vector(self.dimensions))
             else:
                 from sqlalchemy import Float
