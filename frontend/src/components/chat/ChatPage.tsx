@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
-import { useParams, useNavigate, Link } from "react-router-dom";
+import { useParams, useNavigate, Link, useSearchParams, useLocation } from "react-router-dom";
 import {
   Send,
   Plus,
@@ -28,8 +28,9 @@ import {
   apiOrigin,
   exportConversationZip,
   importConversationZip,
+  listCanvases,
 } from "@/lib/api";
-import type { ConversationSummary, Message, ExecutionEvent, CanvasResponse } from "@/types";
+import type { ConversationSummary, Message, ExecutionEvent, CanvasResponse, CanvasListItem } from "@/types";
 import { executionEventToMessage } from "./executionEventMessage";
 
 const WS_BASE = `ws://${import.meta.env.VITE_API_HOST || "localhost:8000"}`;
@@ -211,6 +212,8 @@ function computeNestingLevels(canvasData: CanvasResponse): Record<string, number
 export default function ChatPage() {
   const { conversation_id } = useParams<{ conversation_id: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
+  const [searchParams] = useSearchParams();
 
   const setActiveNodeId = useCanvasStore((s) => s.setActiveNodeId);
   const theme = useThemeStore((s) => s.theme);
@@ -221,6 +224,7 @@ export default function ChatPage() {
   const [canvasName, setCanvasName] = useState<string>("Canvas");
   const [canvas, setCanvas] = useState<CanvasResponse | null>(null);
   const [conversationName, setConversationName] = useState<string>("Chat");
+  const [allCanvases, setAllCanvases] = useState<CanvasListItem[]>([]);
 
   const nestingLevels = useMemo(() => {
     if (!canvas) return {};
@@ -284,30 +288,40 @@ export default function ChatPage() {
     setCollapsedSteps(new Set());
   }, [conversation_id]);
 
-  // Support loading canvas_id from query param for empty state
+  // Fetch all canvases on mount
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const urlCanvasId = params.get("canvas");
-    if (urlCanvasId) {
-      setCanvasId(urlCanvasId);
-      // Fetch canvas name
-      getCanvas(urlCanvasId)
-        .then((canvasData) => {
-          setCanvasName(canvasData.name);
-          setCanvas(canvasData);
-        })
-        .catch((err) => console.error("Failed to load canvas name from query param:", err));
-    }
+    listCanvases()
+      .then((list) => {
+        setAllCanvases(list);
+      })
+      .catch((err) => console.error("Failed to load canvases list:", err));
   }, []);
 
-  // Load conversation details
-  useEffect(() => {
-    if (!conversation_id || conversation_id === "empty") {
-      setMessages([]);
-      return;
-    }
+  const queryCanvasId = searchParams.get("canvas");
 
-    const loadConv = async () => {
+  // Load conversation details or default canvas
+  useEffect(() => {
+    const initAndLoad = async () => {
+      if (!conversation_id || conversation_id === "empty") {
+        setMessages([]);
+        setConversationName("Chat");
+        
+        if (queryCanvasId) {
+          setCanvasId(queryCanvasId);
+          try {
+            const canvasData = await getCanvas(queryCanvasId);
+            setCanvasName(canvasData.name);
+            setCanvas(canvasData);
+          } catch (err) {
+            console.error("Failed to load canvas data for query param:", err);
+          }
+        } else if (allCanvases.length > 0) {
+          const firstCanvasId = allCanvases[0].id;
+          navigate(`/chat/empty?canvas=${firstCanvasId}`, { replace: true });
+        }
+        return;
+      }
+
       setLoadingConv(true);
       setError(null);
       try {
@@ -337,8 +351,8 @@ export default function ChatPage() {
       }
     };
 
-    loadConv();
-  }, [conversation_id]);
+    initAndLoad();
+  }, [conversation_id, queryCanvasId, allCanvases, navigate]);
 
   // Load sidebar conversations once we have a canvas_id
   const loadSidebar = useCallback(async () => {
@@ -587,9 +601,9 @@ export default function ChatPage() {
   };
 
   const navItemClass = (toPath: string) => {
-    const isExact = window.location.pathname.startsWith(toPath);
+    const isExact = location.pathname.startsWith(toPath);
     const isHome = toPath === "/";
-    const isActive = isHome ? window.location.pathname === "/" : isExact;
+    const isActive = isHome ? location.pathname === "/" : isExact;
     
     return sidebarCollapsed
       ? `flex items-center justify-center w-10 h-10 mx-auto rounded-lg transition-all ${
@@ -671,6 +685,13 @@ export default function ChatPage() {
               </Link>
             )}
             <button
+              onClick={() => {
+                if (canvasId) {
+                  navigate(`/chat/empty?canvas=${canvasId}`);
+                } else {
+                  navigate(`/chat/empty`);
+                }
+              }}
               className={navItemClass("/chat")}
               title="Agent Chat"
             >
@@ -804,7 +825,32 @@ export default function ChatPage() {
             </span>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-4">
+            {allCanvases.length > 0 && (
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-wider">
+                  Canvas:
+                </span>
+                <select
+                  value={canvasId || ""}
+                  onChange={(e) => {
+                    const selectedId = e.target.value;
+                    if (selectedId) {
+                      navigate(`/chat/empty?canvas=${selectedId}`);
+                    }
+                  }}
+                  disabled={!isEmpty}
+                  title={!isEmpty ? "Cannot change canvas mid-conversation" : "Select canvas for chat"}
+                  className="bg-[var(--color-surface)] border border-[var(--color-border-default)] rounded-lg px-2.5 py-1 text-xs font-semibold text-[var(--color-text-primary)] outline-none focus:border-[var(--color-accent)] disabled:opacity-60 disabled:cursor-not-allowed transition-all duration-200 cursor-pointer"
+                >
+                  {allCanvases.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
             <ThemeToggle className="hover:bg-[var(--color-elevated)]" />
           </div>
         </header>

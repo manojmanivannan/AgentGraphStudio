@@ -39,7 +39,7 @@ A DSPy ReAct subclass (in `streaming_react.py`) that emits events at each ReAct 
 _Avoid_: Custom agent, React agent
 
 **Conversation**:
-A persisted chat thread scoped to a Canvas. Tracks multi-turn user↔assistant exchanges. Messages include role, agent name, node_id, and event_type.
+A persisted chat thread scoped to a Canvas. Tracks multi-turn user↔assistant exchanges. Messages include role, agent name, node_id, and event_type. In the Agent Chat UI, users can select which canvas they want to use when starting a new conversation, and the selection becomes locked once the conversation begins.
 _Avoid_: Thread, chat session
 
 Automatic naming: When the first user message is sent in a newly-created conversation (default name `New Conversation`), the backend attempts to generate a concise human-friendly title using a DSPy LLM call. If successful the conversation `name` is updated and a `conversation_renamed` WebSocket event is emitted so the frontend updates the Recent Chats list and current header immediately. If the LLM does not produce a suitable title, the backend falls back to a short excerpt from the user's question.

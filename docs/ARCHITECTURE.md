@@ -977,8 +977,9 @@ The UI has two main modes:
 1. **Landing Page** (`App.tsx` when `canvasId === null`):
    - "Agent Builder" branding
    - "New Canvas" button → creates canvas via API
+   - "Agent Chat" card (visible if at least one canvas is available) → starts/continues conversation using the selected canvas
    - Recent canvases list (loaded from API)
-   - Deep-link support: `?canvas=<id>` URL parameter
+   - Deep-link support: `?canvas=<id>` URL parameter (only triggers on the root pathname `/` to prevent intercepting other routes)
 
 2. **AppShell** (`App.tsx` when navigating to `/canvas/:canvas_id`):
    - Absolute-positioned editor zones (TopBar, SidebarRail, CanvasView, and PropertiesOverlay)
@@ -1059,6 +1060,8 @@ interface ThemeState {
 
 **ChatPage.tsx** — Dedicated page route (`/chat/:conversation_id`):
 - Dual-panel workspace with a sidebar of past conversations (create, switch, delete options).
+- **Canvas Selector Dropdown**: Top-right select dropdown allows selecting any available canvas when starting a new conversation. Disables automatically mid-conversation (`conversation_id !== "empty"`) to ensure runtime scopes remain locked.
+- **Location & Search Parameter Synced**: Reads parameters reactively via `useLocation` and `useSearchParams` hooks, eliminating race conditions during route transitions.
 - Message display grouped into "turns" per user prompt.
 - Turn structure: user message → collapsible execution steps (thoughts, handoffs, tool results) → final answer.
 - Streaming: incoming WebSocket events rendered as they arrive, and execution steps automatically collapse when the final answer is reached.
