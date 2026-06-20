@@ -197,8 +197,8 @@ class TestConversationAPI:
         self, test_client, fresh_db, blank_canvas, test_session
     ):
         import io
-        import zipfile
         import json
+        import zipfile
 
         create_resp = await test_client.post(
             f"/api/canvases/{blank_canvas.id}/conversations",

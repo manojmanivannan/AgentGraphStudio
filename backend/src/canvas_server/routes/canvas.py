@@ -589,6 +589,7 @@ async def export_conversation(
 ):
     from sqlalchemy import select
     from sqlalchemy.orm import selectinload
+
     from canvas_server.models.canvas import Conversation
 
     logger.info("Exporting conversation: canvas=%s conv=%s", canvas_id, conversation_id)
@@ -656,9 +657,11 @@ async def import_conversation_zip(
     file: UploadFile = File(...),
     session: AsyncSession = Depends(get_session),
 ):
-    from datetime import datetime, UTC
+    from datetime import UTC, datetime
+
     from sqlalchemy import select
     from sqlalchemy.orm import selectinload
+
     from canvas_server.models.canvas import Conversation, ConversationPlot, Message
 
     logger.info("Importing conversation ZIP file to canvas=%s", canvas_id)
@@ -684,7 +687,7 @@ async def import_conversation_zip(
         raise HTTPException(status_code=400, detail="Invalid manifest.json") from None
 
     new_conv_id = uuid.uuid4()
-    
+
     created_at_raw = manifest.get("created_at")
     updated_at_raw = manifest.get("updated_at")
     created_at = datetime.fromisoformat(created_at_raw) if created_at_raw else datetime.now(UTC)
@@ -708,7 +711,7 @@ async def import_conversation_zip(
         plot_format = plot_data.get("format", "png")
         plot_created_raw = plot_data.get("created_at")
         plot_created_at = datetime.fromisoformat(plot_created_raw) if plot_created_raw else datetime.now(UTC)
-        
+
         path = f"plots/{old_plot_id}.{plot_format}"
         try:
             plot_content = archive.read(path)
@@ -731,7 +734,7 @@ async def import_conversation_zip(
         msg_created_raw = msg_data.get("created_at")
         msg_created_at = datetime.fromisoformat(msg_created_raw) if msg_created_raw else datetime.now(UTC)
         content = msg_data.get("content", "")
-        
+
         # Replace old plot IDs with new plot IDs
         for old_id, new_id in plot_id_mapping.items():
             content = content.replace(old_id, new_id)
