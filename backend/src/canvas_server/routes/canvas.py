@@ -577,3 +577,191 @@ async def delete_agent_document(
     from canvas_server.runner.rag_helper import RAGIndexManager
 
     await RAGIndexManager.trigger_reindex(agent_id)
+
+
+@canvas_router.get(
+    "/{canvas_id}/conversations/{conversation_id}/export",
+)
+async def export_conversation(
+    canvas_id: uuid.UUID,
+    conversation_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+):
+    from sqlalchemy import select
+    from sqlalchemy.orm import selectinload
+
+    from canvas_server.models.canvas import Conversation
+
+    logger.info("Exporting conversation: canvas=%s conv=%s", canvas_id, conversation_id)
+    stmt = (
+        select(Conversation)
+        .options(
+            selectinload(Conversation.messages),
+            selectinload(Conversation.plots),
+        )
+        .where(Conversation.id == conversation_id)
+    )
+    res = await session.execute(stmt)
+    conv = res.scalar_one_or_none()
+    if not conv or conv.canvas_id != canvas_id:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+
+    payload = {
+        "name": conv.name,
+        "status": conv.status,
+        "created_at": conv.created_at.isoformat() if conv.created_at else None,
+        "updated_at": conv.updated_at.isoformat() if conv.updated_at else None,
+        "messages": [
+            {
+                "id": str(msg.id),
+                "role": msg.role,
+                "content": msg.content,
+                "agent_name": msg.agent_name,
+                "node_id": str(msg.node_id) if msg.node_id else None,
+                "event_type": msg.event_type,
+                "created_at": msg.created_at.isoformat() if msg.created_at else None,
+            }
+            for msg in conv.messages
+        ],
+        "plots": [
+            {
+                "id": str(plot.id),
+                "format": plot.format,
+                "created_at": plot.created_at.isoformat() if plot.created_at else None,
+            }
+            for plot in conv.plots
+        ],
+    }
+
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("manifest.json", json.dumps(payload, indent=2, default=str))
+        for plot in conv.plots:
+            zf.writestr(f"plots/{plot.id}.{plot.format}", plot.content)
+    buffer.seek(0)
+
+    safe_name = conv.name.replace(" ", "_").replace("/", "_")
+    return Response(
+        content=buffer.read(),
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="conversation-{safe_name}.zip"'},
+    )
+
+
+@canvas_router.post(
+    "/{canvas_id}/conversations/import",
+    response_model=ConversationResponse,
+)
+async def import_conversation_zip(
+    canvas_id: uuid.UUID,
+    file: UploadFile = File(...),
+    session: AsyncSession = Depends(get_session),
+):
+    from datetime import UTC, datetime
+
+    from sqlalchemy import select
+    from sqlalchemy.orm import selectinload
+
+    from canvas_server.models.canvas import Conversation, ConversationPlot, Message
+
+    logger.info("Importing conversation ZIP file to canvas=%s", canvas_id)
+    canvas_repo = CanvasRepo(session)
+    try:
+        await canvas_repo.get_or_404(canvas_id)
+    except CanvasNotFoundError:
+        raise HTTPException(status_code=404, detail="Canvas not found") from None
+
+    content_bytes = await file.read()
+    try:
+        archive = zipfile.ZipFile(io.BytesIO(content_bytes))
+    except zipfile.BadZipFile:
+        raise HTTPException(status_code=400, detail="Invalid ZIP archive") from None
+
+    if "manifest.json" not in archive.namelist():
+        raise HTTPException(status_code=400, detail="ZIP archive missing manifest.json")
+
+    manifest_bytes = archive.read("manifest.json")
+    try:
+        manifest = json.loads(manifest_bytes.decode("utf-8"))
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid manifest.json") from None
+
+    new_conv_id = uuid.uuid4()
+
+    created_at_raw = manifest.get("created_at")
+    updated_at_raw = manifest.get("updated_at")
+    created_at = datetime.fromisoformat(created_at_raw) if created_at_raw else datetime.now(UTC)
+    updated_at = datetime.fromisoformat(updated_at_raw) if updated_at_raw else datetime.now(UTC)
+
+    new_conv = Conversation(
+        id=new_conv_id,
+        canvas_id=canvas_id,
+        name=manifest.get("name", "Imported Conversation"),
+        status=manifest.get("status", "active"),
+        created_at=created_at,
+        updated_at=updated_at,
+    )
+    session.add(new_conv)
+
+    plot_id_mapping = {}
+    for plot_data in manifest.get("plots", []):
+        old_plot_id = plot_data.get("id")
+        if not old_plot_id:
+            continue
+        plot_format = plot_data.get("format", "png")
+        plot_created_raw = plot_data.get("created_at")
+        plot_created_at = datetime.fromisoformat(plot_created_raw) if plot_created_raw else datetime.now(UTC)
+
+        path = f"plots/{old_plot_id}.{plot_format}"
+        try:
+            plot_content = archive.read(path)
+        except KeyError:
+            raise HTTPException(status_code=400, detail=f"Missing plot file in ZIP: {path}") from None
+
+        new_plot_id = uuid.uuid4()
+        plot_id_mapping[old_plot_id] = str(new_plot_id)
+
+        new_plot = ConversationPlot(
+            id=new_plot_id,
+            conversation_id=new_conv_id,
+            format=plot_format,
+            content=plot_content,
+            created_at=plot_created_at,
+        )
+        session.add(new_plot)
+
+    for msg_data in manifest.get("messages", []):
+        msg_created_raw = msg_data.get("created_at")
+        msg_created_at = datetime.fromisoformat(msg_created_raw) if msg_created_raw else datetime.now(UTC)
+        content = msg_data.get("content", "")
+
+        # Replace old plot IDs with new plot IDs
+        for old_id, new_id in plot_id_mapping.items():
+            content = content.replace(old_id, new_id)
+
+        node_id_raw = msg_data.get("node_id")
+        node_id = uuid.UUID(node_id_raw) if node_id_raw else None
+
+        new_msg = Message(
+            id=uuid.uuid4(),
+            conversation_id=new_conv_id,
+            role=msg_data["role"],
+            content=content,
+            agent_name=msg_data.get("agent_name"),
+            node_id=node_id,
+            event_type=msg_data.get("event_type"),
+            created_at=msg_created_at,
+        )
+        session.add(new_msg)
+
+    await session.commit()
+    logger.info("Conversation imported: id=%s", new_conv_id)
+
+    stmt = (
+        select(Conversation)
+        .options(selectinload(Conversation.messages))
+        .where(Conversation.id == new_conv_id)
+    )
+    result = await session.execute(stmt)
+    return result.scalar_one()
+

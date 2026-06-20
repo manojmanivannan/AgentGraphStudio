@@ -309,6 +309,7 @@ agent_nodes
 ├── enable_conversation_history: BOOLEAN DEFAULT FALSE
 ├── enable_rag: BOOLEAN DEFAULT FALSE
 ├── rag_chunk_size: INTEGER DEFAULT 1000
+├── is_entry_point: BOOLEAN DEFAULT FALSE
 ├── position_x: DOUBLE PRECISION DEFAULT 0
 ├── position_y: DOUBLE PRECISION DEFAULT 0
 ├── relationships: documents (CASCADE delete)
@@ -349,7 +350,7 @@ conversations
 ├── status: VARCHAR(20) DEFAULT 'active'  -- 'active' | 'completed'
 ├── created_at: TIMESTAMPTZ
 ├── updated_at: TIMESTAMPTZ
-└── relationships: messages (CASCADE delete)
+└── relationships: messages, plots (CASCADE delete)
 
 messages
 ├── id: UUID PK
@@ -361,6 +362,14 @@ messages
 ├── event_type: VARCHAR(30) NULL    -- 'run_start' | 'final_answer' | 'thought' | 'error' | etc.
 ├── created_at: TIMESTAMPTZ
 └── INDEX: idx_messages_conversation (conversation_id)
+
+conversation_plots
+├── id: UUID PK
+├── conversation_id: UUID FK → conversations.id (CASCADE)
+├── format: VARCHAR(10) DEFAULT 'png'
+├── content: BYTEA/LargeBinary      -- binary plot image contents
+├── created_at: TIMESTAMPTZ
+└── INDEX: idx_conversation_plots_conversation (conversation_id)
 ```
 
 **Key schema decisions:**
@@ -453,6 +462,8 @@ documents/{agent_id}/{document_id}.txt
 | `GET` | `/api/canvases/{id}/conversations` | List conversations |
 | `GET` | `/api/canvases/{id}/conversations/{cid}` | Get conversation with messages |
 | `DELETE` | `/api/canvases/{id}/conversations/{cid}` | Delete conversation |
+| `GET` | `/api/canvases/{id}/conversations/{cid}/export` | Export conversation (messages, metadata, binary plot files) as a ZIP archive |
+| `POST` | `/api/canvases/{id}/conversations/import` | Import conversation from a ZIP archive, remapping plot IDs to prevent collisions |
 
 ### Execution
 
@@ -720,9 +731,10 @@ If the `enable_plotting` capability flag is checked on an Agent Node (Worker or 
 2. The `PlotProvider` exposes the `generate_plot(python_code: str) -> str` tool function to the agent's available tools.
 3. When the agent runs Python plotting code (using standard matplotlib or plotly APIs), it invokes `generate_plot` which runs the script inside the Docker sandbox session (`ArtifactSandboxSession`).
 4. Any figures produced by calling `plt.show()` or `fig.show()` are captured by the sandbox session as base64 images.
-5. The `PlotProvider` decodes these images, writes them to `storage/plots/` on the backend host, and returns a Markdown image link (e.g., `![Plot](/api/static/plots/{filename}.png)`) to the agent.
+5. The `PlotProvider` decodes these images, saves them to the database as `ConversationPlot` records, and returns a Markdown image link referencing the database record (e.g., `![Plot](/api/plots/{plot_id})`) to the agent.
 6. The agent is strictly instructed via dynamic prompts to preserve this exact markdown image link in its final response.
-7. The frontend chat overlay renders the markdown image tag natively in the conversation turn thread.
+7. **Automatic Link Recovery (`ensure_plots_in_result`)**: If the agent's final text response (or sub-agent handoff result) omits the markdown plot link generated during the run, the execution engine intercepts the result, extracts any markdown image links from the tool observations, and appends them to the final response text automatically.
+8. The frontend chat overlay renders the markdown image tag natively in the conversation turn thread.
 
 ### streaming_react.py — StreamingReAct
 
@@ -780,12 +792,19 @@ by `run()`. They:
   ```
   It executes the selected target agents concurrently using `asyncio.gather(..., return_exceptions=True)` and aggregates their results (including graceful handling of per-agent errors) into a single findings report returned to the router.
 
+### Starting Agent Resolution (Entry Point & Target Agent)
+
+When execution is initiated, the backend determines the starting agent node based on the following precedence rules:
+1. **Target Agent Mode**: If a `target_agent_id` is specified (typically sent by the frontend), the execution starts directly at that agent node (whether a worker or router).
+2. **Entry Point Flag**: If no `target_agent_id` is specified, the backend searches the canvas for any agent node marked as an entry point (`is_entry_point: true`).
+3. **Fallback Selection**: If no agent node is explicitly marked as the entry point and no target is sent, it defaults to the first agent node (usually the first worker in the canvas node list).
+
 ### Handoff Chain (No Target Agent)
 
-When `run()` is called without `target_agent_id` and the first agent is a worker:
+When `run()` is called without `target_agent_id` and the starting agent is a worker:
 
 ```
-current_agent = first worker in list
+current_agent = resolved starting worker agent
 while current_agent is not None and not visited:
     run worker → get final_answer
     pick first handoff edge as next_agent

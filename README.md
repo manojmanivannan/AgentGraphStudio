@@ -48,14 +48,16 @@ graph TD
     classDef sandbox fill:#f59e0b,stroke:#d97706,stroke-width:2px,color:#fff;
 
     A["React Canvas / Chat UI"]:::frontend -->|1. WebSocket Connection| B["FastAPI ws/conversations/:id/run"]:::backend
-    B -->|2. Load Canvas Graph| C[("PostgreSQL + pgvector")]:::storage
-    B -->|3. Initialize Runner| D["CanvasRunner"]:::backend
-    D -->|4. Lazy Compilation & Setup| E["Build Worker/Router Agents"]:::backend
-    E -->|5. Sandboxed Tool Execution| F["Docker Sandbox / llm-sandbox"]:::sandbox
-    E -->|6. Multi-turn Agent Logic| G["DSPy StreamingReAct Loop"]:::backend
-    G -->|7. Embeddings / RAG / Memory| H[("mem0 + Qdrant")]:::storage
-    G -->|8. Log Traces & Metrics| I["MLflow Tracing"]:::storage
-    G -->|9. Real-time Event Stream| A
+    B -->|2. Delegate to coordinator| J["ConversationRunCoordinator"]:::backend
+    J -->|3. Load Graph & Resolve Entry Point| C[("PostgreSQL + pgvector")]:::storage
+    J -->|4. Initialize Runner| D["CanvasRunner"]:::backend
+    D -->|5. Lazy Compilation & Setup| E["Build Worker/Router Agents"]:::backend
+    E -->|6. Sandboxed Tool Execution| F["Docker Sandbox / llm-sandbox"]:::sandbox
+    F -->|7. Save Binary Plot Assets| C
+    E -->|8. Multi-turn Agent Logic| G["DSPy StreamingReAct Loop"]:::backend
+    G -->|9. Embeddings / RAG / Memory| H[("mem0 + Qdrant")]:::storage
+    G -->|10. Log Traces & Metrics| I["MLflow Tracing"]:::storage
+    G -->|11. Real-time Event Stream| A
 ```
 
 </details>
@@ -64,15 +66,15 @@ graph TD
 
 ## ✨ Features
 
-*   **🎨 Visual Canvas Editor**: Build architectures using ReactFlow v12. Drag, configure, and wire agents and tools. Custom edges support smooth handoffs and distinct tool-access channels.
+*   **🎨 Visual Canvas Editor**: Build architectures using ReactFlow v12. Drag, configure, and wire agents and tools. Custom edges support smooth handoffs and distinct tool-access channels. Designate an entry point agent node as the default starting execution point.
 *   **🧠 Dual Agent Model**:
     *   **Workers**: Execute specialized tasks via DSPy ReAct loops (thoughts $\rightarrow$ tool calls $\rightarrow$ observations $\rightarrow$ answer).
     *   **Routers**: Orchestrate tasks by dynamically delegating execution to other worker or router nodes. Supports sequential lazy handoff tools and concurrent multi-agent delegation via the parallel execution tool.
-*   **🛡️ Secure Docker Sandbox**: Execute user-defined Python tools safely inside isolated Docker containers managed by the `llm-sandbox` library. Provides OS-level isolation, native Python performance, and persistent session state across runs.
+*   **🛡️ Secure Docker Sandbox**: Execute user-defined Python tools safely inside isolated Docker containers managed by the `llm-sandbox` library. Provides OS-level isolation, native Python performance, and persistent session state across runs. Enables agents to generate charts/visualizations via `generate_plot` (utilizing matplotlib/plotly), which are captured, saved to the database, and rendered in chat.
 *   **📚 In-Memory RAG**: Attach domain-specific text documents directly to worker nodes. Documents are split using a paragraph-aligned chunker, embedded dynamically, and retrieved at runtime using the `{{ rag_document }}` template placeholder.
 *   **💾 Agent Memory (mem0 + Qdrant)**: Maintain context across messages. Leverages a thread-safe, in-process shared `mem0` instance connected to a local Qdrant vector store.
 *   **WebSocket Streaming**: Watch thoughts, tool starts, tool results, handoffs, and final answers stream live. Canvas nodes glow green dynamically as they trigger.
-*   **📦 Portable ZIP Packages**: Export an entire canvas (layout, agent states, tool scripts, and attached RAG documents) as a single portable `.zip` bundle, or import it back to share it.
+*   **📦 Portable ZIP Packages**: Export/import an entire canvas (layout, agent states, tool scripts, and RAG documents) as a single portable `.zip` bundle. Additionally, export/import entire conversations as ZIP archives, packaging all messages, metadata, and binary plot assets with UUID remapping on import.
 *   **🧩 Explicit Canvas Response Shape**: Canvas GET and save responses use a distinct response envelope so agent capability fields like `rag_chunk_size` stay visible at the API seam.
 *   **📈 MLflow Observability**: Full execution transparency. Automatically trace DSPy pipelines, LLM prompt signatures, and tool outputs using integrated MLflow tracking.
 *   **🏷️ Automatic Conversation Naming**: Automatically titles new threads using a quick LLM call on the first message, with a fallback to the user's initial prompt.

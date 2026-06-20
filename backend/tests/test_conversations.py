@@ -193,6 +193,81 @@ class TestConversationAPI:
         get_resp = await test_client.get(f"/api/canvases/conversations/{conv_id}")
         assert get_resp.status_code == 404
 
+    async def test_export_and_import_conversation(
+        self, test_client, fresh_db, blank_canvas, test_session
+    ):
+        import io
+        import json
+        import zipfile
+
+        create_resp = await test_client.post(
+            f"/api/canvases/{blank_canvas.id}/conversations",
+            json={"name": "ExportImportChat"},
+        )
+        assert create_resp.status_code == 200
+        conv_id = create_resp.json()["id"]
+
+        from canvas_server.repos.conversation_repo import ConversationRepo
+        repo = ConversationRepo(test_session)
+
+        plot = await repo.save_plot(
+            conversation_id=uuid.UUID(conv_id),
+            content=b"fake-image-bytes",
+            format="png",
+        )
+
+        await repo.add_message(
+            conversation_id=uuid.UUID(conv_id),
+            role="user",
+            content="Show me a plot",
+        )
+        await repo.add_message(
+            conversation_id=uuid.UUID(conv_id),
+            role="assistant",
+            content=f"Here is the plot: ![Plot](/api/plots/{plot.id})",
+        )
+        await test_session.commit()
+
+        export_resp = await test_client.get(
+            f"/api/canvases/{blank_canvas.id}/conversations/{conv_id}/export"
+        )
+        assert export_resp.status_code == 200
+        assert export_resp.headers["content-type"] == "application/zip"
+
+        zip_bytes = export_resp.read()
+        archive = zipfile.ZipFile(io.BytesIO(zip_bytes))
+        assert "manifest.json" in archive.namelist()
+        assert f"plots/{plot.id}.png" in archive.namelist()
+
+        manifest_data = json.loads(archive.read("manifest.json").decode("utf-8"))
+        assert manifest_data["name"] == "ExportImportChat"
+        assert len(manifest_data["messages"]) == 2
+        assert len(manifest_data["plots"]) == 1
+
+        import_resp = await test_client.post(
+            f"/api/canvases/{blank_canvas.id}/conversations/import",
+            files={"file": ("export.zip", zip_bytes, "application/zip")},
+        )
+        assert import_resp.status_code == 200
+        imported_data = import_resp.json()
+        assert imported_data["name"] == "ExportImportChat"
+        assert imported_data["id"] != conv_id
+
+        get_resp = await test_client.get(
+            f"/api/canvases/{blank_canvas.id}/conversations/{imported_data['id']}"
+        )
+        assert get_resp.status_code == 200
+        imported_conv = get_resp.json()
+        assert len(imported_conv["messages"]) == 2
+
+        user_msg = imported_conv["messages"][0]
+        assistant_msg = imported_conv["messages"][1]
+
+        assert "Show me a plot" in user_msg["content"]
+        assert f"![Plot](/api/plots/{plot.id})" not in assistant_msg["content"]
+        assert "/api/plots/" in assistant_msg["content"]
+
+
 
 class TestConversationRepo:
     async def test_complete_conversation_sets_status(self, test_session, blank_canvas):
