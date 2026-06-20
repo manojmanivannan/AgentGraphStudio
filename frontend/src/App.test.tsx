@@ -8,9 +8,11 @@ import { useCanvasStore } from "@/store/canvasStore";
 import App from "./App";
 import { MemoryRouter } from "react-router-dom";
 
-// AppShell contains the full ReactFlow canvas — keep App tests focused on the landing page
 vi.mock("@/components/layout/AppShell", () => ({
   AppShell: () => <div data-testid="app-shell" />,
+}));
+vi.mock("@/components/chat/ChatPage", () => ({
+  default: () => <div data-testid="chat-page" />,
 }));
 
 beforeEach(() => {
@@ -388,5 +390,33 @@ describe("App — landing page", () => {
     await user.click(screen.getByRole("button", { name: "Deselect All" }));
     expect(screen.getByRole("button", { name: "Delete Selected (0)" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Select All" })).toBeInTheDocument();
+  });
+
+  it("shows Agent Chat card on the landing page if canvases are available and navigates on click", async () => {
+    const user = userEvent.setup();
+    server.use(
+      http.get("http://localhost:8000/api/canvases", () =>
+        HttpResponse.json([
+          mockCanvasListItem({ id: "c1", name: "Alpha Canvas" }),
+        ])
+      )
+    );
+
+    render(
+      <MemoryRouter initialEntries={["/"]}>
+        <App />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Alpha Canvas")).toBeInTheDocument();
+      expect(screen.getByText("Agent Chat")).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByText("Agent Chat"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("chat-page")).toBeInTheDocument();
+    });
   });
 });

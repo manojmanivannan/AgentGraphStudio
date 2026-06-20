@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from "react";
-import { Routes, Route, useNavigate, useParams, Link } from "react-router-dom";
+import { Routes, Route, useNavigate, useParams, Link, useLocation } from "react-router-dom";
 import { AppShell } from "@/components/layout/AppShell";
 import ChatPage from "@/components/chat/ChatPage";
 import ObservabilityPage from "@/components/observability/ObservabilityPage";
@@ -24,6 +24,7 @@ import {
   X,
   HelpCircle,
   Check,
+  MessageSquare,
 } from "lucide-react";
 import type { CanvasListItem, CanvasSavePayload } from "@/types";
 import type { Node } from "@xyflow/react";
@@ -161,6 +162,7 @@ function LandingPage({
   handleImportFile: (file: File) => Promise<void>;
   handleDeleteCanvases: (ids: string[]) => Promise<void>;
 }) {
+  const navigate = useNavigate();
   const resetStore = useCanvasStore((s) => s.reset);
   const theme = useThemeStore((s) => s.theme);
 
@@ -274,7 +276,7 @@ function LandingPage({
       )}
 
       {/* Hero Cards Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 w-full max-w-4xl mb-12 relative z-10">
+      <div className={`grid grid-cols-1 ${canvases.length > 0 ? "md:grid-cols-3" : "md:grid-cols-2"} gap-6 w-full max-w-4xl mb-12 relative z-10`}>
         {/* New Canvas Card */}
         <button
           onClick={handleCreateCanvas}
@@ -314,6 +316,35 @@ function LandingPage({
             Upload &rarr;
           </div>
         </button>
+
+        {/* Agent Chat Card */}
+        {canvases.length > 0 && (
+          <button
+            onClick={() => {
+              const canvasId = canvases[0]?.id;
+              if (canvasId) {
+                navigate(`/chat/empty?canvas=${canvasId}`);
+              } else {
+                navigate(`/chat/empty`);
+              }
+            }}
+            disabled={loading}
+            className="group relative flex flex-col items-start p-6 rounded-2xl bg-gradient-to-br from-[var(--color-surface)] to-[var(--color-elevated)] border border-[var(--color-border-default)] hover:border-[var(--color-agent)] transition-all duration-300 text-left shadow-[0_4px_20px_rgba(0,0,0,0.35),0_0_12px_rgba(255,255,255,0.02)] hover:shadow-[0_0_30px_-5px_rgba(99,102,241,0.15),0_0_15px_rgba(255,255,255,0.04),0_8px_32px_-4px_rgba(0,0,0,0.5)] disabled:opacity-40"
+          >
+            <div className="w-12 h-12 rounded-xl bg-[var(--color-agent-subtle)] border border-[var(--color-border-default)] flex items-center justify-center text-[var(--color-agent)] group-hover:scale-110 transition-transform duration-300 mb-4 shadow-inner">
+              <MessageSquare className="w-6 h-6" />
+            </div>
+            <h3 className="text-lg font-semibold text-[var(--color-text-primary)] mb-1">
+              Agent Chat
+            </h3>
+            <p className="text-xs text-[var(--color-text-secondary)] leading-relaxed">
+              Start chatting with your agent workflow, ask questions, run tool actions, and orchestrate agent task completion.
+            </p>
+            <div className="absolute bottom-4 right-4 text-xs text-[var(--color-agent)] font-semibold opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+              Chat &rarr;
+            </div>
+          </button>
+        )}
       </div>
 
       {/* Loading Spinner */}
@@ -416,13 +447,12 @@ function LandingPage({
                     toggleSelectCanvas(c.id);
                   }
                 }}
-                className={`group relative flex items-center justify-between p-4 bg-gradient-to-r from-[var(--color-surface)] to-[var(--color-elevated)] border rounded-xl transition-all duration-300 shadow-[0_4px_16px_rgba(0,0,0,0.25)] hover:shadow-[0_0_24px_-4px_rgba(116,116,139,0.18),0_0_8px_-2px_rgba(116,116,139,0.08),0_4px_12px_rgba(0,0,0,0.35)] ${
-                  selectMode
-                    ? selectedCanvasIds.has(c.id)
-                      ? "border-[var(--color-accent)]"
-                      : "border-[var(--color-border-subtle)] hover:border-[var(--color-border-default)] cursor-pointer"
-                    : "border-[var(--color-border-subtle)] hover:border-[var(--color-border-default)]"
-                }`}
+                className={`group relative flex items-center justify-between p-4 bg-gradient-to-r from-[var(--color-surface)] to-[var(--color-elevated)] border rounded-xl transition-all duration-300 shadow-[0_4px_16px_rgba(0,0,0,0.25)] hover:shadow-[0_0_24px_-4px_rgba(116,116,139,0.18),0_0_8px_-2px_rgba(116,116,139,0.08),0_4px_12px_rgba(0,0,0,0.35)] ${selectMode
+                  ? selectedCanvasIds.has(c.id)
+                    ? "border-[var(--color-accent)]"
+                    : "border-[var(--color-border-subtle)] hover:border-[var(--color-border-default)] cursor-pointer"
+                  : "border-[var(--color-border-subtle)] hover:border-[var(--color-border-default)]"
+                  }`}
               >
                 {selectMode && (
                   <div
@@ -430,11 +460,10 @@ function LandingPage({
                       e.stopPropagation();
                       toggleSelectCanvas(c.id);
                     }}
-                    className={`w-4.5 h-4.5 rounded border flex items-center justify-center shrink-0 cursor-pointer transition-all mr-2 ${
-                      selectedCanvasIds.has(c.id)
-                        ? "border-[var(--color-accent)] bg-[var(--color-accent)] text-black"
-                        : "border-[var(--color-border-strong)] bg-[var(--color-inset)] hover:border-[var(--color-text-secondary)]"
-                    }`}
+                    className={`w-4.5 h-4.5 rounded border flex items-center justify-center shrink-0 cursor-pointer transition-all mr-2 ${selectedCanvasIds.has(c.id)
+                      ? "border-[var(--color-accent)] bg-[var(--color-accent)] text-black"
+                      : "border-[var(--color-border-strong)] bg-[var(--color-inset)] hover:border-[var(--color-text-secondary)]"
+                      }`}
                   >
                     {selectedCanvasIds.has(c.id) && <Check className="w-3 h-3 stroke-[3]" />}
                   </div>
@@ -557,6 +586,7 @@ function LandingPage({
 
 export default function App() {
   const navigate = useNavigate();
+  const location = useLocation();
 
   const [canvases, setCanvases] = useState<CanvasListItem[]>([]);
   const [loading, setLoading] = useState(false);
@@ -580,12 +610,13 @@ export default function App() {
 
   // Support deep-linking via ?canvas=<id> (redirects to the clean route)
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
+    if (location.pathname !== "/") return;
+    const params = new URLSearchParams(location.search);
     const initialId = params.get("canvas");
     if (initialId) {
       navigate(`/canvas/${initialId}`, { replace: true });
     }
-  }, [navigate]);
+  }, [navigate, location.pathname, location.search]);
 
   const handleCreateCanvas = async () => {
     setLoading(true);
