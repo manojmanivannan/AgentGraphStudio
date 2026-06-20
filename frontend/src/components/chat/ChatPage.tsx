@@ -13,6 +13,8 @@ import {
   AlertCircle,
   FolderKanban,
   Activity,
+  Download,
+  Upload,
 } from "lucide-react";
 import { useCanvasStore } from "@/store/canvasStore";
 import { useThemeStore } from "@/store/themeStore";
@@ -24,6 +26,8 @@ import {
   deleteConversationById,
   getCanvas,
   apiOrigin,
+  exportConversationZip,
+  importConversationZip,
 } from "@/lib/api";
 import type { ConversationSummary, Message, ExecutionEvent, CanvasResponse } from "@/types";
 import { executionEventToMessage } from "./executionEventMessage";
@@ -262,6 +266,7 @@ export default function ChatPage() {
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const localMessagesRef = useRef<Message[]>([]);
 
@@ -372,6 +377,50 @@ export default function ChatPage() {
       console.error("Failed to delete conversation:", err);
     }
     setDeleteConfirmId(null);
+  };
+
+  const handleExportConversation = async (e: React.MouseEvent, id: string, name: string) => {
+    e.stopPropagation();
+    try {
+      if (!canvasId) return;
+      setError(null);
+      const blob = await exportConversationZip(canvasId, id);
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      const safeName = name.replace(/\s+/g, "_").replace(/\//g, "_");
+      a.download = `conversation-${safeName}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+    } catch (err: any) {
+      setError("Failed to export conversation.");
+      console.error("Failed to export conversation:", err);
+    }
+  };
+
+  const handleImportClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !canvasId) return;
+
+    setError(null);
+    try {
+      const newConv = await importConversationZip(canvasId, file);
+      setConversations((prev) => [newConv, ...prev]);
+      navigate(`/chat/${newConv.id}`);
+    } catch (err: any) {
+      setError("Failed to import conversation. Please make sure the uploaded file is a valid conversation ZIP archive.");
+      console.error("Failed to import conversation:", err);
+    } finally {
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+    }
   };
 
   const toggleExpand = useCallback((turnId: string) => {
@@ -679,16 +728,25 @@ export default function ChatPage() {
                       <MessageSquare className="w-3.5 h-3.5 text-[var(--color-text-tertiary)] shrink-0" />
                       <span className="text-xs truncate font-medium">{c.name}</span>
                     </div>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setDeleteConfirmId(c.id);
-                      }}
-                      className="opacity-0 group-hover:opacity-100 p-1 text-[var(--color-text-tertiary)] hover:text-[var(--color-danger)] hover:bg-[var(--color-danger-subtle)] rounded transition-all duration-150"
-                      title="Delete conversation"
-                    >
-                      <Trash2 className="w-3 h-3" />
-                    </button>
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={(e) => handleExportConversation(e, c.id, c.name)}
+                        className="opacity-0 group-hover:opacity-100 p-1 text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-overlay)]/40 rounded transition-all duration-150"
+                        title="Export conversation"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setDeleteConfirmId(c.id);
+                        }}
+                        className="opacity-0 group-hover:opacity-100 p-1 text-[var(--color-text-tertiary)] hover:text-[var(--color-danger)] hover:bg-[var(--color-danger-subtle)] rounded transition-all duration-150"
+                        title="Delete conversation"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    </div>
                   </>
                 )}
               </div>
@@ -697,7 +755,7 @@ export default function ChatPage() {
         </div>
 
         {/* Sidebar Bottom - Start New Conversation */}
-        <div className={`p-3 border-t border-[var(--color-border-subtle)] bg-[var(--color-inset)] w-full ${sidebarCollapsed ? "flex justify-center" : ""}`}>
+        <div className={`p-3 border-t border-[var(--color-border-subtle)] bg-[var(--color-inset)] w-full flex flex-col ${sidebarCollapsed ? "items-center" : ""} gap-2`}>
           <button
             onClick={handleNewConversation}
             disabled={!canvasId}
@@ -708,8 +766,27 @@ export default function ChatPage() {
             title="New Conversation"
           >
             <Plus className="w-3.5 h-3.5 shrink-0" />
-            {!sidebarCollapsed && <span className="whitespace-nowrap">New Conversation</span>}
+            {!sidebarCollapsed && <span className="truncate">New Conversation</span>}
           </button>
+          <button
+            onClick={handleImportClick}
+            disabled={!canvasId}
+            className={sidebarCollapsed
+              ? "btn-secondary w-10 h-10 p-0 flex items-center justify-center rounded-lg border border-[var(--color-border-default)]"
+              : "w-full btn-secondary flex items-center justify-center gap-1.5 h-10 text-xs whitespace-nowrap border border-[var(--color-border-default)]"
+            }
+            title="Import Conversation"
+          >
+            <Upload className="w-3.5 h-3.5 shrink-0" />
+            {!sidebarCollapsed && <span className="truncate">Import Conversation</span>}
+          </button>
+          <input
+            type="file"
+            ref={fileInputRef}
+            onChange={handleFileChange}
+            accept=".zip"
+            className="hidden"
+          />
         </div>
       </aside>
 

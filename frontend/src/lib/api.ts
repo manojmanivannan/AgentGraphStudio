@@ -280,3 +280,35 @@ export async function deleteAgentDocument(
   );
   if (!res.ok) throw new Error("Failed to delete agent document");
 }
+
+export async function exportConversationZip(
+  canvasId: string,
+  conversationId: string
+): Promise<Blob> {
+  const res = await fetch(
+    `${API_BASE}/canvases/${canvasId}/conversations/${conversationId}/export`
+  );
+  if (!res.ok) throw new Error("Failed to export conversation ZIP");
+  return res.blob();
+}
+
+export async function importConversationZip(
+  canvasId: string,
+  file: File
+): Promise<Conversation> {
+  const formData = new FormData();
+  formData.append("file", file);
+
+  const res = await fetch(
+    `${API_BASE}/canvases/${canvasId}/conversations/import`,
+    {
+      method: "POST",
+      body: formData,
+    }
+  );
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({ detail: "Failed to import conversation" }));
+    throw new Error(error.detail || "Failed to import conversation");
+  }
+  return res.json();
+}
