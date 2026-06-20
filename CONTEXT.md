@@ -70,6 +70,10 @@ _Avoid_: Knowledge base, document store, uploaded files
 A ZIP archive export/import format for a Canvas. It contains a `manifest.json` plus agent-specific document files under `documents/{agent_id}/{doc_id}.txt`, allowing RAG documents to be preserved when moving teams between environments.
 _Avoid_: bundle, tarball, archive format
 
+**Conversation ZIP package**:
+A ZIP archive export/import format for a Conversation. It contains a `manifest.json` with the conversation's messages, metadata, and plot references, as well as binary plot image files under `plots/`. During import, plot image IDs are remapped to prevent UUID collisions, and references in message content are updated automatically.
+_Avoid_: thread export, conversation archive, text dump
+
 **RAG Chunk Size**:
 The maximum length (in characters) used when splitting RAG documents into paragraph-aligned chunks for embedding and retrieval.
 _Avoid_: Split size, block length, character limit
@@ -91,5 +95,9 @@ Running a tool function in the sandbox with user-provided argument values and re
 _Avoid_: Playground, REPL, runner
 
 **Plotting / PlotProvider**:
-A capability that enables agents to generate visual charts and plots by executing python code containing matplotlib or plotly commands inside the sandboxed Docker session. The generated plots are captured, saved to local storage, and returned to the conversation as markdown image links (`![Plot](/api/static/plots/{filename})`).
+A capability that enables agents to generate visual charts and plots by executing python code containing matplotlib or plotly commands inside the sandboxed Docker session. The generated plots are captured, saved to the database as `ConversationPlot` records, and returned to the conversation as markdown image links referencing the database record (e.g., `![Plot](/api/plots/{plot_id})`). The execution engine also implements automatic plot link recovery (`ensure_plots_in_result`) to ensure that any generated plot is appended to the agent's final text response even if the LLM forgot to include it.
 _Avoid_: Client-side charting, host-side plotting, inline plot generation
+
+**Entry Point**:
+A configuration flag (`is_entry_point`) on an Agent Node. When set to `True`, it designates that agent as the default starting node for workflow execution when no specific target agent ID is specified.
+_Avoid_: Start node, root agent, entry node
