@@ -59,6 +59,30 @@ describe("executionEventToMessage", () => {
     });
   });
 
+  it("maps non-handoff tool results to tool transcript messages", () => {
+    const message = executionEventToMessage(
+      {
+        type: "tool_result",
+        agent: "WeatherAgent",
+        tool: "get_weather_forecast",
+        output: "Sunny in Chennai",
+        node_id: "tool-node-1",
+      },
+      baseContext
+    );
+
+    expect(message).toEqual({
+      id: "msg-1",
+      conversation_id: "conv-1",
+      role: "tool",
+      content: "Sunny in Chennai",
+      agent_name: "get_weather_forecast",
+      node_id: "tool-node-1",
+      event_type: "tool_result",
+      created_at: "2026-01-01T00:00:00.000Z",
+    });
+  });
+
   it("maps handoff events to system transcript messages", () => {
     const message = executionEventToMessage(
       {

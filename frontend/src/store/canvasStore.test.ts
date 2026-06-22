@@ -79,6 +79,14 @@ describe("canvasStore", () => {
       store().setActiveNodeId(null);
       expect(store().activeNodeId).toBeNull();
     });
+
+    it("tracks replay-driven active node transitions", () => {
+      store().setActiveNodeId("agent-a");
+      expect(store().activeNodeId).toBe("agent-a");
+
+      store().setActiveNodeId("tool-b");
+      expect(store().activeNodeId).toBe("tool-b");
+    });
   });
 
   describe("setSaveStatus", () => {

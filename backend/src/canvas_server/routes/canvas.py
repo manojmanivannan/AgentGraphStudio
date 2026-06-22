@@ -590,7 +590,7 @@ async def export_conversation(
     from sqlalchemy import select
     from sqlalchemy.orm import selectinload
 
-    from canvas_server.models.canvas import Conversation
+    from canvas_server.models.canvas import Canvas, Conversation
 
     logger.info("Exporting conversation: canvas=%s conv=%s", canvas_id, conversation_id)
     stmt = (
@@ -606,9 +606,17 @@ async def export_conversation(
     if not conv or conv.canvas_id != canvas_id:
         raise HTTPException(status_code=404, detail="Conversation not found")
 
+    canvas_stmt = select(Canvas).where(Canvas.id == conv.canvas_id)
+    canvas_result = await session.execute(canvas_stmt)
+    conv_canvas = canvas_result.scalar_one_or_none()
+
     payload = {
         "name": conv.name,
         "status": conv.status,
+        "canvas": {
+            "id": str(conv.canvas_id),
+            "name": conv_canvas.name if conv_canvas else None,
+        },
         "created_at": conv.created_at.isoformat() if conv.created_at else None,
         "updated_at": conv.updated_at.isoformat() if conv.updated_at else None,
         "messages": [
@@ -667,7 +675,7 @@ async def import_conversation_zip(
     logger.info("Importing conversation ZIP file to canvas=%s", canvas_id)
     canvas_repo = CanvasRepo(session)
     try:
-        await canvas_repo.get_or_404(canvas_id)
+        target_canvas = await canvas_repo.get_or_404(canvas_id)
     except CanvasNotFoundError:
         raise HTTPException(status_code=404, detail="Canvas not found") from None
 
@@ -685,6 +693,22 @@ async def import_conversation_zip(
         manifest = json.loads(manifest_bytes.decode("utf-8"))
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid manifest.json") from None
+
+    manifest_canvas = manifest.get("canvas")
+    if isinstance(manifest_canvas, dict):
+        manifest_canvas_id = manifest_canvas.get("id")
+        manifest_canvas_name = manifest_canvas.get("name") or "Unknown Canvas"
+        if manifest_canvas_id and str(canvas_id) != str(manifest_canvas_id):
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"This conversation belongs to canvas '{manifest_canvas_name}'. "
+                    f"Please switch to that canvas before importing."
+                ),
+            )
+
+    if target_canvas is None:
+        raise HTTPException(status_code=404, detail="Canvas not found")
 
     new_conv_id = uuid.uuid4()
 

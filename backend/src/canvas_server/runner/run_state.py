@@ -152,10 +152,18 @@ class CanvasRunState:
             send_event = self.send_event
 
             async def callback(event, aid=agent_id, aname=agent_node.name):
-                await send_event({"agent": aname, "node_id": str(aid), **event})
-                if event.get("type") == "tool_start":
+                event_type = event.get("type")
+
+                if event_type == "tool_start":
                     tool_name = event.get("tool", "")
                     tool_node_id = tool_name_to_id.get(tool_name)
+                    await send_event(
+                        {
+                            "agent": aname,
+                            "node_id": str(aid),
+                            **event,
+                        }
+                    )
                     if tool_node_id:
                         await send_event(
                             {
@@ -164,26 +172,44 @@ class CanvasRunState:
                                 "node_id": str(tool_node_id),
                             }
                         )
-                elif event.get("type") == "thought":
+                    return
+
+                if event_type == "tool_result":
+                    tool_name = event.get("tool", "")
+                    classification = classify_tool_result(
+                        tool_name=tool_name,
+                        fallback_agent_name=aname,
+                    )
+                    tool_node_id = tool_name_to_id.get(tool_name)
+                    resolved_node_id = tool_node_id or aid
+
+                    await send_event(
+                        {
+                            "agent": aname,
+                            "node_id": str(resolved_node_id),
+                            **event,
+                        }
+                    )
+
+                    persisted_role = "assistant" if classification.event_type == "response" else "tool"
+                    await self.conversation_service.persist_message(
+                        role=persisted_role,
+                        content=event.get("output", ""),
+                        agent_name=classification.agent_name,
+                        node_id=resolved_node_id,
+                        event_type=classification.event_type,
+                    )
+                    return
+
+                await send_event({"agent": aname, "node_id": str(aid), **event})
+
+                if event_type == "thought":
                     await self.conversation_service.persist_message(
                         role="assistant",
                         content=event.get("content", ""),
                         agent_name=aname,
                         node_id=aid,
                         event_type="thought",
-                    )
-                elif event.get("type") == "tool_result":
-                    tool_name = event.get("tool", "")
-                    classification = classify_tool_result(
-                        tool_name=tool_name,
-                        fallback_agent_name=aname,
-                    )
-                    await self.conversation_service.persist_message(
-                        role="assistant",
-                        content=event.get("output", ""),
-                        agent_name=classification.agent_name,
-                        node_id=aid,
-                        event_type=classification.event_type,
                     )
 
             agent.on_event(callback)
