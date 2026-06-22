@@ -107,6 +107,82 @@ function resolveReplayNodeId(message: Message | null, nodes: Node[]): string | n
   return nameMatch?.id || null;
 }
 
+type ReplaySemanticType = "router" | "worker" | "tool" | "user" | "unknown";
+
+const BUILTIN_TOOL_NAMES = new Set(["generate_plot"]);
+
+function isBuiltinToolActor(message: Message): boolean {
+  const actorName = message.agent_name?.trim().toLowerCase();
+  return Boolean(actorName && BUILTIN_TOOL_NAMES.has(actorName));
+}
+
+function resolveReplaySemanticType(message: Message, nodes: Node[]): ReplaySemanticType {
+  if (isToolResultMessage(message)) {
+    return "tool";
+  }
+
+  const resolvedNodeId = resolveReplayNodeId(message, nodes);
+  if (resolvedNodeId) {
+    const matchedNode = nodes.find((node) => node.id === resolvedNodeId);
+    if (matchedNode?.type === "tool") {
+      return "tool";
+    }
+
+    if (matchedNode?.type === "agent") {
+      const agentData = matchedNode.data as { agentType?: string } | undefined;
+      return agentData?.agentType === "router" ? "router" : "worker";
+    }
+  }
+
+  if (isBuiltinToolActor(message)) {
+    return "tool";
+  }
+
+  if (message.role === "assistant") {
+    return "worker";
+  }
+
+  if (message.role === "user") {
+    return "user";
+  }
+
+  return "unknown";
+}
+
+function getReplayBadgeColorClass(type: ReplaySemanticType): string {
+  if (type === "router") {
+    return "bg-[var(--color-agent-subtle)] text-[var(--color-agent)]";
+  }
+  if (type === "worker") {
+    return "bg-[var(--color-accent-subtle)] text-[var(--color-accent)]";
+  }
+  if (type === "tool") {
+    return "bg-[var(--color-secondary-subtle)] text-[var(--color-secondary)]";
+  }
+  if (type === "user") {
+    return "bg-[var(--color-warning-subtle)] text-[var(--color-warning)]";
+  }
+  return "bg-[var(--color-border-subtle)] text-[var(--color-text-secondary)]";
+}
+
+function getReplayTickColorClass(type: ReplaySemanticType): string {
+  if (type === "router") {
+    return "bg-[var(--color-agent)]";
+  }
+  if (type === "worker") {
+    return "bg-[var(--color-accent)]";
+  }
+  if (type === "tool") {
+    return "bg-[var(--color-secondary)]";
+  }
+  if (type === "user") {
+    return "bg-[var(--color-warning)]";
+  }
+  return "bg-[var(--color-border-strong)]";
+}
+
+const BASE_REPLAY_INTERVAL_MS = 1200;
+
 export function ConversationReplayPanel() {
   const canvasId = useCanvasStore((s) => s.canvasId);
   const nodes = useCanvasStore((s) => s.nodes);
@@ -120,12 +196,38 @@ export function ConversationReplayPanel() {
   const [expanded, setExpanded] = useState<boolean>(false);
   const [conversationList, setConversationList] = useState<ConversationSummary[]>([]);
   const [showConversationList, setShowConversationList] = useState<boolean>(false);
+  const [conversationSearch, setConversationSearch] = useState<string>("");
+  const [conversationSort, setConversationSort] = useState<"updated_desc" | "name_asc">("updated_desc");
+  const [isPlaying, setIsPlaying] = useState<boolean>(false);
+  const [playbackSpeed, setPlaybackSpeed] = useState<number>(1);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const replayMessages = useMemo(() => messages.filter(isReplayMessage), [messages]);
   const currentMessage = replayMessages[index] ?? null;
   const currentActor = getActorLabel(currentMessage);
+  const currentSemanticType = useMemo(
+    () => (currentMessage ? resolveReplaySemanticType(currentMessage, nodes) : "unknown"),
+    [currentMessage, nodes]
+  );
+  const filteredSortedConversations = useMemo(() => {
+    const searchValue = conversationSearch.trim().toLowerCase();
+    const filtered = conversationList.filter((conversation) => {
+      if (!searchValue) {
+        return true;
+      }
+      return conversation.name.toLowerCase().includes(searchValue);
+    });
+
+    const sorted = [...filtered];
+    if (conversationSort === "name_asc") {
+      sorted.sort((a, b) => a.name.localeCompare(b.name));
+      return sorted;
+    }
+
+    sorted.sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime());
+    return sorted;
+  }, [conversationList, conversationSearch, conversationSort]);
   const activeReplayNodeId = useMemo(
     () => resolveReplayNodeId(currentMessage, nodes),
     [currentMessage, nodes]
@@ -145,6 +247,97 @@ export function ConversationReplayPanel() {
     };
   }, [setActiveNodeId]);
 
+  useEffect(() => {
+    if (!isPlaying || replayMessages.length === 0) {
+      return;
+    }
+
+    const intervalMs = Math.max(250, Math.round(BASE_REPLAY_INTERVAL_MS / playbackSpeed));
+    const timer = window.setInterval(() => {
+      setIndex((prev) => Math.min(prev + 1, replayMessages.length - 1));
+    }, intervalMs);
+
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, [isPlaying, playbackSpeed, replayMessages.length]);
+
+  useEffect(() => {
+    if (!isPlaying) {
+      return;
+    }
+    if (replayMessages.length === 0 || index >= replayMessages.length - 1) {
+      setIsPlaying(false);
+    }
+  }, [index, isPlaying, replayMessages.length]);
+
+  useEffect(() => {
+    if (!expanded) {
+      return;
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      const tagName = target?.tagName?.toLowerCase() ?? "";
+      const inputType = tagName === "input" ? (target as HTMLInputElement).type : null;
+      const isTypingTarget =
+        (tagName === "input" && inputType !== "range") ||
+        tagName === "textarea" ||
+        tagName === "select" ||
+        target?.isContentEditable;
+
+      if (isTypingTarget || replayMessages.length === 0) {
+        return;
+      }
+
+      if (event.key === "ArrowLeft") {
+        event.preventDefault();
+        setIsPlaying(false);
+        setIndex((prev) => Math.max(prev - 1, 0));
+        return;
+      }
+
+      if (event.key === "ArrowRight") {
+        event.preventDefault();
+        setIsPlaying(false);
+        setIndex((prev) => Math.min(prev + 1, replayMessages.length - 1));
+        return;
+      }
+
+      if (event.key === "Home") {
+        event.preventDefault();
+        setIsPlaying(false);
+        setIndex(0);
+        return;
+      }
+
+      if (event.key === "End") {
+        event.preventDefault();
+        setIsPlaying(false);
+        setIndex(replayMessages.length - 1);
+        return;
+      }
+
+      if (event.key === " ") {
+        event.preventDefault();
+        setIsPlaying((prev) => {
+          if (prev) {
+            return false;
+          }
+          if (index >= replayMessages.length - 1) {
+            setIndex(0);
+          }
+          return true;
+        });
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [expanded, index, replayMessages.length]);
+
   const handleImportClick = () => {
     fileInputRef.current?.click();
   };
@@ -153,6 +346,7 @@ export function ConversationReplayPanel() {
     setConversationName(name);
     setMessages(replayMessages);
     setIndex(0);
+    setIsPlaying(false);
     setError(null);
   };
 
@@ -174,6 +368,7 @@ export function ConversationReplayPanel() {
       setMessages([]);
       setConversationName("");
       setIndex(0);
+      setIsPlaying(false);
       setActiveNodeId(null);
     } finally {
       setLoading(false);
@@ -193,6 +388,8 @@ export function ConversationReplayPanel() {
     try {
       const conversations = await listConversations(canvasId);
       setConversationList(conversations);
+      setConversationSearch("");
+      setConversationSort("updated_desc");
       setShowConversationList(true);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to load conversations";
@@ -222,20 +419,82 @@ export function ConversationReplayPanel() {
   };
 
   const stepBack = () => {
+    setIsPlaying(false);
     setIndex((prev) => Math.max(prev - 1, 0));
   };
 
   const stepForward = () => {
+    setIsPlaying(false);
     setIndex((prev) => Math.min(prev + 1, Math.max(replayMessages.length - 1, 0)));
+  };
+
+  const togglePlay = () => {
+    if (replayMessages.length === 0 || loading) {
+      return;
+    }
+
+    if (isPlaying) {
+      setIsPlaying(false);
+      return;
+    }
+
+    if (index >= replayMessages.length - 1) {
+      setIndex(0);
+    }
+    setIsPlaying(true);
+  };
+
+  const handleTimelineChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    setIsPlaying(false);
+    setIndex(Number(event.target.value));
+  };
+
+  const handleTimelineKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (replayMessages.length === 0) {
+      return;
+    }
+
+    if (event.key === "Home") {
+      event.preventDefault();
+      setIsPlaying(false);
+      setIndex(0);
+      return;
+    }
+
+    if (event.key === "End") {
+      event.preventDefault();
+      setIsPlaying(false);
+      setIndex(replayMessages.length - 1);
+    }
+  };
+
+  const handlePlaybackSpeedChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
+    const speed = Number(event.target.value);
+    setPlaybackSpeed(speed);
   };
 
   const clearReplay = () => {
     setMessages([]);
     setConversationName("");
     setIndex(0);
+    setIsPlaying(false);
     setError(null);
     setShowConversationList(false);
+    setConversationSearch("");
+    setConversationSort("updated_desc");
     setActiveNodeId(null);
+  };
+
+  const timelineMax = Math.max(replayMessages.length - 1, 0);
+
+  const getTickColorClass = (message: Message): string => getReplayTickColorClass(resolveReplaySemanticType(message, nodes));
+
+  const formatUpdatedAt = (updatedAt: string): string => {
+    const date = new Date(updatedAt);
+    if (Number.isNaN(date.getTime())) {
+      return "Updated unknown";
+    }
+    return `Updated ${date.toLocaleDateString()}`;
   };
 
   if (!canvasId) {
@@ -337,8 +596,27 @@ export function ConversationReplayPanel() {
             className="rounded-md border border-[var(--color-border-subtle)] bg-[var(--color-surface)] p-1.5 max-h-40 overflow-y-auto"
             data-testid="replay-conversation-list"
           >
-            {conversationList.length > 0 ? (
-              conversationList.map((conversation) => (
+            <div className="mb-1.5 px-0.5 flex items-center gap-1.5">
+              <input
+                type="text"
+                value={conversationSearch}
+                onChange={(event) => setConversationSearch(event.target.value)}
+                placeholder="Search"
+                className="flex-1 min-w-0 text-[11px] rounded-md border border-[var(--color-border-subtle)] bg-[var(--color-inset)] text-[var(--color-text-primary)] px-2 py-1"
+                data-testid="replay-conversation-search"
+              />
+              <select
+                value={conversationSort}
+                onChange={(event) => setConversationSort(event.target.value as "updated_desc" | "name_asc")}
+                className="text-[11px] rounded-md border border-[var(--color-border-subtle)] bg-[var(--color-inset)] text-[var(--color-text-primary)] px-1.5 py-1"
+                data-testid="replay-conversation-sort"
+              >
+                <option value="updated_desc">Recent</option>
+                <option value="name_asc">Name</option>
+              </select>
+            </div>
+            {filteredSortedConversations.length > 0 ? (
+              filteredSortedConversations.map((conversation) => (
                 <button
                   key={conversation.id}
                   type="button"
@@ -346,38 +624,42 @@ export function ConversationReplayPanel() {
                   aria-label={conversation.name}
                   className="w-full text-left px-2.5 py-2 rounded-md hover:bg-[var(--color-elevated)] transition-colors"
                 >
-                  <span className="block text-[11px] text-[var(--color-text-primary)] truncate">
+                  <span className="block text-[11px] text-[var(--color-text-primary)] truncate" data-testid="replay-conversation-item-name">
                     {conversation.name}
                   </span>
-                  <span
-                    className="block text-[10px] text-[var(--color-text-tertiary)] mt-0.5"
-                    aria-hidden="true"
-                  >
-                    {conversation.status}
-                  </span>
+                  <div className="mt-1 flex items-center gap-1.5">
+                    <span
+                      className="inline-flex items-center rounded-full px-1.5 py-0.5 text-[9px] uppercase tracking-wide bg-[var(--color-elevated)] text-[var(--color-text-secondary)]"
+                      data-testid={`replay-conversation-item-status-${conversation.id}`}
+                      aria-hidden="true"
+                    >
+                      {conversation.status}
+                    </span>
+                    <span
+                      className="text-[9px] text-[var(--color-text-tertiary)]"
+                      data-testid={`replay-conversation-item-updated-${conversation.id}`}
+                      aria-hidden="true"
+                    >
+                      {formatUpdatedAt(conversation.updated_at)}
+                    </span>
+                  </div>
                 </button>
               ))
             ) : (
               <div className="px-2.5 py-2 text-[11px] text-[var(--color-text-tertiary)]">
-                No conversations available for this canvas.
+                No matching conversations for this canvas.
               </div>
             )}
           </div>
         )}
 
-        <div className="rounded-md border border-[var(--color-border-subtle)] bg-[var(--color-surface)] p-2.5 min-h-[110px]">
+        <div className="rounded-md border border-[var(--color-border-subtle)] bg-[var(--color-surface)] p-2.5 h-[170px] flex flex-col">
           {currentMessage ? (
             <>
               <div className="flex items-center justify-between mb-1.5">
                 <div className="flex items-center gap-1.5 min-w-0">
                   <span
-                    className={`text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded-md font-semibold ${
-                      (isToolResultMessage(currentMessage) && currentMessage.event_type !== "response")
-                        ? "bg-[var(--color-success-subtle)] text-[var(--color-success)]"
-                        : currentMessage.role === "assistant"
-                        ? "bg-[var(--color-agent-subtle)] text-[var(--color-agent)]"
-                        : "bg-[var(--color-accent-subtle)] text-[var(--color-accent)]"
-                    }`}
+                    className={`text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded-md font-semibold ${getReplayBadgeColorClass(currentSemanticType)}`}
                     data-testid="replay-current-role"
                   >
                     {formatRole(currentMessage)}
@@ -395,18 +677,39 @@ export function ConversationReplayPanel() {
                   {index + 1}/{replayMessages.length}
                 </span>
               </div>
-              <div className="text-[12px] text-[var(--color-text-primary)] whitespace-pre-wrap leading-relaxed" data-testid="replay-current-message">
+              <div className="flex-1 min-h-0 overflow-y-auto text-[12px] text-[var(--color-text-primary)] whitespace-pre-wrap leading-relaxed pr-1" data-testid="replay-current-message">
                 {currentMessage.content}
               </div>
             </>
           ) : (
-            <div className="h-full min-h-[90px] flex items-center justify-center text-center text-[11px] text-[var(--color-text-tertiary)]">
+            <div className="flex-1 min-h-0 flex items-center justify-center text-center text-[11px] text-[var(--color-text-tertiary)]">
               Import a conversation ZIP to replay user and assistant messages on the canvas.
             </div>
           )}
         </div>
 
         <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={togglePlay}
+            disabled={loading || replayMessages.length === 0}
+            className="btn-secondary text-[11px] px-2.5 py-1.5 disabled:opacity-50"
+            data-testid="replay-play-button"
+          >
+            {isPlaying ? "Pause" : "Play"}
+          </button>
+          <select
+            value={String(playbackSpeed)}
+            onChange={handlePlaybackSpeedChange}
+            disabled={loading || replayMessages.length === 0}
+            className="text-[11px] rounded-md border border-[var(--color-border-subtle)] bg-[var(--color-surface)] text-[var(--color-text-primary)] px-2 py-1.5 disabled:opacity-50"
+            aria-label="Replay speed"
+            data-testid="replay-speed-select"
+          >
+            <option value="0.5">0.5x</option>
+            <option value="1">1x</option>
+            <option value="2">2x</option>
+          </select>
           <button
             onClick={stepBack}
             disabled={loading || replayMessages.length === 0 || index === 0}
@@ -425,6 +728,41 @@ export function ConversationReplayPanel() {
             Next
             <ChevronRight className="w-3.5 h-3.5" />
           </button>
+        </div>
+
+        <input
+          type="range"
+          min={0}
+          max={timelineMax}
+          step={1}
+          value={Math.min(index, timelineMax)}
+          onChange={handleTimelineChange}
+          onKeyDown={handleTimelineKeyDown}
+          disabled={loading || replayMessages.length === 0}
+          className="w-full accent-[var(--color-accent)] disabled:opacity-50"
+          aria-label="Replay timeline"
+          data-testid="replay-timeline-slider"
+        />
+
+        <div className="w-full flex items-center gap-1" data-testid="replay-timeline-rail">
+          {replayMessages.map((message, stepIndex) => {
+            const isActive = stepIndex === index;
+            return (
+              <button
+                key={message.id}
+                type="button"
+                onClick={() => {
+                  setIsPlaying(false);
+                  setIndex(stepIndex);
+                }}
+                className={`h-2 flex-1 rounded-full transition-all ${getTickColorClass(message)} ${
+                  isActive ? "ring-1 ring-[var(--color-text-primary)]" : "opacity-55 hover:opacity-90"
+                }`}
+                aria-label={`Jump to step ${stepIndex + 1}`}
+                data-testid={`replay-timeline-tick-${stepIndex}`}
+              />
+            );
+          })}
         </div>
       </div>
     </div>
