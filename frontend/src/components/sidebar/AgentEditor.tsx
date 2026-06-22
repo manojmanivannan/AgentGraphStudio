@@ -3,6 +3,7 @@ import { useCanvasStore } from "@/store/canvasStore";
 import { Wrench, Plus, Loader2, FileText, Trash2 } from "lucide-react";
 import { listAgentDocuments, uploadAgentDocument, deleteAgentDocument } from "@/lib/api";
 import type { AgentDocument } from "@/types";
+import { InfoTooltip } from "./InfoTooltip";
 
 export function AgentEditor() {
   const selectedNodeId = useCanvasStore((s) => s.selectedNodeId);
@@ -159,7 +160,16 @@ export function AgentEditor() {
       </div>
 
       <div>
-        <label className="block text-[11px] font-semibold text-[var(--color-text-tertiary)] mb-1.5 uppercase tracking-[0.06em]">Instructions</label>
+        <div className="mb-1.5 flex items-center gap-1.5">
+          <label className="text-[11px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-[0.06em]">Instructions</label>
+          {(data as any).agentType === "worker" && (
+            <InfoTooltip
+              testId="agent-instructions-info"
+              ariaLabel="Worker instructions tips"
+              content="In order to use rag context, use {{ rag_document }} which will dyanamically replaced by retrieved content. Note: it is hard coded with top 5 results"
+            />
+          )}
+        </div>
         <textarea
           value={(data as any).instructions ?? ""}
           onChange={(e) => updateField("instructions", e.target.value)}

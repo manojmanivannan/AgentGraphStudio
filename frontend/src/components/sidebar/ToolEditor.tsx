@@ -4,6 +4,7 @@ import { useCanvasStore } from "@/store/canvasStore";
 import { useThemeStore } from "@/store/themeStore";
 import { inspectTool, testTool } from "@/lib/api";
 import type { ToolInspectResponse, ToolTestResponse } from "@/types";
+import { InfoTooltip } from "./InfoTooltip";
 
 type TestState = "idle" | "inspecting" | "ready" | "testing" | "success" | "error";
 
@@ -201,7 +202,14 @@ export function ToolEditor() {
       </div>
 
       <div>
-        <label className="block text-[11px] font-semibold text-[var(--color-text-tertiary)] mb-1.5 uppercase tracking-[0.06em]">Python Code</label>
+        <div className="mb-1.5 flex items-center gap-1.5">
+          <label className="text-[11px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-[0.06em]">Python Code</label>
+          <InfoTooltip
+            testId="tool-python-code-info"
+            ariaLabel="Tool python code tips"
+            content="Ensure function name and tool name are same to support for conversation replay highlighting"
+          />
+        </div>
         <div className="border border-[var(--color-border-default)] rounded-lg overflow-hidden h-[300px]">
           <Editor
             height="300px"

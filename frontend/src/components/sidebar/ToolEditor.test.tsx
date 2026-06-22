@@ -259,4 +259,21 @@ describe("ToolEditor", () => {
       expect(screen.getByTestId("tool-test-error")).toBeInTheDocument();
     });
   });
+
+  it("shows python code info tooltip on hover", async () => {
+    const user = userEvent.setup();
+    useCanvasStore.getState().setNodes([toolNode]);
+    useCanvasStore.getState().selectNode("tool-1");
+    render(<ToolEditor />);
+
+    const infoButton = screen.getByTestId("tool-python-code-info");
+    await user.hover(infoButton);
+
+    expect(
+      screen.getByText(/Ensure function name and tool name are same/)
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/conversation replay highlighting/)
+    ).toBeInTheDocument();
+  });
 });
