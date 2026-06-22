@@ -319,7 +319,7 @@ if __name__ == '__main__':
     sandbox_tool_fn.__name__ = user_func.__name__
     sandbox_tool_fn.__doc__ = user_func.__doc__
     sandbox_tool_fn.__annotations__ = getattr(user_func, "__annotations__", {})
-    setattr(sandbox_tool_fn, "__signature__", inspect.signature(user_func))
+    sandbox_tool_fn.__signature__ = inspect.signature(user_func)
     functools.update_wrapper(sandbox_tool_fn, user_func)
 
     logger.info("Compiled tool '%s' (llm-sandbox mode)", name)

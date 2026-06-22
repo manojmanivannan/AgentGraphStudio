@@ -1,5 +1,5 @@
-import shutil
 import inspect
+import shutil
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
