@@ -241,6 +241,8 @@ class TestConversationAPI:
 
         manifest_data = json.loads(archive.read("manifest.json").decode("utf-8"))
         assert manifest_data["name"] == "ExportImportChat"
+        assert manifest_data["canvas"]["id"] == str(blank_canvas.id)
+        assert manifest_data["canvas"]["name"] == blank_canvas.name
         assert len(manifest_data["messages"]) == 2
         assert len(manifest_data["plots"]) == 1
 
@@ -266,6 +268,37 @@ class TestConversationAPI:
         assert "Show me a plot" in user_msg["content"]
         assert f"![Plot](/api/plots/{plot.id})" not in assistant_msg["content"]
         assert "/api/plots/" in assistant_msg["content"]
+
+    async def test_import_conversation_rejects_wrong_canvas_with_helpful_error(
+        self, test_client, fresh_db, blank_canvas
+    ):
+        create_resp = await test_client.post(
+            f"/api/canvases/{blank_canvas.id}/conversations",
+            json={"name": "Canvas Bound Conversation"},
+        )
+        assert create_resp.status_code == 200
+        conv_id = create_resp.json()["id"]
+
+        export_resp = await test_client.get(
+            f"/api/canvases/{blank_canvas.id}/conversations/{conv_id}/export"
+        )
+        assert export_resp.status_code == 200
+
+        other_canvas_resp = await test_client.post(
+            "/api/canvases",
+            json={"name": "Other Canvas"},
+        )
+        other_canvas_id = other_canvas_resp.json()["id"]
+
+        import_resp = await test_client.post(
+            f"/api/canvases/{other_canvas_id}/conversations/import",
+            files={"file": ("export.zip", export_resp.read(), "application/zip")},
+        )
+
+        assert import_resp.status_code == 409
+        detail = import_resp.json()["detail"]
+        assert "belongs to canvas" in detail.lower()
+        assert blank_canvas.name in detail
 
 
 

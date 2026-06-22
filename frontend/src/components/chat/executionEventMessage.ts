@@ -100,7 +100,7 @@ export function executionEventToMessage(
     const classification = classifyToolResult(event.tool, event.agent);
     return {
       ...baseMessage,
-      role: "assistant",
+      role: classification.eventType === "response" ? "assistant" : "tool",
       content: event.output,
       agent_name: classification.agentName,
       node_id: event.node_id ?? null,

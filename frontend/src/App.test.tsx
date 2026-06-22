@@ -9,7 +9,11 @@ import App from "./App";
 import { MemoryRouter } from "react-router-dom";
 
 vi.mock("@/components/layout/AppShell", () => ({
-  AppShell: () => <div data-testid="app-shell" />,
+  AppShell: () => (
+    <div data-testid="app-shell">
+      <div data-testid="conversation-replay-panel" />
+    </div>
+  ),
 }));
 vi.mock("@/components/chat/ChatPage", () => ({
   default: () => <div data-testid="chat-page" />,
@@ -48,6 +52,20 @@ describe("App — landing page", () => {
       expect(screen.getByTestId("app-shell")).toBeInTheDocument();
     });
     expect(screen.queryByText("AgentGraph Studio")).not.toBeInTheDocument();
+  });
+
+  it("shows conversation replay panel on canvas route", async () => {
+    useCanvasStore.getState().setCanvas("canvas-1", "My Canvas");
+
+    render(
+      <MemoryRouter initialEntries={["/canvas/canvas-1"]}>
+        <App />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("conversation-replay-panel")).toBeInTheDocument();
+    });
   });
 
   it("lists canvases returned by the API", async () => {

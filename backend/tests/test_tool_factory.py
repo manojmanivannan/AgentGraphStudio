@@ -1,3 +1,4 @@
+import inspect
 import shutil
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -35,6 +36,16 @@ class TestCompileToolFromCode:
         fn = await compile_tool_from_code("adder", code)
         assert fn.__doc__ is not None
         assert "Adds two numbers" in fn.__doc__
+
+    async def test_preserves_original_signature(self):
+        code = "def get_weather_forecast(city: str) -> dict:\n    return {'city': city}"
+        fn = await compile_tool_from_code("weather", code)
+
+        sig = inspect.signature(fn)
+
+        assert list(sig.parameters) == ["city"]
+        assert sig.parameters["city"].kind is inspect.Parameter.POSITIONAL_OR_KEYWORD
+        assert "kwargs" not in sig.parameters
 
     async def test_empty_code_raises(self):
         with pytest.raises(ToolCompilationError):

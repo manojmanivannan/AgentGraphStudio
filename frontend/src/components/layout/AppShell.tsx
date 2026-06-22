@@ -1,5 +1,6 @@
 import { CanvasView } from "@/components/canvas/CanvasView";
 import { SidebarRail } from "@/components/layout/SidebarRail";
+import { ConversationReplayPanel } from "@/components/layout/ConversationReplayPanel";
 import { TopBar } from "@/components/layout/TopBar";
 import { PropertiesOverlay } from "@/components/PropertiesOverlay";
 import { useCanvasStore } from "@/store/canvasStore";
@@ -28,6 +29,7 @@ export function AppShell() {
       </div>
       <SidebarRail />
       <PropertiesOverlay />
+      <ConversationReplayPanel />
       {/* Shared across both modes — persists across mode switches */}
       <TopBar />
     </div>

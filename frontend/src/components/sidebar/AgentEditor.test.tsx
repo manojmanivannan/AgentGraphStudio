@@ -302,4 +302,30 @@ describe("AgentEditor", () => {
 
     expect(screen.getByText("Capabilities")).toBeInTheDocument();
   });
+
+  it("shows instructions info tooltip for worker agents", async () => {
+    const user = userEvent.setup();
+    useCanvasStore.getState().setNodes([agentNode]);
+    useCanvasStore.getState().selectNode("agent-1");
+    render(<AgentEditor />);
+
+    const infoButton = screen.getByTestId("agent-instructions-info");
+    await user.hover(infoButton);
+
+    expect(
+      screen.getByText(/In order to use rag context, use \{\{ rag_document \}\}/)
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/top 5 results/)
+    ).toBeInTheDocument();
+  });
+
+  it("does not show instructions info tooltip for router agents", () => {
+    const routerNode = { ...agentNode, data: { ...agentNode.data, agentType: "router" } };
+    useCanvasStore.getState().setNodes([routerNode]);
+    useCanvasStore.getState().selectNode("agent-1");
+    render(<AgentEditor />);
+
+    expect(screen.queryByTestId("agent-instructions-info")).not.toBeInTheDocument();
+  });
 });

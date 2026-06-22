@@ -86,6 +86,8 @@ class ConversationService:
         for msg in messages:
             if msg.role == "system":
                 continue
+            if msg.role not in ("user", "assistant"):
+                continue
             if (
                 msg.role == "assistant"
                 and history_enabled_node_ids is not None
