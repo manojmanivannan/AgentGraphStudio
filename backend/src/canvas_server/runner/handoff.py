@@ -100,10 +100,15 @@ class HandoffToolBuilder:
                 needs_history = self.agent_factory.needs_history(target_node)
                 if dspy_history is not None and needs_history:
                     result = await target_agent.aforward(
-                        user_request=prompt, history=dspy_history
+                        user_request=prompt,
+                        history=dspy_history,
+                        get_client_response=self.run_state.get_client_response,
                     )
                 else:
-                    result = await target_agent.aforward(user_request=prompt)
+                    result = await target_agent.aforward(
+                        user_request=prompt,
+                        get_client_response=self.run_state.get_client_response,
+                    )
                 from canvas_server.runner.execution import ensure_plots_in_result
                 answer = ensure_plots_in_result(result, result.process_result)
             except Exception as e:

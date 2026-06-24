@@ -202,6 +202,31 @@ export function ToolEditor() {
       </div>
 
       <div>
+        <label className="flex items-center gap-2.5 cursor-pointer group py-1">
+          <input
+            type="checkbox"
+            checked={(selectedNode.data as any)?.requiresApproval ?? false}
+            onChange={(e) => {
+              const checked = e.target.checked;
+              const currentNodes = useCanvasStore.getState().nodes;
+              const newNodes = currentNodes.map((n) =>
+                n.id === selectedNodeId
+                  ? { ...n, data: { ...n.data, requiresApproval: checked } }
+                  : n
+              );
+              setNodes(newNodes);
+            }}
+            data-testid="tool-requires-approval"
+            className="rounded border-[var(--color-border-default)] text-[var(--color-accent)] focus:ring-[var(--color-accent)] bg-[var(--color-base)]"
+          />
+          <div>
+            <span className="text-[12px] font-medium text-[var(--color-text-secondary)] group-hover:text-[var(--color-text-primary)] transition-colors">Requires Approval</span>
+            <p className="text-[10px] text-[var(--color-text-tertiary)] mt-0.5">Require human approval before running this tool</p>
+          </div>
+        </label>
+      </div>
+
+      <div>
         <div className="mb-1.5 flex items-center gap-1.5">
           <label className="text-[11px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-[0.06em]">Python Code</label>
           <InfoTooltip

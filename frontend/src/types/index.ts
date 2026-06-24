@@ -10,6 +10,7 @@ export interface AgentNodeData {
   enableConversationHistory?: boolean;
   enableRag?: boolean;
   ragChunkSize?: number;
+  enableHitl?: boolean;
   isEntryPoint?: boolean;
 }
 
@@ -24,6 +25,7 @@ export interface ToolNodeData {
   name: string;
   code: string;
   packages?: string;
+  requiresApproval?: boolean;
 }
 
 export type ExecutionEvent =
@@ -37,6 +39,8 @@ export type ExecutionEvent =
   | { type: "run_complete"; result: string }
   | { type: "error"; message: string; agent?: string; node_id?: string }
   | { type: "warning"; message: string; agent?: string; node_id?: string }
+  | { type: "human_input_request"; request_id: string; question: string; agent: string; node_id?: string }
+  | { type: "tool_approval_request"; request_id: string; tool: string; args?: Record<string, unknown>; agent: string; node_id?: string }
   | { type: "conversation_renamed"; conversation_id: string; name: string };
 
 export type ExecutionStatus = "idle" | "running" | "done" | "error";
@@ -57,6 +61,7 @@ export interface CanvasSavePayload {
       model_name: string;
       agent_type: string;
       enable_plotting: boolean;
+      enable_hitl: boolean;
       enable_memory: boolean;
       enable_conversation_history: boolean;
       enable_rag: boolean;
@@ -71,6 +76,7 @@ export interface CanvasSavePayload {
       code: string;
       packages?: string;
       args: ToolArgument[];
+      requires_approval: boolean;
       position_x: number;
       position_y: number;
     }[];
@@ -98,6 +104,7 @@ export interface CanvasResponse {
       model_name: string;
       agent_type: string;
       enable_plotting: boolean;
+      enable_hitl: boolean;
       enable_memory: boolean;
       enable_conversation_history: boolean;
       enable_rag: boolean;
@@ -113,6 +120,7 @@ export interface CanvasResponse {
       code: string;
       packages?: string;
       args: ToolArgument[];
+      requires_approval: boolean;
       position_x: number;
       position_y: number;
     }>;
@@ -151,6 +159,8 @@ export interface Message {
   node_id?: string | null;
   event_type?: string | null;
   created_at: string;
+  request_id?: string | null;
+  args?: Record<string, any> | null;
 }
 
 export interface Conversation {

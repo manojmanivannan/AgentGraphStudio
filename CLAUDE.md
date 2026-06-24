@@ -92,10 +92,11 @@ and edges on a ReactFlow canvas, then run workflows against a FastAPI + DSPy bac
    f. Auto-store memory for primary agent
    g. Send run_complete event
 6. All events sent over WebSocket in real-time
-7. Frontend ChatOverlay receives events and updates UI:
-   - Steps shown live during streaming
-   - Final answer displayed as assistant message
-   - Canvas nodes glow green on node_id match
+7. Frontend ChatPage receives events and updates UI:
+   - Intermediate execution steps (thoughts, handoffs, tool results) are grouped into a collapsible container.
+   - Human-in-the-Loop (HITL) inputs and tool approvals are grouped under `humanInterrupt` and rendered outside the collapsible steps block to persist inline input fields / Approve/Deny buttons in the natural conversation flow.
+   - Final answer is displayed as an assistant message block.
+   - Canvas nodes glow green on node_id match.
 ```
 
 ---

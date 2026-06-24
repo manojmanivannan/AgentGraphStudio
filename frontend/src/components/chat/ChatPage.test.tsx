@@ -157,6 +157,56 @@ describe("groupMessagesIntoTurns", () => {
         expect(turns[0].isStreaming).toBe(true);
         expect(turns[0].steps).toHaveLength(1);
     });
+
+    it("groups human_input_request and tool_approval_request under humanInterrupt", () => {
+        const userMsg: Message = {
+            id: "u1", conversation_id: "c1", role: "user", content: "Hello",
+            created_at: "2026-01-01T00:00:00.000Z",
+        };
+        const thought: Message = {
+            id: "t1", conversation_id: "c1", role: "assistant", content: "Thinking...",
+            event_type: "thought", created_at: "2026-01-01T00:00:01.000Z",
+        };
+        const humanReq: Message = {
+            id: "h1", conversation_id: "c1", role: "assistant", content: "Provide input",
+            event_type: "human_input_request", created_at: "2026-01-01T00:00:02.000Z",
+        };
+
+        const { turns } = groupMessagesIntoTurns([userMsg, thought, humanReq]);
+
+        expect(turns).toHaveLength(1);
+        expect(turns[0].isStreaming).toBe(false);
+        expect(turns[0].steps).toHaveLength(2);
+        expect(turns[0].steps[0].event_type).toBe("thought");
+        expect(turns[0].steps[1].event_type).toBe("human_input_request");
+        expect(turns[0].humanInterrupt).toBeDefined();
+        expect(turns[0].humanInterrupt?.id).toBe("h1");
+    });
+
+    it("resumes isStreaming to true when new steps arrive after tool_approval_request in same turn", () => {
+        const userMsg: Message = {
+            id: "u1", conversation_id: "c1", role: "user", content: "Hello",
+            created_at: "2026-01-01T00:00:00.000Z",
+        };
+        const approvalReq: Message = {
+            id: "a1", conversation_id: "c1", role: "tool", content: "Approve tool",
+            event_type: "tool_approval_request", created_at: "2026-01-01T00:00:01.000Z",
+        };
+        const thoughtAfter: Message = {
+            id: "t2", conversation_id: "c1", role: "assistant", content: "Resuming...",
+            event_type: "thought", created_at: "2026-01-01T00:00:02.000Z",
+        };
+
+        const { turns } = groupMessagesIntoTurns([userMsg, approvalReq, thoughtAfter]);
+
+        expect(turns).toHaveLength(1);
+        expect(turns[0].humanInterrupt).toBeDefined();
+        expect(turns[0].humanInterrupt?.id).toBe("a1");
+        expect(turns[0].isStreaming).toBe(true);
+        expect(turns[0].steps).toHaveLength(2);
+        expect(turns[0].steps[0].id).toBe("a1");
+        expect(turns[0].steps[1].id).toBe("t2");
+    });
 });
 
 describe("ChatPage component", () => {

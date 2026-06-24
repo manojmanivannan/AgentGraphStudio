@@ -269,6 +269,32 @@ export function AgentEditor() {
           </div>
         )}
 
+        {(data as any).agentType === "worker" && (
+          <div>
+            <label className="flex items-center gap-2.5 cursor-pointer group">
+              <input
+                type="checkbox"
+                checked={(data as any).enableHitl ?? false}
+                onChange={(e) => {
+                  const checked = e.target.checked;
+                  const updatedNodes = nodes.map((n) =>
+                    n.id === selectedNodeId
+                      ? { ...n, data: { ...n.data, enableHitl: checked } }
+                      : n
+                  );
+                  setNodes(updatedNodes);
+                }}
+                data-testid="agent-enable-hitl"
+                className="rounded border-[var(--color-border-default)] text-[var(--color-accent)] focus:ring-[var(--color-accent)] bg-[var(--color-base)]"
+              />
+              <div>
+                <span className="text-[12px] font-medium text-[var(--color-text-secondary)] group-hover:text-[var(--color-text-primary)] transition-colors">Enable Human-in-the-Loop</span>
+                <p className="text-[10px] text-[var(--color-text-tertiary)] mt-0.5">Let agent ask for clarification or input</p>
+              </div>
+            </label>
+          </div>
+        )}
+
 
         {(data as any).agentType === "worker" && (
           <div>

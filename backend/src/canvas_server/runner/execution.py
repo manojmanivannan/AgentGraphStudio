@@ -172,9 +172,16 @@ class ExecutionStrategy(ABC):
 
         try:
             if dspy_history is not None and needs_history:
-                result = await agent.aforward(user_request=prompt, history=dspy_history)
+                result = await agent.aforward(
+                    user_request=prompt,
+                    history=dspy_history,
+                    get_client_response=self._services.run_state.get_client_response,
+                )
             else:
-                result = await agent.aforward(user_request=prompt)
+                result = await agent.aforward(
+                    user_request=prompt,
+                    get_client_response=self._services.run_state.get_client_response,
+                )
             text = result.process_result
             text = ensure_plots_in_result(result, text)
             logger.info("Agent %s completed: result=%s", agent_node.name, text[:200])
@@ -260,10 +267,15 @@ class RouterExecution(ExecutionStrategy):
         try:
             if ctx.dspy_history is not None:
                 result = await agent.aforward(
-                    user_request=prompt, history=ctx.dspy_history
+                    user_request=prompt,
+                    history=ctx.dspy_history,
+                    get_client_response=self._services.run_state.get_client_response,
                 )
             else:
-                result = await agent.aforward(user_request=prompt)
+                result = await agent.aforward(
+                    user_request=prompt,
+                    get_client_response=self._services.run_state.get_client_response,
+                )
             final_text = result.process_result
 
             await self._services.conversation_service.persist_message(

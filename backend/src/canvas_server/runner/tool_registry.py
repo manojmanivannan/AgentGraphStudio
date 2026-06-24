@@ -51,6 +51,9 @@ class ToolRegistry:
 
                 fn = make_failed_tool(tool_node.name, e)
 
+            fn.requires_approval = getattr(tool_node, "requires_approval", False)
+            fn.node_id = tool_node.id
+
             self.tools[tool_node.id] = fn
             self._tool_name_to_id[tool_node.name] = tool_node.id
             logger.debug(

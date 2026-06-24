@@ -32,6 +32,7 @@ def test_websocket_run_delegates_to_coordinator_and_forwards_events(monkeypatch)
             user_prompt,
             send_event,
             target_agent_id=None,
+            get_client_response=None,
         ):
             captured["conversation_id"] = conversation_id
             captured["user_prompt"] = user_prompt

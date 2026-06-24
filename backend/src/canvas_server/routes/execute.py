@@ -53,12 +53,41 @@ async def run_conversation(websocket: WebSocket, conversation_id: uuid.UUID):
                 except Exception:
                     pass
 
+            pending_requests = {}
+
+            async def get_client_response(request_id: str, request_type: str) -> dict:
+                loop = asyncio.get_running_loop()
+                fut = loop.create_future()
+                pending_requests[request_id] = fut
+                try:
+                    return await fut
+                finally:
+                    pending_requests.pop(request_id, None)
+
+            async def websocket_reader():
+                try:
+                    while True:
+                        data = await websocket.receive_text()
+                        body = json.loads(data)
+                        req_id = body.get("request_id")
+                        if req_id in pending_requests:
+                            fut = pending_requests[req_id]
+                            if not fut.done():
+                                fut.set_result(body)
+                except Exception as e:
+                    for fut in list(pending_requests.values()):
+                        if not fut.done():
+                            fut.set_exception(e or Exception("WebSocket disconnected"))
+
+            reader_task = asyncio.create_task(websocket_reader())
+
             task = asyncio.create_task(
                 coordinator.run(
                     conversation_id=conversation_id,
                     user_prompt=user_prompt,
                     send_event=send_event,
                     target_agent_id=target_agent_id,
+                    get_client_response=get_client_response,
                 )
             )
 
@@ -66,6 +95,8 @@ async def run_conversation(websocket: WebSocket, conversation_id: uuid.UUID):
                 await task
             except asyncio.CancelledError:
                 pass
+            finally:
+                reader_task.cancel()
 
     except TimeoutError:
         try:

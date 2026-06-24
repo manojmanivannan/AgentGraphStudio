@@ -12,6 +12,7 @@ class AgentNodeBase(BaseModel):
     model_name: str = "ollama:llama3.1"
     agent_type: str = "worker"
     enable_plotting: bool = False
+    enable_hitl: bool = False
     enable_memory: bool = False
     enable_conversation_history: bool = False
     enable_rag: bool = False
@@ -59,6 +60,7 @@ class ToolNodeInput(BaseModel):
     packages: str = ""
     dependencies: list[str] = Field(default_factory=list)
     args: list[dict] = Field(default_factory=list)
+    requires_approval: bool = False
     position_x: float = 0
     position_y: float = 0
 

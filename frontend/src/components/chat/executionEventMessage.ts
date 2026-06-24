@@ -63,6 +63,31 @@ export function executionEventToMessage(
     };
   }
 
+  if (event.type === "human_input_request") {
+    return {
+      ...baseMessage,
+      role: "assistant",
+      content: event.question,
+      agent_name: event.agent,
+      node_id: event.node_id ?? null,
+      event_type: "human_input_request",
+      request_id: event.request_id,
+    };
+  }
+
+  if (event.type === "tool_approval_request") {
+    return {
+      ...baseMessage,
+      role: "tool",
+      content: `Tool approval required: ${event.tool}`,
+      agent_name: event.agent,
+      node_id: event.node_id ?? null,
+      event_type: "tool_approval_request",
+      request_id: event.request_id,
+      args: event.args ?? null,
+    };
+  }
+
   if (event.type === "final_answer") {
     return {
       ...baseMessage,

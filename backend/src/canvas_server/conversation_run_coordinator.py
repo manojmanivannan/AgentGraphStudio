@@ -28,6 +28,7 @@ class ConversationRunCoordinator:
         user_prompt: str,
         send_event: EventSender,
         target_agent_id: uuid.UUID | None = None,
+        get_client_response = None,
     ) -> None:
         conversation = await self.conversation_repo.get_or_404(conversation_id)
         canvas = await self.canvas_repo.get_or_404(conversation.canvas_id)
@@ -49,6 +50,7 @@ class ConversationRunCoordinator:
                 user_prompt,
                 send_event,
                 target_agent_id=target_agent_id,
+                get_client_response=get_client_response,
             )
         except Exception as exc:
             primary_agent = self._resolve_primary_agent(

@@ -87,6 +87,7 @@ class CanvasRunner:
             conversation_service=self._conversation,
             tool_registry=self._tool_registry,
         )
+        self._agent_factory._run_state = self.run_state
 
         self._handoff_tool_builder = HandoffToolBuilder(self.run_state)
         self.run_state.handoff_tool_builder = self._handoff_tool_builder
@@ -288,6 +289,7 @@ class CanvasRunner:
             conversation_id=self._conversation.conversation_id,
             conversation_repo=self.conversation_repo,
         )
+        self._agent_factory._run_state = self.run_state
         self.run_state.agent_factory = self._agent_factory
 
         # Build worker agents (routers are built lazily at run time)
@@ -406,6 +408,7 @@ class CanvasRunner:
         user_prompt: str,
         send_event,
         target_agent_id: uuid.UUID | None = None,
+        get_client_response = None,
     ) -> str | None:
         logger.info(
             "Starting canvas execution: canvas_id=%s prompt=%s target=%s",
@@ -472,6 +475,7 @@ class CanvasRunner:
             history_text=history_text,
             dspy_history=dspy_history,
         )
+        self.run_state.get_client_response = get_client_response
 
         # ---- Execute ---
         strategy = self._resolve_strategy(target_agent_id)

@@ -52,6 +52,7 @@ describe("canvasGraphCodec", () => {
             model_name: "ollama:llama3.1",
             agent_type: "worker",
             enable_plotting: false,
+            enable_hitl: false,
             enable_memory: false,
             enable_conversation_history: false,
             enable_rag: false,
@@ -68,6 +69,7 @@ describe("canvasGraphCodec", () => {
             code: "def lookup():\n    return 'ok'",
             packages: "",
             args: [],
+            requires_approval: false,
             position_x: 30,
             position_y: 40,
           },
@@ -106,6 +108,7 @@ describe("canvasGraphCodec", () => {
             enable_rag: true,
             rag_chunk_size: 2048,
             is_entry_point: true,
+            enable_hitl: true,
             position_x: 11,
             position_y: 22,
           },
@@ -118,6 +121,7 @@ describe("canvasGraphCodec", () => {
             code: "def lookup():\n    return 'ok'",
             packages: "requests",
             args: [],
+            requires_approval: true,
             position_x: 33,
             position_y: 44,
           },
@@ -153,6 +157,7 @@ describe("canvasGraphCodec", () => {
           enableRag: true,
           ragChunkSize: 2048,
           isEntryPoint: true,
+          enableHitl: true,
         },
       },
       {
@@ -166,6 +171,7 @@ describe("canvasGraphCodec", () => {
           code: "def lookup():\n    return 'ok'",
           packages: "requests",
           args: [],
+          requiresApproval: true,
         },
       },
     ]);
@@ -229,6 +235,7 @@ describe("canvasGraphCodec", () => {
         enableRag: false,
         ragChunkSize: 1000,
         isEntryPoint: false,
+        enableHitl: false,
       },
     });
   });
