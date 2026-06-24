@@ -214,7 +214,7 @@ class AgentFactory:
                     The text response provided by the human user.
                 """
                 request_id = str(uuid.uuid4())
-                
+
                 # Persist the interrupt request to conversation messages
                 if self._conversation_id and self._conversation_repo:
                     await self._conversation_repo.add_message(
@@ -225,7 +225,7 @@ class AgentFactory:
                         node_id=agent_node.id,
                         event_type="human_input_request",
                     )
-                
+
                 # Send websocket event
                 run_state = getattr(self, "_run_state", None)
                 if run_state and run_state.send_event:
@@ -236,12 +236,12 @@ class AgentFactory:
                         "agent": agent_node.name,
                         "node_id": str(agent_node.id),
                     })
-                
+
                 # Wait for the response
                 if run_state and hasattr(run_state, "get_client_response") and run_state.get_client_response:
                     res = await run_state.get_client_response(request_id, "human_input_response")
                     content = res.get("content", "")
-                    
+
                     # Persist the user's response to history
                     if self._conversation_id and self._conversation_repo:
                         await self._conversation_repo.add_message(
@@ -253,7 +253,7 @@ class AgentFactory:
                             event_type="human_input_response",
                         )
                     return content
-                
+
                 return "Error: Human input callback not available."
 
             tools.append(ask_human)

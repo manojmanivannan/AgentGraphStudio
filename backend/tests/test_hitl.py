@@ -1,8 +1,8 @@
 import uuid
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import dspy
+import pytest
+
 from canvas_server.runner.agent_factory import AgentFactory
 from canvas_server.streaming_react import StreamingReAct
 
@@ -45,7 +45,7 @@ async def test_ask_human_tool_registration():
         memory_manager=MagicMock(),
         edges=[],
     )
-    
+
     # Mock build_signature
     with patch.object(factory, "build_signature", return_value=MagicMock()):
         agent_with_hitl = await factory.build_worker(node_with_hitl)
@@ -65,7 +65,7 @@ async def test_tool_approval_intercept_approve():
     class FakeTool:
         async def acall(self, **kwargs):
             return "Success"
-    
+
     fake_tool = FakeTool()
     fake_tool.requires_approval = True
     fake_tool.node_id = uuid.uuid4()
@@ -82,14 +82,14 @@ async def test_tool_approval_intercept_approve():
     # Mock the react prediction step to call the tool
     pred_react = MagicMock(next_thought="Call tool", next_tool_name="FakeTool", next_tool_args={})
     pred_extract = MagicMock(process_result="Done!")
-    
+
     with patch.object(agent, "_async_call_with_potential_trajectory_truncation") as mock_call:
         # First call to ReAct, second call is finish, third call is extract
         pred_finish = MagicMock(next_thought="Finish", next_tool_name="finish", next_tool_args={})
         mock_call.side_effect = [pred_react, pred_finish, pred_extract]
 
         result = await agent.aforward(get_client_response=get_client_response)
-        
+
         # Verify get_client_response was called
         get_client_response.assert_awaited_once()
         assert result.trajectory["observation_0"] == "Success"
@@ -101,7 +101,7 @@ async def test_tool_approval_intercept_deny():
     class FakeTool:
         async def acall(self, **kwargs):
             return "Should not run"
-    
+
     fake_tool = FakeTool()
     fake_tool.requires_approval = True
     fake_tool.node_id = uuid.uuid4()
@@ -118,13 +118,13 @@ async def test_tool_approval_intercept_deny():
     # Mock the react prediction step to call the tool
     pred_react = MagicMock(next_thought="Call tool", next_tool_name="FakeTool", next_tool_args={})
     pred_extract = MagicMock(process_result="Done!")
-    
+
     with patch.object(agent, "_async_call_with_potential_trajectory_truncation") as mock_call:
         pred_finish = MagicMock(next_thought="Finish", next_tool_name="finish", next_tool_args={})
         mock_call.side_effect = [pred_react, pred_finish, pred_extract]
 
         result = await agent.aforward(get_client_response=get_client_response)
-        
+
         # Verify get_client_response was called and tool observation is denied string
         get_client_response.assert_awaited_once()
         assert result.trajectory["observation_0"] == "Tool execution denied by user."
