@@ -56,6 +56,7 @@ class CanvasRunState:
         self.send_event: Callable | None = None
         self.history_text: str = ""
         self.dspy_history: Any = None
+        self.get_client_response: Callable | None = None
 
     def set_run_context(
         self,
@@ -210,6 +211,14 @@ class CanvasRunState:
                         agent_name=aname,
                         node_id=aid,
                         event_type="thought",
+                    )
+                elif event_type == "tool_approval_request":
+                    await self.conversation_service.persist_message(
+                        role="tool",
+                        content=f"Tool approval required: {event.get('tool', '')}",
+                        agent_name=aname,
+                        node_id=event.get("node_id") or aid,
+                        event_type="tool_approval_request",
                     )
 
             agent.on_event(callback)

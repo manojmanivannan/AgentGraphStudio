@@ -87,6 +87,9 @@ class AgentNode(Base):
     enable_plotting: Mapped[bool] = mapped_column(
         sa.Boolean(), default=False, server_default=sa.text("false"), nullable=False
     )
+    enable_hitl: Mapped[bool] = mapped_column(
+        sa.Boolean(), default=False, server_default=sa.text("false"), nullable=False
+    )
     enable_memory: Mapped[bool] = mapped_column(
         sa.Boolean(), default=False, server_default=sa.text("false"), nullable=False
     )
@@ -243,6 +246,9 @@ class ToolNode(Base):
     args: Mapped[list] = mapped_column(JSON, default=[])
     position_x: Mapped[float] = mapped_column(Double, default=0)
     position_y: Mapped[float] = mapped_column(Double, default=0)
+    requires_approval: Mapped[bool] = mapped_column(
+        sa.Boolean(), default=False, server_default=sa.text("false"), nullable=False
+    )
 
     canvas: Mapped[Canvas] = relationship("Canvas", back_populates="tool_nodes")
 

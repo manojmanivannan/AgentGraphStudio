@@ -37,6 +37,11 @@ class PlotProvider:
 
             logger.info("Executing plot code in sandbox...")
             with session:
+                if hasattr(session, "clear_plots"):
+                    try:
+                        session.clear_plots()
+                    except Exception as e:
+                        logger.warning(f"Failed to clear plots in sandbox: {e}")
                 result = session.run(python_code)
 
             if result.exit_code != 0:

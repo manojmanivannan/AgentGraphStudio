@@ -40,6 +40,7 @@ interface TurnGroup {
   id: string;
   userMessage: Message;
   steps: Message[];
+  humanInterrupt?: Message;
   finalAnswer?: Message;
   isStreaming: boolean;
 }
@@ -127,8 +128,15 @@ export function groupMessagesIntoTurns(messages: Message[]): {
       if (msg.event_type === "final_answer") {
         currentTurn.finalAnswer = msg;
         currentTurn.isStreaming = false;
+      } else if (msg.event_type === "human_input_request" || msg.event_type === "tool_approval_request") {
+        currentTurn.humanInterrupt = msg;
+        currentTurn.isStreaming = false;
+        currentTurn.steps.push(msg);
       } else {
         currentTurn.steps.push(msg);
+        if (currentTurn.humanInterrupt?.event_type === "tool_approval_request") {
+          currentTurn.isStreaming = true;
+        }
       }
     } else {
       preTurnMessages.push(msg);
@@ -268,6 +276,64 @@ export default function ChatPage() {
   const [expandedTurns, setExpandedTurns] = useState<Set<string>>(() => new Set());
   const [collapsedSteps, setCollapsedSteps] = useState<Set<string>>(() => new Set());
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [activeInterrupt, setActiveInterrupt] = useState<{
+    type: "human_input" | "tool_approval";
+    request_id: string;
+    message_id: string;
+    question?: string;
+    tool?: string;
+    args?: Record<string, unknown>;
+  } | null>(null);
+
+  const chatInputRef = useRef<HTMLInputElement>(null);
+  const inlineInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (activeInterrupt?.type === "human_input") {
+      setTimeout(() => {
+        inlineInputRef.current?.focus();
+      }, 50);
+    }
+  }, [activeInterrupt]);
+
+  const handleSendHumanResponse = (content: string) => {
+    if (!activeInterrupt || !wsRef.current) return;
+    wsRef.current.send(
+      JSON.stringify({
+        type: "human_input_response",
+        request_id: activeInterrupt.request_id,
+        content: content,
+      })
+    );
+    const userMsg: Message = {
+      id: crypto.randomUUID(),
+      conversation_id: conversation_id!,
+      role: "user",
+      content: content,
+      event_type: "human_input_response",
+      created_at: new Date().toISOString(),
+    };
+    setMessages((prev) => [...prev, userMsg]);
+    setActiveInterrupt(null);
+    setTimeout(() => {
+      chatInputRef.current?.focus();
+    }, 50);
+  };
+
+  const handleSendToolApproval = (approved: boolean) => {
+    if (!activeInterrupt || !wsRef.current) return;
+    wsRef.current.send(
+      JSON.stringify({
+        type: "tool_approval_response",
+        request_id: activeInterrupt.request_id,
+        approved: approved,
+      })
+    );
+    setActiveInterrupt(null);
+    setTimeout(() => {
+      chatInputRef.current?.focus();
+    }, 50);
+  };
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -526,6 +592,7 @@ export default function ChatPage() {
 
         if (event.type === "run_complete") {
           setRunning(false);
+          setActiveInterrupt(null);
           setActiveNodeId(null);
           loadSidebar(); // Refresh sidebar order since conversation updated
           refreshConversationName();
@@ -542,13 +609,32 @@ export default function ChatPage() {
             addMessageLocal(errMsg);
           }
           setRunning(false);
+          setActiveInterrupt(null);
           setActiveNodeId(null);
           return;
         }
 
+        let msgId = crypto.randomUUID();
+        if (event.type === "human_input_request") {
+          setActiveInterrupt({
+            type: "human_input",
+            request_id: event.request_id,
+            message_id: msgId,
+            question: event.question,
+          });
+        } else if (event.type === "tool_approval_request") {
+          setActiveInterrupt({
+            type: "tool_approval",
+            request_id: event.request_id,
+            message_id: msgId,
+            tool: event.tool,
+            args: event.args,
+          });
+        }
+
         const message = executionEventToMessage(event, {
           conversationId: convId,
-          messageId: crypto.randomUUID(),
+          messageId: msgId,
           createdAt: new Date().toISOString(),
         });
         if (message) {
@@ -571,6 +657,7 @@ export default function ChatPage() {
           created_at: new Date().toISOString(),
         });
         setRunning(false);
+        setActiveInterrupt(null);
         setActiveNodeId(null);
       };
 
@@ -587,6 +674,7 @@ export default function ChatPage() {
           });
         }
         setRunning(false);
+        setActiveInterrupt(null);
         setActiveNodeId(null);
       };
     };
@@ -597,6 +685,7 @@ export default function ChatPage() {
   const stopRun = () => {
     wsRef.current?.close();
     setRunning(false);
+    setActiveInterrupt(null);
     setActiveNodeId(null);
   };
 
@@ -1008,29 +1097,186 @@ export default function ChatPage() {
 
                                   {!isStepCollapsed && (
                                     <div
-                                      className={`max-w-[85%] rounded-xl px-3 py-2 text-[12px] leading-relaxed shadow-sm ${isHandoff
+                                      className={`max-w-[85%] w-full rounded-xl px-3 py-2 text-[12px] leading-relaxed shadow-sm ${isHandoff
                                         ? "bg-[var(--color-info-subtle)] text-[var(--color-info)] border border-[var(--color-info)]/20 rounded-bl-sm"
                                         : isError
                                           ? "bg-[var(--color-danger-subtle)] text-[var(--color-danger)] border border-[var(--color-danger)]/20 rounded-bl-sm"
-                                          : isWarning
+                                          : isWarning || stepMsg.event_type === "tool_approval_request"
                                             ? "bg-[var(--color-warning-subtle)] text-[var(--color-warning)] border border-[var(--color-warning)]/20 rounded-bl-sm"
                                             : isThought
                                               ? "bg-[var(--color-agent-subtle)] text-[var(--color-agent)] border border-[var(--color-agent)]/20 rounded-bl-sm font-mono whitespace-pre-wrap text-[11px]"
-                                              : isToolResult
-                                                ? "bg-[var(--color-success-subtle)] text-[var(--color-success)] border border-[var(--color-success)]/20 rounded-bl-sm font-mono"
-                                                : isResponse
-                                                  ? "bg-[var(--color-agent-subtle)] text-[var(--color-agent)] border border-[var(--color-agent)]/20 rounded-bl-sm"
-                                                  : isSubAnswer
-                                                    ? "bg-[var(--color-elevated)] text-[var(--color-text-secondary)] border border-[var(--color-border-subtle)] rounded-bl-sm"
-                                                    : "bg-[var(--color-elevated)] text(--color-text-primary)] border border-[var(--color-border-subtle)] rounded-bl-sm"
+                                              : stepMsg.event_type === "human_input_request"
+                                                ? "bg-[var(--color-agent-subtle)] text-[var(--color-agent)] border border-[var(--color-agent)]/20 rounded-bl-sm"
+                                                : isToolResult
+                                                  ? "bg-[var(--color-success-subtle)] text-[var(--color-success)] border border-[var(--color-success)]/20 rounded-bl-sm font-mono"
+                                                  : isResponse
+                                                    ? "bg-[var(--color-agent-subtle)] text-[var(--color-agent)] border border-[var(--color-agent)]/20 rounded-bl-sm"
+                                                    : isSubAnswer
+                                                      ? "bg-[var(--color-elevated)] text-[var(--color-text-secondary)] border border-[var(--color-border-subtle)] rounded-bl-sm"
+                                                      : "bg-[var(--color-elevated)] text-[var(--color-text-primary)] border border-[var(--color-border-subtle)] rounded-bl-sm"
                                         }`}
                                     >
-                                      {renderMessageContent(stepMsg.content, true)}
+                                      {stepMsg.event_type === "human_input_request" && stepMsg.id === activeInterrupt?.message_id ? (
+                                        <div className="space-y-3 w-full">
+                                          <div className="text-[var(--color-text-primary)] font-medium">
+                                            {stepMsg.content}
+                                          </div>
+                                          <form
+                                            onSubmit={(e) => {
+                                              e.preventDefault();
+                                              const form = e.currentTarget;
+                                              const data = new FormData(form);
+                                              const val = (data.get("response") as string || "").trim();
+                                              if (!val) return;
+                                              handleSendHumanResponse(val);
+                                            }}
+                                            className="flex gap-2 w-full mt-1.5"
+                                          >
+                                            <input
+                                              ref={inlineInputRef}
+                                              name="response"
+                                              type="text"
+                                              required
+                                              placeholder="Type your response..."
+                                              className="input-base flex-1 py-1.5 px-3 rounded-lg text-[12px] bg-[var(--color-base)] text-[var(--color-text-primary)] border border-[var(--color-border-default)] focus:border-[var(--color-accent)]"
+                                            />
+                                            <button
+                                              type="submit"
+                                              className="px-3.5 py-1.5 bg-[var(--color-accent)] hover:bg-[var(--color-accent-bright)] text-white text-[11px] font-semibold rounded-lg shadow transition-colors"
+                                            >
+                                              Submit
+                                            </button>
+                                          </form>
+                                        </div>
+                                      ) : stepMsg.event_type === "tool_approval_request" && stepMsg.id === activeInterrupt?.message_id ? (
+                                        <div className="space-y-2.5 w-full">
+                                          <div className="text-[var(--color-text-primary)] font-medium flex items-center gap-1.5">
+                                            <span className="w-2 h-2 rounded-full bg-[var(--color-warning)] animate-ping" />
+                                            <span>Tool Approval Required</span>
+                                          </div>
+                                          <div className="bg-[var(--color-base)] border border-[var(--color-border-subtle)] rounded-lg p-2.5 font-mono text-[11px] text-[var(--color-text-secondary)] space-y-1 max-w-full overflow-x-auto">
+                                            <div><strong>Tool:</strong> {activeInterrupt.tool}</div>
+                                            {activeInterrupt.args && Object.keys(activeInterrupt.args).length > 0 && (
+                                              <div>
+                                                <strong>Arguments:</strong>
+                                                <pre className="mt-1 p-1.5 bg-[var(--color-elevated)] rounded border border-[var(--color-border-subtle)]/50 text-[10px] overflow-x-auto whitespace-pre-wrap">
+                                                  {JSON.stringify(activeInterrupt.args, null, 2)}
+                                                </pre>
+                                              </div>
+                                            )}
+                                          </div>
+                                          <div className="flex gap-2 mt-1">
+                                            <button
+                                              onClick={() => handleSendToolApproval(true)}
+                                              className="px-3.5 py-1.5 bg-[var(--color-success)] hover:bg-[var(--color-success)]/90 text-white text-[11px] font-semibold rounded-lg shadow flex items-center gap-1 transition-colors"
+                                            >
+                                              Approve
+                                            </button>
+                                            <button
+                                              onClick={() => handleSendToolApproval(false)}
+                                              className="px-3.5 py-1.5 bg-[var(--color-danger)] hover:bg-[var(--color-danger)]/90 text-white text-[11px] font-semibold rounded-lg shadow flex items-center gap-1 transition-colors"
+                                            >
+                                              Deny
+                                            </button>
+                                          </div>
+                                        </div>
+                                      ) : (
+                                        renderMessageContent(stepMsg.content, true)
+                                      )}
                                     </div>
                                   )}
                                 </div>
                               );
                             })}
+                          </div>
+                        )}
+
+                        {/* Human Interrupt Request (visible outside only when collapsed) */}
+                        {!isStreaming && !isExpanded && turn.humanInterrupt && (
+                          <div
+                            className="flex flex-col items-start w-full animate-fade-in"
+                            style={{ animation: "staggerFadeIn 0.3s ease-out" }}
+                          >
+                            {turn.humanInterrupt.agent_name && (
+                              <span className="text-[10px] text-[var(--color-text-tertiary)] mb-0.5 px-1 font-semibold tracking-wide">
+                                {turn.humanInterrupt.agent_name} · {turn.humanInterrupt.event_type === "tool_approval_request" ? "tool_approval_request" : "human_input_request"}
+                              </span>
+                            )}
+                            <div
+                              className={`max-w-[85%] w-full rounded-xl px-3 py-2.5 text-[12px] leading-relaxed shadow-sm ${
+                                turn.humanInterrupt.event_type === "tool_approval_request"
+                                  ? "bg-[var(--color-warning-subtle)] text-[var(--color-warning)] border border-[var(--color-warning)]/20 rounded-bl-sm"
+                                  : "bg-[var(--color-agent-subtle)] text-[var(--color-agent)] border border-[var(--color-agent)]/20 rounded-bl-sm"
+                              }`}
+                            >
+                              {turn.humanInterrupt.event_type === "human_input_request" && turn.humanInterrupt.id === activeInterrupt?.message_id ? (
+                                <div className="space-y-3 w-full">
+                                  <div className="text-[var(--color-text-primary)] font-medium">
+                                    {turn.humanInterrupt.content}
+                                  </div>
+                                  <form
+                                    onSubmit={(e) => {
+                                      e.preventDefault();
+                                      const form = e.currentTarget;
+                                      const data = new FormData(form);
+                                      const val = (data.get("response") as string || "").trim();
+                                      if (!val) return;
+                                      handleSendHumanResponse(val);
+                                    }}
+                                    className="flex gap-2 w-full mt-1.5"
+                                  >
+                                    <input
+                                      ref={inlineInputRef}
+                                      name="response"
+                                      type="text"
+                                      required
+                                      placeholder="Type your response..."
+                                      className="input-base flex-1 py-1.5 px-3 rounded-lg text-[12px] bg-[var(--color-base)] text-[var(--color-text-primary)] border border-[var(--color-border-default)] focus:border-[var(--color-accent)]"
+                                    />
+                                    <button
+                                      type="submit"
+                                      className="px-3.5 py-1.5 bg-[var(--color-accent)] hover:bg-[var(--color-accent-bright)] text-white text-[11px] font-semibold rounded-lg shadow transition-colors"
+                                    >
+                                      Submit
+                                    </button>
+                                  </form>
+                                </div>
+                              ) : turn.humanInterrupt.event_type === "tool_approval_request" && turn.humanInterrupt.id === activeInterrupt?.message_id ? (
+                                <div className="space-y-2.5 w-full">
+                                  <div className="text-[var(--color-text-primary)] font-medium flex items-center gap-1.5">
+                                    <span className="w-2 h-2 rounded-full bg-[var(--color-warning)] animate-ping" />
+                                    <span>Tool Approval Required</span>
+                                  </div>
+                                  <div className="bg-[var(--color-base)] border border-[var(--color-border-subtle)] rounded-lg p-2.5 font-mono text-[11px] text-[var(--color-text-secondary)] space-y-1 max-w-full overflow-x-auto">
+                                    <div><strong>Tool:</strong> {activeInterrupt.tool}</div>
+                                    {activeInterrupt.args && Object.keys(activeInterrupt.args).length > 0 && (
+                                      <div>
+                                        <strong>Arguments:</strong>
+                                        <pre className="mt-1 p-1.5 bg-[var(--color-elevated)] rounded border border-[var(--color-border-subtle)]/50 text-[10px] overflow-x-auto whitespace-pre-wrap">
+                                          {JSON.stringify(activeInterrupt.args, null, 2)}
+                                        </pre>
+                                      </div>
+                                    )}
+                                  </div>
+                                  <div className="flex gap-2 mt-1">
+                                    <button
+                                      onClick={() => handleSendToolApproval(true)}
+                                      className="px-3.5 py-1.5 bg-[var(--color-success)] hover:bg-[var(--color-success)]/90 text-white text-[11px] font-semibold rounded-lg shadow flex items-center gap-1 transition-colors"
+                                    >
+                                      Approve
+                                    </button>
+                                    <button
+                                      onClick={() => handleSendToolApproval(false)}
+                                      className="px-3.5 py-1.5 bg-[var(--color-danger)] hover:bg-[var(--color-danger)]/90 text-white text-[11px] font-semibold rounded-lg shadow flex items-center gap-1 transition-colors"
+                                    >
+                                      Deny
+                                    </button>
+                                  </div>
+                                </div>
+                              ) : (
+                                renderMessageContent(turn.humanInterrupt.content, true)
+                              )}
+                            </div>
                           </div>
                         )}
 
@@ -1084,6 +1330,7 @@ export default function ChatPage() {
           <div className="border-t border-[var(--color-border-subtle)] p-4 bg-[var(--color-surface)] flex justify-center">
             <div className="max-w-3xl w-full flex gap-3">
               <input
+                ref={chatInputRef}
                 type="text"
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
@@ -1093,8 +1340,8 @@ export default function ChatPage() {
                     handleSend();
                   }
                 }}
-                placeholder="Message agents..."
-                disabled={running || loadingConv}
+                placeholder={activeInterrupt ? "Waiting for your response/approval above..." : running ? "Orchestrating workflow..." : "Message agents..."}
+                disabled={(running && !activeInterrupt) || loadingConv}
                 data-testid="chat-input"
                 className="input-base flex-1 py-2.5 px-4 rounded-xl"
               />

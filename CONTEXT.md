@@ -101,3 +101,15 @@ _Avoid_: Client-side charting, host-side plotting, inline plot generation
 **Entry Point**:
 A configuration flag (`is_entry_point`) on an Agent Node. When set to `True`, it designates that agent as the default starting node for workflow execution when no specific target agent ID is specified.
 _Avoid_: Start node, root agent, entry node
+
+**Human-in-the-Loop (HITL)**:
+A runtime capability allowing worker agents and tools to pause execution and request human intervention. In worker agents, it triggers an input request for text input. In tools, it triggers an approval/denial request before execution.
+_Avoid_: User-in-the-loop, human control
+
+**ask_human**:
+A built-in tool registered on worker agents that have Human-in-the-Loop enabled. When called by the agent, it suspends execution and requests textual input from the user via the chat UI.
+_Avoid_: prompt_user, human_input
+
+**Tool Approval**:
+A capability where custom tool execution is paused until approved or denied by the user in the UI. If approved, the tool runs. If denied, the tool is skipped and a denial message is returned to the agent as the observation.
+_Avoid_: function approval, script verification

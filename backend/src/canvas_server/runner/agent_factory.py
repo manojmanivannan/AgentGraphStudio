@@ -47,6 +47,7 @@ class AgentFactory:
         self._agent_names = agent_names or {}
         self._conversation_id = conversation_id
         self._conversation_repo = conversation_repo
+        self._run_state = None
 
     # ------------------------------------------------------------------
     # DSPy signature
@@ -107,6 +108,15 @@ class AgentFactory:
                 "a markdown image link (e.g. `![Plot](/api/plots/...)`), you MUST preserve this image "
                 "markdown link exactly and include it in your final answer/response (process_result). "
                 "Do not omit, summarize, or modify the image link."
+            )
+
+        if getattr(agent_node, "enable_hitl", False):
+            full_instructions += (
+                "\n\nYou have a tool `ask_human` available. If you need clarification, "
+                "more information, or need to ask the user a question (for example, if a "
+                "parameter is ambiguous or you need the user to choose an option), you MUST "
+                "call the `ask_human` tool with your question. Do not reply to the user "
+                "directly with the question in your thought or final answer."
             )
 
         if self._memory_manager.needs_memory(agent_node):
@@ -192,6 +202,61 @@ class AgentFactory:
         if getattr(agent_node, "enable_plotting", False) and self._conversation_id:
             plot_provider = PlotProvider(self._conversation_id, self._conversation_repo)
             tools.append(plot_provider.generate_plot)
+
+        if getattr(agent_node, "enable_hitl", False):
+            async def ask_human(question: str) -> str:
+                """Ask a human user for input or clarification when you are stuck or need more information.
+
+                Args:
+                    question: The question or prompt to show to the human user.
+
+                Returns:
+                    The text response provided by the human user.
+                """
+                request_id = str(uuid.uuid4())
+
+                # Persist the interrupt request to conversation messages
+                if self._conversation_id and self._conversation_repo:
+                    await self._conversation_repo.add_message(
+                        conversation_id=uuid.UUID(self._conversation_id) if isinstance(self._conversation_id, str) else self._conversation_id,
+                        role="assistant",
+                        content=question,
+                        agent_name=agent_node.name,
+                        node_id=agent_node.id,
+                        event_type="human_input_request",
+                    )
+
+                # Send websocket event
+                run_state = getattr(self, "_run_state", None)
+                if run_state and run_state.send_event:
+                    await run_state.send_event({
+                        "type": "human_input_request",
+                        "request_id": request_id,
+                        "question": question,
+                        "agent": agent_node.name,
+                        "node_id": str(agent_node.id),
+                    })
+
+                # Wait for the response
+                if run_state and hasattr(run_state, "get_client_response") and run_state.get_client_response:
+                    res = await run_state.get_client_response(request_id, "human_input_response")
+                    content = res.get("content", "")
+
+                    # Persist the user's response to history
+                    if self._conversation_id and self._conversation_repo:
+                        await self._conversation_repo.add_message(
+                            conversation_id=uuid.UUID(self._conversation_id) if isinstance(self._conversation_id, str) else self._conversation_id,
+                            role="user",
+                            content=content,
+                            agent_name=None,
+                            node_id=None,
+                            event_type="human_input_response",
+                        )
+                    return content
+
+                return "Error: Human input callback not available."
+
+            tools.append(ask_human)
 
         if handoff_tool_builder and send_event:
             handoff_targets = await self._get_handoff_target_ids(agent_node.id)

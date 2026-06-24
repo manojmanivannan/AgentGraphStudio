@@ -1063,11 +1063,18 @@ interface ThemeState {
 - **Canvas Selector Dropdown**: Top-right select dropdown allows selecting any available canvas when starting a new conversation. Disables automatically mid-conversation (`conversation_id !== "empty"`) to ensure runtime scopes remain locked.
 - **Location & Search Parameter Synced**: Reads parameters reactively via `useLocation` and `useSearchParams` hooks, eliminating race conditions during route transitions.
 - Message display grouped into "turns" per user prompt.
-- Turn structure: user message → collapsible execution steps (thoughts, handoffs, tool results) → final answer.
+- **Turn-Grouped Chat UI & Collapsible Execution Steps**:
+  - The chat interface groups messages into logical "turns" initiated by each user prompt.
+  - Intermediate agent events (thoughts, handoffs, and tool execution results) are grouped into a collapsible **Execution Steps** container. This helps keep the conversation history clean and readable.
+  - When a final answer or interrupt is reached, the execution steps are collapsed by default. The user can expand/collapse execution steps for any turn via a toggle button (e.g. "Show 3 execution steps" / "Hide execution steps").
+- **Human-in-the-Loop (HITL) Interrupts**:
+  - Interrupt events (`human_input_request` for user feedback/clarification and `tool_approval_request` for tool execution authorization) are kept **outside** of the collapsible execution steps block.
+  - They are displayed directly in the conversation flow as standard chat bubbles/blocks. This ensures they remain fully visible and interactive even if execution steps are minimized.
+  - Active interrupts display inline action forms (e.g., text inputs for human answers or Approve/Deny buttons for tool approvals) that automatically autofocus upon rendering, returning focus to the main input field upon submission.
 - Streaming: incoming WebSocket events rendered as they arrive, and execution steps automatically collapse when the final answer is reached.
 - Input bar with message send/stop button.
 - WebSocket lifecycle: connects on submit, runs, and closes on complete/error.
-- Intermediate execution steps are persisted directly to the SQLite database and loaded upon conversation switch/navigation.
+- Intermediate execution steps and tool approval requests are persisted directly to the database and loaded upon conversation switch/navigation.
 
 ### Auto-Save
 

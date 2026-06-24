@@ -1,4 +1,5 @@
 import logging
+import uuid
 
 import dspy
 
@@ -29,6 +30,7 @@ class StreamingReAct(dspy.ReAct):
     async def aforward(self, **input_args):
         trajectory = {}
         max_iters = input_args.pop("max_iters", self.max_iters)
+        get_client_response = input_args.pop("get_client_response", None)
 
         for idx in range(max_iters):
             pred = await self._async_call_with_potential_trajectory_truncation(
@@ -47,6 +49,40 @@ class StreamingReAct(dspy.ReAct):
             await self._emit(
                 {"type": "tool_start", "tool": pred.next_tool_name}
             )
+
+            # Check if this tool requires approval
+            tool_obj = self.tools[pred.next_tool_name]
+            original_fn = getattr(tool_obj, "func", getattr(tool_obj, "fn", tool_obj))
+            requires_approval = getattr(original_fn, "requires_approval", False)
+            tool_node_id = getattr(original_fn, "node_id", None)
+
+            approved = True
+            if requires_approval and get_client_response:
+                request_id = str(uuid.uuid4())
+                await self._emit({
+                    "type": "tool_approval_request",
+                    "request_id": request_id,
+                    "tool": pred.next_tool_name,
+                    "args": pred.next_tool_args,
+                    "node_id": str(tool_node_id) if tool_node_id else None,
+                })
+                try:
+                    res = await get_client_response(request_id, "tool_approval_response")
+                    approved = res.get("approved", False)
+                except Exception:
+                    approved = False
+
+            if not approved:
+                observation = "Tool execution denied by user."
+                trajectory[f"observation_{idx}"] = observation
+                await self._emit(
+                    {
+                        "type": "tool_result",
+                        "tool": pred.next_tool_name,
+                        "output": str(observation),
+                    }
+                )
+                continue
 
             try:
                 observation = await self.tools[pred.next_tool_name].acall(

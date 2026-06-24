@@ -53,6 +53,7 @@ export function encodeCanvasGraph({ canvasName, nodes, edges }: CanvasGraph): Ca
             enable_rag: data.enableRag ?? false,
             rag_chunk_size: data.ragChunkSize ?? DEFAULT_RAG_CHUNK_SIZE,
             is_entry_point: data.isEntryPoint ?? false,
+            enable_hitl: data.enableHitl ?? false,
             position_x: node.position.x,
             position_y: node.position.y,
           };
@@ -67,6 +68,7 @@ export function encodeCanvasGraph({ canvasName, nodes, edges }: CanvasGraph): Ca
             code: data.code ?? "",
             packages: data.packages ?? "",
             args: data.args ?? [],
+            requires_approval: data.requiresApproval ?? false,
             position_x: node.position.x,
             position_y: node.position.y,
           };
@@ -102,6 +104,7 @@ export function decodeCanvasResponse(canvas: CanvasResponse): DecodedCanvasGraph
           enableRag: agent.enable_rag,
           ragChunkSize: agent.rag_chunk_size,
           isEntryPoint: agent.is_entry_point,
+          enableHitl: agent.enable_hitl,
         },
       })),
       ...canvas.nodes.tools.map((tool) => ({
@@ -115,6 +118,7 @@ export function decodeCanvasResponse(canvas: CanvasResponse): DecodedCanvasGraph
           code: tool.code,
           packages: tool.packages ?? "",
           args: tool.args,
+          requiresApproval: tool.requires_approval,
         },
       })),
     ],

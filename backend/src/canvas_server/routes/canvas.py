@@ -55,6 +55,7 @@ def _canvas_to_response(canvas: Canvas) -> CanvasResponse:
                     model_name=n.model_name,
                     agent_type=n.agent_type,
                     enable_plotting=n.enable_plotting,
+                    enable_hitl=n.enable_hitl,
                     enable_memory=n.enable_memory,
                     enable_conversation_history=n.enable_conversation_history,
                     enable_rag=n.enable_rag,
@@ -74,6 +75,7 @@ def _canvas_to_response(canvas: Canvas) -> CanvasResponse:
                     packages=",".join(n.dependencies),
                     dependencies=n.dependencies,
                     args=n.args,
+                    requires_approval=n.requires_approval,
                     position_x=n.position_x,
                     position_y=n.position_y,
                 )

@@ -87,6 +87,7 @@ async def test_coordinator_renames_new_conversation_and_runs_targeted_agent():
         "what is 2 + 2?",
         send_event,
         target_agent_id=target_agent_id,
+        get_client_response=None,
     )
     assert session.commit.await_count == 2
 
