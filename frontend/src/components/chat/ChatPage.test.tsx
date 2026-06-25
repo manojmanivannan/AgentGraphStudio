@@ -1445,4 +1445,81 @@ describe("ChatPage component", () => {
 
         await waitFor(() => expect(interruptCalls).toBe(1));
     });
+
+    it("closes active websocket and resets state when switching conversations", async () => {
+        const user = userEvent.setup();
+
+        server.use(
+            http.get(`${API}/canvases`, () =>
+                HttpResponse.json([{ id: "canvas-1", name: "My Canvas" }])
+            ),
+            http.get(`${API}/canvases/conversations/conv-1`, () =>
+                HttpResponse.json(
+                    mockConversation({ id: "conv-1", canvas_id: "canvas-1", name: "First Chat", messages: [] })
+                )
+            ),
+            http.get(`${API}/canvases/conversations/conv-2`, () =>
+                HttpResponse.json(
+                    mockConversation({ id: "conv-2", canvas_id: "canvas-1", name: "Second Chat", messages: [] })
+                )
+            ),
+            http.get(`${API}/canvases/canvas-1`, () =>
+                HttpResponse.json({ id: "canvas-1", name: "My Canvas", nodes: { agents: [], tools: [] }, edges: [] })
+            ),
+            http.get(`${API}/canvases/canvas-1/conversations`, () =>
+                HttpResponse.json([
+                    mockConversationSummary({ id: "conv-1", name: "First Chat" }),
+                    mockConversationSummary({ id: "conv-2", name: "Second Chat" }),
+                ])
+            )
+        );
+
+        renderChatPage("conv-1");
+
+        await waitFor(() => {
+            expect(screen.getByTestId("chat-input")).toBeInTheDocument();
+        });
+
+        // Start execution to open websocket
+        await user.type(screen.getByTestId("chat-input"), "start run");
+        await user.click(screen.getByTestId("send-button"));
+
+        await waitFor(() => {
+            expect(FakeWebSocket.instances).toHaveLength(1);
+        });
+
+        const firstSocket = FakeWebSocket.instances[0];
+
+        // Simulate tool approval request showing in UI
+        await act(async () => {
+            firstSocket.simulateMessage({ type: "run_queued", run_id: "run-first" });
+            firstSocket.simulateMessage({
+                type: "tool_approval_request",
+                request_id: "req-tool-first",
+                tool: "dangerous_tool",
+                args: {},
+                agent: "Executor",
+                run_id: "run-first",
+                sequence: 1,
+            });
+        });
+
+        await waitFor(() => {
+            expect(screen.getByText(/dangerous_tool/)).toBeInTheDocument();
+        });
+
+        // Click the Second Chat link in the sidebar to navigate to conv-2
+        const secondChatLink = screen.getByText("Second Chat");
+        await user.click(secondChatLink);
+
+        // Verify that the websocket was closed
+        await waitFor(() => {
+            expect(firstSocket.closed).toBe(true);
+        });
+
+        // Verify that the tool approval modal/overlay is reset and no longer showing in the new conversation
+        await waitFor(() => {
+            expect(screen.queryByText(/dangerous_tool/)).not.toBeInTheDocument();
+        });
+    });
 });

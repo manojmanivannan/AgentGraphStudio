@@ -347,6 +347,17 @@ export default function ChatPage() {
   const lastSequenceRef = useRef<number>(0);
   const reconnectTimerRef = useRef<number | null>(null);
   const manualStopRef = useRef<boolean>(false);
+
+  const resetLiveRunTracking = useCallback(() => {
+    activeRunIdRef.current = null;
+    lastSequenceRef.current = 0;
+    manualStopRef.current = false;
+    if (reconnectTimerRef.current !== null) {
+      window.clearTimeout(reconnectTimerRef.current);
+      reconnectTimerRef.current = null;
+    }
+  }, []);
+
   const localMessagesRef = useRef<Message[]>([]);
 
   useEffect(() => {
@@ -357,11 +368,23 @@ export default function ChatPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // Reset expand state when switching conversations
+  // Reset states and clean up active websocket when switching conversations
   useEffect(() => {
     setExpandedTurns(new Set());
     setCollapsedSteps(new Set());
-  }, [conversation_id]);
+
+    setRunning(false);
+    setActiveInterrupt(null);
+    setActiveNodeId(null);
+    resetLiveRunTracking();
+
+    return () => {
+      if (wsRef.current) {
+        wsRef.current.close();
+        wsRef.current = null;
+      }
+    };
+  }, [conversation_id, resetLiveRunTracking]);
 
   // Fetch all canvases on mount
   useEffect(() => {
@@ -541,15 +564,7 @@ export default function ChatPage() {
     setMessages((prev) => [...prev, msg]);
   };
 
-  const resetLiveRunTracking = useCallback(() => {
-    activeRunIdRef.current = null;
-    lastSequenceRef.current = 0;
-    manualStopRef.current = false;
-    if (reconnectTimerRef.current !== null) {
-      window.clearTimeout(reconnectTimerRef.current);
-      reconnectTimerRef.current = null;
-    }
-  }, []);
+
 
   const connectAndRun = useCallback(async (
     convId: string,
@@ -829,15 +844,7 @@ export default function ChatPage() {
     };
   }, [conversation_id, running, loadingConv, connectAndRun]);
 
-  // Cleanup websocket on unmount to prevent memory/socket leaks
-  useEffect(() => {
-    return () => {
-      if (wsRef.current) {
-        wsRef.current.close();
-        wsRef.current = null;
-      }
-    };
-  }, []);
+
 
   const stopRun = async () => {
     manualStopRef.current = true;

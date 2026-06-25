@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import signal
 
@@ -18,11 +19,9 @@ async def _run_worker_process() -> None:
 
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):
-        try:
+        # add_signal_handler is not available on some platforms.
+        with contextlib.suppress(NotImplementedError):
             loop.add_signal_handler(sig, stop_event.set)
-        except NotImplementedError:
-            # add_signal_handler is not available on some platforms.
-            pass
 
     worker = get_background_run_worker()
     await worker.ensure_started()

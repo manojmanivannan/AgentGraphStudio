@@ -147,3 +147,65 @@ def test_ask_human_prompt_instructions():
 
     assert "ask_human" in sig_with_hitl.__doc__
     assert "ask_human" not in sig_without_hitl.__doc__
+
+
+@pytest.mark.asyncio
+async def test_streaming_react_propagates_run_aborted_error():
+    from canvas_server.exceptions import RunAbortedError
+
+    # 1. Test event callback abort propagation
+    sig = MagicMock()
+    agent = StreamingReAct(sig, tools=[])
+
+    async def aborting_callback(event):
+        raise RunAbortedError("Abort from callback")
+
+    agent.on_event(aborting_callback)
+
+    with pytest.raises(RunAbortedError):
+        await agent._emit({"type": "thought", "content": "test"})
+
+    # 2. Test get_client_response abort propagation in aforward tool approval
+    class FakeTool:
+        async def acall(self, **kwargs):
+            return "Success"
+
+    fake_tool = FakeTool()
+    fake_tool.requires_approval = True
+    fake_tool.node_id = uuid.uuid4()
+    fake_tool.__name__ = "FakeTool"
+
+    agent = StreamingReAct(sig, tools=[])
+    agent.tools = {"FakeTool": fake_tool}
+
+    async def get_client_response_abort(request_id, response_type):
+        raise RunAbortedError("Abort from client response")
+
+    pred_react = MagicMock(next_thought="Call tool", next_tool_name="FakeTool", next_tool_args={})
+    pred_extract = MagicMock(process_result="Done!")
+
+    with patch.object(agent, "_async_call_with_potential_trajectory_truncation") as mock_call:
+        mock_call.side_effect = [pred_react, pred_extract]
+        with pytest.raises(RunAbortedError):
+            await agent.aforward(get_client_response=get_client_response_abort)
+
+    # 3. Test tool call abort propagation in aforward tool execution
+    class AbortingTool:
+        async def acall(self, **kwargs):
+            raise RunAbortedError("Abort during tool run")
+
+    aborting_tool = AbortingTool()
+    aborting_tool.requires_approval = False
+    aborting_tool.node_id = uuid.uuid4()
+    aborting_tool.__name__ = "AbortingTool"
+
+    agent = StreamingReAct(sig, tools=[])
+    agent.tools = {"AbortingTool": aborting_tool}
+
+    pred_react_tool = MagicMock(next_thought="Call aborting tool", next_tool_name="AbortingTool", next_tool_args={})
+
+    with patch.object(agent, "_async_call_with_potential_trajectory_truncation") as mock_call:
+        mock_call.side_effect = [pred_react_tool, pred_extract]
+        with pytest.raises(RunAbortedError):
+            await agent.aforward()
+
