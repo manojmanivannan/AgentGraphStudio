@@ -1118,6 +1118,79 @@ describe("ChatPage component", () => {
             expect(screen.getByText("step one")).toBeInTheDocument();
             expect(screen.getByText("step two")).toBeInTheDocument();
         });
+
+        await waitFor(() => {
+            expect(screen.getByTestId("send-button")).toBeInTheDocument();
+        });
+    });
+
+    it("replayed run_aborted event after reconnect restores terminal idle state", async () => {
+        const user = userEvent.setup();
+
+        server.use(
+            http.get(`${API}/canvases`, () =>
+                HttpResponse.json([{ id: "canvas-1", name: "My Canvas" }])
+            ),
+            http.get(`${API}/canvases/conversations/conv-1`, () =>
+                HttpResponse.json(
+                    mockConversation({
+                        id: "conv-1",
+                        canvas_id: "canvas-1",
+                        name: "Live Chat",
+                        messages: [],
+                    })
+                )
+            ),
+            http.get(`${API}/canvases/canvas-1`, () =>
+                HttpResponse.json({ id: "canvas-1", name: "My Canvas", nodes: { agents: [], tools: [] }, edges: [] })
+            ),
+            http.get(`${API}/canvases/canvas-1/conversations`, () =>
+                HttpResponse.json([mockConversationSummary({ id: "conv-1", name: "Live Chat" })])
+            )
+        );
+
+        renderChatPage("conv-1");
+
+        await waitFor(() => {
+            expect(screen.getByTestId("chat-input")).toBeInTheDocument();
+        });
+
+        await user.type(screen.getByTestId("chat-input"), "run then abort");
+        await user.click(screen.getByTestId("send-button"));
+
+        await waitFor(() => {
+            expect(FakeWebSocket.instances).toHaveLength(1);
+        });
+
+        const firstSocket = FakeWebSocket.instances[0];
+        await act(async () => {
+            firstSocket.simulateMessage({ type: "run_queued", run_id: "run-abort-reconnect" });
+            firstSocket.simulateMessage({ type: "thought", agent: "Planner", content: "starting", sequence: 1, run_id: "run-abort-reconnect" });
+            firstSocket.onclose?.(new CloseEvent("close", { code: 1006, wasClean: false }));
+        });
+
+        await waitFor(() => {
+            expect(FakeWebSocket.instances).toHaveLength(2);
+        });
+
+        const reconnectSocket = FakeWebSocket.instances[1];
+        await act(async () => {
+            reconnectSocket.simulateMessage({
+                type: "run_aborted",
+                message: "Run aborted by user",
+                sequence: 2,
+                run_id: "run-abort-reconnect",
+            });
+        });
+
+        await waitFor(() => {
+            expect(screen.getByTestId("send-button")).toBeInTheDocument();
+        });
+
+        // No extra reconnect websocket should be spawned after terminal aborted replay.
+        await waitFor(() => {
+            expect(FakeWebSocket.instances).toHaveLength(2);
+        });
     });
 
     it("stop button aborts active run and does not auto-reconnect", async () => {        const user = userEvent.setup();

@@ -6,6 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
+from starlette.websockets import WebSocketDisconnect
 
 from canvas_server.main import app
 
@@ -46,6 +47,25 @@ def test_websocket_run_delegates_to_coordinator_and_forwards_events(monkeypatch)
             captured["target_agent_id"] = target_agent_id
             return SimpleNamespace(id=run_id)
 
+        async def list_events(self, requested_run_id, *, after_sequence=0):
+            if after_sequence > 0:
+                return []
+            return [
+                SimpleNamespace(
+                    payload={"type": "run_start", "canvas_id": "canvas-1"},
+                    event_type="run_start",
+                    sequence=1,
+                ),
+                SimpleNamespace(
+                    payload={"type": "run_complete", "result": "ok"},
+                    event_type="run_complete",
+                    sequence=2,
+                ),
+            ]
+
+        async def get(self, requested_run_id):
+            return SimpleNamespace(id=requested_run_id, status="completed")
+
     class FakeWorker:
         def __init__(self):
             self.queue = asyncio.Queue()
@@ -64,18 +84,6 @@ def test_websocket_run_delegates_to_coordinator_and_forwards_events(monkeypatch)
 
         def kick(self):
             self.kicked = True
-
-        async def get_run_events_after(self, *, run_id, after_sequence):
-            if after_sequence > 0:
-                return []
-            captured["conversation_id"] = conversation_id
-            return [
-                {"type": "run_start", "canvas_id": "canvas-1", "sequence": 1},
-                {"type": "run_complete", "result": "ok", "sequence": 2},
-            ]
-
-        async def get_run_status(self, requested_run_id):
-            return "completed"
 
     fake_worker = FakeWorker()
 
@@ -119,11 +127,13 @@ def test_websocket_run_delegates_to_coordinator_and_forwards_events(monkeypatch)
         "type": "run_start",
         "canvas_id": "canvas-1",
         "sequence": 1,
+        "run_id": str(run_id),
     }
     assert second_event == {
         "type": "run_complete",
         "result": "ok",
         "sequence": 2,
+        "run_id": str(run_id),
     }
     assert captured["conversation_id"] == conversation_id
     assert captured["create_conversation_id"] == conversation_id
@@ -322,22 +332,34 @@ def test_get_run_events_route_replays_after_sequence(monkeypatch):
     run_id = uuid.uuid4()
     captured: dict[str, object] = {}
 
-    class FakeWorker:
-        async def get_run_events_after(self, *, run_id, after_sequence):
-            captured["run_id"] = run_id
+    class FakeEvent:
+        def __init__(self, sequence, payload, event_type):
+            self.sequence = sequence
+            self.payload = payload
+            self.event_type = event_type
+
+    class FakeDurableRunRepo:
+        def __init__(self, session):
+            pass
+
+        async def list_events(self, requested_run_id, *, after_sequence=0):
+            captured["run_id"] = requested_run_id
             captured["after_sequence"] = after_sequence
             return [
-                {
-                    "type": "thought",
-                    "content": "replayed",
-                    "sequence": 4,
-                    "run_id": str(run_id),
-                }
+                FakeEvent(
+                    sequence=4,
+                    payload={"type": "thought", "content": "replayed"},
+                    event_type="thought",
+                )
             ]
 
     monkeypatch.setattr(
-        "canvas_server.routes.execute.get_background_run_worker",
-        lambda: FakeWorker(),
+        "canvas_server.routes.execute.get_session_factory",
+        lambda: (lambda: FakeSessionContext()),
+    )
+    monkeypatch.setattr(
+        "canvas_server.routes.execute.DurableRunRepo",
+        FakeDurableRunRepo,
     )
 
     client = TestClient(app)
@@ -448,6 +470,19 @@ def test_websocket_run_supports_resuming_existing_run(monkeypatch):
             assert requested_run_id == run_id
             return SimpleNamespace(id=requested_run_id, conversation_id=conversation_id)
 
+        async def list_events(self, requested_run_id, *, after_sequence=0):
+            captured["after_sequence"] = after_sequence
+            return [
+                SimpleNamespace(
+                    payload={"type": "final_answer", "content": "resumed"},
+                    event_type="final_answer",
+                    sequence=6,
+                )
+            ]
+
+        async def get(self, requested_run_id):
+            return SimpleNamespace(id=requested_run_id, status="completed")
+
     class FakeWorker:
         def __init__(self):
             self.queue = asyncio.Queue()
@@ -464,20 +499,6 @@ def test_websocket_run_supports_resuming_existing_run(monkeypatch):
 
         def kick(self):
             return None
-
-        async def get_run_events_after(self, *, run_id, after_sequence):
-            captured["after_sequence"] = after_sequence
-            return [
-                {
-                    "type": "final_answer",
-                    "content": "resumed",
-                    "sequence": 6,
-                    "run_id": str(run_id),
-                }
-            ]
-
-        async def get_run_status(self, requested_run_id):
-            return "completed"
 
     fake_worker = FakeWorker()
 
@@ -544,6 +565,12 @@ def test_websocket_resume_does_not_restart_aborted_run(monkeypatch):
         async def get_or_404(self, requested_run_id):
             return SimpleNamespace(id=requested_run_id, conversation_id=conversation_id, status="aborted")
 
+        async def list_events(self, requested_run_id, *, after_sequence=0):
+            return []
+
+        async def get(self, requested_run_id):
+            return SimpleNamespace(id=requested_run_id, status="aborted")
+
     class FakeWorker:
         def __init__(self):
             self.queue = asyncio.Queue()
@@ -560,12 +587,6 @@ def test_websocket_resume_does_not_restart_aborted_run(monkeypatch):
 
         def kick(self):
             return None
-
-        async def get_run_events_after(self, *, run_id, after_sequence):
-            return []
-
-        async def get_run_status(self, requested_run_id):
-            return "aborted"
 
     monkeypatch.setattr(
         "canvas_server.routes.execute.get_session_factory",
@@ -594,22 +615,125 @@ def test_websocket_resume_does_not_restart_aborted_run(monkeypatch):
                 }
             )
         )
-        with pytest.raises(Exception):
+        with pytest.raises(WebSocketDisconnect):
             websocket.receive_text()
 
     assert captured["subscribed"] == run_id
     assert captured["unsubscribed"] == run_id
 
 
+def test_websocket_run_in_api_mode_streams_events_without_local_worker(monkeypatch):
+    conversation_id = uuid.uuid4()
+    run_id = uuid.uuid4()
+
+    class FakeConversationRepo:
+        def __init__(self, session):
+            pass
+
+        async def get_or_404(self, requested_conversation_id):
+            return SimpleNamespace(id=requested_conversation_id)
+
+    class FakeEvent:
+        def __init__(self, sequence, payload, event_type):
+            self.sequence = sequence
+            self.payload = payload
+            self.event_type = event_type
+
+    class FakeDurableRunRepo:
+        def __init__(self, session):
+            pass
+
+        async def create(self, *, conversation_id, prompt, target_agent_id=None):
+            return SimpleNamespace(id=run_id)
+
+        async def list_events(self, requested_run_id, *, after_sequence=0):
+            if requested_run_id != run_id:
+                return []
+            if after_sequence >= 1:
+                return []
+            return [
+                FakeEvent(
+                    sequence=1,
+                    payload={"type": "run_complete", "result": "ok"},
+                    event_type="run_complete",
+                )
+            ]
+
+        async def get(self, requested_run_id):
+            assert requested_run_id == run_id
+            return SimpleNamespace(id=run_id, status="completed")
+
+    monkeypatch.setattr(
+        "canvas_server.routes.execute.get_session_factory",
+        lambda: (lambda: FakeSessionContext()),
+    )
+    monkeypatch.setattr(
+        "canvas_server.routes.execute.ConversationRepo",
+        FakeConversationRepo,
+    )
+    monkeypatch.setattr(
+        "canvas_server.routes.execute.DurableRunRepo",
+        FakeDurableRunRepo,
+    )
+    monkeypatch.setattr(
+        "canvas_server.routes.execute.settings.execution_mode",
+        "api",
+    )
+    monkeypatch.setattr(
+        "canvas_server.routes.execute.get_background_run_worker",
+        lambda: (_ for _ in ()).throw(AssertionError("worker should not be used in api mode")),
+    )
+
+    client = TestClient(app)
+    try:
+        with client.websocket_connect(f"/ws/conversations/{conversation_id}/run") as websocket:
+            websocket.send_text(json.dumps({"prompt": "run in api-only mode"}))
+
+            queued_event = json.loads(websocket.receive_text())
+            completed_event = json.loads(websocket.receive_text())
+    finally:
+        client.close()
+
+    assert queued_event == {"type": "run_queued", "run_id": str(run_id)}
+    assert completed_event == {
+        "type": "run_complete",
+        "result": "ok",
+        "sequence": 1,
+        "run_id": str(run_id),
+    }
+
+
 def test_submit_interrupt_response_route_resolves_pending_interrupt(monkeypatch):
     run_id = uuid.uuid4()
     captured: dict[str, object] = {}
+
+    class FakeDurableRunRepo:
+        def __init__(self, session):
+            pass
+
+        async def get_or_404(self, requested_run_id):
+            assert requested_run_id == run_id
+            return SimpleNamespace(id=run_id, status="running")
+
+        async def append_event(self, requested_run_id, *, event_type, payload):
+            captured["event_type"] = event_type
+            captured["payload"] = payload
+            return SimpleNamespace(sequence=5)
 
     class FakeWorker:
         async def submit_interrupt_response(self, request_id, response):
             captured["request_id"] = request_id
             captured["response"] = response
             return True
+
+    monkeypatch.setattr(
+        "canvas_server.routes.execute.get_session_factory",
+        lambda: (lambda: FakeSessionContext()),
+    )
+    monkeypatch.setattr(
+        "canvas_server.routes.execute.DurableRunRepo",
+        FakeDurableRunRepo,
+    )
 
     monkeypatch.setattr(
         "canvas_server.routes.execute.get_background_run_worker",
@@ -628,14 +752,85 @@ def test_submit_interrupt_response_route_resolves_pending_interrupt(monkeypatch)
     assert body["request_id"] == "req-abc"
     assert captured["request_id"] == "req-abc"
     assert captured["response"]["content"] == "yes"
+    assert captured["event_type"] == "interrupt_response"
 
 
-def test_submit_interrupt_response_route_returns_404_when_no_pending_interrupt(monkeypatch):
+def test_submit_interrupt_response_route_persists_durable_event_for_external_worker(monkeypatch):
     run_id = uuid.uuid4()
+    captured: dict[str, object] = {}
+
+    class FakeDurableRunRepo:
+        def __init__(self, session):
+            pass
+
+        async def get_or_404(self, requested_run_id):
+            assert requested_run_id == run_id
+            return SimpleNamespace(id=run_id, status="running")
+
+        async def append_event(self, requested_run_id, *, event_type, payload):
+            captured["run_id"] = requested_run_id
+            captured["event_type"] = event_type
+            captured["payload"] = payload
+            return SimpleNamespace(sequence=9)
+
+    class FakeWorker:
+        async def submit_interrupt_response(self, request_id, response):
+            return False
+
+    monkeypatch.setattr(
+        "canvas_server.routes.execute.get_session_factory",
+        lambda: (lambda: FakeSessionContext()),
+    )
+    monkeypatch.setattr(
+        "canvas_server.routes.execute.DurableRunRepo",
+        FakeDurableRunRepo,
+    )
+    monkeypatch.setattr(
+        "canvas_server.routes.execute.get_background_run_worker",
+        lambda: FakeWorker(),
+    )
+
+    client = TestClient(app)
+    response = client.post(
+        f"/api/runs/{run_id}/interrupt-response",
+        json={"request_id": "req-durable", "type": "human_input_response", "content": "yes"},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"ok": True, "request_id": "req-durable"}
+    assert captured["run_id"] == run_id
+    assert captured["event_type"] == "interrupt_response"
+    assert captured["payload"]["request_id"] == "req-durable"
+
+
+def test_submit_interrupt_response_route_returns_200_even_without_local_pending_interrupt(
+    monkeypatch,
+):
+    run_id = uuid.uuid4()
+
+    class FakeDurableRunRepo:
+        def __init__(self, session):
+            pass
+
+        async def get_or_404(self, requested_run_id):
+            assert requested_run_id == run_id
+            return SimpleNamespace(id=run_id, status="running")
+
+        async def append_event(self, requested_run_id, *, event_type, payload):
+            return SimpleNamespace(sequence=11)
 
     class FakeWorker:
         async def submit_interrupt_response(self, request_id, response):
             return False  # no pending interrupt for that request_id
+
+    monkeypatch.setattr(
+        "canvas_server.routes.execute.get_session_factory",
+        lambda: (lambda: FakeSessionContext()),
+    )
+    monkeypatch.setattr(
+        "canvas_server.routes.execute.DurableRunRepo",
+        FakeDurableRunRepo,
+    )
 
     monkeypatch.setattr(
         "canvas_server.routes.execute.get_background_run_worker",
@@ -648,7 +843,8 @@ def test_submit_interrupt_response_route_returns_404_when_no_pending_interrupt(m
         json={"request_id": "req-unknown", "type": "human_input_response", "content": "hi"},
     )
 
-    assert response.status_code == 404
+    assert response.status_code == 200
+    assert response.json() == {"ok": True, "request_id": "req-unknown"}
 
 
 def test_submit_interrupt_response_route_returns_422_when_request_id_missing(monkeypatch):

@@ -4,10 +4,10 @@ Wire the durable run model into the development and deployment story and prove t
 
 ## Acceptance criteria
 
-- [ ] The backend can run with a separate execution worker in development and production-like setups.
-- [ ] End-to-end tests cover start, disconnect, reconnect, completion, and abort flows.
-- [ ] The chat UI reflects completed and aborted terminal states correctly after reconnect.
-- [ ] The architecture docs explain the new ownership model and replay semantics.
+- [x] The backend can run with a separate execution worker in development and production-like setups.
+- [x] End-to-end tests cover start, disconnect, reconnect, completion, and abort flows.
+- [x] The chat UI reflects completed and aborted terminal states correctly after reconnect.
+- [x] The architecture docs explain the new ownership model and replay semantics.
 
 ## Blocked by
 

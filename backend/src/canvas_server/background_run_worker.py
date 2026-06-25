@@ -64,15 +64,22 @@ class InterruptStore:
 
     async def wait_for_response(self, request_id: str) -> dict[str, Any]:
         """Register *request_id* and await its resolution."""
+        future = await self.register(request_id)
+        try:
+            return await future
+        finally:
+            await self.unregister(request_id)
+
+    async def register(self, request_id: str) -> asyncio.Future[dict[str, Any]]:
         loop = asyncio.get_event_loop()
         future: asyncio.Future[dict[str, Any]] = loop.create_future()
         async with self._lock:
             self._pending[request_id] = future
-        try:
-            return await future
-        finally:
-            async with self._lock:
-                self._pending.pop(request_id, None)
+        return future
+
+    async def unregister(self, request_id: str) -> None:
+        async with self._lock:
+            self._pending.pop(request_id, None)
 
     async def resolve(self, request_id: str, response: dict[str, Any]) -> bool:
         """Deliver *response* to the waiting coroutine.  Returns True if resolved."""
@@ -216,7 +223,10 @@ class BackgroundRunWorker:
                 await self._broker.publish(run_id, payload)
 
             async def get_client_response(request_id: str, response_type: str) -> dict[str, Any]:
-                return await self._interrupt_store.wait_for_response(request_id)
+                return await self._wait_for_interrupt_response(
+                    run_id=run_id,
+                    request_id=request_id,
+                )
 
             try:
                 await coordinator.run(
@@ -306,6 +316,49 @@ class BackgroundRunWorker:
         Returns True if a pending interrupt was found and resolved, False otherwise.
         """
         return await self._interrupt_store.resolve(request_id, response)
+
+    async def _wait_for_interrupt_response(
+        self,
+        *,
+        run_id: uuid.UUID,
+        request_id: str,
+    ) -> dict[str, Any]:
+        """Wait for interrupt response from either local API route or durable run events."""
+        future = await self._interrupt_store.register(request_id)
+        after_sequence = 0
+        try:
+            while True:
+                if future.done():
+                    return future.result()
+
+                async with self._session_factory() as session:
+                    run_repo = DurableRunRepo(session)
+                    events = await run_repo.list_events(run_id, after_sequence=after_sequence)
+                    run = await run_repo.get(run_id)
+
+                for event in events:
+                    after_sequence = max(after_sequence, event.sequence)
+                    if event.event_type != "interrupt_response":
+                        continue
+                    payload = dict(event.payload or {})
+                    if payload.get("request_id") != request_id:
+                        continue
+                    if not future.done():
+                        future.set_result(payload)
+                    return payload
+
+                if run and run.status in {"aborting", "aborted"}:
+                    raise RunAbortedError("Run aborted while waiting for human response")
+
+                try:
+                    return await asyncio.wait_for(
+                        asyncio.shield(future),
+                        timeout=self.poll_interval_seconds,
+                    )
+                except TimeoutError:
+                    continue
+        finally:
+            await self._interrupt_store.unregister(request_id)
 
     async def get_run_status(self, run_id: uuid.UUID) -> str | None:
         async with self._session_factory() as session:

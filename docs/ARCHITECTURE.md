@@ -530,9 +530,11 @@ ws://localhost:8000/ws/conversations/{conversation_id}/run
 ### Flow
 
 1. Client connects WebSocket
-2. Client sends `{"prompt": "..."}` (within 30s timeout)
-3. Server streams events as newline-delimited JSON
-4. Server closes connection on completion or error
+2. Client sends either:
+  - `{"prompt": "...", "target_agent_id": "..."}` to create a new run
+  - `{"run_id": "...", "after_sequence": N}` to resume a run
+3. Server emits `run_queued` for new runs and streams durable events after `after_sequence`
+4. Server polls durable run status and closes connection when terminal
 
 ### Events
 
@@ -562,6 +564,12 @@ All events carry `node_id` (the agent node that produced them) except `run_start
 // Completion
 {"type": "run_complete", "result": "Workflow execution completed."}
 
+// Queued
+{"type": "run_queued", "run_id": "..."}
+
+// Aborted
+{"type": "run_aborted", "message": "Run aborted by user", "run_id": "..."}
+
 // Error
 {"type": "error", "message": "Tool 'Lookup' timed out.", "agent": "Researcher", "node_id": "..."}
 ```
@@ -571,6 +579,14 @@ All events carry `node_id` (the agent node that produced them) except `run_start
 synonyms — the frontend `ChatOverlay.tsx` handles both in its `onmessage` handler,
 but only `tool_result` is used for display. The TS `ExecutionEvent` union includes
 `tool_call` as forward-compatible.
+
+### Replay Semantics
+
+- Durable events are stored with monotonic per-run `sequence` values.
+- Reconnect clients pass `after_sequence` and receive only newer events.
+- Resume works across tab closes and worker restarts because replay is DB-backed.
+- Interrupt replies are also persisted (`interrupt_response` events), so HITL
+  resumes without requiring API and worker to share in-memory state.
 
 ---
 
@@ -637,14 +653,17 @@ Maps CRUD operations to FastAPI endpoints. Key patterns:
 - Export returns a `Response` with `Content-Disposition: attachment`
 - Import uses `create_full()` with ID remapping
 
-### routes/execute.py — WebSocket Router
+### routes/execute.py — Durable Run Control Plane
 
-Single endpoint `run_conversation()`:
-1. Accepts WebSocket
-2. Receives `{"prompt", "target_agent_id?"}` within 30s timeout
-3. Creates `CanvasRunner` with conversation repo
-4. Calls `runner.run()` in a background task
-5. Commits session on completion (critical — messages otherwise lost on rollback)
+`routes/execute.py` now acts as a control plane for durable runs:
+1. Creates or resumes durable runs over WebSocket (`/ws/conversations/{id}/run`)
+2. Streams replay/live events from `durable_run_events`
+3. Accepts control actions over HTTP (`/abort`, `/interrupt-response`)
+4. Polls terminal run status (`completed`, `failed`, `aborted`) and closes sockets
+
+Execution itself is performed by `BackgroundRunWorker` instances (in-process or
+standalone `canvas-worker` process), which claim queued runs and persist all
+execution events durably.
 
 ---
 
@@ -966,6 +985,15 @@ Conversations have `status: "active" | "completed"`.
 - Stay `"active"` across multiple turns (never set to `"completed"` by `runner.run()`)
 - Set to `"completed"` explicitly by the frontend or via `complete_conversation()` in repo
 
+### Durable Run Ownership Model
+
+- API process owns websocket lifecycle, run creation/resume, replay/status reads,
+  and control-plane HTTP actions (`abort`, `interrupt-response`).
+- Worker process owns run claiming, coordinator execution, durable event writes,
+  and terminal run state transitions.
+- API and worker coordinate through durable DB state, not shared in-memory
+  queues/futures, which preserves reconnect behavior in split deployments.
+
 ---
 
 ## Frontend Architecture
@@ -1146,18 +1174,24 @@ Defined in `globals.css`:
 
 ### docker-compose.yml
 
-Four services connect to a shared `agent_network`:
+Five services connect to a shared `agent_network`:
 
 | Service | Port | Dependencies | Notes |
 |---|---|---|---|
 | `postgres` | 5432 | — | pgvector/pgvector:pg17, health check |
-| `backend` | 8000 | postgres (health) | Hot-reload via `develop.watch`, mounts `./backend/src` |
+| `backend` | 8000 | postgres (health) | API/control plane (`EXECUTION_MODE=api`) |
+| `execution-worker` | — | postgres (health) | Durable run worker (`uv run canvas-worker`) |
 | `frontend` | 5173 | backend | Hot-reload, Vite dev server |
 | `mlflow` | 5000 | — | Custom Dockerfile, health check |
 
 **Key details:**
 - `extra_hosts: host.docker.internal:host-gateway` on backend — allows connecting
   to Ollama on the host machine
+- `backend` and `execution-worker` share durable run tables in the same database
+- `EXECUTION_MODE` controls process role:
+  - `api`: control plane only
+  - `worker`: standalone worker loop only
+  - `all`: single-process local mode (default)
 - MLflow proxy: Vite config proxies `/mlflow` to `http://mlflow:5000`
 - Ollama service commented out (user runs Ollama on host or external server)
 - Backend loads `.env` via `env_file`
@@ -1193,7 +1227,14 @@ COPY alembic/ alembic/
 COPY src/ src/
 ENV PYTHONPATH=/app/src
 EXPOSE 8000
-CMD ["sh", "-c", "uv run alembic upgrade head && uv run uvicorn canvas_server.main:app --host 0.0.0.0 --port 8000 --reload"]
+CMD ["sh", "-c", "uv run alembic upgrade head && uv run uvicorn canvas_server.main:app --host 0.0.0.0 --port 8000"]
+```
+
+Standalone worker command:
+
+```bash
+cd backend
+uv run canvas-worker
 ```
 
 ### frontend/Dockerfile

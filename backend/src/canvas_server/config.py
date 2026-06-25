@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     llm_model: str = "ollama_chat/gemma4:31b"
     llm_title_timeout_seconds: float = 8.0
     llm_validation_timeout_seconds: float = 12.0
+    execution_mode: str = "all"
 
     # Memory (mem0) settings
     llm_provider_type: str = "ollama"

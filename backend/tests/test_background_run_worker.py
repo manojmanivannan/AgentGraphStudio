@@ -283,3 +283,82 @@ async def test_worker_passes_get_client_response_that_uses_interrupt_store(
         fresh_repo = DurableRunRepo(session)
         updated_run = await fresh_repo.get_or_404(run.id)
     assert updated_run.status == "completed"
+
+
+@pytest.mark.asyncio
+async def test_worker_resumes_interrupt_from_durable_event_when_api_process_is_separate(
+    blank_canvas, test_session, monkeypatch
+):
+    """Worker should consume interrupt_response durable events even without in-process submit."""
+    conversation_repo = ConversationRepo(test_session)
+    conversation = await conversation_repo.create(blank_canvas.id, "Durable Interrupt Chat")
+
+    run_repo = DurableRunRepo(test_session)
+    run = await run_repo.create(conversation.id, prompt="wait for durable response")
+
+    response_received: dict = {}
+
+    class FakeCoordinator:
+        def __init__(self, *, session, conversation_repo, canvas_repo):
+            pass
+
+        async def run(
+            self,
+            *,
+            conversation_id,
+            user_prompt,
+            send_event,
+            target_agent_id=None,
+            get_client_response=None,
+        ):
+            request_id = "durable-req-001"
+            await send_event(
+                {
+                    "type": "human_input_request",
+                    "request_id": request_id,
+                    "question": "Need confirmation",
+                }
+            )
+
+            response = await get_client_response(request_id, "human_input_response")
+            response_received.update(response)
+            await send_event({"type": "run_complete", "result": "done"})
+
+    monkeypatch.setattr(
+        "canvas_server.background_run_worker.ConversationRunCoordinator",
+        FakeCoordinator,
+    )
+
+    worker = BackgroundRunWorker(session_factory=get_session_factory())
+    process_task = asyncio.create_task(worker.process_once())
+
+    # Wait until the request event is persisted.
+    deadline = asyncio.get_event_loop().time() + 5
+    while asyncio.get_event_loop().time() < deadline:
+        async with get_session_factory()() as session:
+            fresh_repo = DurableRunRepo(session)
+            events = await fresh_repo.list_events(run.id)
+        if any(e.event_type == "human_input_request" for e in events):
+            break
+        await asyncio.sleep(0.05)
+
+    async with get_session_factory()() as session:
+        fresh_repo = DurableRunRepo(session)
+        await fresh_repo.append_event(
+            run.id,
+            event_type="interrupt_response",
+            payload={
+                "type": "human_input_response",
+                "request_id": "durable-req-001",
+                "content": "confirmed",
+            },
+        )
+        await session.commit()
+
+    processed = await asyncio.wait_for(process_task, timeout=5.0)
+    assert processed is True
+    assert response_received == {
+        "type": "human_input_response",
+        "request_id": "durable-req-001",
+        "content": "confirmed",
+    }
