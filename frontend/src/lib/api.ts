@@ -332,3 +332,26 @@ export async function getRunEventsAfter(
   if (!res.ok) throw new Error("Failed to get run events");
   return res.json();
 }
+
+export async function abortRun(runId: string): Promise<{ run_id: string; status: string }> {
+  const res = await fetch(`${API_BASE}/runs/${runId}/abort`, {
+    method: "POST",
+  });
+  if (!res.ok) throw new Error("Failed to abort run");
+  return res.json();
+}
+
+export async function submitInterruptResponse(
+  runId: string,
+  requestId: string,
+  responseType: "human_input_response" | "tool_approval_response",
+  data: Record<string, unknown>
+): Promise<{ ok: boolean; request_id: string }> {
+  const res = await fetch(`${API_BASE}/runs/${runId}/interrupt-response`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ request_id: requestId, type: responseType, ...data }),
+  });
+  if (!res.ok) throw new Error("Failed to submit interrupt response");
+  return res.json();
+}

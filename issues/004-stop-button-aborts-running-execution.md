@@ -4,10 +4,10 @@ Make the chat stop button produce an explicit aborted terminal state in the back
 
 ## Acceptance criteria
 
-- [ ] Pressing stop marks the active run as aborting in persistent state.
-- [ ] The worker stops the run at a safe cancellation boundary and records the final state as aborted.
-- [ ] Aborted runs do not resume automatically on reconnect.
-- [ ] Tests cover stop during an active run, disconnect, and the final aborted state.
+- [x] Pressing stop marks the active run as aborting in persistent state.
+- [x] The worker stops the run at a safe cancellation boundary and records the final state as aborted.
+- [x] Aborted runs do not resume automatically on reconnect.
+- [x] Tests cover stop during an active run, disconnect, and the final aborted state.
 
 ## Blocked by
 

@@ -4,10 +4,10 @@ Make human-in-the-loop input and tool approval survive disconnects by persisting
 
 ## Acceptance criteria
 
-- [ ] HITL and tool approval requests are stored durably with identifiers that can be resumed later.
-- [ ] A user can reconnect and answer a pending interrupt without restarting the run.
-- [ ] The worker resumes cleanly after the interrupt is resolved.
-- [ ] Backend and frontend tests cover disconnect-then-respond flows.
+- [x] HITL and tool approval requests are stored durably with identifiers that can be resumed later.
+- [x] A user can reconnect and answer a pending interrupt without restarting the run.
+- [x] The worker resumes cleanly after the interrupt is resolved.
+- [x] Backend and frontend tests cover disconnect-then-respond flows.
 
 ## Blocked by
 

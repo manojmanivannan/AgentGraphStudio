@@ -50,6 +50,40 @@ class RunEventBroker:
             queue.put_nowait(event)
 
 
+class InterruptStore:
+    """Holds in-memory asyncio Futures for pending HITL / tool-approval interrupts.
+
+    Each pending interrupt is keyed by its request_id.  The executing worker
+    creates a Future via ``wait_for_response``, which blocks until the API
+    route resolves it via ``resolve``.
+    """
+
+    def __init__(self) -> None:
+        self._pending: dict[str, asyncio.Future[dict[str, Any]]] = {}
+        self._lock = asyncio.Lock()
+
+    async def wait_for_response(self, request_id: str) -> dict[str, Any]:
+        """Register *request_id* and await its resolution."""
+        loop = asyncio.get_event_loop()
+        future: asyncio.Future[dict[str, Any]] = loop.create_future()
+        async with self._lock:
+            self._pending[request_id] = future
+        try:
+            return await future
+        finally:
+            async with self._lock:
+                self._pending.pop(request_id, None)
+
+    async def resolve(self, request_id: str, response: dict[str, Any]) -> bool:
+        """Deliver *response* to the waiting coroutine.  Returns True if resolved."""
+        async with self._lock:
+            future = self._pending.get(request_id)
+        if future is not None and not future.done():
+            future.set_result(response)
+            return True
+        return False
+
+
 class BackgroundRunWorker:
     def __init__(
         self,
@@ -67,6 +101,7 @@ class BackgroundRunWorker:
         self._stop_event = asyncio.Event()
         self._worker_task: asyncio.Task | None = None
         self._broker = RunEventBroker()
+        self._interrupt_store = InterruptStore()
 
     async def ensure_started(self) -> None:
         if self._worker_task and not self._worker_task.done():
@@ -180,13 +215,16 @@ class BackgroundRunWorker:
                 payload["run_id"] = str(run_id)
                 await self._broker.publish(run_id, payload)
 
+            async def get_client_response(request_id: str, response_type: str) -> dict[str, Any]:
+                return await self._interrupt_store.wait_for_response(request_id)
+
             try:
                 await coordinator.run(
                     conversation_id=conversation_id,
                     user_prompt=prompt,
                     send_event=send_event,
                     target_agent_id=target_agent_id,
-                    get_client_response=None,
+                    get_client_response=get_client_response,
                 )
                 latest_run = await run_repo.get_or_404(run_id)
                 if latest_run.status == "aborting":
@@ -257,6 +295,17 @@ class BackgroundRunWorker:
             payload["run_id"] = str(run_id)
             replay.append(payload)
         return replay
+
+    async def submit_interrupt_response(
+        self,
+        request_id: str,
+        response: dict[str, Any],
+    ) -> bool:
+        """Deliver *response* to the worker coroutine waiting on *request_id*.
+
+        Returns True if a pending interrupt was found and resolved, False otherwise.
+        """
+        return await self._interrupt_store.resolve(request_id, response)
 
     async def get_run_status(self, run_id: uuid.UUID) -> str | None:
         async with self._session_factory() as session:

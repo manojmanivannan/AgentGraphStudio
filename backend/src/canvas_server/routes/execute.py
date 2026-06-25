@@ -59,6 +59,22 @@ async def get_run_events(
     )
 
 
+@execute_router.post("/api/runs/{run_id}/interrupt-response")
+async def submit_interrupt_response(run_id: uuid.UUID, body: dict):
+    request_id = body.get("request_id")
+    if not request_id:
+        raise HTTPException(status_code=422, detail="request_id is required")
+
+    worker = get_background_run_worker()
+    resolved = await worker.submit_interrupt_response(request_id, body)
+    if not resolved:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No pending interrupt found for request_id {request_id!r}",
+        )
+    return {"ok": True, "request_id": request_id}
+
+
 @execute_router.post("/api/runs/{run_id}/abort")
 async def abort_run(run_id: uuid.UUID):
     factory = get_session_factory()

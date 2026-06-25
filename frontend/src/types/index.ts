@@ -42,6 +42,7 @@ export type ExecutionEvent = ExecutionEventBase & (
   | { type: "handoff"; from: string; to: string; node_id?: string }
   | { type: "final_answer"; agent?: string; content: string; node_id?: string }
   | { type: "run_complete"; result: string }
+  | { type: "run_aborted"; message: string }
   | { type: "error"; message: string; agent?: string; node_id?: string }
   | { type: "warning"; message: string; agent?: string; node_id?: string }
   | { type: "human_input_request"; request_id: string; question: string; agent: string; node_id?: string }

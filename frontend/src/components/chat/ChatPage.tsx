@@ -29,6 +29,9 @@ import {
   exportConversationZip,
   importConversationZip,
   listCanvases,
+  getActiveRun,
+  abortRun,
+  submitInterruptResponse,
 } from "@/lib/api";
 import type { ConversationSummary, Message, ExecutionEvent, CanvasResponse, CanvasListItem } from "@/types";
 import { executionEventToMessage } from "./executionEventMessage";
@@ -296,15 +299,16 @@ export default function ChatPage() {
     }
   }, [activeInterrupt]);
 
-  const handleSendHumanResponse = (content: string) => {
-    if (!activeInterrupt || !wsRef.current) return;
-    wsRef.current.send(
-      JSON.stringify({
-        type: "human_input_response",
-        request_id: activeInterrupt.request_id,
-        content: content,
-      })
-    );
+  const handleSendHumanResponse = async (content: string) => {
+    if (!activeInterrupt) return;
+    const runId = activeRunIdRef.current;
+    if (runId) {
+      try {
+        await submitInterruptResponse(runId, activeInterrupt.request_id, "human_input_response", { content });
+      } catch (err) {
+        console.error("Failed to submit human input response:", err);
+      }
+    }
     const userMsg: Message = {
       id: crypto.randomUUID(),
       conversation_id: conversation_id!,
@@ -320,15 +324,16 @@ export default function ChatPage() {
     }, 50);
   };
 
-  const handleSendToolApproval = (approved: boolean) => {
-    if (!activeInterrupt || !wsRef.current) return;
-    wsRef.current.send(
-      JSON.stringify({
-        type: "tool_approval_response",
-        request_id: activeInterrupt.request_id,
-        approved: approved,
-      })
-    );
+  const handleSendToolApproval = async (approved: boolean) => {
+    if (!activeInterrupt) return;
+    const runId = activeRunIdRef.current;
+    if (runId) {
+      try {
+        await submitInterruptResponse(runId, activeInterrupt.request_id, "tool_approval_response", { approved });
+      } catch (err) {
+        console.error("Failed to submit tool approval response:", err);
+      }
+    }
     setActiveInterrupt(null);
     setTimeout(() => {
       chatInputRef.current?.focus();
@@ -636,6 +641,23 @@ export default function ChatPage() {
           return;
         }
 
+        if (event.type === "run_aborted") {
+          const abortedMessage = executionEventToMessage(event, {
+            conversationId: convId,
+            messageId: crypto.randomUUID(),
+            createdAt: new Date().toISOString(),
+          });
+          if (abortedMessage) {
+            addMessageLocal(abortedMessage);
+          }
+          setRunning(false);
+          setActiveInterrupt(null);
+          setActiveNodeId(null);
+          resetLiveRunTracking();
+          loadSidebar();
+          return;
+        }
+
         if (event.type === "error") {
           const errMsg = executionEventToMessage(event, {
             conversationId: convId,
@@ -746,12 +768,31 @@ export default function ChatPage() {
     connectAndRun(conversation_id, { prompt });
   };
 
-  const stopRun = () => {
+  const stopRun = async () => {
     manualStopRef.current = true;
     if (reconnectTimerRef.current !== null) {
       window.clearTimeout(reconnectTimerRef.current);
       reconnectTimerRef.current = null;
     }
+
+    let runId = activeRunIdRef.current;
+    if (!runId && conversation_id && conversation_id !== "empty") {
+      try {
+        const activeRun = await getActiveRun(conversation_id);
+        runId = activeRun?.run_id ?? null;
+      } catch (err) {
+        console.error("Failed to fetch active run before abort:", err);
+      }
+    }
+
+    if (runId) {
+      try {
+        await abortRun(runId);
+      } catch (err) {
+        console.error("Failed to abort run:", err);
+      }
+    }
+
     wsRef.current?.close();
     setRunning(false);
     setActiveInterrupt(null);
