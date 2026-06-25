@@ -37,6 +37,28 @@ async def _main_async() -> None:
         format="%(asctime)s [%(levelname)s] %(name)s:%(lineno)d: %(message)s",
     )
 
+    # Initialize MLflow tracing for DSPy — skip gracefully when unavailable
+    if settings.mlflow_enabled:
+        try:
+            import mlflow
+
+            mlflow.set_tracking_uri(settings.mlflow_tracking_uri)
+            mlflow.set_experiment(settings.mlflow_experiment_name)
+            mlflow.dspy.autolog()
+            logger.info(
+                "MLflow tracing enabled: tracking_uri=%s experiment=%s",
+                settings.mlflow_tracking_uri,
+                settings.mlflow_experiment_name,
+            )
+        except Exception as exc:
+            logger.warning(
+                "MLflow tracing disabled — could not connect to %s: %s",
+                settings.mlflow_tracking_uri,
+                exc,
+            )
+    else:
+        logger.info("MLflow tracing disabled via configuration")
+
     logger.info("Starting execution worker process")
     try:
         await _run_worker_process()
