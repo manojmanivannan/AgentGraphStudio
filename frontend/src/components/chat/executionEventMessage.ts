@@ -63,6 +63,17 @@ export function executionEventToMessage(
     };
   }
 
+  if (event.type === "run_aborted") {
+    return {
+      ...baseMessage,
+      role: "system",
+      content: event.message,
+      agent_name: null,
+      node_id: null,
+      event_type: "warning",
+    };
+  }
+
   if (event.type === "human_input_request") {
     return {
       ...baseMessage,

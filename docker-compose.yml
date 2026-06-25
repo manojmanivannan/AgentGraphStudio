@@ -23,6 +23,7 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://canvas:canvas@postgres:5432/canvas_db
       MLFLOW_TRACKING_URI: http://mlflow:5000
+      EXECUTION_MODE: api
     env_file: ./backend/.env
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -33,6 +34,40 @@ services:
       - qdrant_data:/tmp/qdrant
     depends_on:
       postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    develop:
+      watch:
+        - action: sync
+          path: ./backend/src
+          target: /app/src
+        - action: rebuild
+          path: ./backend/requirements.txt
+
+  execution-worker:
+    build:
+      context: ./backend
+    command: ["uv", "run", "python", "-m", "canvas_server.worker_main"]
+    environment:
+      DATABASE_URL: postgresql+asyncpg://canvas:canvas@postgres:5432/canvas_db
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+      EXECUTION_MODE: worker
+    env_file: ./backend/.env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - agent_network
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - qdrant_data:/tmp/qdrant
+    depends_on:
+      postgres:
+        condition: service_healthy
+      backend:
         condition: service_healthy
     develop:
       watch:

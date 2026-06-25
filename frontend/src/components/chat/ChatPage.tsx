@@ -29,6 +29,9 @@ import {
   exportConversationZip,
   importConversationZip,
   listCanvases,
+  getActiveRun,
+  abortRun,
+  submitInterruptResponse,
 } from "@/lib/api";
 import type { ConversationSummary, Message, ExecutionEvent, CanvasResponse, CanvasListItem } from "@/types";
 import { executionEventToMessage } from "./executionEventMessage";
@@ -296,15 +299,16 @@ export default function ChatPage() {
     }
   }, [activeInterrupt]);
 
-  const handleSendHumanResponse = (content: string) => {
-    if (!activeInterrupt || !wsRef.current) return;
-    wsRef.current.send(
-      JSON.stringify({
-        type: "human_input_response",
-        request_id: activeInterrupt.request_id,
-        content: content,
-      })
-    );
+  const handleSendHumanResponse = async (content: string) => {
+    if (!activeInterrupt) return;
+    const runId = activeRunIdRef.current;
+    if (runId) {
+      try {
+        await submitInterruptResponse(runId, activeInterrupt.request_id, "human_input_response", { content });
+      } catch (err) {
+        console.error("Failed to submit human input response:", err);
+      }
+    }
     const userMsg: Message = {
       id: crypto.randomUUID(),
       conversation_id: conversation_id!,
@@ -320,15 +324,16 @@ export default function ChatPage() {
     }, 50);
   };
 
-  const handleSendToolApproval = (approved: boolean) => {
-    if (!activeInterrupt || !wsRef.current) return;
-    wsRef.current.send(
-      JSON.stringify({
-        type: "tool_approval_response",
-        request_id: activeInterrupt.request_id,
-        approved: approved,
-      })
-    );
+  const handleSendToolApproval = async (approved: boolean) => {
+    if (!activeInterrupt) return;
+    const runId = activeRunIdRef.current;
+    if (runId) {
+      try {
+        await submitInterruptResponse(runId, activeInterrupt.request_id, "tool_approval_response", { approved });
+      } catch (err) {
+        console.error("Failed to submit tool approval response:", err);
+      }
+    }
     setActiveInterrupt(null);
     setTimeout(() => {
       chatInputRef.current?.focus();
@@ -338,6 +343,10 @@ export default function ChatPage() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
+  const activeRunIdRef = useRef<string | null>(null);
+  const lastSequenceRef = useRef<number>(0);
+  const reconnectTimerRef = useRef<number | null>(null);
+  const manualStopRef = useRef<boolean>(false);
   const localMessagesRef = useRef<Message[]>([]);
 
   useEffect(() => {
@@ -531,162 +540,320 @@ export default function ChatPage() {
     setMessages((prev) => [...prev, msg]);
   };
 
+  const resetLiveRunTracking = useCallback(() => {
+    activeRunIdRef.current = null;
+    lastSequenceRef.current = 0;
+    manualStopRef.current = false;
+    if (reconnectTimerRef.current !== null) {
+      window.clearTimeout(reconnectTimerRef.current);
+      reconnectTimerRef.current = null;
+    }
+  }, []);
+
+  const connectAndRun = useCallback(async (
+    convId: string,
+    payload: { prompt?: string; run_id?: string; after_sequence?: number }
+  ) => {
+    const userMsg: Message = {
+      id: crypto.randomUUID(),
+      conversation_id: convId,
+      role: "user",
+      content: payload.prompt ?? "",
+      created_at: new Date().toISOString(),
+    };
+
+    if (payload.prompt) {
+      addMessageLocal(userMsg);
+    }
+
+    setRunning(true);
+    setActiveNodeId(null);
+
+    const ws = new WebSocket(`${WS_BASE}/ws/conversations/${convId}/run`);
+    wsRef.current = ws;
+
+    ws.onopen = () => {
+      ws.send(JSON.stringify(payload));
+    };
+
+    const refreshConversationName = async () => {
+      if (!conversation_id) return;
+      try {
+        const updated = await getConversationById(conversation_id);
+        setConversationName(updated.name);
+        setConversations((prev) =>
+          prev.map((c) =>
+            c.id === updated.id ? { ...c, name: updated.name } : c
+          )
+        );
+      } catch (err) {
+        console.error("Failed to refresh conversation name:", err);
+      }
+    };
+
+    ws.onmessage = (evt) => {
+      const event = JSON.parse(evt.data) as ExecutionEvent;
+
+      if (event.run_id) {
+        activeRunIdRef.current = event.run_id;
+      }
+
+      if (event.type === "run_queued") {
+        activeRunIdRef.current = event.run_id;
+        return;
+      }
+
+      if (typeof event.sequence === "number") {
+        if (event.sequence <= lastSequenceRef.current) {
+          return;
+        }
+        lastSequenceRef.current = event.sequence;
+      }
+
+      if (event.type === "conversation_renamed") {
+        setConversations((prev) =>
+          prev.map((c) =>
+            c.id === event.conversation_id
+              ? { ...c, name: event.name }
+              : c
+          )
+        );
+        if (convId === conversation_id) {
+          setConversationName(event.name);
+        }
+        loadSidebar();
+        return;
+      }
+
+      if (event.type === "run_complete") {
+        setRunning(false);
+        setActiveInterrupt(null);
+        setActiveNodeId(null);
+        resetLiveRunTracking();
+        loadSidebar(); // Refresh sidebar order since conversation updated
+        refreshConversationName();
+        return;
+      }
+
+      if (event.type === "run_aborted") {
+        const abortedMessage = executionEventToMessage(event, {
+          conversationId: convId,
+          messageId: crypto.randomUUID(),
+          createdAt: new Date().toISOString(),
+        });
+        if (abortedMessage) {
+          addMessageLocal(abortedMessage);
+        }
+        setRunning(false);
+        setActiveInterrupt(null);
+        setActiveNodeId(null);
+        resetLiveRunTracking();
+        loadSidebar();
+        return;
+      }
+
+      if (event.type === "error") {
+        const errMsg = executionEventToMessage(event, {
+          conversationId: convId,
+          messageId: crypto.randomUUID(),
+          createdAt: new Date().toISOString(),
+        });
+        if (errMsg) {
+          addMessageLocal(errMsg);
+        }
+        setRunning(false);
+        setActiveInterrupt(null);
+        setActiveNodeId(null);
+        resetLiveRunTracking();
+        return;
+      }
+
+      let msgId = crypto.randomUUID();
+      if (event.type === "human_input_request") {
+        setActiveInterrupt({
+          type: "human_input",
+          request_id: event.request_id,
+          message_id: msgId,
+          question: event.question,
+        });
+      } else if (event.type === "tool_approval_request") {
+        setActiveInterrupt({
+          type: "tool_approval",
+          request_id: event.request_id,
+          message_id: msgId,
+          tool: event.tool,
+          args: event.args,
+        });
+      }
+
+      const message = executionEventToMessage(event, {
+        conversationId: convId,
+        messageId: msgId,
+        createdAt: new Date().toISOString(),
+      });
+      if (message) {
+        addMessageLocal(message);
+      }
+
+      if (event.node_id) {
+        setActiveNodeId(event.node_id);
+      }
+    };
+
+    ws.onerror = () => {
+      addMessageLocal({
+        id: crypto.randomUUID(),
+        conversation_id: convId,
+        role: "system",
+        content: "WebSocket connection failed. Is the backend running?",
+        event_type: "error",
+        created_at: new Date().toISOString(),
+      });
+      setRunning(false);
+      setActiveInterrupt(null);
+      setActiveNodeId(null);
+    };
+
+    ws.onclose = (ev) => {
+      if (wsRef.current === ws) wsRef.current = null;
+
+      const isUnexpected = ev.code !== 1000 && ev.code !== 1005;
+
+      if (isUnexpected && !manualStopRef.current && activeRunIdRef.current) {
+        reconnectTimerRef.current = window.setTimeout(() => {
+          connectAndRun(convId, {
+            run_id: activeRunIdRef.current ?? undefined,
+            after_sequence: lastSequenceRef.current,
+          }).catch((err) => {
+            console.error("Failed to reconnect websocket:", err);
+          });
+        }, 500);
+
+        addMessageLocal({
+          id: crypto.randomUUID(),
+          conversation_id: convId,
+          role: "system",
+          content: "Connection interrupted. Attempting to reconnect...",
+          event_type: "warning",
+          created_at: new Date().toISOString(),
+        });
+        return;
+      }
+
+      if (isUnexpected) {
+        addMessageLocal({
+          id: crypto.randomUUID(),
+          conversation_id: convId,
+          role: "system",
+          content: `Connection closed unexpectedly (code ${ev.code}).`,
+          event_type: "error",
+          created_at: new Date().toISOString(),
+        });
+      }
+      setRunning(false);
+      setActiveInterrupt(null);
+      setActiveNodeId(null);
+      resetLiveRunTracking();
+    };
+  }, [conversation_id, loadSidebar, resetLiveRunTracking]);
+
   const handleSend = () => {
     if (!input.trim() || !conversation_id || running) return;
 
     const prompt = input.trim();
     setInput("");
 
-    const connectAndRun = async (convId: string) => {
-      const userMsg: Message = {
-        id: crypto.randomUUID(),
-        conversation_id: convId,
-        role: "user",
-        content: prompt,
-        created_at: new Date().toISOString(),
-      };
-      addMessageLocal(userMsg);
-
-      setRunning(true);
-      setActiveNodeId(null);
-
-      const ws = new WebSocket(`${WS_BASE}/ws/conversations/${convId}/run`);
-      wsRef.current = ws;
-
-      ws.onopen = () => {
-        ws.send(JSON.stringify({ prompt }));
-      };
-
-      const refreshConversationName = async () => {
-        if (!conversation_id) return;
-        try {
-          const updated = await getConversationById(conversation_id);
-          setConversationName(updated.name);
-          setConversations((prev) =>
-            prev.map((c) =>
-              c.id === updated.id ? { ...c, name: updated.name } : c
-            )
-          );
-        } catch (err) {
-          console.error("Failed to refresh conversation name:", err);
-        }
-      };
-
-      ws.onmessage = (evt) => {
-        const event = JSON.parse(evt.data) as ExecutionEvent;
-
-        if (event.type === "conversation_renamed") {
-          setConversations((prev) =>
-            prev.map((c) =>
-              c.id === event.conversation_id
-                ? { ...c, name: event.name }
-                : c
-            )
-          );
-          if (convId === conversation_id) {
-            setConversationName(event.name);
-          }
-          loadSidebar();
-          return;
-        }
-
-        if (event.type === "run_complete") {
-          setRunning(false);
-          setActiveInterrupt(null);
-          setActiveNodeId(null);
-          loadSidebar(); // Refresh sidebar order since conversation updated
-          refreshConversationName();
-          return;
-        }
-
-        if (event.type === "error") {
-          const errMsg = executionEventToMessage(event, {
-            conversationId: convId,
-            messageId: crypto.randomUUID(),
-            createdAt: new Date().toISOString(),
-          });
-          if (errMsg) {
-            addMessageLocal(errMsg);
-          }
-          setRunning(false);
-          setActiveInterrupt(null);
-          setActiveNodeId(null);
-          return;
-        }
-
-        let msgId = crypto.randomUUID();
-        if (event.type === "human_input_request") {
-          setActiveInterrupt({
-            type: "human_input",
-            request_id: event.request_id,
-            message_id: msgId,
-            question: event.question,
-          });
-        } else if (event.type === "tool_approval_request") {
-          setActiveInterrupt({
-            type: "tool_approval",
-            request_id: event.request_id,
-            message_id: msgId,
-            tool: event.tool,
-            args: event.args,
-          });
-        }
-
-        const message = executionEventToMessage(event, {
-          conversationId: convId,
-          messageId: msgId,
-          createdAt: new Date().toISOString(),
-        });
-        if (message) {
-          addMessageLocal(message);
-        }
-
-        if (event.node_id) {
-          setActiveNodeId(event.node_id);
-        }
-
-      };
-
-      ws.onerror = () => {
-        addMessageLocal({
-          id: crypto.randomUUID(),
-          conversation_id: convId,
-          role: "system",
-          content: "WebSocket connection failed. Is the backend running?",
-          event_type: "error",
-          created_at: new Date().toISOString(),
-        });
-        setRunning(false);
-        setActiveInterrupt(null);
-        setActiveNodeId(null);
-      };
-
-      ws.onclose = (ev) => {
-        if (wsRef.current === ws) wsRef.current = null;
-        if (ev.code !== 1000 && ev.code !== 1005) {
-          addMessageLocal({
-            id: crypto.randomUUID(),
-            conversation_id: convId,
-            role: "system",
-            content: `Connection closed unexpectedly (code ${ev.code}).`,
-            event_type: "error",
-            created_at: new Date().toISOString(),
-          });
-        }
-        setRunning(false);
-        setActiveInterrupt(null);
-        setActiveNodeId(null);
-      };
-    };
-
-    connectAndRun(conversation_id);
+    resetLiveRunTracking();
+    connectAndRun(conversation_id, { prompt });
   };
 
-  const stopRun = () => {
+  // Check active runs and reconnect on tab visibility/focus changes
+  useEffect(() => {
+    const checkAndReconnect = async () => {
+      if (!conversation_id || conversation_id === "empty" || running) return;
+
+      try {
+        const activeRun = await getActiveRun(conversation_id);
+        if (
+          activeRun &&
+          (activeRun.status === "queued" ||
+            activeRun.status === "running" ||
+            activeRun.status === "aborting")
+        ) {
+          // Find max sequence in current messages
+          let maxSeq = 0;
+          for (const m of localMessagesRef.current) {
+            if (m.sequence && m.sequence > maxSeq) {
+              maxSeq = m.sequence;
+            }
+          }
+          lastSequenceRef.current = maxSeq;
+          activeRunIdRef.current = activeRun.run_id;
+
+          connectAndRun(conversation_id, {
+            run_id: activeRun.run_id,
+            after_sequence: maxSeq,
+          }).catch((err) => {
+            console.error("Failed to reconnect active run on visibility change:", err);
+          });
+        }
+      } catch (err) {
+        console.error("Failed to check active run on tab visibility change:", err);
+      }
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        checkAndReconnect();
+      }
+    };
+
+    const handleFocus = () => {
+      checkAndReconnect();
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("focus", handleFocus);
+
+    // Initial check on mount/load
+    checkAndReconnect();
+
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("focus", handleFocus);
+    };
+  }, [conversation_id, running, connectAndRun]);
+
+  const stopRun = async () => {
+    manualStopRef.current = true;
+    if (reconnectTimerRef.current !== null) {
+      window.clearTimeout(reconnectTimerRef.current);
+      reconnectTimerRef.current = null;
+    }
+
+    let runId = activeRunIdRef.current;
+    if (!runId && conversation_id && conversation_id !== "empty") {
+      try {
+        const activeRun = await getActiveRun(conversation_id);
+        runId = activeRun?.run_id ?? null;
+      } catch (err) {
+        console.error("Failed to fetch active run before abort:", err);
+      }
+    }
+
+    if (runId) {
+      try {
+        await abortRun(runId);
+      } catch (err) {
+        console.error("Failed to abort run:", err);
+      }
+    }
+
     wsRef.current?.close();
     setRunning(false);
     setActiveInterrupt(null);
     setActiveNodeId(null);
+    resetLiveRunTracking();
   };
 
   const navItemClass = (toPath: string) => {
