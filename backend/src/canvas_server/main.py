@@ -10,6 +10,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 import canvas_server
+from canvas_server.background_run_worker import shutdown_background_run_worker
 from canvas_server.config import settings
 from canvas_server.routes.canvas import canvas_router
 from canvas_server.routes.execute import execute_router
@@ -81,6 +82,11 @@ async def lifespan(app: FastAPI):
         logger.info("SandboxManager shut down")
     except Exception as exc:
         logger.warning("Sandbox shutdown failed: %s", exc)
+
+    try:
+        await shutdown_background_run_worker()
+    except Exception as exc:
+        logger.warning("Background worker shutdown failed: %s", exc)
 
 
 app = FastAPI(title="Canvas Server", version="0.1.0", lifespan=lifespan)

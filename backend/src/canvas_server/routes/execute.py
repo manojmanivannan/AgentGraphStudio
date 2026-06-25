@@ -4,10 +4,13 @@ import uuid
 
 from fastapi import APIRouter, HTTPException, Response, WebSocket, WebSocketDisconnect
 
-from canvas_server.conversation_run_coordinator import ConversationRunCoordinator
+from canvas_server.background_run_worker import (
+    TERMINAL_RUN_STATUSES,
+    get_background_run_worker,
+)
 from canvas_server.database import get_session_factory
-from canvas_server.repos.canvas_repo import CanvasRepo
 from canvas_server.repos.conversation_repo import ConversationRepo
+from canvas_server.repos.durable_run_repo import DurableRunRepo
 
 execute_router = APIRouter()
 
@@ -23,15 +26,75 @@ async def get_plot(plot_id: uuid.UUID):
         return Response(content=plot.content, media_type=f"image/{plot.format}")
 
 
+@execute_router.get("/api/conversations/{conversation_id}/runs/active")
+async def get_active_run(conversation_id: uuid.UUID):
+    factory = get_session_factory()
+    async with factory() as session:
+        conv_repo = ConversationRepo(session)
+        await conv_repo.get_or_404(conversation_id)
+
+        run_repo = DurableRunRepo(session)
+        run = await run_repo.get_latest_active_for_conversation(conversation_id)
+
+        if run is None:
+            return None
+
+        return {
+            "run_id": str(run.id),
+            "conversation_id": str(run.conversation_id),
+            "status": run.status,
+            "replay_cursor": run.replay_cursor,
+        }
+
+
+@execute_router.get("/api/runs/{run_id}/events")
+async def get_run_events(
+    run_id: uuid.UUID,
+    after_sequence: int = 0,
+):
+    worker = get_background_run_worker()
+    return await worker.get_run_events_after(
+        run_id=run_id,
+        after_sequence=after_sequence,
+    )
+
+
+@execute_router.post("/api/runs/{run_id}/abort")
+async def abort_run(run_id: uuid.UUID):
+    factory = get_session_factory()
+    async with factory() as session:
+        run_repo = DurableRunRepo(session)
+        run = await run_repo.get_or_404(run_id)
+
+        if run.status in TERMINAL_RUN_STATUSES:
+            return {
+                "run_id": str(run.id),
+                "status": run.status,
+            }
+
+        updated = await run_repo.mark_aborting(run_id)
+        await session.commit()
+
+        return {
+            "run_id": str(updated.id),
+            "status": updated.status,
+        }
+
+
 
 @execute_router.websocket("/ws/conversations/{conversation_id}/run")
 async def run_conversation(websocket: WebSocket, conversation_id: uuid.UUID):
     await websocket.accept()
+    run_id: uuid.UUID | None = None
+    queue = None
 
     try:
         data = await asyncio.wait_for(websocket.receive_text(), timeout=30)
         body = json.loads(data)
         user_prompt = body.get("prompt", "")
+        requested_run_id_raw = body.get("run_id")
+        requested_run_id = uuid.UUID(requested_run_id_raw) if requested_run_id_raw else None
+        after_sequence = int(body.get("after_sequence", 0) or 0)
         target_agent_id_raw = body.get("target_agent_id")
         target_agent_id = (
             uuid.UUID(target_agent_id_raw) if target_agent_id_raw else None
@@ -40,63 +103,57 @@ async def run_conversation(websocket: WebSocket, conversation_id: uuid.UUID):
         factory = get_session_factory()
         async with factory() as session:
             conv_repo = ConversationRepo(session)
-            canvas_repo = CanvasRepo(session)
-            coordinator = ConversationRunCoordinator(
-                session=session,
-                conversation_repo=conv_repo,
-                canvas_repo=canvas_repo,
-            )
+            await conv_repo.get_or_404(conversation_id)
+            run_repo = DurableRunRepo(session)
 
-            async def send_event(event: dict):
-                try:
-                    await websocket.send_text(json.dumps(event, default=str))
-                except Exception:
-                    pass
+            if requested_run_id is not None:
+                existing_run = await run_repo.get_or_404(requested_run_id)
+                if existing_run.conversation_id != conversation_id:
+                    raise HTTPException(status_code=400, detail="Run does not belong to conversation")
+                run_id = existing_run.id
+            else:
+                if not user_prompt:
+                    raise HTTPException(status_code=400, detail="prompt is required when run_id is not provided")
 
-            pending_requests = {}
-
-            async def get_client_response(request_id: str, request_type: str) -> dict:
-                loop = asyncio.get_running_loop()
-                fut = loop.create_future()
-                pending_requests[request_id] = fut
-                try:
-                    return await fut
-                finally:
-                    pending_requests.pop(request_id, None)
-
-            async def websocket_reader():
-                try:
-                    while True:
-                        data = await websocket.receive_text()
-                        body = json.loads(data)
-                        req_id = body.get("request_id")
-                        if req_id in pending_requests:
-                            fut = pending_requests[req_id]
-                            if not fut.done():
-                                fut.set_result(body)
-                except Exception as e:
-                    for fut in list(pending_requests.values()):
-                        if not fut.done():
-                            fut.set_exception(e or Exception("WebSocket disconnected"))
-
-            reader_task = asyncio.create_task(websocket_reader())
-
-            task = asyncio.create_task(
-                coordinator.run(
+                run = await run_repo.create(
                     conversation_id=conversation_id,
-                    user_prompt=user_prompt,
-                    send_event=send_event,
+                    prompt=user_prompt,
                     target_agent_id=target_agent_id,
-                    get_client_response=get_client_response,
                 )
+                run_id = run.id
+
+        worker = get_background_run_worker()
+        await worker.ensure_started()
+        queue = await worker.subscribe(run_id)
+
+        if requested_run_id is None:
+            await websocket.send_text(
+                json.dumps({"type": "run_queued", "run_id": str(run_id)})
             )
+            worker.kick()
+
+        last_sequence = after_sequence
+
+        while True:
+            replay_events = await worker.get_run_events_after(
+                run_id=run_id, after_sequence=last_sequence
+            )
+            for event in replay_events:
+                await websocket.send_text(json.dumps(event, default=str))
+                last_sequence = max(last_sequence, int(event.get("sequence", 0)))
+
+            status = await worker.get_run_status(run_id)
+            if status in TERMINAL_RUN_STATUSES:
+                break
 
             try:
-                await task
-            except asyncio.CancelledError:
-                pass
-            finally:
-                reader_task.cancel()
+                live_event = await asyncio.wait_for(queue.get(), timeout=1.0)
+                sequence = int(live_event.get("sequence", 0))
+                if sequence > last_sequence:
+                    await websocket.send_text(json.dumps(live_event, default=str))
+                    last_sequence = sequence
+            except TimeoutError:
+                continue
 
     except TimeoutError:
         try:
@@ -118,6 +175,9 @@ async def run_conversation(websocket: WebSocket, conversation_id: uuid.UUID):
         except Exception:
             pass
     finally:
+        if run_id and queue is not None:
+            worker = get_background_run_worker()
+            await worker.unsubscribe(run_id, queue)
         try:
             await websocket.close()
         except Exception:

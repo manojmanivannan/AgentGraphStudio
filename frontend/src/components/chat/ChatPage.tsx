@@ -338,6 +338,10 @@ export default function ChatPage() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
+  const activeRunIdRef = useRef<string | null>(null);
+  const lastSequenceRef = useRef<number>(0);
+  const reconnectTimerRef = useRef<number | null>(null);
+  const manualStopRef = useRef<boolean>(false);
   const localMessagesRef = useRef<Message[]>([]);
 
   useEffect(() => {
@@ -531,13 +535,26 @@ export default function ChatPage() {
     setMessages((prev) => [...prev, msg]);
   };
 
+  const resetLiveRunTracking = useCallback(() => {
+    activeRunIdRef.current = null;
+    lastSequenceRef.current = 0;
+    manualStopRef.current = false;
+    if (reconnectTimerRef.current !== null) {
+      window.clearTimeout(reconnectTimerRef.current);
+      reconnectTimerRef.current = null;
+    }
+  }, []);
+
   const handleSend = () => {
     if (!input.trim() || !conversation_id || running) return;
 
     const prompt = input.trim();
     setInput("");
 
-    const connectAndRun = async (convId: string) => {
+    const connectAndRun = async (
+      convId: string,
+      payload: { prompt?: string; run_id?: string; after_sequence?: number }
+    ) => {
       const userMsg: Message = {
         id: crypto.randomUUID(),
         conversation_id: convId,
@@ -545,7 +562,10 @@ export default function ChatPage() {
         content: prompt,
         created_at: new Date().toISOString(),
       };
-      addMessageLocal(userMsg);
+
+      if (payload.prompt) {
+        addMessageLocal(userMsg);
+      }
 
       setRunning(true);
       setActiveNodeId(null);
@@ -554,7 +574,7 @@ export default function ChatPage() {
       wsRef.current = ws;
 
       ws.onopen = () => {
-        ws.send(JSON.stringify({ prompt }));
+        ws.send(JSON.stringify(payload));
       };
 
       const refreshConversationName = async () => {
@@ -575,6 +595,22 @@ export default function ChatPage() {
       ws.onmessage = (evt) => {
         const event = JSON.parse(evt.data) as ExecutionEvent;
 
+        if (event.run_id) {
+          activeRunIdRef.current = event.run_id;
+        }
+
+        if (event.type === "run_queued") {
+          activeRunIdRef.current = event.run_id;
+          return;
+        }
+
+        if (typeof event.sequence === "number") {
+          if (event.sequence <= lastSequenceRef.current) {
+            return;
+          }
+          lastSequenceRef.current = event.sequence;
+        }
+
         if (event.type === "conversation_renamed") {
           setConversations((prev) =>
             prev.map((c) =>
@@ -594,6 +630,7 @@ export default function ChatPage() {
           setRunning(false);
           setActiveInterrupt(null);
           setActiveNodeId(null);
+          resetLiveRunTracking();
           loadSidebar(); // Refresh sidebar order since conversation updated
           refreshConversationName();
           return;
@@ -611,6 +648,7 @@ export default function ChatPage() {
           setRunning(false);
           setActiveInterrupt(null);
           setActiveNodeId(null);
+          resetLiveRunTracking();
           return;
         }
 
@@ -663,7 +701,31 @@ export default function ChatPage() {
 
       ws.onclose = (ev) => {
         if (wsRef.current === ws) wsRef.current = null;
-        if (ev.code !== 1000 && ev.code !== 1005) {
+
+        const isUnexpected = ev.code !== 1000 && ev.code !== 1005;
+
+        if (isUnexpected && !manualStopRef.current && activeRunIdRef.current) {
+          reconnectTimerRef.current = window.setTimeout(() => {
+            connectAndRun(convId, {
+              run_id: activeRunIdRef.current ?? undefined,
+              after_sequence: lastSequenceRef.current,
+            }).catch((err) => {
+              console.error("Failed to reconnect websocket:", err);
+            });
+          }, 500);
+
+          addMessageLocal({
+            id: crypto.randomUUID(),
+            conversation_id: convId,
+            role: "system",
+            content: "Connection interrupted. Attempting to reconnect...",
+            event_type: "warning",
+            created_at: new Date().toISOString(),
+          });
+          return;
+        }
+
+        if (isUnexpected) {
           addMessageLocal({
             id: crypto.randomUUID(),
             conversation_id: convId,
@@ -676,17 +738,25 @@ export default function ChatPage() {
         setRunning(false);
         setActiveInterrupt(null);
         setActiveNodeId(null);
+        resetLiveRunTracking();
       };
     };
 
-    connectAndRun(conversation_id);
+    resetLiveRunTracking();
+    connectAndRun(conversation_id, { prompt });
   };
 
   const stopRun = () => {
+    manualStopRef.current = true;
+    if (reconnectTimerRef.current !== null) {
+      window.clearTimeout(reconnectTimerRef.current);
+      reconnectTimerRef.current = null;
+    }
     wsRef.current?.close();
     setRunning(false);
     setActiveInterrupt(null);
     setActiveNodeId(null);
+    resetLiveRunTracking();
   };
 
   const navItemClass = (toPath: string) => {

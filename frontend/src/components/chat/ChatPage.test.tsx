@@ -1,9 +1,10 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { server } from "@/test/mocks/server";
+import { FakeWebSocket } from "@/test/mocks/websocket";
 import { mockConversation, mockConversationSummary } from "@/test/mocks/handlers";
 import { useCanvasStore } from "@/store/canvasStore";
 import type { Message } from "@/types";
@@ -11,6 +12,12 @@ import ChatPage, { groupMessagesIntoTurns } from "./ChatPage";
 
 beforeEach(() => {
     useCanvasStore.getState().reset();
+    FakeWebSocket.reset();
+    vi.stubGlobal("WebSocket", FakeWebSocket);
+});
+
+afterEach(() => {
+    vi.unstubAllGlobals();
 });
 
 describe("groupMessagesIntoTurns", () => {
@@ -975,6 +982,141 @@ describe("ChatPage component", () => {
             const dropdown = screen.getByTitle("Select canvas for chat") as HTMLSelectElement;
             expect(dropdown).toBeInTheDocument();
             expect(dropdown).not.toBeDisabled();
+        });
+    });
+
+    it("reconnects websocket with run_id and after_sequence after unexpected disconnect", async () => {
+        const user = userEvent.setup();
+
+        server.use(
+            http.get(`${API}/canvases`, () =>
+                HttpResponse.json([{ id: "canvas-1", name: "My Canvas" }])
+            ),
+            http.get(`${API}/canvases/conversations/conv-1`, () =>
+                HttpResponse.json(
+                    mockConversation({
+                        id: "conv-1",
+                        canvas_id: "canvas-1",
+                        name: "Live Chat",
+                        messages: [],
+                    })
+                )
+            ),
+            http.get(`${API}/canvases/canvas-1`, () =>
+                HttpResponse.json({ id: "canvas-1", name: "My Canvas", nodes: { agents: [], tools: [] }, edges: [] })
+            ),
+            http.get(`${API}/canvases/canvas-1/conversations`, () =>
+                HttpResponse.json([mockConversationSummary({ id: "conv-1", name: "Live Chat" })])
+            )
+        );
+
+        renderChatPage("conv-1");
+
+        await waitFor(() => {
+            expect(screen.getByTestId("chat-input")).toBeInTheDocument();
+        });
+
+        await user.type(screen.getByTestId("chat-input"), "run this workflow");
+        await user.click(screen.getByTestId("send-button"));
+
+        await waitFor(() => {
+            expect(FakeWebSocket.instances).toHaveLength(1);
+        });
+
+        const firstSocket = FakeWebSocket.instances[0];
+        await waitFor(() => {
+            expect(firstSocket.sentMessages.length).toBeGreaterThanOrEqual(1);
+        });
+
+        expect(JSON.parse(firstSocket.sentMessages[0])).toEqual({ prompt: "run this workflow" });
+
+        await act(async () => {
+            firstSocket.simulateMessage({ type: "run_queued", run_id: "run-123" });
+            firstSocket.simulateMessage({ type: "thought", agent: "Planner", content: "Thinking", run_id: "run-123", sequence: 1 });
+            firstSocket.onclose?.(new CloseEvent("close", { code: 1006, wasClean: false }));
+        });
+
+        await waitFor(() => {
+            expect(FakeWebSocket.instances).toHaveLength(2);
+        });
+
+        const reconnectSocket = FakeWebSocket.instances[1];
+        await waitFor(() => {
+            expect(reconnectSocket.sentMessages.length).toBeGreaterThanOrEqual(1);
+        });
+
+        expect(JSON.parse(reconnectSocket.sentMessages[0])).toEqual({
+            run_id: "run-123",
+            after_sequence: 1,
+        });
+    });
+
+    it("replayed events after reconnect keep turn grouping visible", async () => {
+        const user = userEvent.setup();
+
+        server.use(
+            http.get(`${API}/canvases`, () =>
+                HttpResponse.json([{ id: "canvas-1", name: "My Canvas" }])
+            ),
+            http.get(`${API}/canvases/conversations/conv-1`, () =>
+                HttpResponse.json(
+                    mockConversation({
+                        id: "conv-1",
+                        canvas_id: "canvas-1",
+                        name: "Live Chat",
+                        messages: [],
+                    })
+                )
+            ),
+            http.get(`${API}/canvases/canvas-1`, () =>
+                HttpResponse.json({ id: "canvas-1", name: "My Canvas", nodes: { agents: [], tools: [] }, edges: [] })
+            ),
+            http.get(`${API}/canvases/canvas-1/conversations`, () =>
+                HttpResponse.json([mockConversationSummary({ id: "conv-1", name: "Live Chat" })])
+            )
+        );
+
+        renderChatPage("conv-1");
+
+        await waitFor(() => {
+            expect(screen.getByTestId("chat-input")).toBeInTheDocument();
+        });
+
+        await user.type(screen.getByTestId("chat-input"), "recover run");
+        await user.click(screen.getByTestId("send-button"));
+
+        await waitFor(() => {
+            expect(FakeWebSocket.instances).toHaveLength(1);
+        });
+
+        const firstSocket = FakeWebSocket.instances[0];
+        await act(async () => {
+            firstSocket.simulateMessage({ type: "run_queued", run_id: "run-abc" });
+            firstSocket.simulateMessage({ type: "thought", agent: "Planner", content: "step one", sequence: 1, run_id: "run-abc" });
+            firstSocket.onclose?.(new CloseEvent("close", { code: 1006, wasClean: false }));
+        });
+
+        await waitFor(() => {
+            expect(FakeWebSocket.instances).toHaveLength(2);
+        });
+
+        const reconnectSocket = FakeWebSocket.instances[1];
+        await act(async () => {
+            reconnectSocket.simulateMessage({ type: "tool_result", agent: "Planner", tool: "search", output: "step two", sequence: 2, run_id: "run-abc" });
+            reconnectSocket.simulateMessage({ type: "final_answer", agent: "Planner", content: "all done", sequence: 3, run_id: "run-abc" });
+            reconnectSocket.simulateMessage({ type: "run_complete", result: "ok", sequence: 4, run_id: "run-abc" });
+        });
+
+        await waitFor(() => {
+            expect(screen.getByText("all done")).toBeInTheDocument();
+        });
+
+        const toggleBtn = screen.getByText(/Show.*execution step/);
+        await user.click(toggleBtn);
+
+        await waitFor(() => {
+            expect(screen.getByText("step one")).toBeInTheDocument();
+            expect(screen.getByText("step two")).toBeInTheDocument();
         });
     });
 });

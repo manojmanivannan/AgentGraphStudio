@@ -28,7 +28,12 @@ export interface ToolNodeData {
   requiresApproval?: boolean;
 }
 
-export type ExecutionEvent =
+type ExecutionEventBase = {
+  run_id?: string;
+  sequence?: number;
+};
+
+export type ExecutionEvent = ExecutionEventBase & (
   | { type: "run_start"; canvas_id: string; node_id?: string }
   | { type: "agent_start"; agent: string; agentType?: string; node_id?: string }
   | { type: "thought"; agent: string; content: string; node_id?: string }
@@ -41,7 +46,16 @@ export type ExecutionEvent =
   | { type: "warning"; message: string; agent?: string; node_id?: string }
   | { type: "human_input_request"; request_id: string; question: string; agent: string; node_id?: string }
   | { type: "tool_approval_request"; request_id: string; tool: string; args?: Record<string, unknown>; agent: string; node_id?: string }
-  | { type: "conversation_renamed"; conversation_id: string; name: string };
+  | { type: "conversation_renamed"; conversation_id: string; name: string }
+  | { type: "run_queued"; run_id: string }
+);
+
+export interface ActiveRunResponse {
+  run_id: string;
+  conversation_id: string;
+  status: string;
+  replay_cursor: string | null;
+}
 
 export type ExecutionStatus = "idle" | "running" | "done" | "error";
 

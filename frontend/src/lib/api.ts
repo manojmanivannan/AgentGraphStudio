@@ -1,9 +1,11 @@
 import type {
+  ActiveRunResponse,
   CanvasListItem,
   CanvasResponse,
   CanvasSavePayload,
   Conversation,
   ConversationSummary,
+  ExecutionEvent,
   ToolInspectResponse,
   ToolTestResponse,
   AgentDocument,
@@ -310,5 +312,23 @@ export async function importConversationZip(
     const error = await res.json().catch(() => ({ detail: "Failed to import conversation" }));
     throw new Error(error.detail || "Failed to import conversation");
   }
+  return res.json();
+}
+
+export async function getActiveRun(
+  conversationId: string
+): Promise<ActiveRunResponse | null> {
+  const res = await fetch(`${API_BASE}/conversations/${conversationId}/runs/active`);
+  if (!res.ok) throw new Error("Failed to get active run");
+  return res.json();
+}
+
+export async function getRunEventsAfter(
+  runId: string,
+  afterSequence: number
+): Promise<ExecutionEvent[]> {
+  const params = new URLSearchParams({ after_sequence: String(afterSequence) });
+  const res = await fetch(`${API_BASE}/runs/${runId}/events?${params.toString()}`);
+  if (!res.ok) throw new Error("Failed to get run events");
   return res.json();
 }
