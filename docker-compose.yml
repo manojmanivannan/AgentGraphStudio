@@ -35,6 +35,11 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
     develop:
       watch:
         - action: sync
@@ -46,7 +51,7 @@ services:
   execution-worker:
     build:
       context: ./backend
-    command: ["sh", "-c", "uv run alembic upgrade head && uv run canvas-worker"]
+    command: ["uv", "run", "python", "-m", "canvas_server.worker_main"]
     environment:
       DATABASE_URL: postgresql+asyncpg://canvas:canvas@postgres:5432/canvas_db
       MLFLOW_TRACKING_URI: http://mlflow:5000
@@ -61,6 +66,8 @@ services:
       - qdrant_data:/tmp/qdrant
     depends_on:
       postgres:
+        condition: service_healthy
+      backend:
         condition: service_healthy
     develop:
       watch:

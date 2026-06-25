@@ -362,3 +362,39 @@ async def test_worker_resumes_interrupt_from_durable_event_when_api_process_is_s
         "request_id": "durable-req-001",
         "content": "confirmed",
     }
+
+
+@pytest.mark.asyncio
+async def test_worker_initializes_and_shuts_down_sandbox_pool(monkeypatch):
+    from unittest.mock import MagicMock
+    from canvas_server.sandbox import SandboxManager
+
+    mock_manager = MagicMock()
+    async def fake_initialize_pool():
+        mock_manager.initialize_pool_called = True
+    async def fake_shutdown():
+        mock_manager.shutdown_called = True
+
+    mock_manager.initialize_pool = fake_initialize_pool
+    mock_manager.shutdown = fake_shutdown
+    mock_manager.initialize_pool_called = False
+    mock_manager.shutdown_called = False
+
+    monkeypatch.setattr(
+        "canvas_server.sandbox.SandboxManager.get",
+        lambda: mock_manager,
+    )
+
+    worker = BackgroundRunWorker(session_factory=get_session_factory())
+
+    async def fake_process_once():
+        return False
+    monkeypatch.setattr(worker, "process_once", fake_process_once)
+
+    await worker.ensure_started()
+    await asyncio.sleep(0.05)
+    await worker.stop()
+
+    assert mock_manager.initialize_pool_called is True
+    assert mock_manager.shutdown_called is True
+

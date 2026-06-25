@@ -170,6 +170,14 @@ class BackgroundRunWorker:
     async def _run_loop(self) -> None:
         logger.info("Background run worker started: %s", self.worker_id)
         try:
+            from canvas_server.sandbox import get_sandbox
+            manager = await get_sandbox()
+            await manager.initialize_pool()
+            logger.info("Sandbox pool initialized for background worker: %s", self.worker_id)
+        except Exception as e:
+            logger.warning("Failed to initialize sandbox pool in worker %s: %s", self.worker_id, e)
+
+        try:
             while not self._stop_event.is_set():
                 claimed = await self.process_once()
                 if claimed:
@@ -184,6 +192,13 @@ class BackgroundRunWorker:
                 finally:
                     self._wake_event.clear()
         finally:
+            try:
+                from canvas_server.sandbox import get_sandbox
+                manager = await get_sandbox()
+                await manager.shutdown()
+                logger.info("Sandbox pool shut down for background worker: %s", self.worker_id)
+            except Exception as e:
+                logger.warning("Failed to shut down sandbox pool in worker %s: %s", self.worker_id, e)
             logger.info("Background run worker stopped: %s", self.worker_id)
 
     async def _execute_run(
