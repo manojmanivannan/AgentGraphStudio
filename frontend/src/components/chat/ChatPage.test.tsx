@@ -1522,4 +1522,75 @@ describe("ChatPage component", () => {
             expect(screen.queryByText(/dangerous_tool/)).not.toBeInTheDocument();
         });
     });
+
+    it("clears pending tool approval when tool_approval_response is replayed", async () => {
+        const user = userEvent.setup();
+
+        server.use(
+            http.get(`${API}/canvases`, () =>
+                HttpResponse.json([{ id: "canvas-1", name: "My Canvas" }])
+            ),
+            http.get(`${API}/canvases/conversations/conv-1`, () =>
+                HttpResponse.json(
+                    mockConversation({ id: "conv-1", canvas_id: "canvas-1", name: "Live Chat", messages: [] })
+                )
+            ),
+            http.get(`${API}/canvases/canvas-1`, () =>
+                HttpResponse.json({ id: "canvas-1", name: "My Canvas", nodes: { agents: [], tools: [] }, edges: [] })
+            ),
+            http.get(`${API}/canvases/canvas-1/conversations`, () =>
+                HttpResponse.json([mockConversationSummary({ id: "conv-1", name: "Live Chat" })])
+            )
+        );
+
+        renderChatPage("conv-1");
+
+        await waitFor(() => {
+            expect(screen.getByTestId("chat-input")).toBeInTheDocument();
+        });
+
+        await user.type(screen.getByTestId("chat-input"), "run tool");
+        await user.click(screen.getByTestId("send-button"));
+
+        await waitFor(() => {
+            expect(FakeWebSocket.instances).toHaveLength(1);
+        });
+
+        const socket = FakeWebSocket.instances[0];
+
+        // 1. Simulate tool approval request showing in UI
+        await act(async () => {
+            socket.simulateMessage({ type: "run_queued", run_id: "run-approval" });
+            socket.simulateMessage({
+                type: "tool_approval_request",
+                request_id: "req-tool-001",
+                tool: "dangerous_tool",
+                args: { param: "value" },
+                agent: "Executor",
+                run_id: "run-approval",
+                sequence: 1,
+            });
+        });
+
+        // Verify that the approval buttons are visible
+        await waitFor(() => {
+            expect(screen.getByRole("button", { name: /approve/i })).toBeInTheDocument();
+        });
+
+        // 2. Simulate tool_approval_response is replayed/received
+        await act(async () => {
+            socket.simulateMessage({
+                type: "tool_approval_response",
+                request_id: "req-tool-001",
+                approved: true,
+                run_id: "run-approval",
+                sequence: 2,
+            });
+        });
+
+        // Verify that the approval buttons are gone (since activeInterrupt is cleared)
+        await waitFor(() => {
+            expect(screen.queryByRole("button", { name: /approve/i })).not.toBeInTheDocument();
+        });
+    });
 });

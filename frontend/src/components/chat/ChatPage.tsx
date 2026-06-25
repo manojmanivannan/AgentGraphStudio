@@ -626,6 +626,20 @@ export default function ChatPage() {
         lastSequenceRef.current = event.sequence;
       }
 
+      if (
+        event.type === "tool_approval_response" ||
+        event.type === "human_input_response" ||
+        event.type === "interrupt_response"
+      ) {
+        setActiveInterrupt((prev) => {
+          if (prev && prev.request_id === event.request_id) {
+            return null;
+          }
+          return prev;
+        });
+        return;
+      }
+
       if (event.type === "conversation_renamed") {
         setConversations((prev) =>
           prev.map((c) =>
