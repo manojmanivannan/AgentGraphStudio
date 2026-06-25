@@ -367,6 +367,7 @@ async def test_worker_resumes_interrupt_from_durable_event_when_api_process_is_s
 @pytest.mark.asyncio
 async def test_worker_initializes_and_shuts_down_sandbox_pool(monkeypatch):
     from unittest.mock import MagicMock
+
     from canvas_server.sandbox import SandboxManager
 
     mock_manager = MagicMock()

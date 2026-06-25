@@ -274,7 +274,7 @@ export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [running, setRunning] = useState(false);
-  const [loadingConv, setLoadingConv] = useState(false);
+  const [loadingConv, setLoadingConv] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [expandedTurns, setExpandedTurns] = useState<Set<string>>(() => new Set());
   const [collapsedSteps, setCollapsedSteps] = useState<Set<string>>(() => new Set());
@@ -394,6 +394,7 @@ export default function ChatPage() {
           const firstCanvasId = allCanvases[0].id;
           navigate(`/chat/empty?canvas=${firstCanvasId}`, { replace: true });
         }
+        setLoadingConv(false);
         return;
       }
 
@@ -770,7 +771,7 @@ export default function ChatPage() {
   // Check active runs and reconnect on tab visibility/focus changes
   useEffect(() => {
     const checkAndReconnect = async () => {
-      if (!conversation_id || conversation_id === "empty" || running) return;
+      if (!conversation_id || conversation_id === "empty" || running || loadingConv) return;
 
       try {
         const activeRun = await getActiveRun(conversation_id);
@@ -780,19 +781,23 @@ export default function ChatPage() {
             activeRun.status === "running" ||
             activeRun.status === "aborting")
         ) {
-          // Find max sequence in current messages
-          let maxSeq = 0;
-          for (const m of localMessagesRef.current) {
-            if (m.sequence && m.sequence > maxSeq) {
-              maxSeq = m.sequence;
+          // Clean up any replayed steps of the active run from the message history
+          // to prevent duplicate items during replay.
+          setMessages((prev) => {
+            const lastUserIdx = [...prev].reverse().findIndex((m) => m.role === "user");
+            if (lastUserIdx !== -1) {
+              const idx = prev.length - 1 - lastUserIdx;
+              return prev.slice(0, idx + 1);
             }
-          }
-          lastSequenceRef.current = maxSeq;
+            return prev;
+          });
+
+          lastSequenceRef.current = 0;
           activeRunIdRef.current = activeRun.run_id;
 
           connectAndRun(conversation_id, {
             run_id: activeRun.run_id,
-            after_sequence: maxSeq,
+            after_sequence: 0,
           }).catch((err) => {
             console.error("Failed to reconnect active run on visibility change:", err);
           });
@@ -822,7 +827,17 @@ export default function ChatPage() {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       window.removeEventListener("focus", handleFocus);
     };
-  }, [conversation_id, running, connectAndRun]);
+  }, [conversation_id, running, loadingConv, connectAndRun]);
+
+  // Cleanup websocket on unmount to prevent memory/socket leaks
+  useEffect(() => {
+    return () => {
+      if (wsRef.current) {
+        wsRef.current.close();
+        wsRef.current = null;
+      }
+    };
+  }, []);
 
   const stopRun = async () => {
     manualStopRef.current = true;

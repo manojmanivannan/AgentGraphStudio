@@ -9,7 +9,6 @@ from sqlalchemy.orm import selectinload
 from canvas_server.exceptions import DurableRunNotFoundError
 from canvas_server.models.canvas import DurableRun, DurableRunEvent
 
-
 NON_TERMINAL_RUN_STATUSES = ("queued", "running", "aborting")
 
 
