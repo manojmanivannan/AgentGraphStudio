@@ -1164,7 +1164,7 @@ describe("ChatPage component", () => {
         });
     });
 
-    it("checkAndReconnect resumes active run using activeRun.replay_cursor and does not slice messages when replay_cursor > 0", async () => {
+    it("checkAndReconnect always reconnects with after_sequence 0 and slices messages to recover request_id", async () => {
         server.use(
             http.get(`${API}/canvases`, () =>
                 HttpResponse.json([{ id: "canvas-1", name: "My Canvas" }])
@@ -1240,15 +1240,91 @@ describe("ChatPage component", () => {
             expect(activeSocket.sentMessages.length).toBeGreaterThanOrEqual(1);
         });
 
-        // Verify it resumed from sequence 3
+        // Verify it resumed from sequence 0
         expect(JSON.parse(activeSocket.sentMessages[0])).toEqual({
             run_id: "run-active-123",
-            after_sequence: 3,
+            after_sequence: 0,
         });
 
-        // Verify messages were NOT sliced
+        // Verify messages WERE sliced back to the prompt (Lisbon is removed before replay)
         expect(screen.getByText("hows the weather in Portugal")).toBeInTheDocument();
-        expect(screen.getByText("Lisbon")).toBeInTheDocument();
+        expect(screen.queryByText("Lisbon")).not.toBeInTheDocument();
+    });
+
+    it("checkAndReconnect does not restore activeInterrupt if there is a response after the last interrupt in the loaded messages", async () => {
+        server.use(
+            http.get(`${API}/canvases`, () =>
+                HttpResponse.json([{ id: "canvas-1", name: "My Canvas" }])
+            ),
+            http.get(`${API}/canvases/conversations/conv-1`, () =>
+                HttpResponse.json(
+                    mockConversation({
+                        id: "conv-1",
+                        canvas_id: "canvas-1",
+                        name: "Live Chat",
+                        messages: [
+                            {
+                                id: "msg-1",
+                                conversation_id: "conv-1",
+                                role: "user",
+                                content: "hows the weather in Italy",
+                                created_at: "2026-01-01T00:00:00.000Z",
+                            },
+                            {
+                                id: "msg-2",
+                                conversation_id: "conv-1",
+                                role: "assistant",
+                                content: "Thinking...",
+                                event_type: "thought",
+                                created_at: "2026-01-01T00:00:01.000Z",
+                            },
+                            {
+                                id: "msg-3",
+                                conversation_id: "conv-1",
+                                role: "assistant",
+                                content: "Tool approval required: get_weather_forecast",
+                                event_type: "tool_approval_request",
+                                request_id: "req-1",
+                                created_at: "2026-01-01T00:00:02.000Z",
+                            },
+                            {
+                                id: "msg-4",
+                                conversation_id: "conv-1",
+                                role: "tool",
+                                content: "{'city': 'Rome'}",
+                                event_type: "tool_result",
+                                created_at: "2026-01-01T00:00:03.000Z",
+                            },
+                        ],
+                    })
+                )
+            ),
+            http.get(`${API}/conversations/conv-1/runs/active`, () =>
+                HttpResponse.json({
+                    run_id: "run-active-123",
+                    conversation_id: "conv-1",
+                    status: "running",
+                    replay_cursor: 4,
+                })
+            ),
+            http.get(`${API}/canvases/canvas-1`, () =>
+                HttpResponse.json({ id: "canvas-1", name: "My Canvas", nodes: { agents: [], tools: [] }, edges: [] })
+            ),
+            http.get(`${API}/canvases/canvas-1/conversations`, () =>
+                HttpResponse.json([mockConversationSummary({ id: "conv-1", name: "Live Chat" })])
+            )
+        );
+
+        renderChatPage("conv-1");
+
+        // Wait for connection to active run
+        await waitFor(() => {
+            expect(FakeWebSocket.instances).toHaveLength(1);
+        });
+
+        // Verify that the prompt buttons for Tool Approval (Approve / Deny) are NOT visible
+        expect(screen.queryByRole("button", { name: /Approve/ })).toBeNull();
+        expect(screen.queryByRole("button", { name: /Deny/ })).toBeNull();
     });
 
     it("replayed run_aborted event after reconnect restores terminal idle state", async () => {

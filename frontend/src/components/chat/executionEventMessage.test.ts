@@ -117,6 +117,59 @@ describe("executionEventToMessage", () => {
 
     expect(message).toBeNull();
   });
+
+  it("maps human_input_response to user messages", () => {
+    const message = executionEventToMessage(
+      {
+        type: "human_input_response",
+        request_id: "req-1",
+        content: "Hello",
+      },
+      baseContext
+    );
+
+    expect(message).toEqual({
+      id: "msg-1",
+      conversation_id: "conv-1",
+      role: "user",
+      content: "Hello",
+      event_type: "human_input_response",
+      created_at: "2026-01-01T00:00:00.000Z",
+    });
+  });
+
+  it("maps interrupt_response with content to user messages", () => {
+    const message = executionEventToMessage(
+      {
+        type: "interrupt_response",
+        request_id: "req-1",
+        content: "Hi there",
+      },
+      baseContext
+    );
+
+    expect(message).toEqual({
+      id: "msg-1",
+      conversation_id: "conv-1",
+      role: "user",
+      content: "Hi there",
+      event_type: "human_input_response",
+      created_at: "2026-01-01T00:00:00.000Z",
+    });
+  });
+
+  it("returns null for tool_approval_response", () => {
+    const message = executionEventToMessage(
+      {
+        type: "tool_approval_response",
+        request_id: "req-1",
+        approved: true,
+      },
+      baseContext
+    );
+
+    expect(message).toBeNull();
+  });
 });
 
 

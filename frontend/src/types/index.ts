@@ -47,6 +47,9 @@ export type ExecutionEvent = ExecutionEventBase & (
   | { type: "warning"; message: string; agent?: string; node_id?: string }
   | { type: "human_input_request"; request_id: string; question: string; agent: string; node_id?: string }
   | { type: "tool_approval_request"; request_id: string; tool: string; args?: Record<string, unknown>; agent: string; node_id?: string }
+  | { type: "human_input_response"; request_id: string; content: string }
+  | { type: "tool_approval_response"; request_id: string; approved: boolean }
+  | { type: "interrupt_response"; request_id: string; response?: any; content?: string }
   | { type: "conversation_renamed"; conversation_id: string; name: string }
   | { type: "run_queued"; run_id: string }
 );
