@@ -1,2 +1,5 @@
 
-<video src="https://raw.githubusercontent.com/manojmanivannan/AgentGraphStudio/ws-to-background/examples/recordings/weather_with_tool_approval.mp4" width="352" height="720"></video>
+<video src="https://github.com/user-attachments/assets/edad7e8f-6e7f-4a32-b6e9-66345cffe8a0" width="946" height="1080"></video>
+
+
+
