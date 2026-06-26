@@ -813,23 +813,57 @@ export default function ChatPage() {
             activeRun.status === "running" ||
             activeRun.status === "aborting")
         ) {
-          // Clean up any replayed steps of the active run from the message history
-          // to prevent duplicate items during replay.
-          setMessages((prev) => {
-            const lastUserIdx = [...prev].reverse().findIndex((m) => m.role === "user");
-            if (lastUserIdx !== -1) {
-              const idx = prev.length - 1 - lastUserIdx;
-              return prev.slice(0, idx + 1);
-            }
-            return prev;
-          });
+          // Determine the sequence to resume from.
+          // If we already have a connection history, use lastSequenceRef.current.
+          // Otherwise, use activeRun.replay_cursor to resume from where the DB is.
+          const resumeSequence = lastSequenceRef.current > 0
+            ? lastSequenceRef.current
+            : (activeRun.replay_cursor ?? 0);
 
-          lastSequenceRef.current = 0;
+          if (resumeSequence === 0) {
+            // Clean up any replayed steps of the active run from the message history
+            // to prevent duplicate items during replay.
+            setMessages((prev) => {
+              const lastUserIdx = [...prev].reverse().findIndex((m) => m.role === "user");
+              if (lastUserIdx !== -1) {
+                const idx = prev.length - 1 - lastUserIdx;
+                return prev.slice(0, idx + 1);
+              }
+              return prev;
+            });
+          } else if (lastSequenceRef.current === 0) {
+            // We are resuming from a non-zero database sequence on first load.
+            // Check if we need to restore the activeInterrupt from the loaded messages.
+            setMessages((prev) => {
+              const lastInterrupt = [...prev].reverse().find(
+                (m) => m.event_type === "human_input_request" || m.event_type === "tool_approval_request"
+              );
+              if (lastInterrupt) {
+                const interruptIdx = prev.indexOf(lastInterrupt);
+                const hasResponse = prev.slice(interruptIdx + 1).some(
+                  (m) => m.role === "user" || m.event_type === "tool_approval_response" || m.event_type === "interrupt_response"
+                );
+                if (!hasResponse) {
+                  setActiveInterrupt({
+                    type: lastInterrupt.event_type === "human_input_request" ? "human_input" : "tool_approval",
+                    request_id: lastInterrupt.request_id!,
+                    message_id: lastInterrupt.id,
+                    question: lastInterrupt.event_type === "human_input_request" ? lastInterrupt.content : undefined,
+                    tool: lastInterrupt.event_type === "tool_approval_request" ? lastInterrupt.content.replace("Tool approval required: ", "") : undefined,
+                    args: lastInterrupt.args,
+                  });
+                }
+              }
+              return prev;
+            });
+          }
+
+          lastSequenceRef.current = resumeSequence;
           activeRunIdRef.current = activeRun.run_id;
 
           connectAndRun(conversation_id, {
             run_id: activeRun.run_id,
-            after_sequence: 0,
+            after_sequence: resumeSequence,
           }).catch((err) => {
             console.error("Failed to reconnect active run on visibility change:", err);
           });

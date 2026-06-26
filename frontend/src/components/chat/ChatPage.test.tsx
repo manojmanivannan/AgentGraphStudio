@@ -1164,6 +1164,93 @@ describe("ChatPage component", () => {
         });
     });
 
+    it("checkAndReconnect resumes active run using activeRun.replay_cursor and does not slice messages when replay_cursor > 0", async () => {
+        server.use(
+            http.get(`${API}/canvases`, () =>
+                HttpResponse.json([{ id: "canvas-1", name: "My Canvas" }])
+            ),
+            http.get(`${API}/canvases/conversations/conv-1`, () =>
+                HttpResponse.json(
+                    mockConversation({
+                        id: "conv-1",
+                        canvas_id: "canvas-1",
+                        name: "Live Chat",
+                        messages: [
+                            {
+                                id: "msg-1",
+                                conversation_id: "conv-1",
+                                role: "user",
+                                content: "hows the weather in Portugal",
+                                created_at: "2026-01-01T00:00:00.000Z",
+                            },
+                            {
+                                id: "msg-2",
+                                conversation_id: "conv-1",
+                                role: "assistant",
+                                content: "Thinking...",
+                                event_type: "thought",
+                                created_at: "2026-01-01T00:00:01.000Z",
+                            },
+                            {
+                                id: "msg-3",
+                                conversation_id: "conv-1",
+                                role: "assistant",
+                                content: "Portugal is a country. Specify a city.",
+                                event_type: "human_input_request",
+                                request_id: "req-1",
+                                created_at: "2026-01-01T00:00:02.000Z",
+                            },
+                            {
+                                id: "msg-4",
+                                conversation_id: "conv-1",
+                                role: "user",
+                                content: "Lisbon",
+                                event_type: "human_input_response",
+                                created_at: "2026-01-01T00:00:03.000Z",
+                            },
+                        ],
+                    })
+                )
+            ),
+            http.get(`${API}/conversations/conv-1/runs/active`, () =>
+                HttpResponse.json({
+                    run_id: "run-active-123",
+                    conversation_id: "conv-1",
+                    status: "running",
+                    replay_cursor: 3,
+                })
+            ),
+            http.get(`${API}/canvases/canvas-1`, () =>
+                HttpResponse.json({ id: "canvas-1", name: "My Canvas", nodes: { agents: [], tools: [] }, edges: [] })
+            ),
+            http.get(`${API}/canvases/canvas-1/conversations`, () =>
+                HttpResponse.json([mockConversationSummary({ id: "conv-1", name: "Live Chat" })])
+            )
+        );
+
+        renderChatPage("conv-1");
+
+        // Wait for connection to active run
+        await waitFor(() => {
+            expect(FakeWebSocket.instances).toHaveLength(1);
+        });
+
+        const activeSocket = FakeWebSocket.instances[0];
+        await waitFor(() => {
+            expect(activeSocket.sentMessages.length).toBeGreaterThanOrEqual(1);
+        });
+
+        // Verify it resumed from sequence 3
+        expect(JSON.parse(activeSocket.sentMessages[0])).toEqual({
+            run_id: "run-active-123",
+            after_sequence: 3,
+        });
+
+        // Verify messages were NOT sliced
+        expect(screen.getByText("hows the weather in Portugal")).toBeInTheDocument();
+        expect(screen.getByText("Lisbon")).toBeInTheDocument();
+    });
+
     it("replayed run_aborted event after reconnect restores terminal idle state", async () => {
         const user = userEvent.setup();
 
