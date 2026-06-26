@@ -137,9 +137,8 @@ export function groupMessagesIntoTurns(messages: Message[]): {
         currentTurn.steps.push(msg);
       } else {
         currentTurn.steps.push(msg);
-        if (currentTurn.humanInterrupt?.event_type === "tool_approval_request") {
-          currentTurn.isStreaming = true;
-        }
+        currentTurn.finalAnswer = undefined;
+        currentTurn.isStreaming = true;
       }
     } else {
       preTurnMessages.push(msg);
@@ -274,6 +273,10 @@ export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [running, setRunning] = useState(false);
+  const runningRef = useRef(running);
+  useEffect(() => {
+    runningRef.current = running;
+  }, [running]);
   const [loadingConv, setLoadingConv] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [expandedTurns, setExpandedTurns] = useState<Set<string>>(() => new Set());
@@ -800,7 +803,7 @@ export default function ChatPage() {
   // Check active runs and reconnect on tab visibility/focus changes
   useEffect(() => {
     const checkAndReconnect = async () => {
-      if (!conversation_id || conversation_id === "empty" || running || loadingConv) return;
+      if (!conversation_id || conversation_id === "empty" || runningRef.current || loadingConv) return;
 
       try {
         const activeRun = await getActiveRun(conversation_id);
@@ -856,7 +859,7 @@ export default function ChatPage() {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       window.removeEventListener("focus", handleFocus);
     };
-  }, [conversation_id, running, loadingConv, connectAndRun]);
+  }, [conversation_id, loadingConv, connectAndRun]);
 
 
 

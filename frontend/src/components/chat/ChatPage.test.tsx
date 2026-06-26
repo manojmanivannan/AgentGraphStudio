@@ -214,6 +214,46 @@ describe("groupMessagesIntoTurns", () => {
         expect(turns[0].steps[0].id).toBe("a1");
         expect(turns[0].steps[1].id).toBe("t2");
     });
+
+    it("sets isStreaming to false when a final answer is received", () => {
+        const userMsg: Message = {
+            id: "u1", conversation_id: "c1", role: "user", content: "Hello",
+            created_at: "2026-01-01T00:00:00.000Z",
+        };
+        const finalAnswer: Message = {
+            id: "f1", conversation_id: "c1", role: "assistant", content: "Final Answer",
+            event_type: "final_answer", created_at: "2026-01-01T00:00:01.000Z",
+        };
+
+        const { turns } = groupMessagesIntoTurns([userMsg, finalAnswer]);
+
+        expect(turns).toHaveLength(1);
+        expect(turns[0].isStreaming).toBe(false);
+        expect(turns[0].finalAnswer).toEqual(finalAnswer);
+    });
+
+    it("resumes isStreaming to true and clears finalAnswer when a step is processed after an intermediate final answer", () => {
+        const userMsg: Message = {
+            id: "u1", conversation_id: "c1", role: "user", content: "Hello",
+            created_at: "2026-01-01T00:00:00.000Z",
+        };
+        const intermediateFinal: Message = {
+            id: "f1", conversation_id: "c1", role: "assistant", content: "Intermediate Answer",
+            event_type: "final_answer", created_at: "2026-01-01T00:00:01.000Z",
+        };
+        const thoughtAfter: Message = {
+            id: "t2", conversation_id: "c1", role: "assistant", content: "Thinking after intermediate final answer...",
+            event_type: "thought", created_at: "2026-01-01T00:00:02.000Z",
+        };
+
+        const { turns } = groupMessagesIntoTurns([userMsg, intermediateFinal, thoughtAfter]);
+
+        expect(turns).toHaveLength(1);
+        expect(turns[0].isStreaming).toBe(true);
+        expect(turns[0].finalAnswer).toBeUndefined();
+        expect(turns[0].steps).toHaveLength(1);
+        expect(turns[0].steps[0].id).toBe("t2");
+    });
 });
 
 describe("ChatPage component", () => {
