@@ -3,6 +3,8 @@ import uuid
 
 import dspy
 
+from canvas_server.exceptions import RunAbortedError
+
 logger = logging.getLogger("canvas_server.streaming_react")
 
 
@@ -24,6 +26,8 @@ class StreamingReAct(dspy.ReAct):
         for cb in self._event_callbacks:
             try:
                 await cb(event)
+            except RunAbortedError:
+                raise
             except Exception:
                 logger.exception("Event callback failed")
 
@@ -69,6 +73,8 @@ class StreamingReAct(dspy.ReAct):
                 try:
                     res = await get_client_response(request_id, "tool_approval_response")
                     approved = res.get("approved", False)
+                except RunAbortedError:
+                    raise
                 except Exception:
                     approved = False
 
@@ -88,6 +94,8 @@ class StreamingReAct(dspy.ReAct):
                 observation = await self.tools[pred.next_tool_name].acall(
                     **pred.next_tool_args
                 )
+            except RunAbortedError:
+                raise
             except Exception as err:
                 observation = f"Execution error in {pred.next_tool_name}: {err}"
                 logger.exception("Tool call failed")

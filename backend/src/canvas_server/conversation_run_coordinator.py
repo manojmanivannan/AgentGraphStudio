@@ -2,6 +2,7 @@ import uuid
 from collections.abc import Awaitable, Callable
 from typing import Any
 
+from canvas_server.exceptions import RunAbortedError
 from canvas_server.runner import CanvasRunner
 
 EventSender = Callable[[dict[str, Any]], Awaitable[None]]
@@ -52,6 +53,8 @@ class ConversationRunCoordinator:
                 target_agent_id=target_agent_id,
                 get_client_response=get_client_response,
             )
+        except RunAbortedError:
+            raise
         except Exception as exc:
             primary_agent = self._resolve_primary_agent(
                 canvas=canvas,

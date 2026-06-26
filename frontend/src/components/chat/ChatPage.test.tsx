@@ -1,9 +1,10 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { server } from "@/test/mocks/server";
+import { FakeWebSocket } from "@/test/mocks/websocket";
 import { mockConversation, mockConversationSummary } from "@/test/mocks/handlers";
 import { useCanvasStore } from "@/store/canvasStore";
 import type { Message } from "@/types";
@@ -11,6 +12,12 @@ import ChatPage, { groupMessagesIntoTurns } from "./ChatPage";
 
 beforeEach(() => {
     useCanvasStore.getState().reset();
+    FakeWebSocket.reset();
+    vi.stubGlobal("WebSocket", FakeWebSocket);
+});
+
+afterEach(() => {
+    vi.unstubAllGlobals();
 });
 
 describe("groupMessagesIntoTurns", () => {
@@ -206,6 +213,46 @@ describe("groupMessagesIntoTurns", () => {
         expect(turns[0].steps).toHaveLength(2);
         expect(turns[0].steps[0].id).toBe("a1");
         expect(turns[0].steps[1].id).toBe("t2");
+    });
+
+    it("sets isStreaming to false when a final answer is received", () => {
+        const userMsg: Message = {
+            id: "u1", conversation_id: "c1", role: "user", content: "Hello",
+            created_at: "2026-01-01T00:00:00.000Z",
+        };
+        const finalAnswer: Message = {
+            id: "f1", conversation_id: "c1", role: "assistant", content: "Final Answer",
+            event_type: "final_answer", created_at: "2026-01-01T00:00:01.000Z",
+        };
+
+        const { turns } = groupMessagesIntoTurns([userMsg, finalAnswer]);
+
+        expect(turns).toHaveLength(1);
+        expect(turns[0].isStreaming).toBe(false);
+        expect(turns[0].finalAnswer).toEqual(finalAnswer);
+    });
+
+    it("resumes isStreaming to true and clears finalAnswer when a step is processed after an intermediate final answer", () => {
+        const userMsg: Message = {
+            id: "u1", conversation_id: "c1", role: "user", content: "Hello",
+            created_at: "2026-01-01T00:00:00.000Z",
+        };
+        const intermediateFinal: Message = {
+            id: "f1", conversation_id: "c1", role: "assistant", content: "Intermediate Answer",
+            event_type: "final_answer", created_at: "2026-01-01T00:00:01.000Z",
+        };
+        const thoughtAfter: Message = {
+            id: "t2", conversation_id: "c1", role: "assistant", content: "Thinking after intermediate final answer...",
+            event_type: "thought", created_at: "2026-01-01T00:00:02.000Z",
+        };
+
+        const { turns } = groupMessagesIntoTurns([userMsg, intermediateFinal, thoughtAfter]);
+
+        expect(turns).toHaveLength(1);
+        expect(turns[0].isStreaming).toBe(true);
+        expect(turns[0].finalAnswer).toBeUndefined();
+        expect(turns[0].steps).toHaveLength(1);
+        expect(turns[0].steps[0].id).toBe("t2");
     });
 });
 
@@ -977,6 +1024,776 @@ describe("ChatPage component", () => {
             expect(dropdown).not.toBeDisabled();
         });
     });
+
+    it("reconnects websocket with run_id and after_sequence after unexpected disconnect", async () => {
+        const user = userEvent.setup();
+
+        server.use(
+            http.get(`${API}/canvases`, () =>
+                HttpResponse.json([{ id: "canvas-1", name: "My Canvas" }])
+            ),
+            http.get(`${API}/canvases/conversations/conv-1`, () =>
+                HttpResponse.json(
+                    mockConversation({
+                        id: "conv-1",
+                        canvas_id: "canvas-1",
+                        name: "Live Chat",
+                        messages: [],
+                    })
+                )
+            ),
+            http.get(`${API}/canvases/canvas-1`, () =>
+                HttpResponse.json({ id: "canvas-1", name: "My Canvas", nodes: { agents: [], tools: [] }, edges: [] })
+            ),
+            http.get(`${API}/canvases/canvas-1/conversations`, () =>
+                HttpResponse.json([mockConversationSummary({ id: "conv-1", name: "Live Chat" })])
+            )
+        );
+
+        renderChatPage("conv-1");
+
+        await waitFor(() => {
+            expect(screen.getByTestId("chat-input")).toBeInTheDocument();
+        });
+
+        await user.type(screen.getByTestId("chat-input"), "run this workflow");
+        await user.click(screen.getByTestId("send-button"));
+
+        await waitFor(() => {
+            expect(FakeWebSocket.instances).toHaveLength(1);
+        });
+
+        const firstSocket = FakeWebSocket.instances[0];
+        await waitFor(() => {
+            expect(firstSocket.sentMessages.length).toBeGreaterThanOrEqual(1);
+        });
+
+        expect(JSON.parse(firstSocket.sentMessages[0])).toEqual({ prompt: "run this workflow" });
+
+        await act(async () => {
+            firstSocket.simulateMessage({ type: "run_queued", run_id: "run-123" });
+            firstSocket.simulateMessage({ type: "thought", agent: "Planner", content: "Thinking", run_id: "run-123", sequence: 1 });
+            firstSocket.onclose?.(new CloseEvent("close", { code: 1006, wasClean: false }));
+        });
+
+        await waitFor(() => {
+            expect(FakeWebSocket.instances).toHaveLength(2);
+        });
+
+        const reconnectSocket = FakeWebSocket.instances[1];
+        await waitFor(() => {
+            expect(reconnectSocket.sentMessages.length).toBeGreaterThanOrEqual(1);
+        });
+
+        expect(JSON.parse(reconnectSocket.sentMessages[0])).toEqual({
+            run_id: "run-123",
+            after_sequence: 1,
+        });
+    });
+
+    it("replayed events after reconnect keep turn grouping visible", async () => {
+        const user = userEvent.setup();
+
+        server.use(
+            http.get(`${API}/canvases`, () =>
+                HttpResponse.json([{ id: "canvas-1", name: "My Canvas" }])
+            ),
+            http.get(`${API}/canvases/conversations/conv-1`, () =>
+                HttpResponse.json(
+                    mockConversation({
+                        id: "conv-1",
+                        canvas_id: "canvas-1",
+                        name: "Live Chat",
+                        messages: [],
+                    })
+                )
+            ),
+            http.get(`${API}/canvases/canvas-1`, () =>
+                HttpResponse.json({ id: "canvas-1", name: "My Canvas", nodes: { agents: [], tools: [] }, edges: [] })
+            ),
+            http.get(`${API}/canvases/canvas-1/conversations`, () =>
+                HttpResponse.json([mockConversationSummary({ id: "conv-1", name: "Live Chat" })])
+            )
+        );
+
+        renderChatPage("conv-1");
+
+        await waitFor(() => {
+            expect(screen.getByTestId("chat-input")).toBeInTheDocument();
+        });
+
+        await user.type(screen.getByTestId("chat-input"), "recover run");
+        await user.click(screen.getByTestId("send-button"));
+
+        await waitFor(() => {
+            expect(FakeWebSocket.instances).toHaveLength(1);
+        });
+
+        const firstSocket = FakeWebSocket.instances[0];
+        await act(async () => {
+            firstSocket.simulateMessage({ type: "run_queued", run_id: "run-abc" });
+            firstSocket.simulateMessage({ type: "thought", agent: "Planner", content: "step one", sequence: 1, run_id: "run-abc" });
+            firstSocket.onclose?.(new CloseEvent("close", { code: 1006, wasClean: false }));
+        });
+
+        await waitFor(() => {
+            expect(FakeWebSocket.instances).toHaveLength(2);
+        });
+
+        const reconnectSocket = FakeWebSocket.instances[1];
+        await act(async () => {
+            reconnectSocket.simulateMessage({ type: "tool_result", agent: "Planner", tool: "search", output: "step two", sequence: 2, run_id: "run-abc" });
+            reconnectSocket.simulateMessage({ type: "final_answer", agent: "Planner", content: "all done", sequence: 3, run_id: "run-abc" });
+            reconnectSocket.simulateMessage({ type: "run_complete", result: "ok", sequence: 4, run_id: "run-abc" });
+        });
+
+        await waitFor(() => {
+            expect(screen.getByText("all done")).toBeInTheDocument();
+        });
+
+        const toggleBtn = screen.getByText(/Show.*execution step/);
+        await user.click(toggleBtn);
+
+        await waitFor(() => {
+            expect(screen.getByText("step one")).toBeInTheDocument();
+            expect(screen.getByText("step two")).toBeInTheDocument();
+        });
+
+        await waitFor(() => {
+            expect(screen.getByTestId("send-button")).toBeInTheDocument();
+        });
+    });
+
+    it("checkAndReconnect always reconnects with after_sequence 0 and slices messages to recover request_id", async () => {
+        server.use(
+            http.get(`${API}/canvases`, () =>
+                HttpResponse.json([{ id: "canvas-1", name: "My Canvas" }])
+            ),
+            http.get(`${API}/canvases/conversations/conv-1`, () =>
+                HttpResponse.json(
+                    mockConversation({
+                        id: "conv-1",
+                        canvas_id: "canvas-1",
+                        name: "Live Chat",
+                        messages: [
+                            {
+                                id: "msg-1",
+                                conversation_id: "conv-1",
+                                role: "user",
+                                content: "hows the weather in Portugal",
+                                created_at: "2026-01-01T00:00:00.000Z",
+                            },
+                            {
+                                id: "msg-2",
+                                conversation_id: "conv-1",
+                                role: "assistant",
+                                content: "Thinking...",
+                                event_type: "thought",
+                                created_at: "2026-01-01T00:00:01.000Z",
+                            },
+                            {
+                                id: "msg-3",
+                                conversation_id: "conv-1",
+                                role: "assistant",
+                                content: "Portugal is a country. Specify a city.",
+                                event_type: "human_input_request",
+                                request_id: "req-1",
+                                created_at: "2026-01-01T00:00:02.000Z",
+                            },
+                            {
+                                id: "msg-4",
+                                conversation_id: "conv-1",
+                                role: "user",
+                                content: "Lisbon",
+                                event_type: "human_input_response",
+                                created_at: "2026-01-01T00:00:03.000Z",
+                            },
+                        ],
+                    })
+                )
+            ),
+            http.get(`${API}/conversations/conv-1/runs/active`, () =>
+                HttpResponse.json({
+                    run_id: "run-active-123",
+                    conversation_id: "conv-1",
+                    status: "running",
+                    replay_cursor: 3,
+                })
+            ),
+            http.get(`${API}/canvases/canvas-1`, () =>
+                HttpResponse.json({ id: "canvas-1", name: "My Canvas", nodes: { agents: [], tools: [] }, edges: [] })
+            ),
+            http.get(`${API}/canvases/canvas-1/conversations`, () =>
+                HttpResponse.json([mockConversationSummary({ id: "conv-1", name: "Live Chat" })])
+            )
+        );
+
+        renderChatPage("conv-1");
+
+        // Wait for connection to active run
+        await waitFor(() => {
+            expect(FakeWebSocket.instances).toHaveLength(1);
+        });
+
+        const activeSocket = FakeWebSocket.instances[0];
+        await waitFor(() => {
+            expect(activeSocket.sentMessages.length).toBeGreaterThanOrEqual(1);
+        });
+
+        // Verify it resumed from sequence 0
+        expect(JSON.parse(activeSocket.sentMessages[0])).toEqual({
+            run_id: "run-active-123",
+            after_sequence: 0,
+        });
+
+        // Verify messages WERE sliced back to the prompt (Lisbon is removed before replay)
+        expect(screen.getByText("hows the weather in Portugal")).toBeInTheDocument();
+        expect(screen.queryByText("Lisbon")).not.toBeInTheDocument();
+    });
+
+    it("checkAndReconnect does not restore activeInterrupt if there is a response after the last interrupt in the loaded messages", async () => {
+        server.use(
+            http.get(`${API}/canvases`, () =>
+                HttpResponse.json([{ id: "canvas-1", name: "My Canvas" }])
+            ),
+            http.get(`${API}/canvases/conversations/conv-1`, () =>
+                HttpResponse.json(
+                    mockConversation({
+                        id: "conv-1",
+                        canvas_id: "canvas-1",
+                        name: "Live Chat",
+                        messages: [
+                            {
+                                id: "msg-1",
+                                conversation_id: "conv-1",
+                                role: "user",
+                                content: "hows the weather in Italy",
+                                created_at: "2026-01-01T00:00:00.000Z",
+                            },
+                            {
+                                id: "msg-2",
+                                conversation_id: "conv-1",
+                                role: "assistant",
+                                content: "Thinking...",
+                                event_type: "thought",
+                                created_at: "2026-01-01T00:00:01.000Z",
+                            },
+                            {
+                                id: "msg-3",
+                                conversation_id: "conv-1",
+                                role: "assistant",
+                                content: "Tool approval required: get_weather_forecast",
+                                event_type: "tool_approval_request",
+                                request_id: "req-1",
+                                created_at: "2026-01-01T00:00:02.000Z",
+                            },
+                            {
+                                id: "msg-4",
+                                conversation_id: "conv-1",
+                                role: "tool",
+                                content: "{'city': 'Rome'}",
+                                event_type: "tool_result",
+                                created_at: "2026-01-01T00:00:03.000Z",
+                            },
+                        ],
+                    })
+                )
+            ),
+            http.get(`${API}/conversations/conv-1/runs/active`, () =>
+                HttpResponse.json({
+                    run_id: "run-active-123",
+                    conversation_id: "conv-1",
+                    status: "running",
+                    replay_cursor: 4,
+                })
+            ),
+            http.get(`${API}/canvases/canvas-1`, () =>
+                HttpResponse.json({ id: "canvas-1", name: "My Canvas", nodes: { agents: [], tools: [] }, edges: [] })
+            ),
+            http.get(`${API}/canvases/canvas-1/conversations`, () =>
+                HttpResponse.json([mockConversationSummary({ id: "conv-1", name: "Live Chat" })])
+            )
+        );
+
+        renderChatPage("conv-1");
+
+        // Wait for connection to active run
+        await waitFor(() => {
+            expect(FakeWebSocket.instances).toHaveLength(1);
+        });
+
+        // Verify that the prompt buttons for Tool Approval (Approve / Deny) are NOT visible
+        expect(screen.queryByRole("button", { name: /Approve/ })).toBeNull();
+        expect(screen.queryByRole("button", { name: /Deny/ })).toBeNull();
+    });
+
+    it("replayed run_aborted event after reconnect restores terminal idle state", async () => {
+        const user = userEvent.setup();
+
+        server.use(
+            http.get(`${API}/canvases`, () =>
+                HttpResponse.json([{ id: "canvas-1", name: "My Canvas" }])
+            ),
+            http.get(`${API}/canvases/conversations/conv-1`, () =>
+                HttpResponse.json(
+                    mockConversation({
+                        id: "conv-1",
+                        canvas_id: "canvas-1",
+                        name: "Live Chat",
+                        messages: [],
+                    })
+                )
+            ),
+            http.get(`${API}/canvases/canvas-1`, () =>
+                HttpResponse.json({ id: "canvas-1", name: "My Canvas", nodes: { agents: [], tools: [] }, edges: [] })
+            ),
+            http.get(`${API}/canvases/canvas-1/conversations`, () =>
+                HttpResponse.json([mockConversationSummary({ id: "conv-1", name: "Live Chat" })])
+            )
+        );
+
+        renderChatPage("conv-1");
+
+        await waitFor(() => {
+            expect(screen.getByTestId("chat-input")).toBeInTheDocument();
+        });
+
+        await user.type(screen.getByTestId("chat-input"), "run then abort");
+        await user.click(screen.getByTestId("send-button"));
+
+        await waitFor(() => {
+            expect(FakeWebSocket.instances).toHaveLength(1);
+        });
+
+        const firstSocket = FakeWebSocket.instances[0];
+        await act(async () => {
+            firstSocket.simulateMessage({ type: "run_queued", run_id: "run-abort-reconnect" });
+            firstSocket.simulateMessage({ type: "thought", agent: "Planner", content: "starting", sequence: 1, run_id: "run-abort-reconnect" });
+            firstSocket.onclose?.(new CloseEvent("close", { code: 1006, wasClean: false }));
+        });
+
+        await waitFor(() => {
+            expect(FakeWebSocket.instances).toHaveLength(2);
+        });
+
+        const reconnectSocket = FakeWebSocket.instances[1];
+        await act(async () => {
+            reconnectSocket.simulateMessage({
+                type: "run_aborted",
+                message: "Run aborted by user",
+                sequence: 2,
+                run_id: "run-abort-reconnect",
+            });
+        });
+
+        await waitFor(() => {
+            expect(screen.getByTestId("send-button")).toBeInTheDocument();
+        });
+
+        // No extra reconnect websocket should be spawned after terminal aborted replay.
+        await waitFor(() => {
+            expect(FakeWebSocket.instances).toHaveLength(2);
+        });
+    });
+
+    it("stop button aborts active run and does not auto-reconnect", async () => {        const user = userEvent.setup();
+        let abortCalls = 0;
+
+        server.use(
+            http.get(`${API}/canvases`, () =>
+                HttpResponse.json([{ id: "canvas-1", name: "My Canvas" }])
+            ),
+            http.get(`${API}/canvases/conversations/conv-1`, () =>
+                HttpResponse.json(
+                    mockConversation({
+                        id: "conv-1",
+                        canvas_id: "canvas-1",
+                        name: "Live Chat",
+                        messages: [],
+                    })
+                )
+            ),
+            http.get(`${API}/canvases/canvas-1`, () =>
+                HttpResponse.json({ id: "canvas-1", name: "My Canvas", nodes: { agents: [], tools: [] }, edges: [] })
+            ),
+            http.get(`${API}/canvases/canvas-1/conversations`, () =>
+                HttpResponse.json([mockConversationSummary({ id: "conv-1", name: "Live Chat" })])
+            ),
+            http.post(`${API}/runs/run-stop/abort`, () => {
+                abortCalls += 1;
+                return HttpResponse.json({ run_id: "run-stop", status: "aborting" });
+            })
+        );
+
+        renderChatPage("conv-1");
+
+        await waitFor(() => {
+            expect(screen.getByTestId("chat-input")).toBeInTheDocument();
+        });
+
+        await user.type(screen.getByTestId("chat-input"), "start and stop");
+        await user.click(screen.getByTestId("send-button"));
+
+        await waitFor(() => {
+            expect(FakeWebSocket.instances).toHaveLength(1);
+        });
+
+        const socket = FakeWebSocket.instances[0];
+        await act(async () => {
+            socket.simulateMessage({ type: "run_queued", run_id: "run-stop" });
+        });
+
+        await waitFor(() => {
+            expect(screen.getByTestId("stop-button")).toBeInTheDocument();
+        });
+
+        await user.click(screen.getByTestId("stop-button"));
+
+        await waitFor(() => {
+            expect(abortCalls).toBe(1);
+        });
+
+        await waitFor(() => {
+            expect(FakeWebSocket.instances).toHaveLength(1);
+        });
+    });
+
+    it("HITL submit sends response via HTTP not WebSocket", async () => {
+        const user = userEvent.setup();
+        let interruptCalls = 0;
+
+        server.use(
+            http.get(`${API}/canvases`, () =>
+                HttpResponse.json([{ id: "canvas-1", name: "My Canvas" }])
+            ),
+            http.get(`${API}/canvases/conversations/conv-1`, () =>
+                HttpResponse.json(
+                    mockConversation({ id: "conv-1", canvas_id: "canvas-1", name: "HITL Chat", messages: [] })
+                )
+            ),
+            http.get(`${API}/canvases/canvas-1`, () =>
+                HttpResponse.json({ id: "canvas-1", name: "My Canvas", nodes: { agents: [], tools: [] }, edges: [] })
+            ),
+            http.get(`${API}/canvases/canvas-1/conversations`, () =>
+                HttpResponse.json([mockConversationSummary({ id: "conv-1", name: "HITL Chat" })])
+            ),
+            http.post(`${API}/runs/run-hitl/interrupt-response`, async ({ request }) => {
+                const body = await request.json() as Record<string, unknown>;
+                interruptCalls += 1;
+                expect(body).toMatchObject({ request_id: "req-human-001", type: "human_input_response", content: "my answer" });
+                return HttpResponse.json({ ok: true, request_id: "req-human-001" });
+            })
+        );
+
+        renderChatPage("conv-1");
+
+        await waitFor(() => expect(screen.getByTestId("chat-input")).toBeInTheDocument());
+
+        await user.type(screen.getByTestId("chat-input"), "need help");
+        await user.click(screen.getByTestId("send-button"));
+
+        await waitFor(() => expect(FakeWebSocket.instances).toHaveLength(1));
+        const socket = FakeWebSocket.instances[0];
+
+        await act(async () => {
+            socket.simulateMessage({ type: "run_queued", run_id: "run-hitl" });
+            socket.simulateMessage({
+                type: "human_input_request",
+                request_id: "req-human-001",
+                question: "What is your name?",
+                agent: "Planner",
+                run_id: "run-hitl",
+                sequence: 1,
+            });
+        });
+
+        await waitFor(() => expect(screen.getByText("What is your name?")).toBeInTheDocument());
+
+        const inlineInput = screen.getByPlaceholderText(/type your response/i);
+        await user.type(inlineInput, "my answer");
+        await user.keyboard("{Enter}");
+
+        await waitFor(() => expect(interruptCalls).toBe(1));
+
+        // Response is NOT sent over the websocket
+        const wsPayloads = socket.sentMessages.map((m) => JSON.parse(m));
+        const wsResponse = wsPayloads.find((p) => p.type === "human_input_response");
+        expect(wsResponse).toBeUndefined();
+    });
+
+    it("tool approval submit sends response via HTTP not WebSocket", async () => {
+        const user = userEvent.setup();
+        let approvalCalls = 0;
+
+        server.use(
+            http.get(`${API}/canvases`, () =>
+                HttpResponse.json([{ id: "canvas-1", name: "My Canvas" }])
+            ),
+            http.get(`${API}/canvases/conversations/conv-1`, () =>
+                HttpResponse.json(
+                    mockConversation({ id: "conv-1", canvas_id: "canvas-1", name: "Approval Chat", messages: [] })
+                )
+            ),
+            http.get(`${API}/canvases/canvas-1`, () =>
+                HttpResponse.json({ id: "canvas-1", name: "My Canvas", nodes: { agents: [], tools: [] }, edges: [] })
+            ),
+            http.get(`${API}/canvases/canvas-1/conversations`, () =>
+                HttpResponse.json([mockConversationSummary({ id: "conv-1", name: "Approval Chat" })])
+            ),
+            http.post(`${API}/runs/run-approval/interrupt-response`, async ({ request }) => {
+                const body = await request.json() as Record<string, unknown>;
+                approvalCalls += 1;
+                expect(body).toMatchObject({ request_id: "req-tool-001", type: "tool_approval_response", approved: true });
+                return HttpResponse.json({ ok: true, request_id: "req-tool-001" });
+            })
+        );
+
+        renderChatPage("conv-1");
+
+        await waitFor(() => expect(screen.getByTestId("chat-input")).toBeInTheDocument());
+
+        await user.type(screen.getByTestId("chat-input"), "run tool");
+        await user.click(screen.getByTestId("send-button"));
+
+        await waitFor(() => expect(FakeWebSocket.instances).toHaveLength(1));
+        const socket = FakeWebSocket.instances[0];
+
+        await act(async () => {
+            socket.simulateMessage({ type: "run_queued", run_id: "run-approval" });
+            socket.simulateMessage({
+                type: "tool_approval_request",
+                request_id: "req-tool-001",
+                tool: "dangerous_tool",
+                args: { param: "value" },
+                agent: "Executor",
+                run_id: "run-approval",
+                sequence: 1,
+            });
+        });
+
+        await waitFor(() => expect(screen.getByText(/dangerous_tool/)).toBeInTheDocument());
+
+        const approveBtn = screen.getByRole("button", { name: /approve/i });
+        await user.click(approveBtn);
+
+        await waitFor(() => expect(approvalCalls).toBe(1));
+
+        const wsPayloads = socket.sentMessages.map((m) => JSON.parse(m));
+        const wsResponse = wsPayloads.find((p) => p.type === "tool_approval_response");
+        expect(wsResponse).toBeUndefined();
+    });
+
+    it("reconnect after disconnect restores pending HITL interrupt from replayed event", async () => {
+        const user = userEvent.setup();
+        let interruptCalls = 0;
+
+        server.use(
+            http.get(`${API}/canvases`, () =>
+                HttpResponse.json([{ id: "canvas-1", name: "My Canvas" }])
+            ),
+            http.get(`${API}/canvases/conversations/conv-1`, () =>
+                HttpResponse.json(
+                    mockConversation({ id: "conv-1", canvas_id: "canvas-1", name: "Reconnect HITL", messages: [] })
+                )
+            ),
+            http.get(`${API}/canvases/canvas-1`, () =>
+                HttpResponse.json({ id: "canvas-1", name: "My Canvas", nodes: { agents: [], tools: [] }, edges: [] })
+            ),
+            http.get(`${API}/canvases/canvas-1/conversations`, () =>
+                HttpResponse.json([mockConversationSummary({ id: "conv-1", name: "Reconnect HITL" })])
+            ),
+            http.post(`${API}/runs/run-reconnect-hitl/interrupt-response`, async ({ request }) => {
+                const body = await request.json() as Record<string, unknown>;
+                interruptCalls += 1;
+                expect(body).toMatchObject({ request_id: "req-reconnect-001" });
+                return HttpResponse.json({ ok: true, request_id: "req-reconnect-001" });
+            })
+        );
+
+        renderChatPage("conv-1");
+
+        await waitFor(() => expect(screen.getByTestId("chat-input")).toBeInTheDocument());
+
+        await user.type(screen.getByTestId("chat-input"), "start then disconnect");
+        await user.click(screen.getByTestId("send-button"));
+
+        await waitFor(() => expect(FakeWebSocket.instances).toHaveLength(1));
+        const firstSocket = FakeWebSocket.instances[0];
+
+        await act(async () => {
+            firstSocket.simulateMessage({ type: "run_queued", run_id: "run-reconnect-hitl" });
+            firstSocket.onclose?.(new CloseEvent("close", { code: 1006, wasClean: false }));
+        });
+
+        await waitFor(() => expect(FakeWebSocket.instances).toHaveLength(2));
+
+        // On reconnect, the server replays the human_input_request event
+        const reconnectSocket = FakeWebSocket.instances[1];
+        await act(async () => {
+            reconnectSocket.simulateMessage({
+                type: "human_input_request",
+                request_id: "req-reconnect-001",
+                question: "What happened during disconnect?",
+                agent: "Planner",
+                run_id: "run-reconnect-hitl",
+                sequence: 1,
+            });
+        });
+
+        await waitFor(() => expect(screen.getByText("What happened during disconnect?")).toBeInTheDocument());
+
+        const inlineInput = screen.getByPlaceholderText(/type your response/i);
+        await user.type(inlineInput, "all good");
+        await user.keyboard("{Enter}");
+
+        await waitFor(() => expect(interruptCalls).toBe(1));
+    });
+
+    it("closes active websocket and resets state when switching conversations", async () => {
+        const user = userEvent.setup();
+
+        server.use(
+            http.get(`${API}/canvases`, () =>
+                HttpResponse.json([{ id: "canvas-1", name: "My Canvas" }])
+            ),
+            http.get(`${API}/canvases/conversations/conv-1`, () =>
+                HttpResponse.json(
+                    mockConversation({ id: "conv-1", canvas_id: "canvas-1", name: "First Chat", messages: [] })
+                )
+            ),
+            http.get(`${API}/canvases/conversations/conv-2`, () =>
+                HttpResponse.json(
+                    mockConversation({ id: "conv-2", canvas_id: "canvas-1", name: "Second Chat", messages: [] })
+                )
+            ),
+            http.get(`${API}/canvases/canvas-1`, () =>
+                HttpResponse.json({ id: "canvas-1", name: "My Canvas", nodes: { agents: [], tools: [] }, edges: [] })
+            ),
+            http.get(`${API}/canvases/canvas-1/conversations`, () =>
+                HttpResponse.json([
+                    mockConversationSummary({ id: "conv-1", name: "First Chat" }),
+                    mockConversationSummary({ id: "conv-2", name: "Second Chat" }),
+                ])
+            )
+        );
+
+        renderChatPage("conv-1");
+
+        await waitFor(() => {
+            expect(screen.getByTestId("chat-input")).toBeInTheDocument();
+        });
+
+        // Start execution to open websocket
+        await user.type(screen.getByTestId("chat-input"), "start run");
+        await user.click(screen.getByTestId("send-button"));
+
+        await waitFor(() => {
+            expect(FakeWebSocket.instances).toHaveLength(1);
+        });
+
+        const firstSocket = FakeWebSocket.instances[0];
+
+        // Simulate tool approval request showing in UI
+        await act(async () => {
+            firstSocket.simulateMessage({ type: "run_queued", run_id: "run-first" });
+            firstSocket.simulateMessage({
+                type: "tool_approval_request",
+                request_id: "req-tool-first",
+                tool: "dangerous_tool",
+                args: {},
+                agent: "Executor",
+                run_id: "run-first",
+                sequence: 1,
+            });
+        });
+
+        await waitFor(() => {
+            expect(screen.getByText(/dangerous_tool/)).toBeInTheDocument();
+        });
+
+        // Click the Second Chat link in the sidebar to navigate to conv-2
+        const secondChatLink = screen.getByText("Second Chat");
+        await user.click(secondChatLink);
+
+        // Verify that the websocket was closed
+        await waitFor(() => {
+            expect(firstSocket.closed).toBe(true);
+        });
+
+        // Verify that the tool approval modal/overlay is reset and no longer showing in the new conversation
+        await waitFor(() => {
+            expect(screen.queryByText(/dangerous_tool/)).not.toBeInTheDocument();
+        });
+    });
+
+    it("clears pending tool approval when tool_approval_response is replayed", async () => {
+        const user = userEvent.setup();
+
+        server.use(
+            http.get(`${API}/canvases`, () =>
+                HttpResponse.json([{ id: "canvas-1", name: "My Canvas" }])
+            ),
+            http.get(`${API}/canvases/conversations/conv-1`, () =>
+                HttpResponse.json(
+                    mockConversation({ id: "conv-1", canvas_id: "canvas-1", name: "Live Chat", messages: [] })
+                )
+            ),
+            http.get(`${API}/canvases/canvas-1`, () =>
+                HttpResponse.json({ id: "canvas-1", name: "My Canvas", nodes: { agents: [], tools: [] }, edges: [] })
+            ),
+            http.get(`${API}/canvases/canvas-1/conversations`, () =>
+                HttpResponse.json([mockConversationSummary({ id: "conv-1", name: "Live Chat" })])
+            )
+        );
+
+        renderChatPage("conv-1");
+
+        await waitFor(() => {
+            expect(screen.getByTestId("chat-input")).toBeInTheDocument();
+        });
+
+        await user.type(screen.getByTestId("chat-input"), "run tool");
+        await user.click(screen.getByTestId("send-button"));
+
+        await waitFor(() => {
+            expect(FakeWebSocket.instances).toHaveLength(1);
+        });
+
+        const socket = FakeWebSocket.instances[0];
+
+        // 1. Simulate tool approval request showing in UI
+        await act(async () => {
+            socket.simulateMessage({ type: "run_queued", run_id: "run-approval" });
+            socket.simulateMessage({
+                type: "tool_approval_request",
+                request_id: "req-tool-001",
+                tool: "dangerous_tool",
+                args: { param: "value" },
+                agent: "Executor",
+                run_id: "run-approval",
+                sequence: 1,
+            });
+        });
+
+        // Verify that the approval buttons are visible
+        await waitFor(() => {
+            expect(screen.getByRole("button", { name: /approve/i })).toBeInTheDocument();
+        });
+
+        // 2. Simulate tool_approval_response is replayed/received
+        await act(async () => {
+            socket.simulateMessage({
+                type: "tool_approval_response",
+                request_id: "req-tool-001",
+                approved: true,
+                run_id: "run-approval",
+                sequence: 2,
+            });
+        });
+
+        // Verify that the approval buttons are gone (since activeInterrupt is cleared)
+        await waitFor(() => {
+            expect(screen.queryByRole("button", { name: /approve/i })).not.toBeInTheDocument();
+        });
+    });
 });
-
-

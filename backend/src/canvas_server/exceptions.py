@@ -6,6 +6,10 @@ class ConversationNotFoundError(Exception):
     pass
 
 
+class DurableRunNotFoundError(Exception):
+    pass
+
+
 class ToolCompilationError(Exception):
     pass
 
@@ -40,6 +44,11 @@ class PythonImportError(ToolCompilationError):
 
 class RAGEmbeddingError(Exception):
     """Raised when RAG embedding generation fails."""
+    pass
+
+
+class RunAbortedError(Exception):
+    """Raised when a durable run is cooperatively aborted."""
     pass
 
 

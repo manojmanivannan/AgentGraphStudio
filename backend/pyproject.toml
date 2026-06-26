@@ -86,3 +86,6 @@ build-backend = "hatchling.build"
 
 [tool.hatch.metadata]
 allow-direct-references = true
+
+[project.scripts]
+canvas-worker = "canvas_server.worker_main:main"

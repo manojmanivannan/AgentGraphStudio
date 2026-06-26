@@ -12,6 +12,7 @@ from sqlalchemy import (
     String,
     Text,
     TypeDecorator,
+    UniqueConstraint,
     Uuid,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -310,6 +311,11 @@ class Conversation(Base):
         back_populates="conversation",
         cascade="all, delete-orphan",
     )
+    runs: Mapped[list[DurableRun]] = relationship(
+        "DurableRun",
+        back_populates="conversation",
+        cascade="all, delete-orphan",
+    )
 
 
 class Message(Base):
@@ -367,4 +373,92 @@ class ConversationPlot(Base):
     conversation: Mapped[Conversation] = relationship(
         "Conversation", back_populates="plots"
     )
+
+
+class DurableRun(Base):
+    __tablename__ = "durable_runs"
+    __table_args__ = (
+        Index("idx_durable_runs_conversation", "conversation_id"),
+        Index("idx_durable_runs_status", "status"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        Uuid,
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+    conversation_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid,
+        ForeignKey("conversations.id", ondelete="CASCADE"),
+    )
+    prompt: Mapped[str] = mapped_column(Text)
+    target_agent_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, nullable=True, default=None
+    )
+    status: Mapped[str] = mapped_column(String(20), default="queued")
+    attempt_count: Mapped[int] = mapped_column(
+        sa.Integer(), default=0, server_default=sa.text("0"), nullable=False
+    )
+    lease_owner: Mapped[str | None] = mapped_column(
+        String(255), nullable=True, default=None
+    )
+    lease_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, default=None
+    )
+    replay_cursor: Mapped[int] = mapped_column(
+        sa.Integer(), default=0, server_default=sa.text("0"), nullable=False
+    )
+    started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, default=None
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, default=None
+    )
+    failed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, default=None
+    )
+    final_result: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    final_error: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow
+    )
+
+    conversation: Mapped[Conversation] = relationship(
+        "Conversation", back_populates="runs"
+    )
+    events: Mapped[list[DurableRunEvent]] = relationship(
+        "DurableRunEvent",
+        back_populates="run",
+        cascade="all, delete-orphan",
+        order_by="DurableRunEvent.sequence",
+    )
+
+
+class DurableRunEvent(Base):
+    __tablename__ = "durable_run_events"
+    __table_args__ = (
+        Index("idx_durable_run_events_run", "run_id"),
+        UniqueConstraint("run_id", "sequence", name="uq_durable_run_events_sequence"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        Uuid,
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+    run_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid,
+        ForeignKey("durable_runs.id", ondelete="CASCADE"),
+    )
+    sequence: Mapped[int] = mapped_column(sa.Integer(), nullable=False)
+    event_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    payload: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow
+    )
+
+    run: Mapped[DurableRun] = relationship("DurableRun", back_populates="events")
 

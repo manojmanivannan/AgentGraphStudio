@@ -63,6 +63,17 @@ export function executionEventToMessage(
     };
   }
 
+  if (event.type === "run_aborted") {
+    return {
+      ...baseMessage,
+      role: "system",
+      content: event.message,
+      agent_name: null,
+      node_id: null,
+      event_type: "warning",
+    };
+  }
+
   if (event.type === "human_input_request") {
     return {
       ...baseMessage,
@@ -130,6 +141,20 @@ export function executionEventToMessage(
       agent_name: classification.agentName,
       node_id: event.node_id ?? null,
       event_type: classification.eventType,
+    };
+  }
+
+  if (event.type === "human_input_response" || event.type === "interrupt_response") {
+    const isToolApproval = (event as any).approved !== undefined || (event as any).type === "tool_approval_response";
+    if (isToolApproval) {
+      return null;
+    }
+    const content = (event as any).content || (event as any).response || "";
+    return {
+      ...baseMessage,
+      role: "user",
+      content: content,
+      event_type: "human_input_response",
     };
   }
 
