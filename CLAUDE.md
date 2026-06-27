@@ -70,33 +70,29 @@ and edges on a ReactFlow canvas, then run workflows against a FastAPI + DSPy bac
 
 ```
 1. User types message in ChatOverlay input
-2. ChatOverlay creates/open WebSocket → /ws/conversations/{id}/run
-3. Sends {"prompt": "..."} (+ target_agent_id for per-agent execution)
-4. Backend routes/execute.py:
-   a. Accepts WebSocket, gets prompt
-   b. Loads Canvas from DB (with all nodes + edges)
-   c. Creates CanvasRunner(canvas, conversation_repo, conversation_id)
-   d. Calls runner.run(prompt, send_event, target_agent_id)
-5. CanvasRunner.run():
-   a. setup(): compile tools → build worker agents
-   b. Load conversation history from DB
-   c. Build dspy.History if enabling conversation history
-   d. Determine agent type (worker/router) and execute:
-      - If target_agent_id is router: build router agent → forward → process
-      - If target_agent_id is worker: attach events → run worker
-      - If no target: chain workers via handoff edges
-   e. Each agent runs StreamingReAct.aforward():
-      - Iterates ReAct loop (max 10): thought → tool → observation → loop
-      - Emits events: thought → tool_start → tool_result → thought → ... → finish
-      - Final: extract answer from trajectory
-   f. Auto-store memory for primary agent
-   g. Send run_complete event
-6. All events sent over WebSocket in real-time
-7. Frontend ChatPage receives events and updates UI:
-   - Intermediate execution steps (thoughts, handoffs, tool results) are grouped into a collapsible container.
-   - Human-in-the-Loop (HITL) inputs and tool approvals are grouped under `humanInterrupt` and rendered outside the collapsible steps block to persist inline input fields / Approve/Deny buttons in the natural conversation flow.
-   - Final answer is displayed as an assistant message block.
-   - Canvas nodes glow green on node_id match.
+2. ChatOverlay opens/reconnects WebSocket → /ws/conversations/{id}/run
+3. Sends {"prompt": "..."} to start a run (or {"run_id": "...", "after_sequence": N} to resume)
+4. Backend routes/execute.py WebSocket route:
+   a. Creates / retrieves a durable run record (status "queued") in PostgreSQL
+   b. Subscribes to the worker's in-memory event broker for the run
+   c. Kicks the BackgroundRunWorker and sends "run_queued" to the client
+5. BackgroundRunWorker claims the next runnable run record from PostgreSQL, setting a lease lock
+6. Worker instantiates ConversationRunCoordinator, passing a database-persisted event logger (send_event)
+7. ConversationRunCoordinator loads the canvas graph and resolves the starting agent
+8. Coordinator starts CanvasRunner with the client response handler (for HITL/approvals)
+9. CanvasRunner executes the agent loop:
+   a. setup(): build agent instances and compile custom python tools inside Docker Sandbox / llm-sandbox
+   b. Load conversation history from DB and build dspy.History
+   c. Determine agent type (worker/router) and run the DSPy StreamingReAct Loop
+   d. Query/write memory in mem0 + Qdrant and log traces to MLflow
+   e. Capture generated plots from sandbox sessions and save them as binary data to PostgreSQL
+10. send_event writes execution events and conversation messages durably to the database and publishes to the broker
+11. WebSocket connection reads broker events and streams them (or replays older sequence events) back to the UI
+12. Frontend ChatPage receives events and updates UI:
+    - Intermediate execution steps (thoughts, handoffs, tool results) are grouped into a collapsible container.
+    - Human-in-the-Loop (HITL) inputs and tool approvals are grouped under `humanInterrupt` and rendered outside the collapsible steps block to persist inline input fields / Approve/Deny buttons in the natural conversation flow.
+    - Final answer is displayed as an assistant message block.
+    - Canvas nodes glow green on node_id match.
 ```
 
 ---

@@ -47,17 +47,20 @@ graph TD
     classDef storage fill:#8b5cf6,stroke:#6d28d9,stroke-width:2px,color:#fff;
     classDef sandbox fill:#f59e0b,stroke:#d97706,stroke-width:2px,color:#fff;
 
-    A["React Canvas / Chat UI"]:::frontend -->|1. WebSocket Connection| B["FastAPI ws/conversations/:id/run"]:::backend
-    B -->|2. Delegate to coordinator| J["ConversationRunCoordinator"]:::backend
-    J -->|3. Load Graph & Resolve Entry Point| C[("PostgreSQL + pgvector")]:::storage
-    J -->|4. Initialize Runner| D["CanvasRunner"]:::backend
-    D -->|5. Lazy Compilation & Setup| E["Build Worker/Router Agents"]:::backend
-    E -->|6. Sandboxed Tool Execution| F["Docker Sandbox / llm-sandbox"]:::sandbox
-    F -->|7. Save Binary Plot Assets| C
-    E -->|8. Multi-turn Agent Logic| G["DSPy StreamingReAct Loop"]:::backend
-    G -->|9. Embeddings / RAG / Memory| H[("mem0 + Qdrant")]:::storage
-    G -->|10. Log Traces & Metrics| I["MLflow Tracing"]:::storage
-    G -->|11. Real-time Event Stream| A
+    A["React Canvas / Chat UI"]:::frontend -->|1. Connect / Start / Reconnect| B["FastAPI ws/conversations/:id/run"]:::backend
+    B -->|2. Create / Retrieve Durable Run| C[("PostgreSQL + pgvector")]:::storage
+    B -->|3. Kick Worker & Subscribe| W["BackgroundRunWorker"]:::backend
+    W -->|4. Claim Lease & Fetch Graph| C
+    W -->|5. Delegate to coordinator| J["ConversationRunCoordinator"]:::backend
+    J -->|6. Initialize Runner| D["CanvasRunner"]:::backend
+    D -->|7. Sandboxed Tool Execution| F["Docker Sandbox / llm-sandbox"]:::sandbox
+    F -->|8. Save Binary Plots| C
+    D -->|9. Multi-turn Agent Logic| G["DSPy StreamingReAct Loop"]:::backend
+    G -->|10. Embeddings / RAG / Memory| H[("mem0 + Qdrant")]:::storage
+    G -->|11. Log Traces & Metrics| I["MLflow Tracing"]:::storage
+    W -->|12. Persist Run Events & Messages| C
+    W -->|13. Publish to Event Broker| B
+    B -->|14. Stream Live & Replay Events| A
 ```
 
 </details>

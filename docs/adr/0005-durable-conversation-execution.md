@@ -43,6 +43,48 @@ flowchart LR
   STREAM --> UI
 ```
 
+### Execution Sequence
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Client as Frontend (WebSocket)
+    participant API as FastAPI Web App
+    participant DB as PostgreSQL
+    participant Worker as Background Worker
+
+    Client->>API: Connect WebSocket /ws/conversations/{conv_id}/run
+    Client->>API: Send prompt (or run_id + after_sequence to resume)
+    
+    alt Starting new run
+        API->>DB: Create run record (status='queued')
+        API-->>Client: Send event "run_queued" with run_id
+        API->>Worker: Wake up worker (kick)
+    else Resuming run
+        API->>DB: Fetch existing run record & replay history
+    end
+
+    Note over API,Worker: For in-process worker, API subscribes to broker. Otherwise, API polls DB
+    Worker->>DB: Claim & lease next runnable run (status='running')
+    
+    loop Run Loop
+        Worker->>Worker: Execute Agent Graph (CanvasRunner)
+        Worker->>DB: Append execution event (payload + sequence)
+        alt In-process worker
+            Worker->>API: Publish event to RunEventBroker
+            API-->>Client: Stream live event down WebSocket
+        else Split process (API-only mode)
+            API->>DB: Poll run events after last sequence (every 250ms)
+            DB-->>API: Return new events
+            API-->>Client: Stream events down WebSocket
+        end
+    end
+
+    Worker->>DB: Mark run completed / failed / aborted
+    Worker->>API: Publish final terminal event
+    API-->>Client: Close WebSocket connection
+```
+
 The runtime responsibilities become:
 
 1. API creates or resumes a durable run record.
