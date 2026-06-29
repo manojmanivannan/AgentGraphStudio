@@ -11,8 +11,15 @@ logger = logging.getLogger("canvas_server.streaming_react")
 class StreamingReAct(dspy.ReAct):
     """A dspy.ReAct subclass that emits events at each iteration of the ReAct loop.
 
-    Register callbacks via ``on_event(callback)`` where the callback is an async
-    callable accepting a single dict argument.
+    This class intercepts the internal ReAct loop to stream intermediate steps
+    (thoughts, tool starts, tool results) back to the UI in real-time. It also
+    handles Human-in-the-Loop (HITL) tool approvals by pausing execution until
+    a client response is received.
+
+    Args:
+        signature: The DSPy signature defining the inputs and outputs.
+        tools: A list of callable tools available to the agent.
+        max_iters (int, optional): Maximum number of ReAct loop iterations. Defaults to 10.
     """
 
     def __init__(self, signature, tools, max_iters=10):
@@ -20,9 +27,23 @@ class StreamingReAct(dspy.ReAct):
         self._event_callbacks = []
 
     def on_event(self, callback):
+        """Registers a callback function to receive streaming events.
+
+        Args:
+            callback: An async callable that accepts a single dictionary
+                representing the event payload.
+        """
         self._event_callbacks.append(callback)
 
     async def _emit(self, event: dict):
+        """Emits an event to all registered callbacks.
+
+        Args:
+            event (dict): The event payload to emit.
+
+        Raises:
+            RunAbortedError: If the run is aborted via the UI.
+        """
         for cb in self._event_callbacks:
             try:
                 await cb(event)
@@ -32,11 +53,30 @@ class StreamingReAct(dspy.ReAct):
                 logger.exception("Event callback failed")
 
     async def aforward(self, **input_args):
+        """Executes the asynchronous ReAct loop.
+
+        This method overrides the default DSPy `aforward` to inject event emission
+        and handle tool approval workflows.
+
+        Args:
+            **input_args: Keyword arguments representing the inputs to the agent
+                (e.g., user_request, history). `get_client_response` can also be
+                passed here to support HITL tool approvals.
+
+        Returns:
+            dspy.Prediction: The final prediction containing the result and trajectory.
+
+        Raises:
+            RunAbortedError: If the run is cooperatively aborted.
+        """
         trajectory = {}
         max_iters = input_args.pop("max_iters", self.max_iters)
+        
+        # Extract the client response callback, used to block and wait for UI approval
         get_client_response = input_args.pop("get_client_response", None)
 
         for idx in range(max_iters):
+            # Generate the next thought and tool call using the language model
             pred = await self._async_call_with_potential_trajectory_truncation(
                 self.react, trajectory, **input_args
             )
@@ -54,7 +94,7 @@ class StreamingReAct(dspy.ReAct):
                 {"type": "tool_start", "tool": pred.next_tool_name}
             )
 
-            # Check if this tool requires approval
+            # Check if this tool requires human approval before executing
             tool_obj = self.tools[pred.next_tool_name]
             original_fn = getattr(tool_obj, "func", getattr(tool_obj, "fn", tool_obj))
             requires_approval = getattr(original_fn, "requires_approval", False)
@@ -71,6 +111,7 @@ class StreamingReAct(dspy.ReAct):
                     "node_id": str(tool_node_id) if tool_node_id else None,
                 })
                 try:
+                    # Block execution and wait for the client to approve or deny via websocket
                     res = await get_client_response(request_id, "tool_approval_response")
                     approved = res.get("approved", False)
                 except RunAbortedError:
@@ -91,12 +132,15 @@ class StreamingReAct(dspy.ReAct):
                 continue
 
             try:
+                # Execute the actual tool function
                 observation = await self.tools[pred.next_tool_name].acall(
                     **pred.next_tool_args
                 )
             except RunAbortedError:
                 raise
             except Exception as err:
+                # Catch tool execution failures (e.g. syntax errors, timeouts) and feed them
+                # back to the LLM as an observation so it can attempt to correct the error.
                 observation = f"Execution error in {pred.next_tool_name}: {err}"
                 logger.exception("Tool call failed")
 
@@ -110,6 +154,7 @@ class StreamingReAct(dspy.ReAct):
                 }
             )
 
+        # Extract the final answer based on the accumulated trajectory
         extract = await self._async_call_with_potential_trajectory_truncation(
             self.extract, trajectory, **input_args
         )

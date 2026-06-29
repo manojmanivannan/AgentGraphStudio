@@ -19,16 +19,16 @@ logger = logging.getLogger("canvas_server.runner.run_state")
 class CanvasRunState:
     """Encapsulates the mutable runtime state for a canvas execution.
 
-    Maintains:
-      * node_map — lookup table of active AgentNodes by ID
-      * agents — dictionary of active StreamingReAct instances
-      * wired_agents — set of agent IDs that have attached event listeners
-      * run-specific context fields (user_prompt, send_event, history)
+    Maintains the lookup tables for nodes and compiled agent instances. It holds
+    ephemeral run context (like websocket callbacks and conversation history)
+    and acts as the centralized point for lazily compiling agents or wiring
+    event callbacks just-in-time before an agent executes.
 
-    Provides:
-      * get_or_build_agent — resolves agent lookup, lazy router compilation,
-        and dynamic RAG assembly.
-      * attach_events — wires event logging and message persistence callbacks.
+    Attributes:
+        canvas: The source Canvas ORM model.
+        agent_factory (AgentFactory): The factory for building DSPy agents.
+        conversation_service (ConversationService): Service for saving messages.
+        tool_registry (ToolRegistry): Compiled python sandbox tools.
     """
 
     def __init__(
@@ -65,14 +65,41 @@ class CanvasRunState:
         history_text: str,
         dspy_history: Any,
     ):
-        """Configure ephemeral fields for the duration of a single run() call."""
+        """Configures ephemeral fields for the duration of a single execution run.
+
+        Args:
+            user_prompt (str): The raw input message from the user.
+            send_event (Callable): Async callback to stream events over websocket.
+            history_text (str): Serialized conversation history for prompt injection.
+            dspy_history (Any): Native DSPy history list.
+        """
         self.user_prompt = user_prompt
         self.send_event = send_event
         self.history_text = history_text
         self.dspy_history = dspy_history
 
     async def get_or_build_agent(self, agent_id: uuid.UUID, task: str | None = None):
-        """Retrieve the agent instance, building or wiring it based on agent type and settings."""
+        """Retrieves or dynamically builds an agent instance for execution.
+
+        This method handles three distinct compilation pathways:
+        1. **RAG Workers**: Recompiled dynamically per-turn to embed the user's
+           specific query and retrieve relevant document passages.
+        2. **Routers**: Built lazily on first invocation because they require
+           active `send_event` callbacks bound to their handoff tools.
+        3. **Standard Workers**: Retrieved directly from the eager-compilation
+           cache populated during runner setup.
+
+        Args:
+            agent_id (uuid.UUID): The UUID of the requested agent node.
+            task (str | None, optional): Specific task query (used for RAG similarity search).
+
+        Returns:
+            StreamingReAct: The fully compiled and wired agent instance.
+
+        Raises:
+            ValueError: If the agent node ID does not exist in the graph.
+            RuntimeError: If handoff tools or dependencies are missing.
+        """
         agent_node = self.node_map.get(agent_id)
         if not agent_node:
             raise ValueError(f"Agent node not found: id={agent_id}")
@@ -138,8 +165,20 @@ class CanvasRunState:
         return agent
 
     def attach_events(self, agent_id: uuid.UUID, force: bool = False):
-        """Wire event callbacks on *agent_id* so StreamingReAct events flow
-        to ``send_event``. Idempotent unless force=True."""
+        """Wires event callbacks to the agent's StreamingReAct loop.
+
+        This ensures that intermediate steps (thoughts, tool invocations) are
+        intercepted and forwarded to both the UI (via `send_event`) and the
+        database (via `conversation_service.persist_message`).
+
+        It is idempotent by default to prevent double-wiring agents that stay
+        alive across multiple conversation turns.
+
+        Args:
+            agent_id (uuid.UUID): The UUID of the agent to wire.
+            force (bool, optional): If True, bypasses the idempotency check
+                (required when an agent is recompiled dynamically, e.g. RAG).
+        """
         if not self.send_event:
             return
         if agent_id in self.wired_agents and not force:

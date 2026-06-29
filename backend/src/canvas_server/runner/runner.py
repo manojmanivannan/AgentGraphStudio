@@ -45,11 +45,17 @@ logger = logging.getLogger("canvas_server.runner")
 
 
 class CanvasRunner:
-    """Orchestrates a canvas execution run.
+    """Orchestrates the lifecycle and execution of a canvas workflow run.
 
-    All services are created during ``__init__`` (they are lightweight wrappers).
-    ``setup()`` performs the actual work: compiling tools, building worker
-    agents.  This lets tests mock ``setup()`` and inject state directly.
+    The runner acts as the primary facade for the execution engine. It initializes
+    the supporting domain services (ToolRegistry, MemoryManager, EdgeGraph),
+    compiles tools in the secure sandbox, and routes execution to the correct
+    strategy (Worker vs Router) based on the target node.
+
+    Args:
+        canvas: The ORM Canvas model containing the graph definition.
+        conversation_repo: Database repository for managing message history.
+        conversation_id (str, optional): The UUID of the durable conversation.
     """
 
     def __init__(self, canvas, conversation_repo=None, conversation_id=None):
