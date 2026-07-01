@@ -71,7 +71,7 @@ class StreamingReAct(dspy.ReAct):
         """
         trajectory = {}
         max_iters = input_args.pop("max_iters", self.max_iters)
-        
+
         # Extract the client response callback, used to block and wait for UI approval
         get_client_response = input_args.pop("get_client_response", None)
 
