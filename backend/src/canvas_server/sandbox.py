@@ -30,9 +30,16 @@ class SandboxError(Exception):
 
 
 class SandboxManager:
-    """
-    Singleton that manages a pool of warm Docker containers
-    and maps conversations to specific interactive sessions.
+    """Singleton that manages a pool of warm Docker containers.
+
+    Uses `llm-sandbox` to maintain a pool of `ArtifactSandboxSession` instances.
+    Each session is mapped to a conversation ID to ensure that consecutive tool
+    executions within the same conversation share the same container and
+    filesystem state (e.g., variables, installed packages, generated plots).
+
+    Attributes:
+        _pool_manager: The underlying `llm-sandbox` PoolManager.
+        _active_sessions (dict): Mapping of conversation_id to active sessions.
     """
 
     _instance: SandboxManager | None = None
@@ -44,12 +51,21 @@ class SandboxManager:
 
     @classmethod
     def get(cls) -> SandboxManager:
+        """Retrieves the singleton instance of the SandboxManager."""
         if cls._instance is None:
             cls._instance = cls()
         return cls._instance
 
     async def initialize_pool(self) -> None:
-        """Pre-warm the container pool using llm-sandbox."""
+        """Pre-warms the container pool using llm-sandbox.
+
+        Must be called during application startup (e.g. FastAPI lifespan)
+        to ensure containers are ready before the first execution request,
+        minimizing latency.
+
+        Raises:
+            SandboxError: If Docker is unavailable or the pool fails to build.
+        """
         if self._initialized:
             return
 
@@ -57,6 +73,8 @@ class SandboxManager:
             f"Initializing llm-sandbox pool (max={POOL_SIZE_MAX}, min={POOL_SIZE_MIN})..."
         )
         try:
+            # We pre-install matplotlib and plotly so that plotting tools
+            # work instantly without requiring inline pip installs.
             self._pool_manager = create_pool_manager(
                 backend="docker",
                 config=PoolConfig(
@@ -72,9 +90,21 @@ class SandboxManager:
             raise SandboxError(f"Sandbox initialization failed: {e}") from e
 
     def get_session(self, conversation_id: str, enable_plotting: bool = True) -> ArtifactSandboxSession:
-        """
-        Get an existing interactive session for the conversation,
-        or create a new one from the pool.
+        """Retrieves or creates an interactive session for the given conversation.
+
+        If a session already exists for this `conversation_id`, it is reused,
+        ensuring that in-memory Python variables from previous tool calls
+        remain available.
+
+        Args:
+            conversation_id (str): The unique ID of the conversation.
+            enable_plotting (bool, optional): Whether to capture plotting artifacts.
+
+        Returns:
+            ArtifactSandboxSession: The configured sandbox session.
+
+        Raises:
+            SandboxError: If the manager has not been initialized.
         """
         if conversation_id in self._active_sessions:
             session = self._active_sessions[conversation_id]
@@ -89,7 +119,8 @@ class SandboxManager:
         logger.info(
             f"Creating new interactive session for conversation: {conversation_id}"
         )
-        # InteractiveSandboxSession maintains state across multiple .run() calls
+        # ArtifactSandboxSession maintains state across multiple .run() calls
+        # because the underlying Docker container is kept alive.
         session = ArtifactSandboxSession(
             lang=DEFAULT_LANG,
             pool=self._pool_manager,
@@ -97,18 +128,14 @@ class SandboxManager:
             enable_plotting=enable_plotting,
         )
 
-        # try:
-        #     session.open()
-        # except Exception as e:
-        #     logger.error(f"Failed to open sandbox session for {conversation_id}: {e}")
-        #     raise SandboxError(f"Could not open sandbox session: {e}")
-
         self._active_sessions[conversation_id] = session
         return session
 
     def release_session(self, conversation_id: str) -> None:
-        """
-        Release a session and return the container to the pool.
+        """Releases a session and returns the underlying container to the pool.
+
+        Args:
+            conversation_id (str): The ID of the conversation to release.
         """
         session = self._active_sessions.pop(conversation_id, None)
         if session:
