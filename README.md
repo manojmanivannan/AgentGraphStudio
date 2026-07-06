@@ -143,7 +143,7 @@ Once running, access the interfaces at:
 | `make up-gpu` | Run all stack services including local Ollama GPU container. |
 | `make down` | Stop container services while preserving volume data. |
 | `make down-v` | Stop container services and purge PostgreSQL/MLflow volumes. |
-| `make clean-sandbox` | Clean up leftover temporary python sandbox environments. |
+| `make clean-sandbox` | Clean up leftover temporary python sandbox environments (safely targets only containers prefixed with `sandbox-`). |
 
 > [!NOTE]
 > The setup defaults to an Ollama server running on the host machine (`http://192.168.1.120:11434`). Configure your local network or keys inside `backend/.env`.
