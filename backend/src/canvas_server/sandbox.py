@@ -14,7 +14,7 @@ import logging
 from typing import Any
 
 from llm_sandbox import ArtifactSandboxSession
-from llm_sandbox.pool import PoolConfig, create_pool_manager
+from llm_sandbox.pool import PoolConfig
 from llm_sandbox.pool.base import ContainerPoolManager
 
 logger = logging.getLogger("canvas_server.sandbox")
@@ -37,9 +37,10 @@ def create_named_pool_manager(
     **kwargs: Any,
 ) -> ContainerPoolManager:
     """Create a Docker pool manager that assigns unique names to containers."""
-    from llm_sandbox.pool.docker_pool import DockerPoolManager
-    from llm_sandbox.docker import SandboxDockerSession
     import uuid
+
+    from llm_sandbox.docker import SandboxDockerSession
+    from llm_sandbox.pool.docker_pool import DockerPoolManager
 
     class NamedDockerPoolManager(DockerPoolManager):
         def _create_session_for_container(self) -> Any:
@@ -54,11 +55,7 @@ def create_named_pool_manager(
                 **self.session_kwargs,
             )
 
-    return NamedDockerPoolManager(
-        config=config,
-        lang=lang,
-        **kwargs
-    )
+    return NamedDockerPoolManager(config=config, lang=lang, **kwargs)
 
 
 class SandboxManager:
@@ -85,16 +82,12 @@ class SandboxManager:
         if self._initialized:
             return
 
-        logger.info(
-            f"Initializing llm-sandbox pool (max={POOL_SIZE_MAX}, min={POOL_SIZE_MIN})..."
-        )
+        logger.info(f"Initializing llm-sandbox pool (max={POOL_SIZE_MAX}, min={POOL_SIZE_MIN})...")
         try:
             self._pool_manager = create_named_pool_manager(
-                config=PoolConfig(
-                    max_pool_size=POOL_SIZE_MAX, min_pool_size=POOL_SIZE_MIN
-                ),
+                config=PoolConfig(max_pool_size=POOL_SIZE_MAX, min_pool_size=POOL_SIZE_MIN),
                 lang=DEFAULT_LANG,
-                libraries=["matplotlib", "plotly"]
+                libraries=["matplotlib", "plotly"],
             )
             self._initialized = True
             logger.info("Sandbox pool initialized successfully")
@@ -113,13 +106,9 @@ class SandboxManager:
             return session
 
         if not self._pool_manager:
-            raise SandboxError(
-                "SandboxManager not initialized. Call initialize_pool() first."
-            )
+            raise SandboxError("SandboxManager not initialized. Call initialize_pool() first.")
 
-        logger.info(
-            f"Creating new interactive session for conversation: {conversation_id}"
-        )
+        logger.info(f"Creating new interactive session for conversation: {conversation_id}")
         # InteractiveSandboxSession maintains state across multiple .run() calls
         session = ArtifactSandboxSession(
             lang=DEFAULT_LANG,
