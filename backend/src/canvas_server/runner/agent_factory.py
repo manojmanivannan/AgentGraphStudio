@@ -54,10 +54,20 @@ class AgentFactory:
     # ------------------------------------------------------------------
 
     def build_signature(self, agent_node, passages: str | None = None) -> type[dspy.Signature]:
-        """Dynamically create a ``dspy.Signature`` for *agent_node*.
+        """Dynamically creates a `dspy.Signature` class for an agent node.
 
-        The signature includes a ``history`` field when conversation history is
-        enabled, and memory-hint instructions are injected into the prompt.
+        The signature dictates the input/output structure for the DSPy LLM module
+        and embeds instructions. This method compiles the user-defined role and
+        instructions, substituting template variables (like `{{ rag_document }}`),
+        and dynamically appends system prompts based on the agent's configured
+        capabilities (e.g., parallel handoff, plotting, HITL, memory).
+
+        Args:
+            agent_node: The AgentNode model defining configuration.
+            passages (str | None, optional): Retrieved RAG document text to inject.
+
+        Returns:
+            type[dspy.Signature]: A generated DSPy Signature class.
         """
         role = agent_node.role or ""
         instructions = agent_node.instructions or ""
@@ -163,10 +173,19 @@ class AgentFactory:
     # ------------------------------------------------------------------
 
     async def build_workers(self, agent_nodes: list) -> dict[uuid.UUID, StreamingReAct]:
-        """Eagerly build all worker agents from *agent_nodes*.
+        """Eagerly builds all worker agents during runner setup.
 
-        Returns ``{agent_id: StreamingReAct}`` for every node with
-        ``agent_type == "worker"``.  Router nodes are skipped (built lazily).
+        Worker agents do not depend on ephemeral run state (like event streams)
+        unless they have handoff targets (which is rare, but supported via lazy
+        rebuilding). Therefore, standard workers are built once when the runner
+        initializes, avoiding compilation overhead on every message.
+
+        Args:
+            agent_nodes (list): List of AgentNode instances from the canvas.
+
+        Returns:
+            dict[uuid.UUID, StreamingReAct]: Mapping of worker agent IDs to
+                compiled DSPy ReAct instances.
         """
         agents: dict[uuid.UUID, StreamingReAct] = {}
         for agent_node in agent_nodes:
@@ -185,7 +204,23 @@ class AgentFactory:
         history_text: str = "",
         dspy_history=None,
     ) -> StreamingReAct:
-        """Build a single worker agent, optionally with retrieved RAG passages and handoff tools."""
+        """Builds a single worker agent instance.
+
+        Collects tools from the registry, attaches memory providers if enabled,
+        injects plotting tools if enabled, creates the `ask_human` HITL tool,
+        and finally constructs the StreamingReAct agent with the built signature.
+
+        Args:
+            agent_node: The AgentNode configuration model.
+            passages (str | None, optional): Optional RAG context to inject into prompt.
+            handoff_tool_builder (HandoffToolBuilder | None, optional): Builder for delegation tools.
+            send_event (Callable | None, optional): Callback for websocket events.
+            history_text (str, optional): Formatted conversation history.
+            dspy_history (Any, optional): DSPy native history object.
+
+        Returns:
+            StreamingReAct: The constructed agent instance.
+        """
         tools = list(
             self._tool_registry.get_tools_for_agent(agent_node.id, self._edges)
         )
@@ -339,10 +374,24 @@ class AgentFactory:
         dspy_history,
         handoff_tool_builder: HandoffToolBuilder,
     ) -> StreamingReAct:
-        """Build (or rebuild) a router agent and register it in *existing_agents*.
+        """Lazily builds a router agent at execution time.
 
-        This is called lazily — either from ``run()`` directly or from within a
-        handoff-tool closure when a router→router handoff is triggered.
+        Unlike workers, routers MUST be built at runtime because they require
+        dynamically generated handoff tools. These handoff tools need the active
+        `send_event` callback and `dspy_history` context to properly bridge
+        execution from the router to the sub-agent.
+
+        Args:
+            agent_node: The Router agent node configuration.
+            existing_agents (dict): Reference to the runner's dictionary of compiled agents.
+            router_name (str): The display name of the router.
+            send_event (Callable): Active callback for websocket event dispatch.
+            history_text (str): Formatted conversational history string.
+            dspy_history: Active DSPy history list.
+            handoff_tool_builder (HandoffToolBuilder): Helper to construct delegation callables.
+
+        Returns:
+            StreamingReAct: The constructed router agent.
         """
         tools = list(
             self._tool_registry.get_tools_for_agent(agent_node.id, self._edges)

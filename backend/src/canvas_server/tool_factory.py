@@ -93,15 +93,27 @@ def coerce_arg(value: str, type_hint: str) -> Any:
 
 
 def _extract_function_ast(code: str, name: str):
-    """Extract the first user-defined function from *code* using AST parsing.
+    """Extracts function metadata from user code without executing it.
 
-    Parses the code into a syntax tree (safe — no execution), finds the first
-    ``FunctionDef``, then builds a minimal function *stub* (``def …: pass``)
-    with the same name, parameters, type annotations, and default values.
+    This uses Python's native `ast` module to safely parse the user's code block.
+    It locates the first defined function, reads its signature, annotations, and
+    default values, and then compiles a 'stub' function (e.g. `def my_func(a: int): pass`).
 
-    Because the stub body is simply ``pass``, import statements in the original
-    code are irrelevant — this never triggers ``ImportError`` on the host side.
-    The returned function object is compatible with ``inspect.signature()``.
+    Why AST? Because if we `exec()` the raw code on the host just to inspect it,
+    it would trigger `ImportError`s for packages that are only installed inside
+    the Docker sandbox container (like `pandas` or `requests`). AST parsing
+    sidesteps this entirely.
+
+    Args:
+        code (str): The raw python code string.
+        name (str): The name of the tool node.
+
+    Returns:
+        Callable: A minimal python function stub with matching signature and docstring.
+
+    Raises:
+        PythonSyntaxError: If the code cannot be parsed by the ast module.
+        ToolCompilationError: If no function definition is found.
     """
     try:
         tree = ast.parse(code)
@@ -224,11 +236,26 @@ async def compile_tool_from_code(
     dependencies: list[str] | None = None,
     runtime_session_id: str | None = None,
 ):
-    """Compile user tool code and return an async callable that executes in the sandbox.
+    """Compiles user tool code into a sandboxed async callable.
 
-    The returned function has __name__, __doc__, and __annotations__
-    set from the original code so that DSPy can build tool descriptors from it.
-    When called, it executes the function in a Docker sandbox.
+    The returned function has its metadata (`__name__`, `__doc__`, `__annotations__`)
+    set via AST parsing so DSPy can reflect on it correctly to build the LLM
+    tool prompt. When the callable is actually executed, it runs the code
+    remotely inside the `llm-sandbox` Docker container and marshals the result
+    back via JSON.
+
+    Args:
+        name (str): The logical name of the tool node.
+        code (str): The python source code provided by the user.
+        dependencies (list[str] | None, optional): Optional pip packages to install.
+        runtime_session_id (str | None, optional): The ID linking to the conversation's
+            persistent container session.
+
+    Returns:
+        Callable: An asynchronous function wrapper executing the code in the sandbox.
+
+    Raises:
+        PythonSyntaxError: If the initial syntax check inside the sandbox fails.
     """
     # Validate syntax via sandbox
     manager = await get_sandbox()
