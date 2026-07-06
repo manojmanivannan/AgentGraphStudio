@@ -11,7 +11,7 @@ class MockDockerPoolManager(MagicMock):
 @pytest.mark.asyncio
 async def test_sandbox_session_lifecycle():
     """Test that a SandboxSession can run code and be closed."""
-    with patch("canvas_server.sandbox.create_pool_manager") as mock_create_pool:
+    with patch("canvas_server.sandbox.create_named_pool_manager") as mock_create_pool:
         mock_pool = MockDockerPoolManager()
         mock_pool.image = "mock-image"
         mock_container = MagicMock()
@@ -46,7 +46,7 @@ async def test_sandbox_session_lifecycle():
 @pytest.mark.asyncio
 async def test_sandbox_session_install():
     """Test that a SandboxSession can install packages via libraries arg."""
-    with patch("canvas_server.sandbox.create_pool_manager") as mock_create_pool:
+    with patch("canvas_server.sandbox.create_named_pool_manager") as mock_create_pool:
         mock_pool = MockDockerPoolManager()
         mock_pool.image = "mock-image"
         mock_container = MagicMock()
@@ -81,7 +81,7 @@ async def test_sandbox_session_install():
 @pytest.mark.asyncio
 async def test_sandbox_manager_pooling():
     """Test that SandboxManager manages sessions and pool lifecycle."""
-    with patch("canvas_server.sandbox.create_pool_manager") as mock_create_pool:
+    with patch("canvas_server.sandbox.create_named_pool_manager") as mock_create_pool:
         mock_pool = MockDockerPoolManager()
         mock_create_pool.return_value = mock_pool
 

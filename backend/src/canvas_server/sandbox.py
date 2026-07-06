@@ -11,9 +11,11 @@ Architecture:
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 from llm_sandbox import ArtifactSandboxSession
 from llm_sandbox.pool import PoolConfig, create_pool_manager
+from llm_sandbox.pool.base import ContainerPoolManager
 
 logger = logging.getLogger("canvas_server.sandbox")
 
@@ -27,6 +29,36 @@ class SandboxError(Exception):
     """Base exception for sandbox operations."""
 
     pass
+
+
+def create_named_pool_manager(
+    config: PoolConfig,
+    lang: str,
+    **kwargs: Any,
+) -> ContainerPoolManager:
+    """Create a Docker pool manager that assigns unique names to containers."""
+    from llm_sandbox.pool.docker_pool import DockerPoolManager
+    from llm_sandbox.docker import SandboxDockerSession
+    import uuid
+
+    class NamedDockerPoolManager(DockerPoolManager):
+        def _create_session_for_container(self) -> Any:
+            configs = dict(self.runtime_configs)
+            configs["name"] = f"sandbox-{uuid.uuid4().hex}"
+            return SandboxDockerSession(
+                client=self.client,
+                image=self.image,
+                dockerfile=self.dockerfile,
+                lang=str(self.lang),
+                runtime_configs=configs,
+                **self.session_kwargs,
+            )
+
+    return NamedDockerPoolManager(
+        config=config,
+        lang=lang,
+        **kwargs
+    )
 
 
 class SandboxManager:
@@ -57,8 +89,7 @@ class SandboxManager:
             f"Initializing llm-sandbox pool (max={POOL_SIZE_MAX}, min={POOL_SIZE_MIN})..."
         )
         try:
-            self._pool_manager = create_pool_manager(
-                backend="docker",
+            self._pool_manager = create_named_pool_manager(
                 config=PoolConfig(
                     max_pool_size=POOL_SIZE_MAX, min_pool_size=POOL_SIZE_MIN
                 ),

@@ -55,7 +55,8 @@ class ConversationService:
         )
         if not self.conversation_repo or not self.conversation_id:
             return
-        async with self._lock:
+        db_lock = getattr(self.conversation_repo.session, "db_lock", self._lock)
+        async with db_lock:
             try:
                 await self.conversation_repo.add_message(
                     conversation_id=self.conversation_id,
