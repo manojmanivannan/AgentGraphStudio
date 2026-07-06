@@ -21,4 +21,5 @@ down-v:
 	docker compose --profile gpu down --remove-orphans --volumes
 
 clean-sandbox:
-	docker ps --format '{{.ID}} {{.Command}}' | grep 'python3' | awk '{print $$1}' | xargs -r docker stop
+	-docker ps -a --filter "name=^sandbox-" --format '{{.ID}}' | xargs -r docker stop
+	-docker ps -a --filter "name=^sandbox-" --format '{{.ID}}' | xargs -r docker rm

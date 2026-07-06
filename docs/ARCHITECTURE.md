@@ -956,7 +956,9 @@ To improve usability, the system now attempts to rename fresh conversations auto
 
 ### Concurrency & Session Safety
 
-When executing worker agents in parallel (using `execute_parallel_agents`), multiple concurrent tasks can emit thoughts, tool calls, or handoff messages simultaneously. To prevent concurrent flushes on the shared SQLAlchemy session (`Session is already flushing` errors), `ConversationService.persist_message` coordinates all message database persistence through an `asyncio.Lock`. This serializes message additions and flushes, ensuring database integrity and session safety during highly concurrent orchestrations.
+When executing worker agents in parallel (using `execute_parallel_agents`), multiple concurrent tasks can emit thoughts, tool calls, or handoff messages simultaneously. To prevent concurrent flushes on the shared SQLAlchemy session (`Session is already flushing` errors) and race conditions during sequence number generation for execution events (which would otherwise lead to unique constraint violations on `uq_durable_run_events_sequence`), the execution worker instantiates a session-level lock (`session.db_lock`).
+
+Both `ConversationService.persist_message` and the `send_event` callback in `background_run_worker.py` dynamically retrieve and acquire this lock (`getattr(session, "db_lock", ...)`). This serializes all database writes, flushes, and commits on the shared `AsyncSession` during the parallel agent execution, ensuring database integrity and session safety.
 
 This flow prevents stale `New Conversation` entries appearing in the Recent Chats pane when clients rely on cached API responses or miss the rename event.
 

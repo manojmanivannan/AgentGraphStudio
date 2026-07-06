@@ -83,7 +83,7 @@ A dedicated MLflow UI page route (`/observability/:canvas_id`) that embeds the M
 _Avoid_: Tracing, monitoring, dashboard
 
 **Sandbox**:
-An isolated Docker container session (managed via the `llm-sandbox` library) that executes all tool code in a sandboxed Python environment. Restricts access to host filesystem, host network, and host environment variables. Managed by the `canvas_server.sandbox.SandboxManager` singleton.
+An isolated Docker container session (managed via the `llm-sandbox` library) that executes all tool code in a sandboxed Python environment. Restricts access to host filesystem, host network, and host environment variables. Managed by the `canvas_server.sandbox.SandboxManager` singleton. Sandbox containers are assigned unique names of the format `sandbox-{uuid}` to enable target-specific clean-up via `make clean-sandbox` using the `--filter "name=^sandbox-"` Docker filter, avoiding accidental termination of other Python-based Docker containers.
 _Avoid_: Deno subprocess, WASM runtime, Pyodide sandbox
 
 **Tool Inspection**:

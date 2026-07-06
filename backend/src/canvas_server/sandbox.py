@@ -11,9 +11,11 @@ Architecture:
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 from llm_sandbox import ArtifactSandboxSession
-from llm_sandbox.pool import PoolConfig, create_pool_manager
+from llm_sandbox.pool import PoolConfig
+from llm_sandbox.pool.base import ContainerPoolManager
 
 logger = logging.getLogger("canvas_server.sandbox")
 
@@ -27,6 +29,33 @@ class SandboxError(Exception):
     """Base exception for sandbox operations."""
 
     pass
+
+
+def create_named_pool_manager(
+    config: PoolConfig,
+    lang: str,
+    **kwargs: Any,
+) -> ContainerPoolManager:
+    """Create a Docker pool manager that assigns unique names to containers."""
+    import uuid
+
+    from llm_sandbox.docker import SandboxDockerSession
+    from llm_sandbox.pool.docker_pool import DockerPoolManager
+
+    class NamedDockerPoolManager(DockerPoolManager):
+        def _create_session_for_container(self) -> Any:
+            configs = dict(self.runtime_configs)
+            configs["name"] = f"sandbox-{uuid.uuid4().hex}"
+            return SandboxDockerSession(
+                client=self.client,
+                image=self.image,
+                dockerfile=self.dockerfile,
+                lang=str(self.lang),
+                runtime_configs=configs,
+                **self.session_kwargs,
+            )
+
+    return NamedDockerPoolManager(config=config, lang=lang, **kwargs)
 
 
 class SandboxManager:
@@ -69,19 +98,15 @@ class SandboxManager:
         if self._initialized:
             return
 
-        logger.info(
-            f"Initializing llm-sandbox pool (max={POOL_SIZE_MAX}, min={POOL_SIZE_MIN})..."
-        )
+        logger.info(f"Initializing llm-sandbox pool (max={POOL_SIZE_MAX}, min={POOL_SIZE_MIN})...")
         try:
             # We pre-install matplotlib and plotly so that plotting tools
             # work instantly without requiring inline pip installs.
-            self._pool_manager = create_pool_manager(
-                backend="docker",
-                config=PoolConfig(
-                    max_pool_size=POOL_SIZE_MAX, min_pool_size=POOL_SIZE_MIN
-                ),
+            self._pool_manager = create_named_pool_manager(
+                config=PoolConfig(max_pool_size=POOL_SIZE_MAX, min_pool_size=POOL_SIZE_MIN),
                 lang=DEFAULT_LANG,
-                libraries=["matplotlib", "plotly"]
+                backend="docker",
+                libraries=["matplotlib", "plotly"],
             )
             self._initialized = True
             logger.info("Sandbox pool initialized successfully")
@@ -112,15 +137,10 @@ class SandboxManager:
             return session
 
         if not self._pool_manager:
-            raise SandboxError(
-                "SandboxManager not initialized. Call initialize_pool() first."
-            )
+            raise SandboxError("SandboxManager not initialized. Call initialize_pool() first.")
 
-        logger.info(
-            f"Creating new interactive session for conversation: {conversation_id}"
-        )
-        # ArtifactSandboxSession maintains state across multiple .run() calls
-        # because the underlying Docker container is kept alive.
+        logger.info(f"Creating new interactive session for conversation: {conversation_id}")
+        # InteractiveSandboxSession maintains state across multiple .run() calls
         session = ArtifactSandboxSession(
             lang=DEFAULT_LANG,
             pool=self._pool_manager,

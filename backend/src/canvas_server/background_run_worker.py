@@ -210,6 +210,9 @@ class BackgroundRunWorker:
         target_agent_id: uuid.UUID | None,
     ) -> None:
         async with self._session_factory() as session:
+            if not hasattr(session, "db_lock"):
+                session.db_lock = asyncio.Lock()
+
             conv_repo = ConversationRepo(session)
             canvas_repo = CanvasRepo(session)
             run_repo = DurableRunRepo(session)
@@ -220,17 +223,23 @@ class BackgroundRunWorker:
             )
 
             async def send_event(event: dict[str, Any]) -> None:
-                current_run = await run_repo.get_or_404(run_id)
-                if current_run.status == "aborting":
-                    raise RunAbortedError("Run aborted by user")
+                db_lock = getattr(session, "db_lock", None)
+                if db_lock is None:
+                    db_lock = asyncio.Lock()
+                    session.db_lock = db_lock
 
-                event_type = str(event.get("type", "event"))
-                durable_event = await run_repo.append_event(
-                    run_id,
-                    event_type=event_type,
-                    payload=event,
-                )
-                await session.commit()
+                async with db_lock:
+                    current_run = await run_repo.get_or_404(run_id)
+                    if current_run.status == "aborting":
+                        raise RunAbortedError("Run aborted by user")
+
+                    event_type = str(event.get("type", "event"))
+                    durable_event = await run_repo.append_event(
+                        run_id,
+                        event_type=event_type,
+                        payload=event,
+                    )
+                    await session.commit()
 
                 payload = dict(event)
                 payload["sequence"] = durable_event.sequence

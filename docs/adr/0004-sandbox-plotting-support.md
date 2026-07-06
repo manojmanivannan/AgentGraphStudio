@@ -68,6 +68,7 @@ To support this:
 * **Execution & Sandbox:**
   * Initialized the Docker container pool with `libraries=["matplotlib", "plotly"]`.
   * Used `ArtifactSandboxSession` in `PlotProvider` for intercepting plot events.
+  * Assigned unique names of the format `sandbox-{uuid}` to sandbox containers to allow target-specific clean-up via `make clean-sandbox` (using Docker's `--filter "name=^sandbox-"`), avoiding accidental termination of other Python-based Docker containers.
   * Exposed a FastAPI static mount on the backend (`/api/static/plots`) pointing to `storage/plots/` to serve the images.
 * **Agent Factory Instructions:**
   * Routers and workers are automatically supplied with instructions to preserve the generated image links (`![Plot](/api/static/plots/...)`) in their final text output.
