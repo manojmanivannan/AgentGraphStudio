@@ -19,8 +19,6 @@ services:
   backend:
     build:
       context: ./backend
-    ports:
-      - "8000:8000"
     env_file: ./.env
     environment:
       DATABASE_URL: ${DATABASE_URL}
@@ -86,6 +84,7 @@ services:
       - "5173:5173"
     env_file: ./.env
     environment:
+      VITE_USE_PROXY: ${VITE_USE_PROXY}
       VITE_API_HOST: ${VITE_API_HOST}
       VITE_API_PROXY_TARGET: ${VITE_API_PROXY_TARGET}
       MLFLOW_PROXY_TARGET: ${MLFLOW_PROXY_TARGET}

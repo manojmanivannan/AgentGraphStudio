@@ -138,7 +138,7 @@ make up-gpu
 
 Once running, access the interfaces at:
 *   **Frontend Studio**: `http://localhost:5173`
-*   **FastAPI Backend**: `http://localhost:8000/docs`
+*   **FastAPI Backend Docs (via frontend proxy)**: `http://localhost:5173/docs` (also supports `http://localhost:5173/api/docs`)
 *   **MLflow Observability**: `http://localhost:5000`
 
 ### Docker Makefile Commands
@@ -192,6 +192,7 @@ Create a root `.env` file. Refer to `.env.example` for templated setups:
 | `MLFLOW_TRACKING_URI`| `http://mlflow:5000` | MLflow host tracking endpoint. |
 | `VITE_API_HOST` | (empty) | Optional frontend API host override for direct API/websocket calls. |
 | `VITE_API_PROXY_TARGET` | `http://backend:8000` | Frontend container proxy target for `/api`. |
+| `VITE_USE_PROXY` | `true` | When `true`, frontend calls same-origin `/api` and `/ws` so backend can stay internal to Docker network. |
 | `MLFLOW_PROXY_TARGET` | `http://mlflow:5000` | Frontend container proxy target for MLflow UI/API. |
 
 > [!WARNING]
