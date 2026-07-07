@@ -1,16 +1,17 @@
 services:
   postgres:
     image: pgvector/pgvector:pg17
+    env_file: ./.env
     environment:
-      POSTGRES_USER: canvas
-      POSTGRES_PASSWORD: canvas
-      POSTGRES_DB: canvas_db
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
     volumes:
       - pgdata:/var/lib/postgresql/data
     networks:
       - agent_network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U canvas -d canvas_db"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -20,13 +21,13 @@ services:
       context: ./backend
     ports:
       - "8000:8000"
+    env_file: ./.env
     environment:
-      DATABASE_URL: postgresql+asyncpg://canvas:canvas@postgres:5432/canvas_db
-      MLFLOW_TRACKING_URI: http://mlflow:5000
-      EXECUTION_MODE: api
-    env_file: ./backend/.env
+      DATABASE_URL: ${DATABASE_URL}
+      MLFLOW_TRACKING_URI: ${MLFLOW_TRACKING_URI}
+      EXECUTION_MODE: ${BACKEND_EXECUTION_MODE}
     extra_hosts:
-      - "host.docker.internal:host-gateway"
+      - "host.docker.internal:host-gateway" # for instantiating sandboxes
     networks:
       - agent_network
     volumes:
@@ -52,12 +53,12 @@ services:
     build:
       context: ./backend
     command: ["uv", "run", "python", "-m", "canvas_server.worker_main"]
+    env_file: ./.env
     environment:
-      DATABASE_URL: postgresql+asyncpg://canvas:canvas@postgres:5432/canvas_db
-      MLFLOW_TRACKING_URI: http://mlflow:5000
-      EXECUTION_MODE: worker
-      HF_TOKEN: ${HF_TOKEN:-}
-    env_file: ./backend/.env
+      DATABASE_URL: ${DATABASE_URL}
+      MLFLOW_TRACKING_URI: ${MLFLOW_TRACKING_URI}
+      EXECUTION_MODE: ${WORKER_EXECUTION_MODE}
+      HF_TOKEN: ${HF_TOKEN}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:
@@ -83,10 +84,11 @@ services:
       context: ./frontend
     ports:
       - "5173:5173"
+    env_file: ./.env
     environment:
-      VITE_API_HOST: ${VITE_API_HOST:-}
-      VITE_API_PROXY_TARGET: http://backend:8000
-      MLFLOW_PROXY_TARGET: http://mlflow:5000
+      VITE_API_HOST: ${VITE_API_HOST}
+      VITE_API_PROXY_TARGET: ${VITE_API_PROXY_TARGET}
+      MLFLOW_PROXY_TARGET: ${MLFLOW_PROXY_TARGET}
     networks:
       - agent_network
     depends_on:
@@ -107,6 +109,7 @@ services:
       context: ./mlflow
     ports:
       - "5000:5000"
+    env_file: ./.env
     environment:
       MLFLOW_SERVER_ALLOWED_HOSTS: "*"
     volumes:
@@ -134,7 +137,7 @@ services:
     volumes:
       - ollama_data:/root/.ollama
       - ./ollama_entrypoint.sh:/entrypoint.sh
-    env_file: ./backend/.env
+    env_file: ./.env
     tty: true
     restart: always
     networks:

@@ -98,7 +98,7 @@ graph TD
 <summary>📂 <strong>View Repository Directory Map</strong></summary>
 
 ```
-mj-agent-framework/
+AgentGraphStudio/
 ├── backend/                  # FastAPI + DSPy execution backend
 │   ├── src/canvas_server/
 │   │   ├── runner/           # Core execution engine (CanvasRunner, RAG, factory)
@@ -121,6 +121,12 @@ mj-agent-framework/
 ## ⚡ Quick Start (With Docker)
 
 The fastest way to spin up pgvector, PostgreSQL, MLflow, the backend server, and the frontend app.
+
+Before starting services, bootstrap the root environment file:
+
+```bash
+cp .env.example .env
+```
 
 ```bash
 # Start docker containers (excluding Ollama by default)
@@ -146,7 +152,7 @@ Once running, access the interfaces at:
 | `make clean-sandbox` | Clean up leftover temporary python sandbox environments (safely targets only containers prefixed with `sandbox-`). |
 
 > [!NOTE]
-> The setup defaults to an Ollama server running on the host machine (`http://192.168.1.120:11434`). Configure your local network or keys inside `backend/.env`.
+> The setup defaults to an Ollama server running on the host machine (`http://192.168.1.120:11434`). Configure your local network or keys inside the repository root `.env`.
 
 ---
 
@@ -166,11 +172,17 @@ Pre-built agent workflow examples are available in the [examples](./examples) di
 
 ## ⚙️ Configuration Variables
 
-Create a `backend/.env` file. Refer to `backend/.env.example` for templated setups:
+Create a root `.env` file. Refer to `.env.example` for templated setups:
 
 | Variable | Default Value | Description |
 | :--- | :--- | :--- |
+| `POSTGRES_USER` | `canvas` | PostgreSQL username used by the postgres container. |
+| `POSTGRES_PASSWORD` | `canvas` | PostgreSQL password used by the postgres container. |
+| `POSTGRES_DB` | `canvas_db` | PostgreSQL database name used by the postgres container. |
 | `DATABASE_URL` | `postgresql+asyncpg://...` | Database connection string. |
+| `BACKEND_EXECUTION_MODE` | `api` | Execution mode for the backend API container. |
+| `WORKER_EXECUTION_MODE` | `worker` | Execution mode for the background worker container. |
+| `HF_TOKEN` | (empty) | Optional Hugging Face token for compatible providers/models. |
 | `LLM_BASE_URL` | `http://192.168.1.120:11434` | Ollama or provider LLM endpoint. |
 | `LLM_MODEL` | `ollama_chat/gemma4:31b` | Default inference LLM model for agents. |
 | `LLM_PROVIDER_TYPE` | `ollama` | Provider for memory indexing (`ollama`, `openai`). |
@@ -178,7 +190,9 @@ Create a `backend/.env` file. Refer to `backend/.env.example` for templated setu
 | `MEM0_EMBEDDER_MODEL`| `nomic-embed-text` | Embedding model for memory and RAG. |
 | `MEM0_EMBEDDER_DIMENSIONS`| `768` | Dimension count for embedding vector space. |
 | `MLFLOW_TRACKING_URI`| `http://mlflow:5000` | MLflow host tracking endpoint. |
-| `MLFLOW_ENABLED` | `true` | Enables or disables DSPy trace logging. |
+| `VITE_API_HOST` | (empty) | Optional frontend API host override for direct API/websocket calls. |
+| `VITE_API_PROXY_TARGET` | `http://backend:8000` | Frontend container proxy target for `/api`. |
+| `MLFLOW_PROXY_TARGET` | `http://mlflow:5000` | Frontend container proxy target for MLflow UI/API. |
 
 > [!WARNING]
 > Local Qdrant directories are not safe for concurrent multi-process file writing. The backend coordinates reads and writes through an in-process memory singleton to avoid file locking conflicts.
