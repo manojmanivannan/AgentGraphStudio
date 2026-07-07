@@ -17,7 +17,18 @@ import {
 import type { Message, ExecutionEvent, ConversationSummary } from "@/types";
 import { executionEventToMessage } from "./executionEventMessage";
 
-const WS_BASE = `ws://${import.meta.env.VITE_API_HOST || "localhost:8000"}`;
+const useProxyMode = ((import.meta.env.VITE_USE_PROXY as string | undefined)?.trim() || "").toLowerCase() === "true";
+const configuredWsHost = (import.meta.env.VITE_API_HOST as string | undefined)?.trim();
+const fallbackWsBase = configuredWsHost
+  ? /^wss?:\/\//.test(configuredWsHost)
+    ? configuredWsHost
+    : `ws://${configuredWsHost}`
+  : "ws://localhost:8000";
+const WS_BASE = useProxyMode
+  ? (typeof window !== "undefined"
+      ? `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host}`
+      : "ws://localhost:5173")
+  : fallbackWsBase;
 
 interface UseChatWebSocketProps {
   conversation_id?: string;

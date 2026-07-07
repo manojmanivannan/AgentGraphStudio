@@ -150,13 +150,14 @@ When the Properties overlay slides open, the canvas container shrinks and `fitVi
 ## Project Structure
 
 ```
-mj-agent-framework/
+AgentGraphStudio/
 ├── README.md                 # Quick start, env vars, top-level overview
 ├── CLAUDE.md                 # AI/human developer context: where things live, recipes
 ├── CONTEXT.md                # Glossary of canonical terms
 ├── ARCHITECTURE.md           # ← YOU ARE HERE
 ├── CONTEXT.md                # Glossary of canonical terms
 ├── docker-compose.yml        # postgres + backend + frontend + mlflow
+├── .env.example              # Template for root .env consumed by docker compose
 ├── canvas_screen.png         # Screenshot for README
 ├── ollama_entrypoint.sh      # Ollama GPU entry point (commented out in compose)
 │
@@ -167,8 +168,6 @@ mj-agent-framework/
 │   ├── alembic/
 │   │   ├── env.py
 │   │   └── versions/         # Auto-generated migration scripts
-│   ├── .env                  # LLM_BASE_URL, LLM_MODEL, MLFLOW_TRACKING_URI, etc.
-│   ├── .env.example          # Template for .env
 │   ├── src/
 │   │   └── canvas_server/
 │   │       ├── __init__.py

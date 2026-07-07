@@ -12,18 +12,23 @@ import type {
 } from "@/types";
 
 const configuredApiHost = (import.meta.env.VITE_API_HOST as string | undefined)?.trim();
+const useProxyMode = ((import.meta.env.VITE_USE_PROXY as string | undefined)?.trim() || "").toLowerCase() === "true";
 const defaultApiOrigin =
   typeof window !== "undefined"
     ? `${window.location.protocol}//${window.location.hostname}:8000`
     : "http://localhost:8000";
+const browserOrigin =
+  typeof window !== "undefined" ? window.location.origin : "http://localhost:5173";
 
 export const apiOrigin = configuredApiHost
   ? /^https?:\/\//.test(configuredApiHost)
     ? configuredApiHost
     : `http://${configuredApiHost}`
-  : defaultApiOrigin;
+  : useProxyMode
+    ? browserOrigin
+    : defaultApiOrigin;
 
-const API_BASE = `${apiOrigin}/api`;
+const API_BASE = useProxyMode ? "/api" : `${apiOrigin}/api`;
 
 function isNetworkFetchError(error: unknown): error is Error {
   return error instanceof Error && /fetch|network|load failed|failed to fetch/i.test(error.message);
