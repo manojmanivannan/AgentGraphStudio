@@ -52,6 +52,10 @@ _Avoid_: Exchange, round
 A Canvas at the moment of execution — the resolved combination of Agent Nodes, Tool Nodes, and Edges that the backend compiles into live DSPy agent instances.
 _Avoid_: Pipeline, graph, run
 
+**Self-contained Distribution**:
+A packaged application runtime that includes all required Agent Builder services locally and runs without Docker Compose.
+_Avoid_: Docker stack, compose app, container bundle
+
 **Execution Event**:
 A JSON message streamed over WebSocket during a Workflow run. Types: run_start, agent_start, thought, tool_start, tool_result, handoff, final_answer, run_complete, error.
 _Avoid_: Console, output, log, terminal
