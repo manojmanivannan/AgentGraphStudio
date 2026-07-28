@@ -7,16 +7,30 @@ import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
-TEST_DB_URL = os.environ.get(
-    "TEST_DATABASE_URL",
-    "sqlite+aiosqlite:///test.db",
-)
+def _compute_test_db_url() -> str:
+    base_url = os.environ.get(
+        "TEST_DATABASE_URL",
+        "sqlite+aiosqlite:///test.db",
+    )
+
+    worker_id = os.environ.get("PYTEST_XDIST_WORKER")
+    if not worker_id:
+        return base_url
+
+    prefix = "sqlite+aiosqlite:///"
+    if not base_url.startswith(prefix):
+        return base_url
+
+    db_path = base_url[len(prefix) :]
+    if db_path.endswith(".db"):
+        db_path = db_path[:-3]
+    return f"{prefix}{db_path}_{worker_id}.db"
 
 
 def _reset_engine_and_factory():
     from canvas_server.database import reset_session_factory
     reset_session_factory()
-    os.environ["DATABASE_URL"] = TEST_DB_URL
+    os.environ["DATABASE_URL"] = _compute_test_db_url()
 
 
 @pytest.fixture(scope="session")
@@ -51,7 +65,7 @@ async def fresh_db():
     from canvas_server.database import Base, async_reset_session_factory, get_engine
 
     _reset_engine_and_factory()
-    engine = get_engine(TEST_DB_URL)
+    engine = get_engine(_compute_test_db_url())
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
@@ -66,7 +80,7 @@ async def fresh_db():
 @pytest_asyncio.fixture
 async def test_session(fresh_db):
     from canvas_server.database import get_session_factory
-    factory = get_session_factory(TEST_DB_URL)
+    factory = get_session_factory(_compute_test_db_url())
     async with factory() as session:
         yield session
 
@@ -76,7 +90,7 @@ async def test_client(fresh_db):
     from canvas_server.database import get_session, get_session_factory
     from canvas_server.main import app
 
-    factory = get_session_factory(TEST_DB_URL)
+    factory = get_session_factory(_compute_test_db_url())
 
     async def override_get_session():
         async with factory() as session:
