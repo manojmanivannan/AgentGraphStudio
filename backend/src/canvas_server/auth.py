@@ -9,6 +9,7 @@ from urllib.parse import urlparse
 
 from fastapi import Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.requests import HTTPConnection
 
 from canvas_server.config import settings
 from canvas_server.database import get_session
@@ -87,7 +88,7 @@ def verify_origin(request: Request) -> None:
 
 
 async def get_current_user(
-    request: Request,
+    request: HTTPConnection,
     session: AsyncSession = Depends(get_session),
 ) -> User:
     """Resolve the current user from the session cookie.
@@ -95,6 +96,15 @@ async def get_current_user(
     Enforces the 30-min sliding idle timeout (extends ``expires_at`` and
     ``last_seen_at`` on every protected-route hit) and the 7-day absolute cap
     (fixed from login). Expired / missing sessions are rejected with 401.
+
+    The connection is typed ``HTTPConnection`` (the shared base of
+    ``Request`` and ``WebSocket``) so this one dependency authenticates both
+    HTTP routes and the WebSocket run route. FastAPI only injects a
+    ``Request``-typed param for HTTP scopes (the websocket branch is skipped),
+    so a plain ``request: Request`` here would never receive a value on the WS
+    path — leaving the WS route unauthenticated. ``HTTPConnection`` is injected
+    unconditionally and exposes ``.cookies`` on both connection types. See
+    ADR 0007.
     """
     token = request.cookies.get(COOKIE_NAME)
     if not token:

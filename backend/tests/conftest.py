@@ -256,14 +256,24 @@ async def authed_sync_client(fresh_db):
 
     app.dependency_overrides[get_session] = override_get_session
 
+    # Use the TestClient default host ("testserver") and a matching Origin so the
+    # session cookie scopes to "testserver" — required because
+    # TestClient.websocket_connect() hardcodes "ws://testserver" and only sends
+    # cookies scoped to that host. ("http://test" would scope the cookie to
+    # "test" and the WS upgrade would arrive without it.) The matching Origin
+    # also satisfies verify_origin's same-origin CSRF check.
     client = TestClient(app)
     creds = {
         "email": f"user_{uuid.uuid4().hex[:12]}@example.com",
         "password": "super-secret-123",
     }
-    r = client.post("/api/auth/register", json=creds, headers={"Origin": "http://test"})
+    r = client.post(
+        "/api/auth/register", json=creds, headers={"Origin": "http://testserver"}
+    )
     assert r.status_code == 201, r.text
-    r = client.post("/api/auth/login", json=creds, headers={"Origin": "http://test"})
+    r = client.post(
+        "/api/auth/login", json=creds, headers={"Origin": "http://testserver"}
+    )
     assert r.status_code == 200, r.text
     me = client.get("/api/auth/me")
     assert me.status_code == 200, me.text
@@ -271,6 +281,64 @@ async def authed_sync_client(fresh_db):
     client.auth_email = creds["email"]  # type: ignore[attr-defined]
     yield client
     client.close()
+    app.dependency_overrides.clear()
+
+
+@pytest_asyncio.fixture
+async def make_authed_sync_client(fresh_db):
+    """Sync TestClient analogue of ``make_authed_client`` (issue #37).
+
+    Factory yielding fresh authenticated sync ``TestClient``s (one per call), each
+    with its own cookie jar backed by a different registered user. Required for
+    cross-user WebSocket tests: the sync TestClient is the only WS-capable client
+    available (httpx AsyncClient has no websocket_connect). Each client exposes
+    ``auth_user_id`` / ``auth_email`` and uses ``base_url="http://test"`` so the
+    same-origin Origin header passes the CSRF check. All clients share the test
+    ``get_session`` override; cleanup closes them at teardown.
+    """
+    from fastapi.testclient import TestClient
+
+    from canvas_server.database import get_session, get_session_factory
+    from canvas_server.main import app
+
+    factory = get_session_factory(TEST_DB_URL)
+
+    async def override_get_session():
+        async with factory() as session:
+            yield session
+
+    app.dependency_overrides[get_session] = override_get_session
+
+    created: list[TestClient] = []
+
+    def _make() -> TestClient:
+        # Default host "testserver" + matching Origin so the session cookie
+        # scopes to "testserver" and is sent on websocket_connect (see
+        # authed_sync_client for why).
+        client = TestClient(app)
+        creds = {
+            "email": f"user_{uuid.uuid4().hex[:12]}@example.com",
+            "password": "super-secret-123",
+        }
+        r = client.post(
+            "/api/auth/register", json=creds, headers={"Origin": "http://testserver"}
+        )
+        assert r.status_code == 201, r.text
+        r = client.post(
+            "/api/auth/login", json=creds, headers={"Origin": "http://testserver"}
+        )
+        assert r.status_code == 200, r.text
+        me = client.get("/api/auth/me")
+        assert me.status_code == 200, me.text
+        client.auth_user_id = uuid.UUID(me.json()["id"])  # type: ignore[attr-defined]
+        client.auth_email = creds["email"]  # type: ignore[attr-defined]
+        created.append(client)
+        return client
+
+    yield _make
+
+    for client in created:
+        client.close()
     app.dependency_overrides.clear()
 
 

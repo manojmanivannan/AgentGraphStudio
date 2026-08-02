@@ -209,12 +209,48 @@ async def run_conversation(
     conversation_id: uuid.UUID,
     current_user: User = Depends(get_current_user),
 ):
+    # Handshake auth: Depends(get_current_user) runs before accept(); FastAPI
+    # rejects the upgrade (closes the socket) when it raises HTTPException, so
+    # no valid session -> no upgrade. get_current_user is typed HTTPConnection
+    # precisely so it works on this WS path (see auth.py + ADR 0007).
     await websocket.accept()
     run_id: uuid.UUID | None = None
     worker = None
     queue = None
 
     try:
+        # Ownership re-check (per-handshake, before the prompt is read).
+        #
+        # Decision (ADR 0007): a per-handshake check is sufficient — there is no
+        # per-run re-check — because (a) canvases.owner_id is immutable (no
+        # transfer endpoint; save_nodes_and_edges never reassigns it), so
+        # ownership cannot change mid-handshake, and (b) a single connection
+        # performs a single run action (one prompt, then stream until terminal).
+        # The resume (run_id replay) path does not widen the window: the path
+        # conversation's ownership is verified here first, then the run is
+        # required to belong to that same conversation (400 below otherwise), so
+        # a foreign run_id can't escape the owned-conversation boundary.
+        #
+        # We verify ownership BEFORE reading the prompt so a cross-user
+        # connection is rejected immediately with a clean error event and no run
+        # is ever created. Same message for foreign + missing (don't leak
+        # existence), mirroring the REST execute routes.
+        factory = get_session_factory()
+        async with factory() as session:
+            conv_repo = ConversationRepo(session)
+            try:
+                conv = await conv_repo.get_or_404(conversation_id)
+            except ConversationNotFoundError:
+                await websocket.send_text(
+                    json.dumps({"type": "error", "message": "Conversation not found"})
+                )
+                return
+            if conv.canvas is None or conv.canvas.owner_id != current_user.id:
+                await websocket.send_text(
+                    json.dumps({"type": "error", "message": "Conversation not found"})
+                )
+                return
+
         data = await asyncio.wait_for(websocket.receive_text(), timeout=30)
         body = json.loads(data)
         user_prompt = body.get("prompt", "")
@@ -226,15 +262,7 @@ async def run_conversation(
             uuid.UUID(target_agent_id_raw) if target_agent_id_raw else None
         )
 
-        factory = get_session_factory()
         async with factory() as session:
-            conv_repo = ConversationRepo(session)
-            try:
-                conv = await conv_repo.get_or_404(conversation_id)
-            except ConversationNotFoundError:
-                raise HTTPException(status_code=404, detail="Conversation not found") from None
-            if conv.canvas is None or conv.canvas.owner_id != current_user.id:
-                raise HTTPException(status_code=404, detail="Conversation not found") from None
             run_repo = DurableRunRepo(session)
 
             if requested_run_id is not None:
