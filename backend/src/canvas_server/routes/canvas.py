@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from canvas_server.auth import get_current_user
 from canvas_server.database import get_session
 from canvas_server.exceptions import CanvasNotFoundError, ConversationNotFoundError
 from canvas_server.models.api import (
@@ -23,12 +24,26 @@ from canvas_server.models.api import (
     CreateCanvasRequest,
     CreateConversationRequest,
 )
+from canvas_server.models.auth import User
 from canvas_server.models.canvas import Canvas
 from canvas_server.repos.canvas_repo import CanvasRepo
 from canvas_server.repos.conversation_repo import ConversationRepo
 
 logger = logging.getLogger("canvas_server.routes.canvas")
 canvas_router = APIRouter(prefix="/api/canvases", tags=["canvases"])
+
+
+async def _owned_canvas_or_404(
+    repo: CanvasRepo, canvas_id: uuid.UUID, user: User
+) -> Canvas:
+    """Resolve a canvas owned by ``user`` or raise 404.
+
+    A missing canvas and another user's canvas are both 404 — no enumeration.
+    """
+    canvas = await repo.get_for_owner(canvas_id, user.id)
+    if canvas is None:
+        raise HTTPException(status_code=404, detail="Canvas not found")
+    return canvas
 
 
 def _canvas_to_response(canvas: Canvas) -> CanvasResponse:
@@ -99,19 +114,23 @@ def _canvas_to_response(canvas: Canvas) -> CanvasResponse:
 async def create_canvas(
     body: CreateCanvasRequest = CreateCanvasRequest(),
     session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
 ):
-    logger.info(f"Creating canvas: name={body.name}")
+    logger.info(f"Creating canvas: name={body.name} owner={current_user.id}")
     repo = CanvasRepo(session)
-    canvas = await repo.create(name=body.name)
+    canvas = await repo.create(name=body.name, owner_id=current_user.id)
     logger.info(f"Canvas created: id={canvas.id}")
     return _canvas_to_response(canvas)
 
 
 @canvas_router.get("", response_model=list[CanvasListResponse])
-async def list_canvases(session: AsyncSession = Depends(get_session)):
-    logger.debug("Listing all canvases")
+async def list_canvases(
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    logger.debug("Listing canvases for user=%s", current_user.id)
     repo = CanvasRepo(session)
-    canvases = await repo.list_all()
+    canvases = await repo.list_for_owner(current_user.id)
     logger.debug(f"Found {len(canvases)} canvases")
     return [
         CanvasListResponse(
@@ -125,14 +144,14 @@ async def list_canvases(session: AsyncSession = Depends(get_session)):
 
 
 @canvas_router.get("/{canvas_id}", response_model=CanvasResponse)
-async def get_canvas(canvas_id: uuid.UUID, session: AsyncSession = Depends(get_session)):
+async def get_canvas(
+    canvas_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
     logger.debug(f"Getting canvas: id={canvas_id}")
     repo = CanvasRepo(session)
-    try:
-        canvas = await repo.get_or_404(canvas_id)
-    except CanvasNotFoundError:
-        logger.warning(f"Canvas not found: id={canvas_id}")
-        raise HTTPException(status_code=404, detail="Canvas not found") from None
+    canvas = await _owned_canvas_or_404(repo, canvas_id, current_user)
     logger.debug(
         f"Canvas fetched: id={canvas_id}, agents={len(canvas.agent_nodes)}, "
         f"tools={len(canvas.tool_nodes)}, edges={len(canvas.edges)}"
@@ -145,6 +164,7 @@ async def save_canvas(
     canvas_id: uuid.UUID,
     body: CanvasSaveRequest,
     session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
 ):
     logger.info(
         f"Saving canvas: id={canvas_id}, name={body.name}, "
@@ -158,6 +178,7 @@ async def save_canvas(
     for e in body.edges:
         logger.debug(f"  edge: id={e.id}, {e.source_node_id} -> {e.target_node_id} [{e.edge_type}]")
     repo = CanvasRepo(session)
+    await _owned_canvas_or_404(repo, canvas_id, current_user)
     try:
         canvas = await repo.save_nodes_and_edges(
             canvas_id=canvas_id,
@@ -174,13 +195,15 @@ async def save_canvas(
 
 
 @canvas_router.delete("/{canvas_id}", status_code=204)
-async def delete_canvas(canvas_id: uuid.UUID, session: AsyncSession = Depends(get_session)):
+async def delete_canvas(
+    canvas_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
     logger.info(f"Deleting canvas: id={canvas_id}")
     repo = CanvasRepo(session)
-    deleted = await repo.delete(canvas_id)
-    if not deleted:
-        logger.warning(f"Canvas not found for delete: id={canvas_id}")
-        raise HTTPException(status_code=404, detail="Canvas not found") from None
+    canvas = await _owned_canvas_or_404(repo, canvas_id, current_user)
+    await repo.delete(canvas.id)
     logger.info(f"Canvas deleted: id={canvas_id}")
 
 
@@ -248,14 +271,14 @@ def _canvas_to_import_payload(canvas: Canvas) -> dict[str, Any]:
 
 
 @canvas_router.get("/{canvas_id}/export")
-async def export_canvas(canvas_id: uuid.UUID, session: AsyncSession = Depends(get_session)):
+async def export_canvas(
+    canvas_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
     logger.info(f"Exporting canvas: id={canvas_id}")
     repo = CanvasRepo(session)
-    try:
-        canvas = await repo.get_or_404(canvas_id)
-    except CanvasNotFoundError:
-        logger.warning(f"Canvas not found for export: id={canvas_id}")
-        raise HTTPException(status_code=404, detail="Canvas not found") from None
+    canvas = await _owned_canvas_or_404(repo, canvas_id, current_user)
 
     data = _canvas_to_response(canvas).model_dump(mode="json")
     content = json.dumps(data, indent=2, default=str)
@@ -268,14 +291,14 @@ async def export_canvas(canvas_id: uuid.UUID, session: AsyncSession = Depends(ge
 
 
 @canvas_router.get("/{canvas_id}/export-zip")
-async def export_canvas_zip(canvas_id: uuid.UUID, session: AsyncSession = Depends(get_session)):
+async def export_canvas_zip(
+    canvas_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
     logger.info(f"Exporting canvas ZIP: id={canvas_id}")
     repo = CanvasRepo(session)
-    try:
-        canvas = await repo.get_or_404(canvas_id)
-    except CanvasNotFoundError:
-        logger.warning(f"Canvas not found for export: id={canvas_id}")
-        raise HTTPException(status_code=404, detail="Canvas not found") from None
+    canvas = await _owned_canvas_or_404(repo, canvas_id, current_user)
 
     payload = _canvas_to_import_payload(canvas)
     manifest = json.dumps(payload, indent=2, default=str)
@@ -297,7 +320,11 @@ async def export_canvas_zip(canvas_id: uuid.UUID, session: AsyncSession = Depend
 
 
 @canvas_router.post("/import", response_model=CanvasResponse)
-async def import_canvas(body: CanvasImportRequest, session: AsyncSession = Depends(get_session)):
+async def import_canvas(
+    body: CanvasImportRequest,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
     logger.info(
         f"Importing canvas: name={body.name}, "
         f"agents={len(body.nodes.agents)}, "
@@ -310,13 +337,18 @@ async def import_canvas(body: CanvasImportRequest, session: AsyncSession = Depen
         tools=body.nodes.tools,
         edges=body.edges,
         documents=body.documents,
+        owner_id=current_user.id,
     )
     logger.info(f"Canvas imported: id={canvas.id}")
     return _canvas_to_response(canvas)
 
 
 @canvas_router.post("/import-zip", response_model=CanvasResponse)
-async def import_canvas_zip(file: UploadFile = File(...), session: AsyncSession = Depends(get_session)):
+async def import_canvas_zip(
+    file: UploadFile = File(...),
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
     logger.info("Importing canvas ZIP file")
     content_bytes = await file.read()
     try:
@@ -369,6 +401,7 @@ async def import_canvas_zip(file: UploadFile = File(...), session: AsyncSession 
         tools=body.nodes.tools,
         edges=body.edges,
         documents=body.documents,
+        owner_id=current_user.id,
     )
     logger.info(f"Canvas imported from ZIP: id={canvas.id}")
     return _canvas_to_response(canvas)
@@ -379,13 +412,11 @@ async def create_conversation(
     canvas_id: uuid.UUID,
     body: CreateConversationRequest = CreateConversationRequest(),
     session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
 ):
     logger.info("Creating conversation for canvas=%s name=%s", canvas_id, body.name)
     canvas_repo = CanvasRepo(session)
-    try:
-        await canvas_repo.get_or_404(canvas_id)
-    except CanvasNotFoundError:
-        raise HTTPException(status_code=404, detail="Canvas not found") from None
+    await _owned_canvas_or_404(canvas_repo, canvas_id, current_user)
 
     repo = ConversationRepo(session)
     conv = await repo.create(canvas_id=canvas_id, name=body.name)
@@ -397,8 +428,11 @@ async def create_conversation(
 async def list_conversations(
     canvas_id: uuid.UUID,
     session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
 ):
     logger.debug("Listing conversations for canvas=%s", canvas_id)
+    canvas_repo = CanvasRepo(session)
+    await _owned_canvas_or_404(canvas_repo, canvas_id, current_user)
     repo = ConversationRepo(session)
     conversations = await repo.list_for_canvas(canvas_id)
     return conversations
@@ -412,8 +446,11 @@ async def get_conversation(
     canvas_id: uuid.UUID,
     conversation_id: uuid.UUID,
     session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
 ):
     logger.debug("Getting conversation: canvas=%s conv=%s", canvas_id, conversation_id)
+    canvas_repo = CanvasRepo(session)
+    await _owned_canvas_or_404(canvas_repo, canvas_id, current_user)
     repo = ConversationRepo(session)
     try:
         conv = await repo.get_or_404(conversation_id)
@@ -431,12 +468,15 @@ async def get_conversation(
 async def get_conversation_by_id(
     conversation_id: uuid.UUID,
     session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
 ):
     logger.debug("Getting conversation by id: conv=%s", conversation_id)
     repo = ConversationRepo(session)
     try:
         conv = await repo.get_or_404(conversation_id)
     except ConversationNotFoundError:
+        raise HTTPException(status_code=404, detail="Conversation not found") from None
+    if conv.canvas is None or conv.canvas.owner_id != current_user.id:
         raise HTTPException(status_code=404, detail="Conversation not found") from None
     return conv
 
@@ -445,11 +485,14 @@ async def get_conversation_by_id(
 async def delete_conversation_by_id(
     conversation_id: uuid.UUID,
     session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
 ):
     logger.info("Deleting conversation by id: conv=%s", conversation_id)
     repo = ConversationRepo(session)
     conv = await repo.get(conversation_id)
     if not conv:
+        raise HTTPException(status_code=404, detail="Conversation not found") from None
+    if conv.canvas is None or conv.canvas.owner_id != current_user.id:
         raise HTTPException(status_code=404, detail="Conversation not found") from None
     await repo.delete(conversation_id)
     logger.info("Conversation deleted by id: id=%s", conversation_id)
@@ -460,8 +503,11 @@ async def delete_conversation(
     canvas_id: uuid.UUID,
     conversation_id: uuid.UUID,
     session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
 ):
     logger.info("Deleting conversation: canvas=%s conv=%s", canvas_id, conversation_id)
+    canvas_repo = CanvasRepo(session)
+    await _owned_canvas_or_404(canvas_repo, canvas_id, current_user)
     repo = ConversationRepo(session)
     conv = await repo.get(conversation_id)
     if not conv or conv.canvas_id != canvas_id:
@@ -478,12 +524,15 @@ async def list_agent_documents(
     canvas_id: uuid.UUID,
     agent_id: uuid.UUID,
     session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
 ):
     from sqlalchemy import select
 
     from canvas_server.models.canvas import AgentDocument, AgentNode
 
     logger.info("Listing documents for canvas=%s agent=%s", canvas_id, agent_id)
+    canvas_repo = CanvasRepo(session)
+    await _owned_canvas_or_404(canvas_repo, canvas_id, current_user)
     stmt = select(AgentNode).where(AgentNode.id == agent_id, AgentNode.canvas_id == canvas_id)
     res = await session.execute(stmt)
     agent = res.scalar_one_or_none()
@@ -509,6 +558,7 @@ async def upload_agent_document(
     agent_id: uuid.UUID,
     file: UploadFile = File(...),
     session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
 ):
     from sqlalchemy import select
 
@@ -520,6 +570,8 @@ async def upload_agent_document(
         agent_id,
         file.filename,
     )
+    canvas_repo = CanvasRepo(session)
+    await _owned_canvas_or_404(canvas_repo, canvas_id, current_user)
     stmt = select(AgentNode).where(AgentNode.id == agent_id, AgentNode.canvas_id == canvas_id)
     res = await session.execute(stmt)
     agent = res.scalar_one_or_none()
@@ -556,12 +608,15 @@ async def delete_agent_document(
     agent_id: uuid.UUID,
     document_id: uuid.UUID,
     session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
 ):
     from sqlalchemy import select
 
     from canvas_server.models.canvas import AgentDocument
 
     logger.info("Deleting document canvas=%s agent=%s doc=%s", canvas_id, agent_id, document_id)
+    canvas_repo = CanvasRepo(session)
+    await _owned_canvas_or_404(canvas_repo, canvas_id, current_user)
     stmt = select(AgentDocument).where(
         AgentDocument.id == document_id,
         AgentDocument.agent_node_id == agent_id,
@@ -588,6 +643,7 @@ async def export_conversation(
     canvas_id: uuid.UUID,
     conversation_id: uuid.UUID,
     session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
 ):
     from sqlalchemy import select
     from sqlalchemy.orm import selectinload
@@ -595,6 +651,8 @@ async def export_conversation(
     from canvas_server.models.canvas import Canvas, Conversation
 
     logger.info("Exporting conversation: canvas=%s conv=%s", canvas_id, conversation_id)
+    canvas_repo = CanvasRepo(session)
+    await _owned_canvas_or_404(canvas_repo, canvas_id, current_user)
     stmt = (
         select(Conversation)
         .options(
@@ -666,6 +724,7 @@ async def import_conversation_zip(
     canvas_id: uuid.UUID,
     file: UploadFile = File(...),
     session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
 ):
     from datetime import UTC, datetime
 
@@ -676,10 +735,7 @@ async def import_conversation_zip(
 
     logger.info("Importing conversation ZIP file to canvas=%s", canvas_id)
     canvas_repo = CanvasRepo(session)
-    try:
-        target_canvas = await canvas_repo.get_or_404(canvas_id)
-    except CanvasNotFoundError:
-        raise HTTPException(status_code=404, detail="Canvas not found") from None
+    target_canvas = await _owned_canvas_or_404(canvas_repo, canvas_id, current_user)
 
     content_bytes = await file.read()
     try:

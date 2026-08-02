@@ -58,150 +58,150 @@ class FakeEdge:
 
 
 class TestConversationAPI:
-    async def test_create_conversation(self, test_client, fresh_db, blank_canvas):
-        resp = await test_client.post(
-            f"/api/canvases/{blank_canvas.id}/conversations",
+    async def test_create_conversation(self, authed_client, owned_canvas):
+        resp = await authed_client.post(
+            f"/api/canvases/{owned_canvas.id}/conversations",
             json={"name": "My Chat"},
         )
         assert resp.status_code == 200
         data = resp.json()
         assert data["name"] == "My Chat"
         assert data["status"] == "active"
-        assert data["canvas_id"] == str(blank_canvas.id)
+        assert data["canvas_id"] == str(owned_canvas.id)
         assert data["messages"] == []
 
     async def test_create_conversation_default_name(
-        self, test_client, fresh_db, blank_canvas
+        self, authed_client, owned_canvas
     ):
-        resp = await test_client.post(
-            f"/api/canvases/{blank_canvas.id}/conversations", json={}
+        resp = await authed_client.post(
+            f"/api/canvases/{owned_canvas.id}/conversations", json={}
         )
         assert resp.status_code == 200
         assert resp.json()["name"] == "New Conversation"
 
-    async def test_create_conversation_missing_canvas(self, test_client, fresh_db):
-        resp = await test_client.post(
+    async def test_create_conversation_missing_canvas(self, authed_client):
+        resp = await authed_client.post(
             f"/api/canvases/{uuid.uuid4()}/conversations", json={"name": "X"}
         )
         assert resp.status_code == 404
 
-    async def test_list_conversations(self, test_client, fresh_db, blank_canvas):
-        await test_client.post(
-            f"/api/canvases/{blank_canvas.id}/conversations", json={"name": "C1"}
+    async def test_list_conversations(self, authed_client, owned_canvas):
+        await authed_client.post(
+            f"/api/canvases/{owned_canvas.id}/conversations", json={"name": "C1"}
         )
-        await test_client.post(
-            f"/api/canvases/{blank_canvas.id}/conversations", json={"name": "C2"}
+        await authed_client.post(
+            f"/api/canvases/{owned_canvas.id}/conversations", json={"name": "C2"}
         )
 
-        resp = await test_client.get(f"/api/canvases/{blank_canvas.id}/conversations")
+        resp = await authed_client.get(f"/api/canvases/{owned_canvas.id}/conversations")
         assert resp.status_code == 200
         data = resp.json()
         assert len(data) == 2
         names = {c["name"] for c in data}
         assert names == {"C1", "C2"}
 
-    async def test_list_conversations_empty(self, test_client, fresh_db, blank_canvas):
-        resp = await test_client.get(f"/api/canvases/{blank_canvas.id}/conversations")
+    async def test_list_conversations_empty(self, authed_client, owned_canvas):
+        resp = await authed_client.get(f"/api/canvases/{owned_canvas.id}/conversations")
         assert resp.status_code == 200
         assert resp.json() == []
 
-    async def test_get_conversation(self, test_client, fresh_db, blank_canvas):
-        create_resp = await test_client.post(
-            f"/api/canvases/{blank_canvas.id}/conversations",
+    async def test_get_conversation(self, authed_client, owned_canvas):
+        create_resp = await authed_client.post(
+            f"/api/canvases/{owned_canvas.id}/conversations",
             json={"name": "My Chat"},
         )
         conv_id = create_resp.json()["id"]
 
-        resp = await test_client.get(
-            f"/api/canvases/{blank_canvas.id}/conversations/{conv_id}"
+        resp = await authed_client.get(
+            f"/api/canvases/{owned_canvas.id}/conversations/{conv_id}"
         )
         assert resp.status_code == 200
         assert resp.json()["id"] == conv_id
         assert resp.json()["name"] == "My Chat"
 
     async def test_get_conversation_wrong_canvas(
-        self, test_client, fresh_db, blank_canvas
+        self, authed_client, owned_canvas
     ):
-        create_resp = await test_client.post(
-            f"/api/canvases/{blank_canvas.id}/conversations", json={"name": "C"}
+        create_resp = await authed_client.post(
+            f"/api/canvases/{owned_canvas.id}/conversations", json={"name": "C"}
         )
         conv_id = create_resp.json()["id"]
 
-        other = await test_client.post("/api/canvases", json={"name": "Other"})
+        other = await authed_client.post("/api/canvases", json={"name": "Other"})
         other_id = other.json()["id"]
 
-        resp = await test_client.get(
+        resp = await authed_client.get(
             f"/api/canvases/{other_id}/conversations/{conv_id}"
         )
         assert resp.status_code == 404
 
-    async def test_delete_conversation(self, test_client, fresh_db, blank_canvas):
-        create_resp = await test_client.post(
-            f"/api/canvases/{blank_canvas.id}/conversations",
+    async def test_delete_conversation(self, authed_client, owned_canvas):
+        create_resp = await authed_client.post(
+            f"/api/canvases/{owned_canvas.id}/conversations",
             json={"name": "ToDelete"},
         )
         conv_id = create_resp.json()["id"]
 
-        del_resp = await test_client.delete(
-            f"/api/canvases/{blank_canvas.id}/conversations/{conv_id}"
+        del_resp = await authed_client.delete(
+            f"/api/canvases/{owned_canvas.id}/conversations/{conv_id}"
         )
         assert del_resp.status_code == 204
 
-        get_resp = await test_client.get(
-            f"/api/canvases/{blank_canvas.id}/conversations/{conv_id}"
+        get_resp = await authed_client.get(
+            f"/api/canvases/{owned_canvas.id}/conversations/{conv_id}"
         )
         assert get_resp.status_code == 404
 
     async def test_delete_conversation_wrong_canvas(
-        self, test_client, fresh_db, blank_canvas
+        self, authed_client, owned_canvas
     ):
-        create_resp = await test_client.post(
-            f"/api/canvases/{blank_canvas.id}/conversations", json={"name": "C"}
+        create_resp = await authed_client.post(
+            f"/api/canvases/{owned_canvas.id}/conversations", json={"name": "C"}
         )
         conv_id = create_resp.json()["id"]
 
-        other = await test_client.post("/api/canvases", json={"name": "Other"})
+        other = await authed_client.post("/api/canvases", json={"name": "Other"})
         other_id = other.json()["id"]
 
-        resp = await test_client.delete(
+        resp = await authed_client.delete(
             f"/api/canvases/{other_id}/conversations/{conv_id}"
         )
         assert resp.status_code == 404
 
-    async def test_get_conversation_by_id(self, test_client, fresh_db, blank_canvas):
-        create_resp = await test_client.post(
-            f"/api/canvases/{blank_canvas.id}/conversations",
+    async def test_get_conversation_by_id(self, authed_client, owned_canvas):
+        create_resp = await authed_client.post(
+            f"/api/canvases/{owned_canvas.id}/conversations",
             json={"name": "Direct Chat"},
         )
         conv_id = create_resp.json()["id"]
 
-        resp = await test_client.get(f"/api/canvases/conversations/{conv_id}")
+        resp = await authed_client.get(f"/api/canvases/conversations/{conv_id}")
         assert resp.status_code == 200
         assert resp.json()["id"] == conv_id
         assert resp.json()["name"] == "Direct Chat"
 
-    async def test_delete_conversation_by_id(self, test_client, fresh_db, blank_canvas):
-        create_resp = await test_client.post(
-            f"/api/canvases/{blank_canvas.id}/conversations",
+    async def test_delete_conversation_by_id(self, authed_client, owned_canvas):
+        create_resp = await authed_client.post(
+            f"/api/canvases/{owned_canvas.id}/conversations",
             json={"name": "DirectToDelete"},
         )
         conv_id = create_resp.json()["id"]
 
-        del_resp = await test_client.delete(f"/api/canvases/conversations/{conv_id}")
+        del_resp = await authed_client.delete(f"/api/canvases/conversations/{conv_id}")
         assert del_resp.status_code == 204
 
-        get_resp = await test_client.get(f"/api/canvases/conversations/{conv_id}")
+        get_resp = await authed_client.get(f"/api/canvases/conversations/{conv_id}")
         assert get_resp.status_code == 404
 
     async def test_export_and_import_conversation(
-        self, test_client, fresh_db, blank_canvas, test_session
+        self, authed_client, owned_canvas, test_session
     ):
         import io
         import json
         import zipfile
 
-        create_resp = await test_client.post(
-            f"/api/canvases/{blank_canvas.id}/conversations",
+        create_resp = await authed_client.post(
+            f"/api/canvases/{owned_canvas.id}/conversations",
             json={"name": "ExportImportChat"},
         )
         assert create_resp.status_code == 200
@@ -228,8 +228,8 @@ class TestConversationAPI:
         )
         await test_session.commit()
 
-        export_resp = await test_client.get(
-            f"/api/canvases/{blank_canvas.id}/conversations/{conv_id}/export"
+        export_resp = await authed_client.get(
+            f"/api/canvases/{owned_canvas.id}/conversations/{conv_id}/export"
         )
         assert export_resp.status_code == 200
         assert export_resp.headers["content-type"] == "application/zip"
@@ -241,13 +241,13 @@ class TestConversationAPI:
 
         manifest_data = json.loads(archive.read("manifest.json").decode("utf-8"))
         assert manifest_data["name"] == "ExportImportChat"
-        assert manifest_data["canvas"]["id"] == str(blank_canvas.id)
-        assert manifest_data["canvas"]["name"] == blank_canvas.name
+        assert manifest_data["canvas"]["id"] == str(owned_canvas.id)
+        assert manifest_data["canvas"]["name"] == owned_canvas.name
         assert len(manifest_data["messages"]) == 2
         assert len(manifest_data["plots"]) == 1
 
-        import_resp = await test_client.post(
-            f"/api/canvases/{blank_canvas.id}/conversations/import",
+        import_resp = await authed_client.post(
+            f"/api/canvases/{owned_canvas.id}/conversations/import",
             files={"file": ("export.zip", zip_bytes, "application/zip")},
         )
         assert import_resp.status_code == 200
@@ -255,8 +255,8 @@ class TestConversationAPI:
         assert imported_data["name"] == "ExportImportChat"
         assert imported_data["id"] != conv_id
 
-        get_resp = await test_client.get(
-            f"/api/canvases/{blank_canvas.id}/conversations/{imported_data['id']}"
+        get_resp = await authed_client.get(
+            f"/api/canvases/{owned_canvas.id}/conversations/{imported_data['id']}"
         )
         assert get_resp.status_code == 200
         imported_conv = get_resp.json()
@@ -270,27 +270,27 @@ class TestConversationAPI:
         assert "/api/plots/" in assistant_msg["content"]
 
     async def test_import_conversation_rejects_wrong_canvas_with_helpful_error(
-        self, test_client, fresh_db, blank_canvas
+        self, authed_client, owned_canvas
     ):
-        create_resp = await test_client.post(
-            f"/api/canvases/{blank_canvas.id}/conversations",
+        create_resp = await authed_client.post(
+            f"/api/canvases/{owned_canvas.id}/conversations",
             json={"name": "Canvas Bound Conversation"},
         )
         assert create_resp.status_code == 200
         conv_id = create_resp.json()["id"]
 
-        export_resp = await test_client.get(
-            f"/api/canvases/{blank_canvas.id}/conversations/{conv_id}/export"
+        export_resp = await authed_client.get(
+            f"/api/canvases/{owned_canvas.id}/conversations/{conv_id}/export"
         )
         assert export_resp.status_code == 200
 
-        other_canvas_resp = await test_client.post(
+        other_canvas_resp = await authed_client.post(
             "/api/canvases",
             json={"name": "Other Canvas"},
         )
         other_canvas_id = other_canvas_resp.json()["id"]
 
-        import_resp = await test_client.post(
+        import_resp = await authed_client.post(
             f"/api/canvases/{other_canvas_id}/conversations/import",
             files={"file": ("export.zip", export_resp.read(), "application/zip")},
         )
@@ -298,7 +298,7 @@ class TestConversationAPI:
         assert import_resp.status_code == 409
         detail = import_resp.json()["detail"]
         assert "belongs to canvas" in detail.lower()
-        assert blank_canvas.name in detail
+        assert owned_canvas.name in detail
 
 
 
@@ -400,10 +400,14 @@ class TestConversationRepo:
         await repo.create(canvas_id=canvas_id, name="A")
         await repo.create(canvas_id=canvas_id, name="B")
 
+        from canvas_server.models.auth import User
         from canvas_server.repos.canvas_repo import CanvasRepo
 
+        other_owner = User(email=f"other_{uuid.uuid4().hex[:8]}@example.com", password_hash="x")
+        test_session.add(other_owner)
+        await test_session.flush()
         canvas_repo = CanvasRepo(test_session)
-        other = await canvas_repo.create(name="Other Canvas")
+        other = await canvas_repo.create(name="Other Canvas", owner_id=other_owner.id)
         await repo.create(canvas_id=other.id, name="Other Conv")
         await test_session.commit()
 
@@ -1006,18 +1010,18 @@ class TestRunnerWithConversation:
         assert len(system_msgs) == 0
 
     async def test_conversation_delete_cascades_from_canvas_delete(
-        self, test_client, fresh_db, blank_canvas
+        self, authed_client, owned_canvas
     ):
-        create_resp = await test_client.post(
-            f"/api/canvases/{blank_canvas.id}/conversations",
+        create_resp = await authed_client.post(
+            f"/api/canvases/{owned_canvas.id}/conversations",
             json={"name": "C1"},
         )
         conv_id = create_resp.json()["id"]
 
-        del_resp = await test_client.delete(f"/api/canvases/{blank_canvas.id}")
+        del_resp = await authed_client.delete(f"/api/canvases/{owned_canvas.id}")
         assert del_resp.status_code == 204
 
-        get_resp = await test_client.get(
-            f"/api/canvases/{blank_canvas.id}/conversations/{conv_id}"
+        get_resp = await authed_client.get(
+            f"/api/canvases/{owned_canvas.id}/conversations/{conv_id}"
         )
         assert get_resp.status_code == 404

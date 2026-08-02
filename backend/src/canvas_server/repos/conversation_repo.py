@@ -14,7 +14,10 @@ class ConversationRepo:
         self.session = session
 
     def _eager_query(self):
-        return select(Conversation).options(selectinload(Conversation.messages))
+        return select(Conversation).options(
+            selectinload(Conversation.messages),
+            selectinload(Conversation.canvas),
+        )
 
     async def create(
         self,
@@ -133,7 +136,13 @@ class ConversationRepo:
 
     async def get_plot(self, plot_id: uuid.UUID) -> ConversationPlot | None:
         result = await self.session.execute(
-            select(ConversationPlot).where(ConversationPlot.id == plot_id)
+            select(ConversationPlot)
+            .options(
+                selectinload(ConversationPlot.conversation).selectinload(
+                    Conversation.canvas
+                )
+            )
+            .where(ConversationPlot.id == plot_id)
         )
         return result.scalar_one_or_none()
 

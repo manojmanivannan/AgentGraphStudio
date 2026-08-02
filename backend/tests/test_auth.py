@@ -293,11 +293,10 @@ class TestAuthedFixture:
         assert resp.status_code == 200
         assert resp.json()["email"] == authed_client.auth_email
 
-    async def test_canvas_route_still_works_unauthed(self, test_client, fresh_db):
-        # This slice does not require auth on canvas routes (that lands later).
+    async def test_canvas_route_requires_auth(self, test_client, fresh_db):
+        # Canvas routes now require auth (issue #36); unauthed -> 401.
         resp = await test_client.post("/api/canvases", json={"name": "C1"})
-        assert resp.status_code == 200
-        assert resp.json()["name"] == "C1"
+        assert resp.status_code == 401
 
 
 # --------------------------------------------------------------------------

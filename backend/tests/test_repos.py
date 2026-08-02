@@ -4,22 +4,24 @@ import pytest
 
 from canvas_server.exceptions import CanvasNotFoundError
 from canvas_server.models.api import AgentNodeInput, EdgeInput, ToolNodeInput
+from canvas_server.models.auth import User
 from canvas_server.repos.canvas_repo import CanvasRepo
 
 
 class TestCanvasRepoCreate:
-    async def test_create_empty(self, test_session):
+    async def test_create_empty(self, test_session, test_user):
         repo = CanvasRepo(test_session)
-        canvas = await repo.create("Empty")
+        canvas = await repo.create("Empty", owner_id=test_user.id)
         assert canvas.name == "Empty"
         assert canvas.id is not None
+        assert canvas.owner_id == test_user.id
         assert canvas.agent_nodes == []
         assert canvas.tool_nodes == []
         assert canvas.edges == []
 
-    async def test_create_default_name(self, test_session):
+    async def test_create_default_name(self, test_session, test_user):
         repo = CanvasRepo(test_session)
-        canvas = await repo.create()
+        canvas = await repo.create(owner_id=test_user.id)
         assert canvas.name == "Untitled Canvas"
 
 
@@ -59,13 +61,42 @@ class TestCanvasRepoList:
         assert len(canvases) == 1
         assert canvases[0].id == blank_canvas.id
 
-    async def test_list_ordered_by_updated(self, test_session):
+    async def test_list_ordered_by_updated(self, test_session, test_user):
         repo = CanvasRepo(test_session)
-        c1 = await repo.create("First")
-        await repo.create("Second")
+        c1 = await repo.create("First", owner_id=test_user.id)
+        await repo.create("Second", owner_id=test_user.id)
         await repo.save_nodes_and_edges(c1.id, "First Updated", [], [], [])
         canvases = await repo.list_all()
         assert canvases[0].id == c1.id
+
+    async def test_list_for_owner_scopes_to_user(self, test_session, test_user):
+        repo = CanvasRepo(test_session)
+        await repo.create("Mine", owner_id=test_user.id)
+        other = User(email=f"other_{uuid.uuid4().hex[:8]}@example.com", password_hash="x")
+        test_session.add(other)
+        await test_session.flush()
+        await repo.create("Theirs", owner_id=other.id)
+        await test_session.commit()
+
+        mine = await repo.list_for_owner(test_user.id)
+        assert [c.name for c in mine] == ["Mine"]
+
+    async def test_get_for_owner_returns_owned_canvas(self, blank_canvas, test_session):
+        repo = CanvasRepo(test_session)
+        canvas = await repo.get_for_owner(blank_canvas.id, blank_canvas.owner_id)
+        assert canvas is not None
+        assert canvas.id == blank_canvas.id
+
+    async def test_get_for_owner_returns_none_for_foreign_canvas(
+        self, blank_canvas, test_session
+    ):
+        repo = CanvasRepo(test_session)
+        foreign = await repo.get_for_owner(blank_canvas.id, uuid.uuid4())
+        assert foreign is None
+
+    async def test_get_for_owner_returns_none_for_missing_canvas(self, test_session, test_user):
+        repo = CanvasRepo(test_session)
+        assert await repo.get_for_owner(uuid.uuid4(), test_user.id) is None
 
 
 class TestCanvasRepoDelete:
@@ -134,7 +165,7 @@ class TestCanvasRepoSaveNodesAndEdges:
 
 
 class TestCanvasRepoCreateFull:
-    async def test_create_full(self, test_session):
+    async def test_create_full(self, test_session, test_user):
         repo = CanvasRepo(test_session)
         master_id = uuid.uuid4()
         worker_id = uuid.uuid4()
@@ -152,8 +183,9 @@ class TestCanvasRepoCreateFull:
             EdgeInput(id=e2_id, source_node_id=worker_id, target_node_id=tool_id, edge_type="tool_access"),
         ]
 
-        canvas = await repo.create_full("Full Canvas", agents, tools, edges)
+        canvas = await repo.create_full("Full Canvas", agents, tools, edges, owner_id=test_user.id)
         assert canvas.name == "Full Canvas"
+        assert canvas.owner_id == test_user.id
         assert len(canvas.agent_nodes) == 2
         assert len(canvas.tool_nodes) == 1
         assert len(canvas.edges) == 2

@@ -2,14 +2,17 @@ import asyncio
 import json
 import uuid
 
-from fastapi import APIRouter, HTTPException, Response, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, HTTPException, Response, WebSocket, WebSocketDisconnect
 
+from canvas_server.auth import get_current_user
 from canvas_server.background_run_worker import (
     TERMINAL_RUN_STATUSES,
     get_background_run_worker,
 )
 from canvas_server.config import settings
 from canvas_server.database import get_session_factory
+from canvas_server.exceptions import ConversationNotFoundError, DurableRunNotFoundError
+from canvas_server.models.auth import User
 from canvas_server.repos.conversation_repo import ConversationRepo
 from canvas_server.repos.durable_run_repo import DurableRunRepo
 
@@ -45,22 +48,40 @@ async def _get_run_status(run_id: uuid.UUID) -> str | None:
 
 
 @execute_router.get("/api/plots/{plot_id}", response_class=Response)
-async def get_plot(plot_id: uuid.UUID):
+async def get_plot(
+    plot_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+):
     factory = get_session_factory()
     async with factory() as session:
         conv_repo = ConversationRepo(session)
         plot = await conv_repo.get_plot(plot_id)
         if not plot:
             raise HTTPException(status_code=404, detail="Plot not found")
+        # Plots are gated transitively through their conversation's canvas.
+        if (
+            plot.conversation is None
+            or plot.conversation.canvas is None
+            or plot.conversation.canvas.owner_id != current_user.id
+        ):
+            raise HTTPException(status_code=404, detail="Plot not found")
         return Response(content=plot.content, media_type=f"image/{plot.format}")
 
 
 @execute_router.get("/api/conversations/{conversation_id}/runs/active")
-async def get_active_run(conversation_id: uuid.UUID):
+async def get_active_run(
+    conversation_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+):
     factory = get_session_factory()
     async with factory() as session:
         conv_repo = ConversationRepo(session)
-        await conv_repo.get_or_404(conversation_id)
+        try:
+            conv = await conv_repo.get_or_404(conversation_id)
+        except ConversationNotFoundError:
+            raise HTTPException(status_code=404, detail="Conversation not found") from None
+        if conv.canvas is None or conv.canvas.owner_id != current_user.id:
+            raise HTTPException(status_code=404, detail="Conversation not found") from None
 
         run_repo = DurableRunRepo(session)
         run = await run_repo.get_latest_active_for_conversation(conversation_id)
@@ -80,15 +101,39 @@ async def get_active_run(conversation_id: uuid.UUID):
 async def get_run_events(
     run_id: uuid.UUID,
     after_sequence: int = 0,
+    current_user: User = Depends(get_current_user),
 ):
-    return await _get_run_events_after(
-        run_id=run_id,
-        after_sequence=after_sequence,
-    )
+    factory = get_session_factory()
+    async with factory() as session:
+        run_repo = DurableRunRepo(session)
+        try:
+            run = await run_repo.get_or_404(run_id)
+        except DurableRunNotFoundError:
+            raise HTTPException(status_code=404, detail="Run not found") from None
+        if (
+            run.conversation is None
+            or run.conversation.canvas is None
+            or run.conversation.canvas.owner_id != current_user.id
+        ):
+            raise HTTPException(status_code=404, detail="Run not found") from None
+        events = await run_repo.list_events(run_id, after_sequence=after_sequence)
+
+    replay: list[dict] = []
+    for event in events:
+        payload = dict(event.payload or {})
+        payload.setdefault("type", event.event_type)
+        payload["sequence"] = event.sequence
+        payload["run_id"] = str(run_id)
+        replay.append(payload)
+    return replay
 
 
 @execute_router.post("/api/runs/{run_id}/interrupt-response")
-async def submit_interrupt_response(run_id: uuid.UUID, body: dict):
+async def submit_interrupt_response(
+    run_id: uuid.UUID,
+    body: dict,
+    current_user: User = Depends(get_current_user),
+):
     request_id = body.get("request_id")
     if not request_id:
         raise HTTPException(status_code=422, detail="request_id is required")
@@ -96,7 +141,16 @@ async def submit_interrupt_response(run_id: uuid.UUID, body: dict):
     factory = get_session_factory()
     async with factory() as session:
         run_repo = DurableRunRepo(session)
-        await run_repo.get_or_404(run_id)
+        try:
+            run = await run_repo.get_or_404(run_id)
+        except DurableRunNotFoundError:
+            raise HTTPException(status_code=404, detail="Run not found") from None
+        if (
+            run.conversation is None
+            or run.conversation.canvas is None
+            or run.conversation.canvas.owner_id != current_user.id
+        ):
+            raise HTTPException(status_code=404, detail="Run not found") from None
         await run_repo.append_event(
             run_id,
             event_type="interrupt_response",
@@ -115,11 +169,23 @@ async def submit_interrupt_response(run_id: uuid.UUID, body: dict):
 
 
 @execute_router.post("/api/runs/{run_id}/abort")
-async def abort_run(run_id: uuid.UUID):
+async def abort_run(
+    run_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+):
     factory = get_session_factory()
     async with factory() as session:
         run_repo = DurableRunRepo(session)
-        run = await run_repo.get_or_404(run_id)
+        try:
+            run = await run_repo.get_or_404(run_id)
+        except DurableRunNotFoundError:
+            raise HTTPException(status_code=404, detail="Run not found") from None
+        if (
+            run.conversation is None
+            or run.conversation.canvas is None
+            or run.conversation.canvas.owner_id != current_user.id
+        ):
+            raise HTTPException(status_code=404, detail="Run not found") from None
 
         if run.status in TERMINAL_RUN_STATUSES:
             return {
@@ -138,7 +204,11 @@ async def abort_run(run_id: uuid.UUID):
 
 
 @execute_router.websocket("/ws/conversations/{conversation_id}/run")
-async def run_conversation(websocket: WebSocket, conversation_id: uuid.UUID):
+async def run_conversation(
+    websocket: WebSocket,
+    conversation_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+):
     await websocket.accept()
     run_id: uuid.UUID | None = None
     worker = None
@@ -159,7 +229,12 @@ async def run_conversation(websocket: WebSocket, conversation_id: uuid.UUID):
         factory = get_session_factory()
         async with factory() as session:
             conv_repo = ConversationRepo(session)
-            await conv_repo.get_or_404(conversation_id)
+            try:
+                conv = await conv_repo.get_or_404(conversation_id)
+            except ConversationNotFoundError:
+                raise HTTPException(status_code=404, detail="Conversation not found") from None
+            if conv.canvas is None or conv.canvas.owner_id != current_user.id:
+                raise HTTPException(status_code=404, detail="Conversation not found") from None
             run_repo = DurableRunRepo(session)
 
             if requested_run_id is not None:

@@ -5,29 +5,29 @@ import zipfile
 
 
 class TestCreateCanvas:
-    async def test_create_default(self, test_client, fresh_db):
-        resp = await test_client.post("/api/canvases", json={})
+    async def test_create_default(self, authed_client):
+        resp = await authed_client.post("/api/canvases", json={})
         assert resp.status_code == 200
         data = resp.json()
         assert data["name"] == "Untitled Canvas"
         assert data["id"] is not None
         assert data["nodes"]["agents"] == []
 
-    async def test_create_named(self, test_client, fresh_db):
-        resp = await test_client.post("/api/canvases", json={"name": "My Canvas"})
+    async def test_create_named(self, authed_client):
+        resp = await authed_client.post("/api/canvases", json={"name": "My Canvas"})
         assert resp.status_code == 200
         assert resp.json()["name"] == "My Canvas"
 
 
 class TestListCanvases:
-    async def test_list_empty(self, test_client, fresh_db):
-        resp = await test_client.get("/api/canvases")
+    async def test_list_empty(self, authed_client):
+        resp = await authed_client.get("/api/canvases")
         assert resp.status_code == 200
         assert resp.json() == []
 
-    async def test_list_with_canvas(self, test_client, fresh_db):
-        await test_client.post("/api/canvases", json={"name": "C1"})
-        resp = await test_client.get("/api/canvases")
+    async def test_list_with_canvas(self, authed_client):
+        await authed_client.post("/api/canvases", json={"name": "C1"})
+        resp = await authed_client.get("/api/canvases")
         assert resp.status_code == 200
         data = resp.json()
         assert len(data) == 1
@@ -35,23 +35,23 @@ class TestListCanvases:
 
 
 class TestGetCanvas:
-    async def test_get_existing(self, test_client, fresh_db):
-        created = await test_client.post("/api/canvases", json={"name": "G1"})
+    async def test_get_existing(self, authed_client):
+        created = await authed_client.post("/api/canvases", json={"name": "G1"})
         cid = created.json()["id"]
 
-        resp = await test_client.get(f"/api/canvases/{cid}")
+        resp = await authed_client.get(f"/api/canvases/{cid}")
         assert resp.status_code == 200
         assert resp.json()["id"] == cid
         assert resp.json()["name"] == "G1"
 
-    async def test_get_missing(self, test_client, fresh_db):
-        resp = await test_client.get(f"/api/canvases/{uuid.uuid4()}")
+    async def test_get_missing(self, authed_client):
+        resp = await authed_client.get(f"/api/canvases/{uuid.uuid4()}")
         assert resp.status_code == 404
 
 
 class TestSaveCanvas:
-    async def test_save_with_nodes(self, test_client, fresh_db):
-        created = await test_client.post("/api/canvases", json={"name": "S1"})
+    async def test_save_with_nodes(self, authed_client):
+        created = await authed_client.post("/api/canvases", json={"name": "S1"})
         cid = created.json()["id"]
 
         aid = str(uuid.uuid4())
@@ -88,7 +88,7 @@ class TestSaveCanvas:
             ],
         }
 
-        resp = await test_client.put(f"/api/canvases/{cid}", json=payload)
+        resp = await authed_client.put(f"/api/canvases/{cid}", json=payload)
         assert resp.status_code == 200
         data = resp.json()
         assert data["name"] == "S1 Updated"
@@ -99,13 +99,13 @@ class TestSaveCanvas:
         assert data["nodes"]["agents"][0]["rag_chunk_size"] == 1337
         assert data["nodes"]["agents"][0]["is_entry_point"] is True
 
-        get_resp = await test_client.get(f"/api/canvases/{cid}")
+        get_resp = await authed_client.get(f"/api/canvases/{cid}")
         assert get_resp.status_code == 200
         assert get_resp.json()["nodes"]["agents"][0]["rag_chunk_size"] == 1337
         assert get_resp.json()["nodes"]["agents"][0]["is_entry_point"] is True
 
-    async def test_save_missing_canvas(self, test_client, fresh_db):
-        resp = await test_client.put(
+    async def test_save_missing_canvas(self, authed_client):
+        resp = await authed_client.put(
             f"/api/canvases/{uuid.uuid4()}",
             json={
                 "name": "X",
@@ -117,27 +117,27 @@ class TestSaveCanvas:
 
 
 class TestDeleteCanvas:
-    async def test_delete_existing(self, test_client, fresh_db):
-        created = await test_client.post("/api/canvases", json={"name": "D1"})
+    async def test_delete_existing(self, authed_client):
+        created = await authed_client.post("/api/canvases", json={"name": "D1"})
         cid = created.json()["id"]
 
-        resp = await test_client.delete(f"/api/canvases/{cid}")
+        resp = await authed_client.delete(f"/api/canvases/{cid}")
         assert resp.status_code == 204
 
-        get_resp = await test_client.get(f"/api/canvases/{cid}")
+        get_resp = await authed_client.get(f"/api/canvases/{cid}")
         assert get_resp.status_code == 404
 
-    async def test_delete_missing(self, test_client, fresh_db):
-        resp = await test_client.delete(f"/api/canvases/{uuid.uuid4()}")
+    async def test_delete_missing(self, authed_client):
+        resp = await authed_client.delete(f"/api/canvases/{uuid.uuid4()}")
         assert resp.status_code == 404
 
 
 class TestExportCanvas:
-    async def test_export_json(self, test_client, fresh_db):
-        created = await test_client.post("/api/canvases", json={"name": "ExportCanvas"})
+    async def test_export_json(self, authed_client):
+        created = await authed_client.post("/api/canvases", json={"name": "ExportCanvas"})
         cid = created.json()["id"]
 
-        resp = await test_client.get(f"/api/canvases/{cid}/export")
+        resp = await authed_client.get(f"/api/canvases/{cid}/export")
         assert resp.status_code == 200
         assert resp.headers["content-type"] == "application/json"
         assert "content-disposition" in resp.headers
@@ -149,15 +149,15 @@ class TestExportCanvas:
         assert "nodes" in data
         assert "edges" in data
 
-    async def test_export_with_nodes(self, test_client, fresh_db):
-        created = await test_client.post("/api/canvases", json={"name": "FullCanvas"})
+    async def test_export_with_nodes(self, authed_client):
+        created = await authed_client.post("/api/canvases", json={"name": "FullCanvas"})
         cid = created.json()["id"]
 
         aid = str(uuid.uuid4())
         tid = str(uuid.uuid4())
         eid = str(uuid.uuid4())
 
-        await test_client.put(
+        await authed_client.put(
             f"/api/canvases/{cid}",
             json={
                 "name": "FullCanvas",
@@ -169,20 +169,20 @@ class TestExportCanvas:
             },
         )
 
-        resp = await test_client.get(f"/api/canvases/{cid}/export")
+        resp = await authed_client.get(f"/api/canvases/{cid}/export")
         assert resp.status_code == 200
         data = resp.json()
         assert len(data["nodes"]["agents"]) == 1
         assert len(data["nodes"]["tools"]) == 1
         assert len(data["edges"]) == 1
 
-    async def test_export_missing(self, test_client, fresh_db):
-        resp = await test_client.get(f"/api/canvases/{uuid.uuid4()}/export")
+    async def test_export_missing(self, authed_client):
+        resp = await authed_client.get(f"/api/canvases/{uuid.uuid4()}/export")
         assert resp.status_code == 404
 
 
 class TestImportCanvas:
-    async def test_import_full_canvas(self, test_client, fresh_db):
+    async def test_import_full_canvas(self, authed_client):
         aid = str(uuid.uuid4())
         worker_id = str(uuid.uuid4())
         tid = str(uuid.uuid4())
@@ -236,7 +236,7 @@ class TestImportCanvas:
             ],
         }
 
-        resp = await test_client.post("/api/canvases/import", json=payload)
+        resp = await authed_client.post("/api/canvases/import", json=payload)
         assert resp.status_code == 200
         data = resp.json()
         assert data["name"] == "Imported Canvas"
@@ -253,8 +253,8 @@ class TestImportCanvas:
         edge_types = {e["edge_type"] for e in data["edges"]}
         assert edge_types == {"handoff", "tool_access"}
 
-    async def test_import_empty_canvas(self, test_client, fresh_db):
-        resp = await test_client.post(
+    async def test_import_empty_canvas(self, authed_client):
+        resp = await authed_client.post(
             "/api/canvases/import",
             json={
                 "name": "Empty Import",
@@ -266,8 +266,8 @@ class TestImportCanvas:
         assert resp.json()["name"] == "Empty Import"
         assert resp.json()["nodes"]["agents"] == []
 
-    async def test_import_default_name(self, test_client, fresh_db):
-        resp = await test_client.post(
+    async def test_import_default_name(self, authed_client):
+        resp = await authed_client.post(
             "/api/canvases/import",
             json={
                 "nodes": {"agents": [], "tools": []},
@@ -277,7 +277,7 @@ class TestImportCanvas:
         assert resp.status_code == 200
         assert resp.json()["name"] == "Untitled Canvas"
 
-    async def test_import_canvas_with_contentless_documents(self, test_client, fresh_db):
+    async def test_import_canvas_with_contentless_documents(self, authed_client):
         aid = str(uuid.uuid4())
         doc_id = str(uuid.uuid4())
         payload = {
@@ -303,7 +303,7 @@ class TestImportCanvas:
                 }
             ],
         }
-        resp = await test_client.post("/api/canvases/import", json=payload)
+        resp = await authed_client.post("/api/canvases/import", json=payload)
         assert resp.status_code == 200
         data = resp.json()
         assert data["name"] == "Canvas with Empty Doc"
@@ -315,13 +315,13 @@ class TestImportCanvas:
         imported_agent_id = data["nodes"]["agents"][0]["id"]
 
         # Fetching documents for the agent should return empty, as the contentless document was skipped
-        docs_resp = await test_client.get(f"/api/canvases/{cid}/agents/{imported_agent_id}/documents")
+        docs_resp = await authed_client.get(f"/api/canvases/{cid}/agents/{imported_agent_id}/documents")
         assert docs_resp.status_code == 200
         assert docs_resp.json() == []
 
 
 class TestExportImportRoundTrip:
-    async def test_export_then_import(self, test_client, fresh_db):
+    async def test_export_then_import(self, authed_client):
         aid = str(uuid.uuid4())
         payload = {
             "name": "RoundTrip Canvas",
@@ -332,12 +332,12 @@ class TestExportImportRoundTrip:
             "edges": [],
         }
 
-        import_resp = await test_client.post("/api/canvases/import", json=payload)
+        import_resp = await authed_client.post("/api/canvases/import", json=payload)
         assert import_resp.status_code == 200
         original_id = import_resp.json()["id"]
         original_data = import_resp.json()
 
-        export_resp = await test_client.get(f"/api/canvases/{original_id}/export")
+        export_resp = await authed_client.get(f"/api/canvases/{original_id}/export")
         assert export_resp.status_code == 200
         exported = export_resp.json()
 
@@ -353,7 +353,7 @@ class TestExportImportRoundTrip:
 
 class TestZipExportImport:
     async def test_export_zip_and_import_zip_with_documents(
-        self, test_client, fresh_db
+        self, authed_client, fresh_db
     ):
         payload = {
             "name": "ZipCanvas",
@@ -371,19 +371,19 @@ class TestZipExportImport:
             "edges": [],
         }
 
-        create_resp = await test_client.post("/api/canvases/import", json=payload)
+        create_resp = await authed_client.post("/api/canvases/import", json=payload)
         assert create_resp.status_code == 200
         canvas_id = create_resp.json()["id"]
         agent_id = create_resp.json()["nodes"]["agents"][0]["id"]
 
-        upload_resp = await test_client.post(
+        upload_resp = await authed_client.post(
             f"/api/canvases/{canvas_id}/agents/{agent_id}/documents",
             files={"file": ("note.txt", b"Hello RAG content", "text/plain")},
         )
         assert upload_resp.status_code == 200
         assert upload_resp.json()["name"] == "note.txt"
 
-        export_resp = await test_client.get(f"/api/canvases/{canvas_id}/export-zip")
+        export_resp = await authed_client.get(f"/api/canvases/{canvas_id}/export-zip")
         assert export_resp.status_code == 200
         assert "application/zip" in export_resp.headers["content-type"]
 
@@ -397,7 +397,7 @@ class TestZipExportImport:
         assert doc_entry["name"] == "note.txt"
         assert doc_entry["path"] in archive.namelist()
 
-        import_resp = await test_client.post(
+        import_resp = await authed_client.post(
             "/api/canvases/import-zip",
             files={"file": ("canvas.zip", export_resp.content, "application/zip")},
         )
@@ -408,10 +408,108 @@ class TestZipExportImport:
         assert imported["nodes"]["agents"][0]["enable_plotting"] is True
 
         imported_agent_id = imported["nodes"]["agents"][0]["id"]
-        docs_resp = await test_client.get(
+        docs_resp = await authed_client.get(
             f"/api/canvases/{imported['id']}/agents/{imported_agent_id}/documents"
         )
         assert docs_resp.status_code == 200
         docs = docs_resp.json()
         assert len(docs) == 1
         assert docs[0]["name"] == "note.txt"
+
+
+class TestPerUserIsolation:
+    """Two registered users see only their own canvases; cross-user access 404s."""
+
+    async def test_list_canvases_scoped_per_user(self, make_authed_client):
+        alice = await make_authed_client()
+        bob = await make_authed_client()
+
+        await alice.post("/api/canvases", json={"name": "Alice Canvas"})
+        await bob.post("/api/canvases", json={"name": "Bob Canvas"})
+
+        alice_list = (await alice.get("/api/canvases")).json()
+        bob_list = (await bob.get("/api/canvases")).json()
+
+        assert [c["name"] for c in alice_list] == ["Alice Canvas"]
+        assert [c["name"] for c in bob_list] == ["Bob Canvas"]
+
+    async def test_cross_user_get_canvas_returns_404(self, make_authed_client):
+        alice = await make_authed_client()
+        bob = await make_authed_client()
+
+        created = await alice.post("/api/canvases", json={"name": "Alice Only"})
+        cid = created.json()["id"]
+
+        # Bob cannot fetch or mutate Alice's canvas.
+        assert (await bob.get(f"/api/canvases/{cid}")).status_code == 404
+        assert (
+            await bob.put(f"/api/canvases/{cid}", json={"name": "Hijack", "nodes": {"agents": [], "tools": []}, "edges": []})
+        ).status_code == 404
+        assert (await bob.delete(f"/api/canvases/{cid}")).status_code == 404
+        # Alice still owns it (Bob's delete was a no-op).
+        assert (await alice.get(f"/api/canvases/{cid}")).status_code == 200
+
+    async def test_cross_user_export_returns_404(self, make_authed_client):
+        alice = await make_authed_client()
+        bob = await make_authed_client()
+        cid = (await alice.post("/api/canvases", json={"name": "ExportMe"})).json()["id"]
+        assert (await bob.get(f"/api/canvases/{cid}/export")).status_code == 404
+
+    async def test_cross_user_conversation_returns_404(self, make_authed_client):
+        alice = await make_authed_client()
+        bob = await make_authed_client()
+        cid = (await alice.post("/api/canvases", json={"name": "C"})).json()["id"]
+        conv = await alice.post(f"/api/canvases/{cid}/conversations", json={"name": "Conv"})
+        conv_id = conv.json()["id"]
+
+        # Bob cannot reach Alice's conversation through either path.
+        assert (
+            await bob.get(f"/api/canvases/{cid}/conversations/{conv_id}")
+        ).status_code == 404
+        assert (
+            await bob.get(f"/api/canvases/conversations/{conv_id}")
+        ).status_code == 404
+
+    async def test_cross_user_agent_document_returns_404(self, make_authed_client):
+        alice = await make_authed_client()
+        bob = await make_authed_client()
+        cid = (await alice.post("/api/canvases", json={"name": "C"})).json()["id"]
+        aid = str(uuid.uuid4())
+        await alice.put(
+            f"/api/canvases/{cid}",
+            json={
+                "name": "C",
+                "nodes": {"agents": [{"id": aid, "name": "A"}], "tools": []},
+                "edges": [],
+            },
+        )
+        up = await alice.post(
+            f"/api/canvases/{cid}/agents/{aid}/documents",
+            files={"file": ("note.txt", b"secret", "text/plain")},
+        )
+        assert up.status_code == 200
+        doc_id = up.json()["id"]
+
+        assert (
+            await bob.get(f"/api/canvases/{cid}/agents/{aid}/documents")
+        ).status_code == 404
+        assert (
+            await bob.delete(f"/api/canvases/{cid}/agents/{aid}/documents/{doc_id}")
+        ).status_code == 404
+        # Alice can still list/delete her own document.
+        assert (
+            await alice.get(f"/api/canvases/{cid}/agents/{aid}/documents")
+        ).status_code == 200
+
+    async def test_unauthed_canvas_routes_return_401(self, test_client, fresh_db):
+        # No cookie -> every canvas route is 401 (not 404/200).
+        assert (await test_client.get("/api/canvases")).status_code == 401
+        assert (await test_client.post("/api/canvases", json={})).status_code == 401
+        assert (await test_client.get(f"/api/canvases/{uuid.uuid4()}")).status_code == 401
+        assert (
+            await test_client.put(
+                f"/api/canvases/{uuid.uuid4()}",
+                json={"name": "X", "nodes": {"agents": [], "tools": []}, "edges": []},
+            )
+        ).status_code == 401
+        assert (await test_client.delete(f"/api/canvases/{uuid.uuid4()}")).status_code == 401

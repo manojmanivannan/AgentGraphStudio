@@ -83,7 +83,7 @@ known-first-party = ["canvas_server"]
 "src/canvas_server/auth.py" = ["B008"]
 "src/canvas_server/routes/canvas.py" = ["B008"]
 "src/canvas_server/routes/auth.py" = ["B008"]
-"src/canvas_server/routes/execute.py" = ["SIM105"]
+"src/canvas_server/routes/execute.py" = ["B008", "SIM105"]
 "tests/*" = ["E501"]
 
 [build-system]

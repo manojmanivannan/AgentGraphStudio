@@ -29,8 +29,8 @@ class CanvasRepo:
             selectinload(Canvas.edges),
         )
 
-    async def create(self, name: str = "Untitled Canvas") -> Canvas:
-        canvas = Canvas(name=name)
+    async def create(self, name: str = "Untitled Canvas", *, owner_id: uuid.UUID) -> Canvas:
+        canvas = Canvas(name=name, owner_id=owner_id)
         self.session.add(canvas)
         await self.session.commit()
         result = await self.session.execute(
@@ -45,8 +45,10 @@ class CanvasRepo:
         tools: list[ToolNodeInput],
         edges: list[EdgeInput],
         documents: list[AgentDocumentInput] | None = None,
+        *,
+        owner_id: uuid.UUID,
     ) -> Canvas:
-        canvas = Canvas(name=name)
+        canvas = Canvas(name=name, owner_id=owner_id)
         self.session.add(canvas)
         await self.session.flush()
 
@@ -154,6 +156,30 @@ class CanvasRepo:
             select(Canvas).order_by(Canvas.updated_at.desc())
         )
         return list(result.scalars().all())
+
+    async def list_for_owner(self, owner_id: uuid.UUID) -> list[Canvas]:
+        """Return only the canvases owned by ``owner_id``, newest-updated first."""
+        result = await self.session.execute(
+            select(Canvas)
+            .where(Canvas.owner_id == owner_id)
+            .order_by(Canvas.updated_at.desc())
+        )
+        return list(result.scalars().all())
+
+    async def get_for_owner(
+        self, canvas_id: uuid.UUID, owner_id: uuid.UUID
+    ) -> Canvas | None:
+        """Return the canvas iff it exists AND is owned by ``owner_id``.
+
+        Used by every protected canvas route to enforce per-user isolation:
+        a missing canvas and a foreign canvas are indistinguishable (404).
+        """
+        result = await self.session.execute(
+            self._eager_query().where(
+                Canvas.id == canvas_id, Canvas.owner_id == owner_id
+            )
+        )
+        return result.scalar_one_or_none()
 
     async def delete(self, canvas_id: uuid.UUID) -> bool:
         canvas = await self.get(canvas_id)

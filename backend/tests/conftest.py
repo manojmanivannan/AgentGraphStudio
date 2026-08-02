@@ -92,10 +92,28 @@ async def test_client(fresh_db):
 
 
 @pytest_asyncio.fixture
-async def blank_canvas(test_session):
+async def test_user(test_session):
+    """A persisted User row used as the owner for repo-level canvas fixtures.
+
+    Repo/unit tests that don't go through the HTTP layer still need a real
+    owner because ``canvases.owner_id`` is NOT NULL with a FK->users.
+    """
+    from canvas_server.models.auth import User
+
+    user = User(
+        email=f"blank_{uuid.uuid4().hex[:8]}@example.com",
+        password_hash="x",
+    )
+    test_session.add(user)
+    await test_session.flush()
+    return user
+
+
+@pytest_asyncio.fixture
+async def blank_canvas(test_session, test_user):
     from canvas_server.repos.canvas_repo import CanvasRepo
     repo = CanvasRepo(test_session)
-    canvas = await repo.create(name="Test Canvas")
+    canvas = await repo.create(name="Test Canvas", owner_id=test_user.id)
     return canvas
 
 
@@ -137,13 +155,127 @@ async def authed_client(fresh_db):
         # Sanity: the cookie jar now holds the session cookie.
         client.auth_email = creds["email"]  # type: ignore[attr-defined]
         client.auth_password = creds["password"]  # type: ignore[attr-defined]
+        me = await client.get("/api/auth/me")
+        assert me.status_code == 200, me.text
+        client.auth_user_id = uuid.UUID(me.json()["id"])  # type: ignore[attr-defined]
         yield client
 
     app.dependency_overrides.clear()
 
 
 @pytest_asyncio.fixture
-async def canvas_with_nodes(test_session):
+async def make_authed_client(fresh_db):
+    """Factory yielding fresh authenticated AsyncClients (one per call).
+
+    For cross-user isolation tests: call ``alice = await make_authed_client()``
+    and ``bob = await make_authed_client()`` to get two independent cookie jars
+    backed by two different registered users. Each client exposes
+    ``auth_user_id`` / ``auth_email``. All clients share the test ``get_session``
+    override; cleanup closes them at teardown.
+    """
+    from httpx import ASGITransport, AsyncClient
+
+    from canvas_server.database import get_session, get_session_factory
+    from canvas_server.main import app
+
+    factory = get_session_factory(TEST_DB_URL)
+
+    async def override_get_session():
+        async with factory() as session:
+            yield session
+
+    app.dependency_overrides[get_session] = override_get_session
+
+    created: list[AsyncClient] = []
+
+    async def _make() -> AsyncClient:
+        client = AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
+        creds = {
+            "email": f"user_{uuid.uuid4().hex[:12]}@example.com",
+            "password": "super-secret-123",
+        }
+        r = await client.post(
+            "/api/auth/register", json=creds, headers={"Origin": "http://test"}
+        )
+        assert r.status_code == 201, r.text
+        r = await client.post(
+            "/api/auth/login", json=creds, headers={"Origin": "http://test"}
+        )
+        assert r.status_code == 200, r.text
+        me = await client.get("/api/auth/me")
+        assert me.status_code == 200, me.text
+        client.auth_user_id = uuid.UUID(me.json()["id"])  # type: ignore[attr-defined]
+        client.auth_email = creds["email"]  # type: ignore[attr-defined]
+        created.append(client)
+        return client
+
+    yield _make
+
+    for client in created:
+        await client.aclose()
+    app.dependency_overrides.clear()
+
+
+@pytest_asyncio.fixture
+async def owned_canvas(authed_client, test_session):
+    """A canvas owned by ``authed_client``'s user, created via the repo.
+
+    HTTP tests that act on a canvas through the API need the canvas to belong
+    to the authenticated user; otherwise every protected route 404s.
+    """
+    from canvas_server.repos.canvas_repo import CanvasRepo
+
+    repo = CanvasRepo(test_session)
+    return await repo.create(
+        name="Test Canvas", owner_id=authed_client.auth_user_id
+    )
+
+
+@pytest_asyncio.fixture
+async def authed_sync_client(fresh_db):
+    """Sync TestClient analogue of ``authed_client`` for the execute-route tests.
+
+    Registers + logs in a user via the real cookie flow, overrides ``get_session``
+    to the test sqlite DB, and exposes ``auth_user_id`` so fakes can stub the
+    ownership chain (``canvas.owner_id == auth_user_id``). The execute routes
+    resolve the current user via ``Depends(get_current_user)`` (which uses the
+    overridden ``get_session``) while their repo work still goes through the
+    per-test monkeypatched ``get_session_factory`` — the two sessions are
+    independent, so auth and faked repos coexist.
+    """
+    from fastapi.testclient import TestClient
+
+    from canvas_server.database import get_session, get_session_factory
+    from canvas_server.main import app
+
+    factory = get_session_factory(TEST_DB_URL)
+
+    async def override_get_session():
+        async with factory() as session:
+            yield session
+
+    app.dependency_overrides[get_session] = override_get_session
+
+    client = TestClient(app)
+    creds = {
+        "email": f"user_{uuid.uuid4().hex[:12]}@example.com",
+        "password": "super-secret-123",
+    }
+    r = client.post("/api/auth/register", json=creds, headers={"Origin": "http://test"})
+    assert r.status_code == 201, r.text
+    r = client.post("/api/auth/login", json=creds, headers={"Origin": "http://test"})
+    assert r.status_code == 200, r.text
+    me = client.get("/api/auth/me")
+    assert me.status_code == 200, me.text
+    client.auth_user_id = uuid.UUID(me.json()["id"])  # type: ignore[attr-defined]
+    client.auth_email = creds["email"]  # type: ignore[attr-defined]
+    yield client
+    client.close()
+    app.dependency_overrides.clear()
+
+
+@pytest_asyncio.fixture
+async def canvas_with_nodes(test_session, test_user):
     from canvas_server.models.api import AgentNodeInput, EdgeInput, ToolNodeInput
     from canvas_server.repos.canvas_repo import CanvasRepo
 
@@ -172,6 +304,7 @@ async def canvas_with_nodes(test_session):
         agents=agents,
         tools=tools,
         edges=edges,
+        owner_id=test_user.id,
     )
     return canvas
 

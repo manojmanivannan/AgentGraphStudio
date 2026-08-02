@@ -8,7 +8,33 @@ import pytest
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
+from canvas_server.auth import get_current_user
 from canvas_server.main import app
+from canvas_server.models.auth import User
+
+# The execute routes resolve the current user via Depends(get_current_user) and
+# then check ownership through the resource -> conversation -> canvas -> owner_id
+# chain. The orchestration tests below stay DB-free by overriding
+# get_current_user with a deterministic fake user and stubbing that same
+# owner_id on the faked repos' returned objects.
+FAKE_USER_ID = uuid.UUID("00000000-0000-0000-0000-000000000001")
+
+
+async def _fake_current_user() -> User:
+    return User(id=FAKE_USER_ID, email="fake@example.com", password_hash="x")
+
+
+def _owned_canvas() -> SimpleNamespace:
+    return SimpleNamespace(owner_id=FAKE_USER_ID)
+
+
+def _owned_conv_chain() -> SimpleNamespace:
+    # A stand-in for run.conversation / plot.conversation carrying the canvas.
+    return SimpleNamespace(canvas=_owned_canvas())
+
+
+def _require_auth(monkeypatch):
+    monkeypatch.setitem(app.dependency_overrides, get_current_user, _fake_current_user)
 
 
 class FakeSessionContext:
@@ -35,7 +61,7 @@ def test_websocket_run_delegates_to_coordinator_and_forwards_events(monkeypatch)
 
         async def get_or_404(self, requested_conversation_id):
             captured["conversation_id"] = requested_conversation_id
-            return SimpleNamespace(id=requested_conversation_id)
+            return SimpleNamespace(id=requested_conversation_id, canvas=_owned_canvas())
 
     class FakeDurableRunRepo:
         def __init__(self, session):
@@ -104,6 +130,7 @@ def test_websocket_run_delegates_to_coordinator_and_forwards_events(monkeypatch)
         lambda: fake_worker,
     )
 
+    _require_auth(monkeypatch)
     client = TestClient(app)
     try:
         with client.websocket_connect(f"/ws/conversations/{conversation_id}/run") as websocket:
@@ -154,7 +181,7 @@ def test_websocket_disconnect_does_not_cancel_background_run(monkeypatch):
             pass
 
         async def get_or_404(self, requested_conversation_id):
-            return SimpleNamespace(id=requested_conversation_id)
+            return SimpleNamespace(id=requested_conversation_id, canvas=_owned_canvas())
 
     class FakeDurableRunRepo:
         def __init__(self, session):
@@ -207,6 +234,7 @@ def test_websocket_disconnect_does_not_cancel_background_run(monkeypatch):
         lambda: fake_worker,
     )
 
+    _require_auth(monkeypatch)
     client = TestClient(app)
     try:
         with client.websocket_connect(f"/ws/conversations/{conversation_id}/run") as websocket:
@@ -231,6 +259,7 @@ def test_get_plot_route_success(monkeypatch):
         id = plot_id
         content = b"fake-binary-content"
         format = "png"
+        conversation = _owned_conv_chain()
 
     class FakeConversationRepo:
         def __init__(self, session):
@@ -248,6 +277,7 @@ def test_get_plot_route_success(monkeypatch):
         FakeConversationRepo,
     )
 
+    _require_auth(monkeypatch)
     client = TestClient(app)
     response = client.get(f"/api/plots/{plot_id}")
     assert response.status_code == 200
@@ -273,6 +303,7 @@ def test_get_plot_route_not_found(monkeypatch):
         FakeConversationRepo,
     )
 
+    _require_auth(monkeypatch)
     client = TestClient(app)
     response = client.get(f"/api/plots/{plot_id}")
     assert response.status_code == 404
@@ -288,7 +319,7 @@ def test_get_active_run_route_returns_latest_non_terminal_run(monkeypatch):
 
         async def get_or_404(self, requested_conversation_id):
             assert requested_conversation_id == conversation_id
-            return SimpleNamespace(id=requested_conversation_id)
+            return SimpleNamespace(id=requested_conversation_id, canvas=_owned_canvas())
 
     class FakeDurableRunRepo:
         def __init__(self, session):
@@ -316,6 +347,7 @@ def test_get_active_run_route_returns_latest_non_terminal_run(monkeypatch):
         FakeDurableRunRepo,
     )
 
+    _require_auth(monkeypatch)
     client = TestClient(app)
     response = client.get(f"/api/conversations/{conversation_id}/runs/active")
 
@@ -342,6 +374,9 @@ def test_get_run_events_route_replays_after_sequence(monkeypatch):
         def __init__(self, session):
             pass
 
+        async def get_or_404(self, requested_run_id):
+            return SimpleNamespace(id=requested_run_id, conversation=_owned_conv_chain())
+
         async def list_events(self, requested_run_id, *, after_sequence=0):
             captured["run_id"] = requested_run_id
             captured["after_sequence"] = after_sequence
@@ -362,6 +397,7 @@ def test_get_run_events_route_replays_after_sequence(monkeypatch):
         FakeDurableRunRepo,
     )
 
+    _require_auth(monkeypatch)
     client = TestClient(app)
     response = client.get(f"/api/runs/{run_id}/events", params={"after_sequence": 3})
 
@@ -388,7 +424,7 @@ def test_abort_run_route_marks_running_run_as_aborting(monkeypatch):
 
         async def get_or_404(self, requested_run_id):
             assert requested_run_id == run_id
-            return SimpleNamespace(id=run_id, status="running", conversation_id=uuid.uuid4())
+            return SimpleNamespace(id=run_id, status="running", conversation_id=uuid.uuid4(), conversation=_owned_conv_chain())
 
         async def mark_aborting(self, requested_run_id):
             assert requested_run_id == run_id
@@ -404,6 +440,7 @@ def test_abort_run_route_marks_running_run_as_aborting(monkeypatch):
         FakeDurableRunRepo,
     )
 
+    _require_auth(monkeypatch)
     client = TestClient(app)
     response = client.post(f"/api/runs/{run_id}/abort")
 
@@ -422,7 +459,7 @@ def test_abort_run_route_keeps_terminal_run_unchanged(monkeypatch):
 
         async def get_or_404(self, requested_run_id):
             assert requested_run_id == run_id
-            return SimpleNamespace(id=run_id, status="aborted", conversation_id=uuid.uuid4())
+            return SimpleNamespace(id=run_id, status="aborted", conversation_id=uuid.uuid4(), conversation=_owned_conv_chain())
 
         async def mark_aborting(self, requested_run_id):
             raise AssertionError("mark_aborting should not be called for terminal runs")
@@ -436,6 +473,7 @@ def test_abort_run_route_keeps_terminal_run_unchanged(monkeypatch):
         FakeDurableRunRepo,
     )
 
+    _require_auth(monkeypatch)
     client = TestClient(app)
     response = client.post(f"/api/runs/{run_id}/abort")
 
@@ -457,7 +495,7 @@ def test_websocket_run_supports_resuming_existing_run(monkeypatch):
 
         async def get_or_404(self, requested_conversation_id):
             captured["conversation_id"] = requested_conversation_id
-            return SimpleNamespace(id=requested_conversation_id)
+            return SimpleNamespace(id=requested_conversation_id, canvas=_owned_canvas())
 
     class FakeDurableRunRepo:
         def __init__(self, session):
@@ -519,6 +557,7 @@ def test_websocket_run_supports_resuming_existing_run(monkeypatch):
         lambda: fake_worker,
     )
 
+    _require_auth(monkeypatch)
     client = TestClient(app)
     try:
         with client.websocket_connect(f"/ws/conversations/{conversation_id}/run") as websocket:
@@ -556,7 +595,7 @@ def test_websocket_resume_does_not_restart_aborted_run(monkeypatch):
             pass
 
         async def get_or_404(self, requested_conversation_id):
-            return SimpleNamespace(id=requested_conversation_id)
+            return SimpleNamespace(id=requested_conversation_id, canvas=_owned_canvas())
 
     class FakeDurableRunRepo:
         def __init__(self, session):
@@ -605,6 +644,7 @@ def test_websocket_resume_does_not_restart_aborted_run(monkeypatch):
         lambda: FakeWorker(),
     )
 
+    _require_auth(monkeypatch)
     client = TestClient(app)
     with client.websocket_connect(f"/ws/conversations/{conversation_id}/run") as websocket:
         websocket.send_text(
@@ -631,7 +671,7 @@ def test_websocket_run_in_api_mode_streams_events_without_local_worker(monkeypat
             pass
 
         async def get_or_404(self, requested_conversation_id):
-            return SimpleNamespace(id=requested_conversation_id)
+            return SimpleNamespace(id=requested_conversation_id, canvas=_owned_canvas())
 
     class FakeEvent:
         def __init__(self, sequence, payload, event_type):
@@ -684,6 +724,7 @@ def test_websocket_run_in_api_mode_streams_events_without_local_worker(monkeypat
         lambda: (_ for _ in ()).throw(AssertionError("worker should not be used in api mode")),
     )
 
+    _require_auth(monkeypatch)
     client = TestClient(app)
     try:
         with client.websocket_connect(f"/ws/conversations/{conversation_id}/run") as websocket:
@@ -713,7 +754,7 @@ def test_submit_interrupt_response_route_resolves_pending_interrupt(monkeypatch)
 
         async def get_or_404(self, requested_run_id):
             assert requested_run_id == run_id
-            return SimpleNamespace(id=run_id, status="running")
+            return SimpleNamespace(id=run_id, status="running", conversation=_owned_conv_chain())
 
         async def append_event(self, requested_run_id, *, event_type, payload):
             captured["event_type"] = event_type
@@ -740,6 +781,7 @@ def test_submit_interrupt_response_route_resolves_pending_interrupt(monkeypatch)
         lambda: FakeWorker(),
     )
 
+    _require_auth(monkeypatch)
     client = TestClient(app)
     response = client.post(
         f"/api/runs/{run_id}/interrupt-response",
@@ -765,7 +807,7 @@ def test_submit_interrupt_response_route_persists_durable_event_for_external_wor
 
         async def get_or_404(self, requested_run_id):
             assert requested_run_id == run_id
-            return SimpleNamespace(id=run_id, status="running")
+            return SimpleNamespace(id=run_id, status="running", conversation=_owned_conv_chain())
 
         async def append_event(self, requested_run_id, *, event_type, payload):
             captured["run_id"] = requested_run_id
@@ -790,6 +832,7 @@ def test_submit_interrupt_response_route_persists_durable_event_for_external_wor
         lambda: FakeWorker(),
     )
 
+    _require_auth(monkeypatch)
     client = TestClient(app)
     response = client.post(
         f"/api/runs/{run_id}/interrupt-response",
@@ -814,7 +857,7 @@ def test_submit_interrupt_response_route_returns_200_even_without_local_pending_
 
         async def get_or_404(self, requested_run_id):
             assert requested_run_id == run_id
-            return SimpleNamespace(id=run_id, status="running")
+            return SimpleNamespace(id=run_id, status="running", conversation=_owned_conv_chain())
 
         async def append_event(self, requested_run_id, *, event_type, payload):
             return SimpleNamespace(sequence=11)
@@ -837,6 +880,7 @@ def test_submit_interrupt_response_route_returns_200_even_without_local_pending_
         lambda: FakeWorker(),
     )
 
+    _require_auth(monkeypatch)
     client = TestClient(app)
     response = client.post(
         f"/api/runs/{run_id}/interrupt-response",
@@ -859,6 +903,7 @@ def test_submit_interrupt_response_route_returns_422_when_request_id_missing(mon
         lambda: FakeWorker(),
     )
 
+    _require_auth(monkeypatch)
     client = TestClient(app)
     response = client.post(
         f"/api/runs/{run_id}/interrupt-response",

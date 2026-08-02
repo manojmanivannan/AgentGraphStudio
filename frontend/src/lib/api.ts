@@ -30,6 +30,15 @@ export const apiOrigin = configuredApiHost
 
 const API_BASE = useProxyMode ? "/api" : `${apiOrigin}/api`;
 
+/**
+ * Shared fetch wrapper: sends the auth session cookie on every request so the
+ * server-side session resolves the current user. `credentials: "include"` is
+ * required both for the same-origin dev proxy and for the cross-origin
+ * (host:8000) case where the cookie was set by the backend.
+ */
+const apiFetch = (input: string, init: RequestInit = {}): Promise<Response> =>
+  fetch(input, { credentials: "include", ...init });
+
 function isNetworkFetchError(error: unknown): error is Error {
   return error instanceof Error && /fetch|network|load failed|failed to fetch/i.test(error.message);
 }
@@ -45,7 +54,7 @@ async function readErrorDetail(
 export async function createCanvas(
   name = "Untitled Canvas"
 ): Promise<CanvasResponse> {
-  const res = await fetch(`${API_BASE}/canvases`, {
+  const res = await apiFetch(`${API_BASE}/canvases`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ name }),
@@ -55,13 +64,13 @@ export async function createCanvas(
 }
 
 export async function listCanvases(): Promise<CanvasListItem[]> {
-  const res = await fetch(`${API_BASE}/canvases`);
+  const res = await apiFetch(`${API_BASE}/canvases`);
   if (!res.ok) throw new Error("Failed to list canvases");
   return res.json();
 }
 
 export async function getCanvas(id: string): Promise<CanvasResponse> {
-  const res = await fetch(`${API_BASE}/canvases/${id}`);
+  const res = await apiFetch(`${API_BASE}/canvases/${id}`);
   if (!res.ok) throw new Error("Failed to get canvas");
   return res.json();
 }
@@ -70,7 +79,7 @@ export async function saveCanvas(
   id: string,
   payload: CanvasSavePayload
 ): Promise<CanvasResponse> {
-  const res = await fetch(`${API_BASE}/canvases/${id}`, {
+  const res = await apiFetch(`${API_BASE}/canvases/${id}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
@@ -80,18 +89,18 @@ export async function saveCanvas(
 }
 
 export async function deleteCanvas(id: string): Promise<void> {
-  const res = await fetch(`${API_BASE}/canvases/${id}`, { method: "DELETE" });
+  const res = await apiFetch(`${API_BASE}/canvases/${id}`, { method: "DELETE" });
   if (!res.ok) throw new Error("Failed to delete canvas");
 }
 
 export async function exportCanvas(id: string): Promise<CanvasResponse> {
-  const res = await fetch(`${API_BASE}/canvases/${id}/export`);
+  const res = await apiFetch(`${API_BASE}/canvases/${id}/export`);
   if (!res.ok) throw new Error("Failed to export canvas");
   return res.json();
 }
 
 export async function exportCanvasZip(id: string): Promise<Blob> {
-  const res = await fetch(`${API_BASE}/canvases/${id}/export-zip`);
+  const res = await apiFetch(`${API_BASE}/canvases/${id}/export-zip`);
   if (!res.ok) throw new Error("Failed to export canvas ZIP");
   return res.blob();
 }
@@ -99,7 +108,7 @@ export async function exportCanvasZip(id: string): Promise<Blob> {
 export async function importCanvas(
   payload: CanvasSavePayload
 ): Promise<CanvasResponse> {
-  const res = await fetch(`${API_BASE}/canvases/import`, {
+  const res = await apiFetch(`${API_BASE}/canvases/import`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
@@ -120,11 +129,11 @@ export async function importCanvasZip(file: File): Promise<CanvasResponse> {
 
   let res: Response;
   try {
-    res = await fetch(`${API_BASE}/canvases/import-zip`, createRequestInit());
+    res = await apiFetch(`${API_BASE}/canvases/import-zip`, createRequestInit());
   } catch {
 
     try {
-      res = await fetch(`/api/canvases/import-zip`, createRequestInit());
+      res = await apiFetch(`/api/canvases/import-zip`, createRequestInit());
     } catch {
       throw new Error(
         "Failed to import canvas ZIP. Could not reach the backend import endpoint."
@@ -135,7 +144,7 @@ export async function importCanvasZip(file: File): Promise<CanvasResponse> {
   if (!res.ok) {
     if (res.status >= 500) {
       try {
-        const fallbackRes = await fetch(`/api/canvases/import-zip`, createRequestInit());
+        const fallbackRes = await apiFetch(`/api/canvases/import-zip`, createRequestInit());
         if (!fallbackRes.ok) {
           throw new Error(await readErrorDetail(fallbackRes, "Failed to import canvas ZIP"));
         }
@@ -154,7 +163,7 @@ export async function createConversation(
   canvasId: string,
   name = "New Conversation"
 ): Promise<Conversation> {
-  const res = await fetch(
+  const res = await apiFetch(
     `${API_BASE}/canvases/${canvasId}/conversations`,
     {
       method: "POST",
@@ -170,7 +179,7 @@ export async function listConversations(
   canvasId: string
 ): Promise<ConversationSummary[]> {
   const url = `${API_BASE}/canvases/${canvasId}/conversations?_=${Date.now()}`;
-  const res = await fetch(url, { cache: "no-store" });
+  const res = await apiFetch(url, { cache: "no-store" });
   if (!res.ok) throw new Error("Failed to list conversations");
   return res.json();
 }
@@ -180,7 +189,7 @@ export async function getConversation(
   conversationId: string
 ): Promise<Conversation> {
   const url = `${API_BASE}/canvases/${canvasId}/conversations/${conversationId}?_=${Date.now()}`;
-  const res = await fetch(url, { cache: "no-store" });
+  const res = await apiFetch(url, { cache: "no-store" });
   if (!res.ok) throw new Error("Failed to get conversation");
   return res.json();
 }
@@ -189,7 +198,7 @@ export async function getConversationById(
   conversationId: string
 ): Promise<Conversation> {
   const url = `${API_BASE}/canvases/conversations/${conversationId}?_=${Date.now()}`;
-  const res = await fetch(url, { cache: "no-store" });
+  const res = await apiFetch(url, { cache: "no-store" });
   if (!res.ok) throw new Error("Failed to get conversation");
   return res.json();
 }
@@ -198,7 +207,7 @@ export async function deleteConversation(
   canvasId: string,
   conversationId: string
 ): Promise<void> {
-  const res = await fetch(
+  const res = await apiFetch(
     `${API_BASE}/canvases/${canvasId}/conversations/${conversationId}`,
     { method: "DELETE" }
   );
@@ -208,7 +217,7 @@ export async function deleteConversation(
 export async function deleteConversationById(
   conversationId: string
 ): Promise<void> {
-  const res = await fetch(
+  const res = await apiFetch(
     `${API_BASE}/canvases/conversations/${conversationId}`,
     { method: "DELETE" }
   );
@@ -219,7 +228,7 @@ export async function inspectTool(
   code: string,
   dependencies?: string[]
 ): Promise<ToolInspectResponse> {
-  const res = await fetch(`${API_BASE}/tools/inspect`, {
+  const res = await apiFetch(`${API_BASE}/tools/inspect`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ code, dependencies: dependencies ?? [] }),
@@ -236,7 +245,7 @@ export async function testTool(
   args: Record<string, string>,
   dependencies?: string[]
 ): Promise<ToolTestResponse> {
-  const res = await fetch(`${API_BASE}/tools/test`, {
+  const res = await apiFetch(`${API_BASE}/tools/test`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ code, args, dependencies: dependencies ?? [] }),
@@ -252,7 +261,7 @@ export async function listAgentDocuments(
   canvasId: string,
   agentId: string
 ): Promise<AgentDocument[]> {
-  const res = await fetch(`${API_BASE}/canvases/${canvasId}/agents/${agentId}/documents`);
+  const res = await apiFetch(`${API_BASE}/canvases/${canvasId}/agents/${agentId}/documents`);
   if (!res.ok) throw new Error("Failed to list agent documents");
   return res.json();
 }
@@ -265,7 +274,7 @@ export async function uploadAgentDocument(
   const formData = new FormData();
   formData.append("file", file);
 
-  const res = await fetch(
+  const res = await apiFetch(
     `${API_BASE}/canvases/${canvasId}/agents/${agentId}/documents`,
     {
       method: "POST",
@@ -281,7 +290,7 @@ export async function deleteAgentDocument(
   agentId: string,
   documentId: string
 ): Promise<void> {
-  const res = await fetch(
+  const res = await apiFetch(
     `${API_BASE}/canvases/${canvasId}/agents/${agentId}/documents/${documentId}`,
     { method: "DELETE" }
   );
@@ -292,7 +301,7 @@ export async function exportConversationZip(
   canvasId: string,
   conversationId: string
 ): Promise<Blob> {
-  const res = await fetch(
+  const res = await apiFetch(
     `${API_BASE}/canvases/${canvasId}/conversations/${conversationId}/export`
   );
   if (!res.ok) throw new Error("Failed to export conversation ZIP");
@@ -306,7 +315,7 @@ export async function importConversationZip(
   const formData = new FormData();
   formData.append("file", file);
 
-  const res = await fetch(
+  const res = await apiFetch(
     `${API_BASE}/canvases/${canvasId}/conversations/import`,
     {
       method: "POST",
@@ -323,7 +332,7 @@ export async function importConversationZip(
 export async function getActiveRun(
   conversationId: string
 ): Promise<ActiveRunResponse | null> {
-  const res = await fetch(`${API_BASE}/conversations/${conversationId}/runs/active`);
+  const res = await apiFetch(`${API_BASE}/conversations/${conversationId}/runs/active`);
   if (!res.ok) throw new Error("Failed to get active run");
   return res.json();
 }
@@ -333,13 +342,13 @@ export async function getRunEventsAfter(
   afterSequence: number
 ): Promise<ExecutionEvent[]> {
   const params = new URLSearchParams({ after_sequence: String(afterSequence) });
-  const res = await fetch(`${API_BASE}/runs/${runId}/events?${params.toString()}`);
+  const res = await apiFetch(`${API_BASE}/runs/${runId}/events?${params.toString()}`);
   if (!res.ok) throw new Error("Failed to get run events");
   return res.json();
 }
 
 export async function abortRun(runId: string): Promise<{ run_id: string; status: string }> {
-  const res = await fetch(`${API_BASE}/runs/${runId}/abort`, {
+  const res = await apiFetch(`${API_BASE}/runs/${runId}/abort`, {
     method: "POST",
   });
   if (!res.ok) throw new Error("Failed to abort run");
@@ -352,7 +361,7 @@ export async function submitInterruptResponse(
   responseType: "human_input_response" | "tool_approval_response",
   data: Record<string, unknown>
 ): Promise<{ ok: boolean; request_id: string }> {
-  const res = await fetch(`${API_BASE}/runs/${runId}/interrupt-response`, {
+  const res = await apiFetch(`${API_BASE}/runs/${runId}/interrupt-response`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ request_id: requestId, type: responseType, ...data }),

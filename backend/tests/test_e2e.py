@@ -268,22 +268,22 @@ class TestE2ERouterMath:
 
 class TestE2EAPIIntegration:
     @pytest.mark.asyncio
-    async def test_import_demo_team_via_api(self, test_client):
+    async def test_import_demo_team_via_api(self, authed_client):
         team = _make_team_with_fresh_ids(load_demo_team())
 
-        create_resp = await test_client.post(
+        create_resp = await authed_client.post(
             "/api/canvases", json={"name": team["name"]}
         )
         assert create_resp.status_code == 200
         canvas_id = create_resp.json()["id"]
 
-        save_resp = await test_client.put(
+        save_resp = await authed_client.put(
             f"/api/canvases/{canvas_id}",
             json={"name": team["name"], "nodes": team["nodes"], "edges": team["edges"]},
         )
         assert save_resp.status_code == 200
 
-        get_resp = await test_client.get(f"/api/canvases/{canvas_id}")
+        get_resp = await authed_client.get(f"/api/canvases/{canvas_id}")
         assert get_resp.status_code == 200
         body = get_resp.json()
         assert body["name"] == "Demo Team"
@@ -291,20 +291,20 @@ class TestE2EAPIIntegration:
         assert len(body["edges"]) == 2
 
     @pytest.mark.asyncio
-    async def test_export_import_round_trip_of_demo_team(self, test_client):
+    async def test_export_import_round_trip_of_demo_team(self, authed_client):
         team = _make_team_with_fresh_ids(load_demo_team())
 
-        create_resp = await test_client.post(
+        create_resp = await authed_client.post(
             "/api/canvases", json={"name": team["name"]}
         )
         canvas_id = create_resp.json()["id"]
 
-        await test_client.put(
+        await authed_client.put(
             f"/api/canvases/{canvas_id}",
             json={"name": team["name"], "nodes": team["nodes"], "edges": team["edges"]},
         )
 
-        export_resp = await test_client.get(f"/api/canvases/{canvas_id}/export")
+        export_resp = await authed_client.get(f"/api/canvases/{canvas_id}/export")
         assert export_resp.status_code == 200
         exported = export_resp.json()
         assert exported["name"] == "Demo Team"
@@ -312,27 +312,27 @@ class TestE2EAPIIntegration:
         assert len(exported["edges"]) == 2
 
         imported_payload = _make_team_with_fresh_ids(exported)
-        import_resp = await test_client.post("/api/canvases/import", json=imported_payload)
+        import_resp = await authed_client.post("/api/canvases/import", json=imported_payload)
         assert import_resp.status_code == 200
         imported = import_resp.json()
         assert imported["name"] == "Demo Team"
         assert len(imported["nodes"]["agents"]) == 3
 
     @pytest.mark.asyncio
-    async def test_demo_team_agents_and_edges_persist_correctly(self, test_client):
+    async def test_demo_team_agents_and_edges_persist_correctly(self, authed_client):
         team = _make_team_with_fresh_ids(load_demo_team())
 
-        create_resp = await test_client.post(
+        create_resp = await authed_client.post(
             "/api/canvases", json={"name": team["name"]}
         )
         canvas_id = create_resp.json()["id"]
 
-        await test_client.put(
+        await authed_client.put(
             f"/api/canvases/{canvas_id}",
             json={"name": team["name"], "nodes": team["nodes"], "edges": team["edges"]},
         )
 
-        get_resp = await test_client.get(f"/api/canvases/{canvas_id}")
+        get_resp = await authed_client.get(f"/api/canvases/{canvas_id}")
         body = get_resp.json()
 
         agent_types = {a["agent_type"] for a in body["nodes"]["agents"]}
