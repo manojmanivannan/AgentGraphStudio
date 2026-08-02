@@ -33,4 +33,4 @@ test-backend:
 test-frontend:
 	cd frontend && npx vitest run
 
-test: test-backend test-frontend
+test: test-backend test-frontend clean-sandbox
