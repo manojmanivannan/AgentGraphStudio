@@ -12,6 +12,7 @@ from fastapi.staticfiles import StaticFiles
 import canvas_server
 from canvas_server.background_run_worker import shutdown_background_run_worker
 from canvas_server.config import settings
+from canvas_server.routes.auth import auth_router
 from canvas_server.routes.canvas import canvas_router
 from canvas_server.routes.execute import execute_router
 from canvas_server.routes.tools import tools_router
@@ -133,6 +134,7 @@ async def global_exception_handler(request: Request, exc: Exception):
     )
 
 
+app.include_router(auth_router)
 app.include_router(canvas_router)
 app.include_router(execute_router)
 app.include_router(tools_router)

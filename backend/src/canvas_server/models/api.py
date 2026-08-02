@@ -193,3 +193,29 @@ class ToolTestResponse(BaseModel):
     success: bool
     output: str
     execution_time_ms: float
+
+
+# --- Auth request/response models ---
+
+
+class RegisterRequest(BaseModel):
+    email: str
+    password: str
+
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+
+class UserResponse(BaseModel):
+    id: uuid.UUID
+    email: str
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class AuthResponse(BaseModel):
+    """Returned by register and login: the authenticated user."""
+    user: UserResponse

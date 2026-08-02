@@ -100,6 +100,49 @@ async def blank_canvas(test_session):
 
 
 @pytest_asyncio.fixture
+async def authed_client(fresh_db):
+    """An httpx AsyncClient that has registered + logged in via the REAL cookie
+    flow (cookie jar), so protected routes authenticate normally.
+
+    No auth is bypassed: get_current_user reads the session cookie and resolves
+    it against the real sessions table. Only get_session is overridden to point
+    at the test sqlite DB (same pattern as test_client). No auth-disable flag.
+    """
+    from canvas_server.database import get_session, get_session_factory
+    from canvas_server.main import app
+
+    factory = get_session_factory(TEST_DB_URL)
+
+    async def override_get_session():
+        async with factory() as session:
+            yield session
+
+    app.dependency_overrides[get_session] = override_get_session
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        creds = {
+            "email": f"user_{uuid.uuid4().hex[:12]}@example.com",
+            "password": "super-secret-123",
+        }
+        # Same-origin Origin header satisfies the CSRF check on state-changing routes.
+        r = await client.post(
+            "/api/auth/register", json=creds, headers={"Origin": "http://test"}
+        )
+        assert r.status_code == 201, r.text
+        r = await client.post(
+            "/api/auth/login", json=creds, headers={"Origin": "http://test"}
+        )
+        assert r.status_code == 200, r.text
+        # Sanity: the cookie jar now holds the session cookie.
+        client.auth_email = creds["email"]  # type: ignore[attr-defined]
+        client.auth_password = creds["password"]  # type: ignore[attr-defined]
+        yield client
+
+    app.dependency_overrides.clear()
+
+
+@pytest_asyncio.fixture
 async def canvas_with_nodes(test_session):
     from canvas_server.models.api import AgentNodeInput, EdgeInput, ToolNodeInput
     from canvas_server.repos.canvas_repo import CanvasRepo

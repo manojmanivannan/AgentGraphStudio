@@ -24,6 +24,10 @@ dependencies = [
     "mlflow>=2.20.0",
     "llm-sandbox[docker]>=0.3.39",
     "pgvector>=0.2.5",
+    "passlib[bcrypt]>=1.7.4",
+    # passlib 1.7.4 needs to read bcrypt's version (bcrypt<4 ships __about__)
+    # so it can skip its broken detect_wrap_bug probe against modern bcrypt.
+    "bcrypt<4",
 ]
 
 [dependency-groups]
@@ -76,7 +80,9 @@ max-doc-length = 120
 known-first-party = ["canvas_server"]
 
 [tool.ruff.lint.per-file-ignores]
+"src/canvas_server/auth.py" = ["B008"]
 "src/canvas_server/routes/canvas.py" = ["B008"]
+"src/canvas_server/routes/auth.py" = ["B008"]
 "src/canvas_server/routes/execute.py" = ["SIM105"]
 "tests/*" = ["E501"]
 
