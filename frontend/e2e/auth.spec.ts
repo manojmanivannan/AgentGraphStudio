@@ -184,11 +184,13 @@ test.describe("Account — logout other sessions", () => {
         data: { email: E2E_USER.email, password: E2E_USER.password },
       });
       expect(loginRes.status()).toBe(200);
-      const secondCookie = (await loginRes.headersArray())["set-cookie"]?.find((c) =>
-        c.startsWith("agentbuilder_session=")
+      // headersArray() returns an array of {name, value} objects, not a record
+      // keyed by header name — find the set-cookie entry and read its value.
+      const setCookieHeader = (await loginRes.headersArray()).find(
+        (h) => h.name.toLowerCase() === "set-cookie",
       );
-      expect(secondCookie).toBeTruthy();
-      const secondToken = secondCookie!.split("=")[1].split(";")[0];
+      expect(setCookieHeader).toBeTruthy();
+      const secondToken = setCookieHeader!.value.split("=")[1].split(";")[0];
 
       // The second session is alive before the action.
       const beforeMe = await secondCtx.get("http://localhost:8000/api/auth/me", {
