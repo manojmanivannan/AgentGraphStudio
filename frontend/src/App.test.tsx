@@ -5,8 +5,15 @@ import { http, HttpResponse } from "msw";
 import { server } from "@/test/mocks/server";
 import { mockCanvas, mockCanvasListItem } from "@/test/mocks/handlers";
 import { useCanvasStore } from "@/store/canvasStore";
+import { useAuthStore } from "@/store/authStore";
 import App from "./App";
 import { MemoryRouter } from "react-router-dom";
+
+const mockUser = {
+  id: "user-1",
+  email: "tester@example.com",
+  created_at: "2024-01-01T00:00:00Z",
+};
 
 vi.mock("@/components/layout/AppShell", () => ({
   AppShell: () => (
@@ -21,6 +28,10 @@ vi.mock("@/components/chat/ChatPage", () => ({
 
 beforeEach(() => {
   useCanvasStore.getState().reset();
+  // Existing App tests assume an authenticated session so the route guard
+  // lets them straight through to the landing page / canvas editor without
+  // waiting on the async /auth/me hydration.
+  useAuthStore.getState().setUser(mockUser);
   // Clear the JSDOM URL query params between tests to avoid test pollution
   window.history.replaceState({}, "", "/");
 });
@@ -436,5 +447,107 @@ describe("App — landing page", () => {
     await waitFor(() => {
       expect(screen.getByTestId("chat-page")).toBeInTheDocument();
     });
+  });
+});
+
+describe("App — auth guards", () => {
+  it("redirects unauthenticated users hitting '/' to /login", async () => {
+    useAuthStore.getState().clear();
+    render(
+      <MemoryRouter initialEntries={["/"]}>
+        <App />
+      </MemoryRouter>
+    );
+    await waitFor(() => {
+      expect(screen.getByText("Welcome back")).toBeInTheDocument();
+    });
+    // The landing page renders "AgentGraph Studio" as a heading; the login
+    // page only has it as a small home link, so the heading should be absent.
+    expect(screen.queryByRole("heading", { name: /AgentGraph Studio/i })).not.toBeInTheDocument();
+  });
+
+  it("redirects unauthenticated users hitting a canvas route to /login", async () => {
+    useAuthStore.getState().clear();
+    render(
+      <MemoryRouter initialEntries={["/canvas/c1"]}>
+        <App />
+      </MemoryRouter>
+    );
+    await waitFor(() => {
+      expect(screen.getByText("Welcome back")).toBeInTheDocument();
+    });
+    expect(screen.queryByTestId("app-shell")).not.toBeInTheDocument();
+  });
+
+  it("redirects authenticated users hitting /login to the app", async () => {
+    render(
+      <MemoryRouter initialEntries={["/login"]}>
+        <App />
+      </MemoryRouter>
+    );
+    await waitFor(() => {
+      expect(screen.getByText("AgentGraph Studio")).toBeInTheDocument();
+    });
+    expect(screen.queryByText("Welcome back")).not.toBeInTheDocument();
+  });
+
+  it("redirects authenticated users hitting /register to the app", async () => {
+    render(
+      <MemoryRouter initialEntries={["/register"]}>
+        <App />
+      </MemoryRouter>
+    );
+    await waitFor(() => {
+      expect(screen.getByText("AgentGraph Studio")).toBeInTheDocument();
+    });
+    expect(screen.queryByText("Create your account")).not.toBeInTheDocument();
+  });
+
+  it("hydrates an authenticated session from /auth/me on boot", async () => {
+    useAuthStore.getState().reset();
+    server.use(
+      http.get("http://localhost:8000/api/auth/me", () => HttpResponse.json(mockUser))
+    );
+    render(
+      <MemoryRouter initialEntries={["/"]}>
+        <App />
+      </MemoryRouter>
+    );
+    await waitFor(() => {
+      expect(useAuthStore.getState().status).toBe("authenticated");
+      expect(screen.getByText("AgentGraph Studio")).toBeInTheDocument();
+    });
+  });
+
+  it("hydrates to unauthenticated (redirects to /login) when /auth/me returns 401", async () => {
+    useAuthStore.getState().reset();
+    server.use(
+      http.get("http://localhost:8000/api/auth/me", () => new HttpResponse(null, { status: 401 }))
+    );
+    render(
+      <MemoryRouter initialEntries={["/"]}>
+        <App />
+      </MemoryRouter>
+    );
+    await waitFor(() => {
+      expect(useAuthStore.getState().status).toBe("unauthenticated");
+      expect(screen.getByText("Welcome back")).toBeInTheDocument();
+    });
+  });
+
+  it("clears stale auth state and routes to /login when a data call returns 401", async () => {
+    server.use(
+      http.get("http://localhost:8000/api/canvases", () => new HttpResponse(null, { status: 401 }))
+    );
+    render(
+      <MemoryRouter initialEntries={["/"]}>
+        <App />
+      </MemoryRouter>
+    );
+    await waitFor(() => {
+      expect(useAuthStore.getState().status).toBe("unauthenticated");
+      expect(screen.getByText("Welcome back")).toBeInTheDocument();
+    });
+    expect(useAuthStore.getState().user).toBeNull();
   });
 });

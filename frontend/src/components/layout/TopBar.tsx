@@ -1,7 +1,10 @@
-import { Check, Loader2, AlertCircle, Home } from "lucide-react";
+import { useState } from "react";
+import { Check, Loader2, AlertCircle, Home, LogOut } from "lucide-react";
 import { useCanvasStore } from "@/store/canvasStore";
+import { useAuthStore } from "@/store/authStore";
 import { useNavigate } from "react-router-dom";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { logout as logoutApi } from "@/lib/api";
 
 export function TopBar() {
   const canvasId = useCanvasStore((s) => s.canvasId);
@@ -12,8 +15,11 @@ export function TopBar() {
   const propertiesWidth = useCanvasStore((s) => s.propertiesWidth);
   const isDraggingPanel = useCanvasStore((s) => s.isDraggingPanel);
   const sidebarCollapsed = useCanvasStore((s) => s.sidebarCollapsed);
+  const user = useAuthStore((s) => s.user);
+  const clearAuth = useAuthStore((s) => s.clear);
 
   const navigate = useNavigate();
+  const [loggingOut, setLoggingOut] = useState(false);
 
   const propertiesOpen = selectedNodeId !== null;
 
@@ -21,6 +27,23 @@ export function TopBar() {
 
   // Shift right edge to avoid being covered by overlay panels
   const rightOffset = propertiesOpen ? propertiesWidth : 0;
+
+  const handleLogout = async () => {
+    setLoggingOut(true);
+    try {
+      await logoutApi();
+    } catch (err) {
+      // Even if the backend call fails (network down, server error), clear the
+      // local session and return to /login — the cookie is httpOnly so we
+      // can't clear it client-side, but the user is effectively logged out of
+      // this client. They'll be re-prompted on next /auth/me.
+      console.error("Logout request failed:", err);
+    } finally {
+      clearAuth();
+      setLoggingOut(false);
+      navigate("/login", { replace: true });
+    }
+  };
 
   return (
     <div
@@ -82,6 +105,24 @@ export function TopBar() {
 
       {/* Theme Toggle */}
       <ThemeToggle className="hover:bg-[var(--color-elevated)]" />
+
+      {/* Logged-in user + logout */}
+      {user && (
+        <div className="flex items-center gap-2 pl-2 ml-1 border-l border-[var(--color-border-subtle)]">
+          <span className="text-[11px] text-[var(--color-text-tertiary)] truncate max-w-[140px]" title={user.email}>
+            {user.email}
+          </span>
+          <button
+            onClick={handleLogout}
+            disabled={loggingOut}
+            data-testid="logout-button"
+            title="Log out"
+            className="flex items-center justify-center p-1 rounded-md text-[var(--color-text-tertiary)] hover:text-[var(--color-danger)] hover:bg-[var(--color-elevated)] transition-all disabled:opacity-50 cursor-pointer"
+          >
+            <LogOut className="w-4 h-4" />
+          </button>
+        </div>
+      )}
     </div>
   );
 }

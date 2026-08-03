@@ -1,5 +1,6 @@
 import type {
   ActiveRunResponse,
+  AuthResponse,
   CanvasListItem,
   CanvasResponse,
   CanvasSavePayload,
@@ -9,6 +10,7 @@ import type {
   ToolInspectResponse,
   ToolTestResponse,
   AgentDocument,
+  User,
 } from "@/types";
 
 const configuredApiHost = (import.meta.env.VITE_API_HOST as string | undefined)?.trim();
@@ -31,13 +33,56 @@ export const apiOrigin = configuredApiHost
 const API_BASE = useProxyMode ? "/api" : `${apiOrigin}/api`;
 
 /**
- * Shared fetch wrapper: sends the auth session cookie on every request so the
- * server-side session resolves the current user. `credentials: "include"` is
- * required both for the same-origin dev proxy and for the cross-origin
- * (host:8000) case where the cookie was set by the backend.
+ * Listeners notified when a protected data endpoint returns 401 — i.e. the
+ * session cookie is missing/expired. The app shell registers one to clear the
+ * stale auth store and bounce to /login. Auth endpoints (login/register/me)
+ * use {@link authFetch} instead so a bad-credentials 401 doesn't trip the
+ * redirect. Subscribers must never throw — they're invoked from inside the
+ * fetch pipeline and a throw would break the calling API function.
  */
-const apiFetch = (input: string, init: RequestInit = {}): Promise<Response> =>
+const unauthorizedListeners = new Set<() => void>();
+
+export function onUnauthorized(listener: () => void): () => void {
+  unauthorizedListeners.add(listener);
+  return () => {
+    unauthorizedListeners.delete(listener);
+  };
+}
+
+function notifyUnauthorized(): void {
+  for (const fn of unauthorizedListeners) {
+    try {
+      fn();
+    } catch {
+      // A listener error must not break the API call that detected the 401.
+    }
+  }
+}
+
+/**
+ * Raw fetch that sends the auth session cookie. Used by auth endpoints
+ * (login/register/logout/me) which must NOT trip the stale-session redirect —
+ * a 401 here means "bad credentials" or "not logged in yet", not "session
+ * expired while using the app".
+ */
+const authFetch = (input: string, init: RequestInit = {}): Promise<Response> =>
   fetch(input, { credentials: "include", ...init });
+
+/**
+ * Shared fetch wrapper for protected data endpoints: sends the auth session
+ * cookie on every request so the server-side session resolves the current
+ * user. `credentials: "include"` is required both for the same-origin dev
+ * proxy and for the cross-origin (host:8000) case where the cookie was set by
+ * the backend. On a 401 it notifies {@link onUnauthorized} listeners so the app
+ * can clear stale auth state and redirect to /login.
+ */
+const apiFetch = async (input: string, init: RequestInit = {}): Promise<Response> => {
+  const res = await fetch(input, { credentials: "include", ...init });
+  if (res.status === 401) {
+    notifyUnauthorized();
+  }
+  return res;
+};
 
 function isNetworkFetchError(error: unknown): error is Error {
   return error instanceof Error && /fetch|network|load failed|failed to fetch/i.test(error.message);
@@ -49,6 +94,53 @@ async function readErrorDetail(
 ): Promise<string> {
   const error = await res.json().catch(() => null) as { detail?: string } | null;
   return error?.detail || fallbackMessage;
+}
+
+// --- Auth ---
+
+export async function register(email: string, password: string): Promise<User> {
+  const res = await authFetch(`${API_BASE}/auth/register`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password }),
+  });
+  if (!res.ok) {
+    throw new Error(await readErrorDetail(res, "Failed to register"));
+  }
+  return ((await res.json()) as AuthResponse).user;
+}
+
+export async function login(email: string, password: string): Promise<User> {
+  const res = await authFetch(`${API_BASE}/auth/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password }),
+  });
+  if (!res.ok) {
+    throw new Error(await readErrorDetail(res, "Failed to log in"));
+  }
+  return ((await res.json()) as AuthResponse).user;
+}
+
+export async function logout(): Promise<void> {
+  const res = await authFetch(`${API_BASE}/auth/logout`, { method: "POST" });
+  if (!res.ok) {
+    throw new Error(await readErrorDetail(res, "Failed to log out"));
+  }
+}
+
+/**
+ * Resolve the current user from the session cookie. Returns the user on 200,
+ * `null` on 401 (not authenticated — the normal "no session yet" case during
+ * boot hydration), and throws on any other error status.
+ */
+export async function getMe(): Promise<User | null> {
+  const res = await authFetch(`${API_BASE}/auth/me`);
+  if (res.status === 401) return null;
+  if (!res.ok) {
+    throw new Error(await readErrorDetail(res, "Failed to get current user"));
+  }
+  return (await res.json()) as User;
 }
 
 export async function createCanvas(

@@ -1,8 +1,13 @@
 import { useEffect, useState, useRef } from "react";
-import { Routes, Route, useNavigate, useParams, Link, useLocation } from "react-router-dom";
+import { Routes, Route, useNavigate, useParams, Link, useLocation, Navigate } from "react-router-dom";
 import { AppShell } from "@/components/layout/AppShell";
 import ChatPage from "@/components/chat/ChatPage";
 import ObservabilityPage from "@/components/observability/ObservabilityPage";
+import LoginPage from "@/components/auth/LoginPage";
+import RegisterPage from "@/components/auth/RegisterPage";
+import { RequireAuth, RedirectIfAuthed } from "@/components/auth/guards";
+import { useAuthStore } from "@/store/authStore";
+import { onUnauthorized } from "@/lib/api";
 import { useCanvasStore } from "@/store/canvasStore";
 import {
   createCanvas,
@@ -584,7 +589,7 @@ function LandingPage({
   );
 }
 
-export default function App() {
+function AppRoutes() {
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -702,48 +707,105 @@ export default function App() {
 
   return (
     <Routes>
-      <Route
-        path="/"
-        element={
-          <LandingPage
-            canvases={canvases}
-            loadCanvases={loadCanvases}
-            loading={loading}
-            setLoading={setLoading}
-            error={error}
-            setError={setError}
-            searchQuery={searchQuery}
-            setSearchQuery={setSearchQuery}
-            deleteConfirmIds={deleteConfirmIds}
-            setDeleteConfirmIds={setDeleteConfirmIds}
-            selectMode={selectMode}
-            setSelectMode={setSelectMode}
-            selectedCanvasIds={selectedCanvasIds}
-            toggleSelectCanvas={toggleSelectCanvas}
-            handleToggleSelectAll={handleToggleSelectAll}
-            handleCancelSelect={handleCancelSelect}
-            dragActive={dragActive}
-            setDragActive={setDragActive}
-            fileInputRef={fileInputRef}
-            handleCreateCanvas={handleCreateCanvas}
-            handleImportFile={handleImportFile}
-            handleDeleteCanvases={handleDeleteCanvases}
-          />
-        }
-      />
-      <Route
-        path="/canvas/:canvas_id"
-        element={
-          <CanvasEditorPage
-            loading={loading}
-            setLoading={setLoading}
-            error={error}
-            setError={setError}
-          />
-        }
-      />
-      <Route path="/chat/:conversation_id" element={<ChatPage />} />
-      <Route path="/observability/:canvas_id" element={<ObservabilityPage />} />
+      {/* Auth routes — bounce authed users to the app */}
+      <Route element={<RedirectIfAuthed />}>
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/register" element={<RegisterPage />} />
+      </Route>
+
+      {/* Protected app routes — bounce unauthed users to /login */}
+      <Route element={<RequireAuth />}>
+        <Route
+          path="/"
+          element={
+            <LandingPage
+              canvases={canvases}
+              loadCanvases={loadCanvases}
+              loading={loading}
+              setLoading={setLoading}
+              error={error}
+              setError={setError}
+              searchQuery={searchQuery}
+              setSearchQuery={setSearchQuery}
+              deleteConfirmIds={deleteConfirmIds}
+              setDeleteConfirmIds={setDeleteConfirmIds}
+              selectMode={selectMode}
+              setSelectMode={setSelectMode}
+              selectedCanvasIds={selectedCanvasIds}
+              toggleSelectCanvas={toggleSelectCanvas}
+              handleToggleSelectAll={handleToggleSelectAll}
+              handleCancelSelect={handleCancelSelect}
+              dragActive={dragActive}
+              setDragActive={setDragActive}
+              fileInputRef={fileInputRef}
+              handleCreateCanvas={handleCreateCanvas}
+              handleImportFile={handleImportFile}
+              handleDeleteCanvases={handleDeleteCanvases}
+            />
+          }
+        />
+        <Route
+          path="/canvas/:canvas_id"
+          element={
+            <CanvasEditorPage
+              loading={loading}
+              setLoading={setLoading}
+              error={error}
+              setError={setError}
+            />
+          }
+        />
+        <Route path="/chat/:conversation_id" element={<ChatPage />} />
+        <Route path="/observability/:canvas_id" element={<ObservabilityPage />} />
+      </Route>
+
+      {/* Unknown routes → home (the guard there redirects to /login if needed) */}
+      <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
+}
+
+function BootSplash() {
+  return (
+    <div className="min-h-screen w-full bg-[var(--color-base)] flex items-center justify-center">
+      <div className="flex gap-1.5">
+        {[0, 1, 2].map((i) => (
+          <span
+            key={i}
+            className="w-1.5 h-1.5 rounded-full bg-[var(--color-accent)] animate-pulse"
+            style={{ animationDelay: `${i * 0.15}s` }}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+export default function App() {
+  const status = useAuthStore((s) => s.status);
+  const hydrate = useAuthStore((s) => s.hydrate);
+  const navigate = useNavigate();
+
+  // Hydrate the session from the server-side cookie once on boot so a refresh
+  // keeps the user logged in.
+  useEffect(() => {
+    if (useAuthStore.getState().status === "unknown") {
+      hydrate();
+    }
+  }, [hydrate]);
+
+  // Surface stale-session (401) from any protected data call: clear the auth
+  // state and send the user to /login.
+  useEffect(() => {
+    return onUnauthorized(() => {
+      useAuthStore.getState().clear();
+      navigate("/login", { replace: true });
+    });
+  }, [navigate]);
+
+  if (status === "unknown") {
+    return <BootSplash />;
+  }
+
+  return <AppRoutes />;
 }

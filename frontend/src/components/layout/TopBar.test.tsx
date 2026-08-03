@@ -1,8 +1,9 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor, act } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { useCanvasStore } from "@/store/canvasStore";
+import { useAuthStore } from "@/store/authStore";
 import { server } from "@/test/mocks/server";
 import { mockConversationSummary } from "@/test/mocks/handlers";
 import { TopBar } from "./TopBar";
@@ -11,8 +12,15 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 
 const API = "http://localhost:8000/api";
 
+const mockUser = {
+  id: "user-1",
+  email: "tester@example.com",
+  created_at: "2024-01-01T00:00:00Z",
+};
+
 beforeEach(() => {
   useCanvasStore.getState().reset();
+  useAuthStore.getState().reset();
   server.resetHandlers();
 });
 
@@ -208,5 +216,83 @@ describe("TopBar", () => {
     );
 
     expect(topBar).toHaveStyle({ left: "64px" });
+  });
+
+  describe("logout", () => {
+    it("renders a logout button showing the logged-in user's email", () => {
+      useAuthStore.getState().setUser(mockUser);
+      useCanvasStore.getState().setCanvas("canvas-1", "Test Canvas");
+
+      render(
+        <MemoryRouter>
+          <TopBar />
+        </MemoryRouter>
+      );
+
+      expect(screen.getByTestId("logout-button")).toBeInTheDocument();
+      expect(screen.getByText(/tester@example\.com/)).toBeInTheDocument();
+    });
+
+    it("calls the backend logout endpoint, clears the auth store, and navigates to /login", async () => {
+      const user = userEvent.setup();
+      useAuthStore.getState().setUser(mockUser);
+      useCanvasStore.getState().setCanvas("canvas-1", "Test Canvas");
+
+      let logoutCalled = false;
+      server.use(
+        http.post(`${API}/auth/logout`, () => {
+          logoutCalled = true;
+          return HttpResponse.json({ ok: true });
+        })
+      );
+
+      render(
+        <MemoryRouter initialEntries={["/canvas/canvas-1"]}>
+          <Routes>
+            <Route path="/canvas/:canvas_id" element={<TopBar />} />
+            <Route path="/login" element={<div data-testid="login-page" />} />
+          </Routes>
+        </MemoryRouter>
+      );
+
+      await user.click(screen.getByTestId("logout-button"));
+
+      await waitFor(() => {
+        expect(logoutCalled).toBe(true);
+      });
+      await waitFor(() => {
+        expect(useAuthStore.getState().status).toBe("unauthenticated");
+        expect(useAuthStore.getState().user).toBeNull();
+      });
+      expect(screen.getByTestId("login-page")).toBeInTheDocument();
+    });
+
+    it("still clears the auth store and navigates to /login even if the backend logout call fails", async () => {
+      const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      const user = userEvent.setup();
+      useAuthStore.getState().setUser(mockUser);
+      useCanvasStore.getState().setCanvas("canvas-1", "Test Canvas");
+
+      server.use(
+        http.post(`${API}/auth/logout`, () => new HttpResponse(null, { status: 500 }))
+      );
+
+      render(
+        <MemoryRouter initialEntries={["/canvas/canvas-1"]}>
+          <Routes>
+            <Route path="/canvas/:canvas_id" element={<TopBar />} />
+            <Route path="/login" element={<div data-testid="login-page" />} />
+          </Routes>
+        </MemoryRouter>
+      );
+
+      await user.click(screen.getByTestId("logout-button"));
+
+      await waitFor(() => {
+        expect(useAuthStore.getState().status).toBe("unauthenticated");
+      });
+      expect(screen.getByTestId("login-page")).toBeInTheDocument();
+      consoleSpy.mockRestore();
+    });
   });
 });
