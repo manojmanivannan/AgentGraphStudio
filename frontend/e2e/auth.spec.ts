@@ -108,3 +108,113 @@ test.describe("Auth — already authenticated", () => {
     await expect(page).toHaveURL(/\/$/);
   });
 });
+
+// Account management (#39): change password + logout other sessions. Uses a
+// throwaway user registered within the test so the shared e2e user's password
+// is never mutated (which would break the rest of the suite).
+test.describe("Account — change password", () => {
+  test.use(NO_AUTH);
+
+  test("changes the password, keeps this session, and invalidates the old password", async ({ page, request }) => {
+    const email = `e2e-acct-${Date.now()}@agentgraphstudio.test`;
+    const oldPassword = "e2e-old-password-1234";
+    const newPassword = "e2e-new-password-5678";
+
+    // Register + log in as the throwaway user through the UI so the browser
+    // holds the session cookie for /account.
+    await page.goto("/register");
+    await page.getByLabel("Email").fill(email);
+    await page.getByLabel("Password", { exact: true }).fill(oldPassword);
+    await page.getByLabel("Confirm password").fill(oldPassword);
+    await page.getByRole("button", { name: "Create account" }).click();
+    await expect(page).toHaveURL(/\/$/);
+    await expect(page.getByRole("button", { name: "New Canvas" })).toBeVisible({ timeout: 10_000 });
+
+    // Open the account page from the landing-page header.
+    await page.getByRole("link", { name: "Account" }).click();
+    await expect(page).toHaveURL(/\/account$/);
+    await expect(page.getByRole("heading", { name: "Account" })).toBeVisible();
+    await expect(page.getByText(email)).toBeVisible();
+
+    // Change the password.
+    await page.getByLabel("Current password").fill(oldPassword);
+    await page.getByLabel("New password", { exact: true }).fill(newPassword);
+    await page.getByLabel("Confirm new password").fill(newPassword);
+    await page.getByRole("button", { name: "Change password" }).click();
+    await expect(page.getByText(/Password changed/i)).toBeVisible({ timeout: 10_000 });
+
+    // The current (this browser) session is still alive — the account page did
+    // not bounce to /login. Use page.request (shares the page's cookie jar =
+    // the throwaway user's session) rather than the `request` fixture, which
+    // carries the suite-wide shared-e2e-user cookie.
+    const meRes = await page.request.get("http://localhost:8000/api/auth/me");
+    expect(meRes.status()).toBe(200);
+
+    // The old password no longer logs in; the new one does. These are
+    // email/password based, so the cookie the request fixture carries is
+    // irrelevant — send the same-origin Origin header for the CSRF check.
+    const oldLogin = await request.post("http://localhost:8000/api/auth/login", {
+      data: { email, password: oldPassword },
+      headers: { Origin: "http://localhost:8000" },
+    });
+    expect(oldLogin.status()).toBe(401);
+
+    const newLogin = await request.post("http://localhost:8000/api/auth/login", {
+      data: { email, password: newPassword },
+      headers: { Origin: "http://localhost:8000" },
+    });
+    expect(newLogin.status()).toBe(200);
+  });
+});
+
+test.describe("Account — logout other sessions", () => {
+  // Uses the suite-wide authenticated storageState for the calling browser,
+  // then opens a SECOND session for the same e2e user from an isolated API
+  // context (so it doesn't overwrite the calling browser's cookie) and proves
+  // that second session is revoked after the action.
+  test("revokes other sessions while keeping the current one", async ({ page, request, playwright }) => {
+    // Second "device": log the shared e2e user in via a FRESH, isolated API
+    // context so the login Set-Cookie does not clobber the suite-wide
+    // storageState cookie in the `request` fixture's jar.
+    const secondCtx = await playwright.request.newContext({
+      extraHTTPHeaders: { Origin: "http://localhost:8000" },
+    });
+    try {
+      const loginRes = await secondCtx.post("http://localhost:8000/api/auth/login", {
+        data: { email: E2E_USER.email, password: E2E_USER.password },
+      });
+      expect(loginRes.status()).toBe(200);
+      const secondCookie = (await loginRes.headersArray())["set-cookie"]?.find((c) =>
+        c.startsWith("agentbuilder_session=")
+      );
+      expect(secondCookie).toBeTruthy();
+      const secondToken = secondCookie!.split("=")[1].split(";")[0];
+
+      // The second session is alive before the action.
+      const beforeMe = await secondCtx.get("http://localhost:8000/api/auth/me", {
+        headers: { Cookie: `agentbuilder_session=${secondToken}` },
+      });
+      expect(beforeMe.status()).toBe(200);
+
+      // The calling browser (suite-wide storageState, untouched) opens /account
+      // and clicks "Log out other sessions".
+      await page.goto("/account");
+      await expect(page.getByRole("heading", { name: "Account" })).toBeVisible({ timeout: 10_000 });
+      await page.getByRole("button", { name: "Log out other sessions" }).click();
+      await expect(page.getByText(/signed out/i)).toBeVisible({ timeout: 10_000 });
+
+      // The second device's session cookie is now dead — /auth/me 401s.
+      const afterMe = await secondCtx.get("http://localhost:8000/api/auth/me", {
+        headers: { Cookie: `agentbuilder_session=${secondToken}` },
+      });
+      expect(afterMe.status()).toBe(401);
+    } finally {
+      await secondCtx.dispose();
+    }
+
+    // The calling browser is still authenticated (its cookie jar was never
+    // touched by the isolated second-device context).
+    const myMe = await request.get("http://localhost:8000/api/auth/me");
+    expect(myMe.status()).toBe(200);
+  });
+});

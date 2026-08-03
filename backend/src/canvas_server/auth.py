@@ -13,7 +13,7 @@ from starlette.requests import HTTPConnection
 
 from canvas_server.config import settings
 from canvas_server.database import get_session
-from canvas_server.models.auth import User
+from canvas_server.models.auth import Session, User
 from canvas_server.repos.auth_repo import AuthRepo
 
 COOKIE_NAME = settings.session_cookie_name
@@ -87,11 +87,11 @@ def verify_origin(request: Request) -> None:
     raise HTTPException(status_code=403, detail="Cross-origin request blocked")
 
 
-async def get_current_user(
+async def get_current_session(
     request: HTTPConnection,
     session: AsyncSession = Depends(get_session),
-) -> User:
-    """Resolve the current user from the session cookie.
+) -> Session:
+    """Resolve and validate the current session from the session cookie.
 
     Enforces the 30-min sliding idle timeout (extends ``expires_at`` and
     ``last_seen_at`` on every protected-route hit) and the 7-day absolute cap
@@ -105,6 +105,11 @@ async def get_current_user(
     path — leaving the WS route unauthenticated. ``HTTPConnection`` is injected
     unconditionally and exposes ``.cookies`` on both connection types. See
     ADR 0007.
+
+    Returns the live ``Session`` row (with its ``id`` and loaded ``user``) so
+    account routes that need to preserve the calling session (change-password,
+    logout-other-sessions) can pass ``sess.id`` as the keep-token to
+    ``revoke_other_sessions``.
     """
     token = request.cookies.get(COOKIE_NAME)
     if not token:
@@ -130,4 +135,18 @@ async def get_current_user(
     sess.last_seen_at = now
     sess.expires_at = now + timedelta(seconds=settings.session_idle_timeout_seconds)
     await session.commit()
+    return sess
+
+
+async def get_current_user(
+    request: HTTPConnection,
+    session: AsyncSession = Depends(get_session),
+) -> User:
+    """Resolve the current user from the session cookie.
+
+    Thin wrapper over :func:`get_current_session` returning the owning user.
+    Behavior is identical to the pre-refactor implementation for all existing
+    callers (HTTP routes and the WebSocket run route).
+    """
+    sess = await get_current_session(request, session)
     return sess.user

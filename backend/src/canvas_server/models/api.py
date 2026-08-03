@@ -219,3 +219,16 @@ class UserResponse(BaseModel):
 class AuthResponse(BaseModel):
     """Returned by register and login: the authenticated user."""
     user: UserResponse
+
+
+class ChangePasswordRequest(BaseModel):
+    """Body for /auth/change-password: verify the current password, then set
+    a new one (which revokes every other session for the user)."""
+    current_password: str
+    new_password: str
+
+
+class SessionsRevokedResponse(BaseModel):
+    """Number of sessions destroyed by logout-other-sessions (or implicitly by
+    change-password). The calling session is never counted — it's kept alive."""
+    revoked: int

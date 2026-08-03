@@ -32,6 +32,14 @@ class AuthRepo:
         await self._session.flush()
         return user
 
+    async def update_password(self, user_id: uuid.UUID, password_hash: str) -> None:
+        """Replace a user's password hash (bcrypt-hashed by the caller)."""
+        user = await self.get_user(user_id)
+        if user is None:
+            return
+        user.password_hash = password_hash
+        await self._session.flush()
+
     # --- sessions ---
 
     async def create_session(
@@ -63,3 +71,21 @@ class AuthRepo:
     async def delete_session(self, session_id: str) -> None:
         stmt = delete(Session).where(Session.id == session_id)
         await self._session.execute(stmt)
+
+    async def revoke_other_sessions(
+        self, user_id: uuid.UUID, keep_session_id: str
+    ) -> int:
+        """Destroy every session for *user_id* except *keep_session_id*.
+
+        Shared by change-password and logout-other-sessions: the calling
+        session is preserved so the user stays logged in on this device while
+        every other device's cookie is invalidated. Returns the number of
+        sessions deleted.
+        """
+        stmt = delete(Session).where(
+            Session.user_id == user_id,
+            Session.id != keep_session_id,
+        )
+        result = await self._session.execute(stmt)
+        await self._session.flush()
+        return result.rowcount or 0

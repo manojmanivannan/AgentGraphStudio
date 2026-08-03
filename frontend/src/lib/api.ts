@@ -143,6 +143,47 @@ export async function getMe(): Promise<User | null> {
   return (await res.json()) as User;
 }
 
+/**
+ * Change the current user's password. The backend verifies the current
+ * password (422 'Current password is incorrect.' on a mismatch — deliberately
+ * NOT 401, so a typo doesn't trip the global stale-session redirect) and, on
+ * success, revokes every other session for the user while keeping this one.
+ *
+ * Uses {@link authFetch} (like login/logout/me) so a genuinely-expired session
+ * 401 doesn't bounce the user to /login from within the account page.
+ */
+export async function changePassword(
+  currentPassword: string,
+  newPassword: string
+): Promise<void> {
+  const res = await authFetch(`${API_BASE}/auth/change-password`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      current_password: currentPassword,
+      new_password: newPassword,
+    }),
+  });
+  if (!res.ok) {
+    throw new Error(await readErrorDetail(res, "Failed to change password"));
+  }
+}
+
+/**
+ * Revoke every session for the current user except the calling one. Returns
+ * the number of sessions that were destroyed. Uses {@link authFetch} for the
+ * same reason as {@link changePassword}.
+ */
+export async function logoutOtherSessions(): Promise<{ revoked: number }> {
+  const res = await authFetch(`${API_BASE}/auth/logout-other-sessions`, {
+    method: "POST",
+  });
+  if (!res.ok) {
+    throw new Error(await readErrorDetail(res, "Failed to log out other sessions"));
+  }
+  return (await res.json()) as { revoked: number };
+}
+
 export async function createCanvas(
   name = "Untitled Canvas"
 ): Promise<CanvasResponse> {
