@@ -21,8 +21,8 @@
  * register returns 409, which we ignore before logging in.
  */
 import { request as playwrightRequest } from "@playwright/test";
-import { mkdirSync, dirname } from "node:fs";
-import { resolve } from "node:path";
+import { mkdirSync } from "node:fs";
+import { dirname } from "node:path";
 
 const API_BASE = "http://localhost:8000/api";
 const EMAIL = "e2e@agentgraphstudio.test";
@@ -59,8 +59,7 @@ export default async function globalSetup() {
     // Persist cookies (the agentbuilder_session cookie set by the backend) so
     // every test context starts authenticated. Ensure the destination directory
     // exists — storageState does not create parent directories.
-    const absPath = resolve(STORAGE_STATE_PATH);
-    mkdirSync(dirname(absPath), { recursive: true });
+    mkdirSync(dirname(STORAGE_STATE_PATH), { recursive: true });
     await context.storageState({ path: STORAGE_STATE_PATH });
   } finally {
     await context.dispose();
