@@ -47,9 +47,17 @@ describe("LoginPage", () => {
   });
 
   it("disables submit and shows loading state while submitting", async () => {
+    // Hold the login request open until we've asserted the loading state, then
+    // resolve it. A fixed setTimeout window is racy under coverage instrumentation
+    // (the re-render can lag past the window, so findByRole misses "Logging in…").
+    // A deferred keeps the request in flight deterministically.
+    let resolveLogin!: () => void;
+    const loginInFlight = new Promise<void>((r) => {
+      resolveLogin = r;
+    });
     server.use(
       http.post(`${API}/auth/login`, async () => {
-        await new Promise((r) => setTimeout(r, 50));
+        await loginInFlight;
         return HttpResponse.json({ user: mockUser });
       })
     );
@@ -58,8 +66,10 @@ describe("LoginPage", () => {
     await user.type(screen.getByLabelText(/email/i), "tester@example.com");
     await user.type(screen.getByLabelText(/password/i), "supersecret");
     await user.click(screen.getByRole("button", { name: /log in/i }));
-    // While the request is in flight the button is disabled / shows loading
+    // While the request is in flight the button is disabled / shows loading.
     expect(await screen.findByRole("button", { name: /logging in/i })).toBeDisabled();
+    // Now let the request complete and confirm the store is hydrated.
+    resolveLogin();
     await waitFor(() => {
       expect(useAuthStore.getState().user).toEqual(mockUser);
     });
