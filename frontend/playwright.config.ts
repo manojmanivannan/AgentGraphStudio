@@ -13,6 +13,7 @@ export default defineConfig({
   // and CPU overloading on CI runners.
   workers: 1,
   reporter: [
+    ["list"],
     ["html"],
     ["junit", { outputFile: "junit/e2e-results.xml" }],
   ],

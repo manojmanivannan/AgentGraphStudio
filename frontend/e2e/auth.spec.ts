@@ -38,7 +38,7 @@ test.describe("Auth — login page", () => {
     await page.goto("/login");
     await expect(page.getByRole("heading", { name: "Welcome back" })).toBeVisible();
     await expect(page.getByLabel("Email")).toBeVisible();
-    await expect(page.getByLabel("Password")).toBeVisible();
+    await expect(page.getByLabel("Password", { exact: true })).toBeVisible();
     await expect(page.getByRole("button", { name: "Log in" })).toBeVisible();
     await expect(page.getByRole("link", { name: "Register" })).toBeVisible();
   });
@@ -46,7 +46,7 @@ test.describe("Auth — login page", () => {
   test("logs in with valid credentials and lands on the app", async ({ page }) => {
     await page.goto("/login");
     await page.getByLabel("Email").fill(E2E_USER.email);
-    await page.getByLabel("Password").fill(E2E_USER.password);
+    await page.getByLabel("Password", { exact: true }).fill(E2E_USER.password);
     await page.getByRole("button", { name: "Log in" }).click();
 
     // The e2e user was registered by global-setup, so login succeeds and the
@@ -58,7 +58,7 @@ test.describe("Auth — login page", () => {
   test("shows an inline error for invalid credentials", async ({ page }) => {
     await page.goto("/login");
     await page.getByLabel("Email").fill(E2E_USER.email);
-    await page.getByLabel("Password").fill("wrong-password");
+    await page.getByLabel("Password", { exact: true }).fill("wrong-password");
     await page.getByRole("button", { name: "Log in" }).click();
 
     await expect(page.getByRole("alert")).toContainText(/Invalid email or password/i);
@@ -74,7 +74,7 @@ test.describe("Auth — register page", () => {
     await page.goto("/register");
     await expect(page.getByRole("heading", { name: "Create your account" })).toBeVisible();
     await expect(page.getByLabel("Email")).toBeVisible();
-    await expect(page.getByLabel("Password")).toBeVisible();
+    await expect(page.getByLabel("Password", { exact: true })).toBeVisible();
     await expect(page.getByLabel("Confirm password")).toBeVisible();
     await expect(page.getByRole("button", { name: "Create account" })).toBeVisible();
     await expect(page.getByRole("link", { name: "Log in" })).toBeVisible();
@@ -84,7 +84,7 @@ test.describe("Auth — register page", () => {
     const uniqueEmail = `e2e-register-${Date.now()}@agentgraphstudio.test`;
     await page.goto("/register");
     await page.getByLabel("Email").fill(uniqueEmail);
-    await page.getByLabel("Password").fill(E2E_USER.password);
+    await page.getByLabel("Password", { exact: true }).fill(E2E_USER.password);
     await page.getByLabel("Confirm password").fill(E2E_USER.password);
     await page.getByRole("button", { name: "Create account" }).click();
 
