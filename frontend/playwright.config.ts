@@ -2,6 +2,10 @@ import { defineConfig, devices } from "@playwright/test";
 
 export default defineConfig({
   testDir: "./e2e",
+  // Authenticate once before the suite (register + login) and share the
+  // session cookie with every test context via `use.storageState`. See
+  // e2e/global-setup.ts.
+  globalSetup: "./e2e/global-setup.ts",
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
@@ -14,6 +18,10 @@ export default defineConfig({
   ],
   use: {
     baseURL: "http://localhost:5173",
+    // Injected by globalSetup — every browser context and `request` fixture
+    // starts with the authenticated session cookie, so seeding canvases (API)
+    // and driving the app (UI, behind the route guard) both work.
+    storageState: "e2e/.auth/user.json",
     trace: "on-first-retry",
   },
   projects: [
