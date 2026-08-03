@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { AlertCircle, Loader2 } from "lucide-react";
 import { AuthLayout } from "./AuthLayout";
-import { register } from "@/lib/api";
+import { register, login } from "@/lib/api";
 import { useAuthStore } from "@/store/authStore";
 
 export default function RegisterPage() {
@@ -24,7 +24,14 @@ export default function RegisterPage() {
     }
     setSubmitting(true);
     try {
-      const user = await register(email, password);
+      // The backend /auth/register creates the account but deliberately does NOT
+      // establish a session (no session cookie — see backend test_auth.py), so
+      // follow it with a login to obtain the cookie before entering the app.
+      // Without this, setUser would mark us authenticated client-side while the
+      // next authenticated API call 401s and the onUnauthorized listener bounces
+      // us back to /login.
+      await register(email, password);
+      const user = await login(email, password);
       setUser(user);
       navigate("/");
     } catch (err: any) {

@@ -47,11 +47,20 @@ describe("RegisterPage", () => {
     expect(screen.getByTestId("login-page")).toBeInTheDocument();
   });
 
-  it("registers, hydrates the auth store, and navigates to the app", async () => {
+  it("registers, then logs in to establish a session, and navigates to the app", async () => {
+    // The backend /auth/register deliberately does NOT set a session cookie
+    // (it only creates the account), so the page must follow register with a
+    // login to obtain the cookie before entering the app. Otherwise the first
+    // authenticated call 401s and the onUnauthorized listener bounces to /login.
+    let loginCalled = false;
     server.use(
       http.post(`${API}/auth/register`, () =>
         HttpResponse.json({ user: mockUser }, { status: 201 })
-      )
+      ),
+      http.post(`${API}/auth/login`, () => {
+        loginCalled = true;
+        return HttpResponse.json({ user: mockUser });
+      })
     );
     const user = userEvent.setup();
     renderAt("/register");
@@ -61,10 +70,38 @@ describe("RegisterPage", () => {
     await user.click(screen.getByRole("button", { name: /create account|register/i }));
 
     await waitFor(() => {
+      expect(loginCalled).toBe(true);
+    });
+    await waitFor(() => {
       expect(useAuthStore.getState().status).toBe("authenticated");
       expect(useAuthStore.getState().user).toEqual(mockUser);
     });
     expect(screen.getByTestId("home")).toBeInTheDocument();
+  });
+
+  it("shows an error and does not log in when the email is already registered", async () => {
+    let loginCalled = false;
+    server.use(
+      http.post(`${API}/auth/register`, () =>
+        HttpResponse.json({ detail: "Email already registered." }, { status: 409 })
+      ),
+      http.post(`${API}/auth/login`, () => {
+        loginCalled = true;
+        return HttpResponse.json({ user: mockUser });
+      })
+    );
+    const user = userEvent.setup();
+    renderAt("/register");
+    await user.type(screen.getByLabelText(/email/i), "tester@example.com");
+    await user.type(screen.getByLabelText(/^password$/i), "supersecret");
+    await user.type(screen.getByLabelText(/confirm password/i), "supersecret");
+    await user.click(screen.getByRole("button", { name: /create account|register/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Email already registered/i)).toBeInTheDocument();
+    });
+    expect(useAuthStore.getState().status).not.toBe("authenticated");
+    expect(loginCalled).toBe(false);
   });
 
   it("shows an error when passwords do not match (client-side)", async () => {
@@ -77,25 +114,6 @@ describe("RegisterPage", () => {
 
     await waitFor(() => {
       expect(screen.getByText(/passwords do not match/i)).toBeInTheDocument();
-    });
-    expect(useAuthStore.getState().status).not.toBe("authenticated");
-  });
-
-  it("shows the server error detail when the email is already registered", async () => {
-    server.use(
-      http.post(`${API}/auth/register`, () =>
-        HttpResponse.json({ detail: "Email already registered." }, { status: 409 })
-      )
-    );
-    const user = userEvent.setup();
-    renderAt("/register");
-    await user.type(screen.getByLabelText(/email/i), "tester@example.com");
-    await user.type(screen.getByLabelText(/^password$/i), "supersecret");
-    await user.type(screen.getByLabelText(/confirm password/i), "supersecret");
-    await user.click(screen.getByRole("button", { name: /create account|register/i }));
-
-    await waitFor(() => {
-      expect(screen.getByText(/Email already registered/i)).toBeInTheDocument();
     });
     expect(useAuthStore.getState().status).not.toBe("authenticated");
   });
