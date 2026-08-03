@@ -1,7 +1,7 @@
 import { Check, Loader2, AlertCircle, Home } from "lucide-react";
 import { useCanvasStore } from "@/store/canvasStore";
 import { useNavigate } from "react-router-dom";
-import { ThemeToggle } from "@/components/ThemeToggle";
+import { AccountControls } from "@/components/layout/AccountControls";
 
 export function TopBar() {
   const canvasId = useCanvasStore((s) => s.canvasId);
@@ -25,7 +25,7 @@ export function TopBar() {
   return (
     <div
       data-testid="top-bar"
-      className={`absolute top-0 h-10 chrome-glass border-b border-[var(--color-border-subtle)] flex items-center px-4 gap-3 z-30 ${
+      className={`absolute top-0 h-12 chrome-glass border-b border-[var(--color-border-subtle)] flex items-center px-4 gap-3 z-30 ${
         isDraggingPanel ? "" : "transition-all duration-300 ease-out"
       }`}
       style={{ left: leftOffset, right: rightOffset }}
@@ -80,8 +80,8 @@ export function TopBar() {
         )}
       </div>
 
-      {/* Theme Toggle */}
-      <ThemeToggle className="hover:bg-[var(--color-elevated)]" />
+      {/* Theme toggle + account + logout (shared chrome) */}
+      <AccountControls />
     </div>
   );
 }

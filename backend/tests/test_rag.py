@@ -243,8 +243,8 @@ def test_pgvector_query_operator_compile():
 
 
 @pytest.mark.asyncio
-async def test_rag_api_endpoints(test_client, blank_canvas, test_session):
-    canvas_id = blank_canvas.id
+async def test_rag_api_endpoints(authed_client, owned_canvas, test_session):
+    canvas_id = owned_canvas.id
     agent_id = uuid.uuid4()
 
     # Create agent
@@ -271,11 +271,11 @@ async def test_rag_api_endpoints(test_client, blank_canvas, test_session):
         },
         "edges": [],
     }
-    res = await test_client.put(f"/api/canvases/{canvas_id}", json=canvas_save_req)
+    res = await authed_client.put(f"/api/canvases/{canvas_id}", json=canvas_save_req)
     assert res.status_code == 200
 
     # List documents (should be empty initially)
-    res = await test_client.get(
+    res = await authed_client.get(
         f"/api/canvases/{canvas_id}/agents/{agent_id}/documents"
     )
     assert res.status_code == 200
@@ -285,7 +285,7 @@ async def test_rag_api_endpoints(test_client, blank_canvas, test_session):
     file_content = (
         b"This is a sample document for testing RAG chunk persistent storage."
     )
-    res = await test_client.post(
+    res = await authed_client.post(
         f"/api/canvases/{canvas_id}/agents/{agent_id}/documents",
         files={"file": ("test_doc.txt", file_content, "text/plain")},
     )
@@ -312,7 +312,7 @@ async def test_rag_api_endpoints(test_client, blank_canvas, test_session):
     assert "testing RAG chunk" in chunks[0].content
 
     # Delete document
-    res = await test_client.delete(
+    res = await authed_client.delete(
         f"/api/canvases/{canvas_id}/agents/{agent_id}/documents/{doc_id}"
     )
     assert res.status_code == 204

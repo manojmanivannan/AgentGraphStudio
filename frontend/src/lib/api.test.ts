@@ -20,6 +20,11 @@ import {
   listAgentDocuments,
   uploadAgentDocument,
   deleteAgentDocument,
+  register,
+  login,
+  logout,
+  getMe,
+  onUnauthorized,
 } from "./api";
 
 const API = "http://localhost:8000/api";
@@ -461,6 +466,145 @@ describe("api", () => {
         })
       );
       await expect(deleteAgentDocument("canvas-1", "agent-1", "doc-1")).rejects.toThrow("Failed to delete agent document");
+    });
+  });
+
+  describe("auth API", () => {
+    const mockUser = {
+      id: "user-1",
+      email: "tester@example.com",
+      created_at: "2024-01-01T00:00:00Z",
+    };
+
+    describe("register", () => {
+      it("posts credentials and returns the new user on success", async () => {
+        let captured: { email?: string; password?: string } | undefined;
+        server.use(
+          http.post(`${API}/auth/register`, async ({ request }) => {
+            captured = (await request.json()) as any;
+            return HttpResponse.json({ user: mockUser }, { status: 201 });
+          })
+        );
+        const user = await register("Tester@example.com", "supersecret");
+        expect(user).toEqual(mockUser);
+        expect(captured).toEqual({ email: "Tester@example.com", password: "supersecret" });
+      });
+
+      it("throws with the server detail on a 409 (email already registered)", async () => {
+        server.use(
+          http.post(`${API}/auth/register`, () =>
+            HttpResponse.json({ detail: "Email already registered." }, { status: 409 })
+          )
+        );
+        await expect(register("a@b.com", "supersecret")).rejects.toThrow("Email already registered.");
+      });
+
+      it("throws a generic message when the error body has no detail", async () => {
+        server.use(
+          http.post(`${API}/auth/register`, () => new HttpResponse(null, { status: 400 }))
+        );
+        await expect(register("a@b.com", "supersecret")).rejects.toThrow("Failed to register");
+      });
+    });
+
+    describe("login", () => {
+      it("posts credentials and returns the user on success", async () => {
+        server.use(
+          http.post(`${API}/auth/login`, () => HttpResponse.json({ user: mockUser }))
+        );
+        const user = await login("tester@example.com", "supersecret");
+        expect(user).toEqual(mockUser);
+      });
+
+      it("throws with the server detail on a 401 (bad credentials)", async () => {
+        server.use(
+          http.post(`${API}/auth/login`, () =>
+            HttpResponse.json({ detail: "Invalid email or password." }, { status: 401 })
+          )
+        );
+        await expect(login("tester@example.com", "wrong")).rejects.toThrow("Invalid email or password.");
+      });
+    });
+
+    describe("logout", () => {
+      it("posts to the logout endpoint and resolves on success", async () => {
+        let called = false;
+        server.use(
+          http.post(`${API}/auth/logout`, () => {
+            called = true;
+            return HttpResponse.json({ ok: true });
+          })
+        );
+        await expect(logout()).resolves.not.toThrow();
+        expect(called).toBe(true);
+      });
+
+      it("throws when the logout endpoint fails", async () => {
+        server.use(
+          http.post(`${API}/auth/logout`, () => new HttpResponse(null, { status: 500 }))
+        );
+        await expect(logout()).rejects.toThrow("Failed to log out");
+      });
+    });
+
+    describe("getMe", () => {
+      it("returns the user on a 200", async () => {
+        server.use(
+          http.get(`${API}/auth/me`, () => HttpResponse.json(mockUser))
+        );
+        await expect(getMe()).resolves.toEqual(mockUser);
+      });
+
+      it("returns null on a 401 (not authenticated) without throwing", async () => {
+        server.use(
+          http.get(`${API}/auth/me`, () => new HttpResponse(null, { status: 401 }))
+        );
+        await expect(getMe()).resolves.toBeNull();
+      });
+
+      it("throws on other error statuses", async () => {
+        server.use(
+          http.get(`${API}/auth/me`, () => new HttpResponse(null, { status: 500 }))
+        );
+        await expect(getMe()).rejects.toThrow("Failed to get current user");
+      });
+    });
+
+    describe("onUnauthorized (stale-session handling)", () => {
+      it("fires registered listeners when a protected data call returns 401", async () => {
+        server.use(
+          http.get(`${API}/canvases`, () => new HttpResponse(null, { status: 401 }))
+        );
+        const listener = vi.fn();
+        const off = onUnauthorized(listener);
+        await expect(listCanvases()).rejects.toThrow();
+        expect(listener).toHaveBeenCalledTimes(1);
+        off();
+      });
+
+      it("does not fire listeners for auth endpoint 401s (e.g. bad login)", async () => {
+        server.use(
+          http.post(`${API}/auth/login`, () =>
+            HttpResponse.json({ detail: "Invalid email or password." }, { status: 401 })
+          )
+        );
+        const listener = vi.fn();
+        const off = onUnauthorized(listener);
+        await expect(login("a@b.com", "wrong")).rejects.toThrow();
+        expect(listener).not.toHaveBeenCalled();
+        off();
+      });
+
+      it("onUnauthorized returns an unsubscribe function", async () => {
+        server.use(
+          http.get(`${API}/canvases`, () => new HttpResponse(null, { status: 401 }))
+        );
+        const listener = vi.fn();
+        const off = onUnauthorized(listener);
+        off();
+        await expect(listCanvases()).rejects.toThrow();
+        expect(listener).not.toHaveBeenCalled();
+      });
     });
   });
 });

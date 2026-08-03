@@ -48,7 +48,19 @@ export const mockConversationSummary = (overrides?: Partial<ConversationSummary>
   ...overrides,
 });
 
+export const mockUser = {
+  id: "user-1",
+  email: "tester@example.com",
+  created_at: "2024-01-01T00:00:00Z",
+};
+
 export const handlers = [
+  // Auth — default to an authenticated session so tests that render the app
+  // without overriding auth state are treated as logged in (mirrors the
+  // default /canvases handler). Tests that need a different outcome override
+  // these with server.use(...).
+  http.get(`${API}/auth/me`, () => HttpResponse.json(mockUser)),
+
   // Canvas CRUD
   http.get(`${API}/canvases`, () =>
     HttpResponse.json([mockCanvasListItem()])

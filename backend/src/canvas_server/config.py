@@ -23,6 +23,22 @@ class Settings(BaseSettings):
     mlflow_enabled: bool = True
     mlflow_tracking_uri: str = "http://mlflow:5000"
     mlflow_experiment_name: str = "canvas-agents"
+
+    # --- Auth & sessions ---
+    # Password rules (per #32): min 8, no mandatory complexity, max 1024.
+    password_min_length: int = 8
+    password_max_length: int = 1024
+    # Sliding idle timeout and fixed-from-login absolute cap.
+    session_idle_timeout_seconds: int = 1800  # 30 min
+    session_absolute_timeout_seconds: int = 604800  # 7 days
+    # Cookie attributes (per #32).
+    session_cookie_name: str = "agentbuilder_session"
+    # Origins trusted for the CSRF same-origin check on state-changing routes.
+    # Deliberately separate from cors_origins: CORS is for intentionally
+    # third-party API access, while CSRF trust must be same-origin only.
+    # Defaults to the local Vite dev origin (served same-origin via the proxy).
+    csrf_trusted_origins: list[str] = ["http://localhost:5173"]
+
     model_config = {
         "env_file": (".env", "../.env"),
         "env_file_encoding": "utf-8",

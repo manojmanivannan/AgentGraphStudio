@@ -1,8 +1,14 @@
 import { useEffect, useState, useRef } from "react";
-import { Routes, Route, useNavigate, useParams, Link, useLocation } from "react-router-dom";
+import { Routes, Route, useNavigate, useParams, Link, useLocation, Navigate } from "react-router-dom";
 import { AppShell } from "@/components/layout/AppShell";
 import ChatPage from "@/components/chat/ChatPage";
 import ObservabilityPage from "@/components/observability/ObservabilityPage";
+import LoginPage from "@/components/auth/LoginPage";
+import RegisterPage from "@/components/auth/RegisterPage";
+import AccountPage from "@/components/account/AccountPage";
+import { RequireAuth, RedirectIfAuthed } from "@/components/auth/guards";
+import { useAuthStore } from "@/store/authStore";
+import { onUnauthorized } from "@/lib/api";
 import { useCanvasStore } from "@/store/canvasStore";
 import {
   createCanvas,
@@ -11,6 +17,7 @@ import {
   deleteCanvas,
   importCanvas,
   importCanvasZip,
+  logout as logoutApi,
 } from "@/lib/api";
 import { decodeCanvasResponse } from "@/lib/canvasGraphCodec";
 import {
@@ -25,6 +32,8 @@ import {
   HelpCircle,
   Check,
   MessageSquare,
+  UserCog,
+  LogOut,
 } from "lucide-react";
 import type { CanvasListItem, CanvasSavePayload } from "@/types";
 import type { Node } from "@xyflow/react";
@@ -165,12 +174,32 @@ function LandingPage({
   const navigate = useNavigate();
   const resetStore = useCanvasStore((s) => s.reset);
   const theme = useThemeStore((s) => s.theme);
+  const user = useAuthStore((s) => s.user);
+  const clearAuth = useAuthStore((s) => s.clear);
+  const [loggingOut, setLoggingOut] = useState(false);
 
   useEffect(() => {
     resetStore();
     loadCanvases();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const handleLogout = async () => {
+    setLoggingOut(true);
+    try {
+      await logoutApi();
+    } catch (err) {
+      // Even if the backend call fails (network down, server error), clear the
+      // local session and return to /login — the cookie is httpOnly so we
+      // can't clear it client-side, but the user is effectively logged out of
+      // this client. They'll be re-prompted on next /auth/me.
+      console.error("Logout request failed:", err);
+    } finally {
+      clearAuth();
+      setLoggingOut(false);
+      navigate("/login", { replace: true });
+    }
+  };
 
   const handleDrag = (e: React.DragEvent) => {
     e.preventDefault();
@@ -255,6 +284,26 @@ function LandingPage({
         </div>
         <div className="flex items-center gap-2">
           <ThemeToggle className="!border !border-[var(--color-border-default)] hover:bg-[var(--color-elevated)] shadow-[0_2px_8px_rgba(0,0,0,0.2)]" />
+          {user && (
+            <Link
+              to="/account"
+              title="Account"
+              className="flex items-center justify-center w-9 h-9 rounded-lg border border-[var(--color-border-default)] text-[var(--color-text-secondary)] hover:bg-[var(--color-elevated)] hover:text-[var(--color-text-primary)] transition-colors"
+            >
+              <UserCog className="w-4 h-4" />
+            </Link>
+          )}
+          {user && (
+            <button
+              onClick={handleLogout}
+              disabled={loggingOut}
+              data-testid="logout-button"
+              title="Log out"
+              className="flex items-center justify-center w-9 h-9 rounded-lg border border-[var(--color-border-default)] text-[var(--color-text-secondary)] hover:bg-[var(--color-elevated)] hover:text-[var(--color-danger)] transition-colors disabled:opacity-50 cursor-pointer"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
+          )}
         </div>
       </header>
 
@@ -584,7 +633,7 @@ function LandingPage({
   );
 }
 
-export default function App() {
+function AppRoutes() {
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -702,48 +751,106 @@ export default function App() {
 
   return (
     <Routes>
-      <Route
-        path="/"
-        element={
-          <LandingPage
-            canvases={canvases}
-            loadCanvases={loadCanvases}
-            loading={loading}
-            setLoading={setLoading}
-            error={error}
-            setError={setError}
-            searchQuery={searchQuery}
-            setSearchQuery={setSearchQuery}
-            deleteConfirmIds={deleteConfirmIds}
-            setDeleteConfirmIds={setDeleteConfirmIds}
-            selectMode={selectMode}
-            setSelectMode={setSelectMode}
-            selectedCanvasIds={selectedCanvasIds}
-            toggleSelectCanvas={toggleSelectCanvas}
-            handleToggleSelectAll={handleToggleSelectAll}
-            handleCancelSelect={handleCancelSelect}
-            dragActive={dragActive}
-            setDragActive={setDragActive}
-            fileInputRef={fileInputRef}
-            handleCreateCanvas={handleCreateCanvas}
-            handleImportFile={handleImportFile}
-            handleDeleteCanvases={handleDeleteCanvases}
-          />
-        }
-      />
-      <Route
-        path="/canvas/:canvas_id"
-        element={
-          <CanvasEditorPage
-            loading={loading}
-            setLoading={setLoading}
-            error={error}
-            setError={setError}
-          />
-        }
-      />
-      <Route path="/chat/:conversation_id" element={<ChatPage />} />
-      <Route path="/observability/:canvas_id" element={<ObservabilityPage />} />
+      {/* Auth routes — bounce authed users to the app */}
+      <Route element={<RedirectIfAuthed />}>
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/register" element={<RegisterPage />} />
+      </Route>
+
+      {/* Protected app routes — bounce unauthed users to /login */}
+      <Route element={<RequireAuth />}>
+        <Route
+          path="/"
+          element={
+            <LandingPage
+              canvases={canvases}
+              loadCanvases={loadCanvases}
+              loading={loading}
+              setLoading={setLoading}
+              error={error}
+              setError={setError}
+              searchQuery={searchQuery}
+              setSearchQuery={setSearchQuery}
+              deleteConfirmIds={deleteConfirmIds}
+              setDeleteConfirmIds={setDeleteConfirmIds}
+              selectMode={selectMode}
+              setSelectMode={setSelectMode}
+              selectedCanvasIds={selectedCanvasIds}
+              toggleSelectCanvas={toggleSelectCanvas}
+              handleToggleSelectAll={handleToggleSelectAll}
+              handleCancelSelect={handleCancelSelect}
+              dragActive={dragActive}
+              setDragActive={setDragActive}
+              fileInputRef={fileInputRef}
+              handleCreateCanvas={handleCreateCanvas}
+              handleImportFile={handleImportFile}
+              handleDeleteCanvases={handleDeleteCanvases}
+            />
+          }
+        />
+        <Route
+          path="/canvas/:canvas_id"
+          element={
+            <CanvasEditorPage
+              loading={loading}
+              setLoading={setLoading}
+              error={error}
+              setError={setError}
+            />
+          }
+        />
+        <Route path="/chat/:conversation_id" element={<ChatPage />} />
+        <Route path="/observability/:canvas_id" element={<ObservabilityPage />} />
+        <Route path="/account" element={<AccountPage />} />
+      </Route>
+
+      {/* Unknown routes → home (the guard there redirects to /login if needed) */}
+      <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
+}
+
+function BootSplash() {
+  return (
+    <div className="min-h-screen w-full bg-[var(--color-base)] flex items-center justify-center">
+      <div className="flex gap-1.5">
+        {[0, 1, 2].map((i) => (
+          <span
+            key={i}
+            className="w-1.5 h-1.5 rounded-full bg-[var(--color-accent)] animate-pulse"
+            style={{ animationDelay: `${i * 0.15}s` }}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+export default function App() {
+  const status = useAuthStore((s) => s.status);
+  const hydrate = useAuthStore((s) => s.hydrate);
+  const navigate = useNavigate();
+
+  // Hydrate the session from the server-side cookie once on boot so a refresh
+  // keeps the user logged in.
+  useEffect(() => {
+    if (useAuthStore.getState().status === "unknown") {
+      hydrate();
+    }
+  }, [hydrate]);
+
+  // Surface stale-session (401) from any protected data call: clear the auth
+  // state and send the user to /login.
+  useEffect(() => {
+    return onUnauthorized(() => {
+      useAuthStore.getState().clear();
+      navigate("/login", { replace: true });
+    });
+  }, [navigate]);
+
+  if (status === "unknown") {
+    return <BootSplash />;
+  }
+
+  return <AppRoutes />;
 }

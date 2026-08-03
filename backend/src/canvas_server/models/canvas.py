@@ -20,6 +20,7 @@ from sqlalchemy.types import JSON
 
 from canvas_server.config import settings
 from canvas_server.database import Base
+from canvas_server.models.auth import User
 
 
 def _utcnow():
@@ -35,6 +36,12 @@ class Canvas(Base):
         default=uuid.uuid4,
     )
     name: Mapped[str] = mapped_column(String(255), default="Untitled Canvas")
+    # Every canvas belongs to exactly one user; users see/touch only their own.
+    owner_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid,
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=_utcnow,
@@ -45,6 +52,7 @@ class Canvas(Base):
         onupdate=_utcnow,
     )
 
+    owner: Mapped[User] = relationship(User)
     agent_nodes: Mapped[list[AgentNode]] = relationship(
         "AgentNode",
         back_populates="canvas",
