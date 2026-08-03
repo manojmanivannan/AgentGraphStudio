@@ -7,11 +7,19 @@ import { server } from "@/test/mocks/server";
 import { FakeWebSocket } from "@/test/mocks/websocket";
 import { mockConversation, mockConversationSummary } from "@/test/mocks/handlers";
 import { useCanvasStore } from "@/store/canvasStore";
+import { useAuthStore } from "@/store/authStore";
 import type { Message } from "@/types";
 import ChatPage, { groupMessagesIntoTurns } from "./ChatPage";
 
+const mockUser = {
+    id: "user-1",
+    email: "tester@example.com",
+    created_at: "2024-01-01T00:00:00Z",
+};
+
 beforeEach(() => {
     useCanvasStore.getState().reset();
+    useAuthStore.getState().reset();
     FakeWebSocket.reset();
     vi.stubGlobal("WebSocket", FakeWebSocket);
 });
@@ -1794,6 +1802,97 @@ describe("ChatPage component", () => {
         // Verify that the approval buttons are gone (since activeInterrupt is cleared)
         await waitFor(() => {
             expect(screen.queryByRole("button", { name: /approve/i })).not.toBeInTheDocument();
+        });
+    });
+
+    describe("header — logout", () => {
+        function renderChatPageWithLoginRoute(conversationId: string) {
+            return render(
+                <MemoryRouter initialEntries={[`/chat/${conversationId}`]}>
+                    <Routes>
+                        <Route path="/chat/:conversation_id" element={<ChatPage />} />
+                        <Route path="/chat/empty" element={<ChatPage />} />
+                        <Route path="/account" element={<div data-testid="account-page" />} />
+                        <Route path="/login" element={<div data-testid="login-page" />} />
+                    </Routes>
+                </MemoryRouter>
+            );
+        }
+
+        it("renders account + logout buttons showing the logged-in user's email", async () => {
+            useAuthStore.getState().setUser(mockUser);
+            server.use(
+                http.get(`${API}/canvases`, () => HttpResponse.json([])),
+            );
+
+            renderChatPageWithLoginRoute("empty");
+
+            await waitFor(() => {
+                expect(screen.getByTestId("logout-button")).toBeInTheDocument();
+                expect(screen.getByTestId("account-button")).toBeInTheDocument();
+            });
+            expect(screen.getByText(/tester@example\.com/)).toBeInTheDocument();
+        });
+
+        it("does not render account or logout buttons when not authenticated", async () => {
+            // user is null by default after reset()
+            server.use(
+                http.get(`${API}/canvases`, () => HttpResponse.json([])),
+            );
+
+            renderChatPageWithLoginRoute("empty");
+
+            await waitFor(() => {
+                expect(screen.getByText("No Chat Active")).toBeInTheDocument();
+            });
+            expect(screen.queryByTestId("logout-button")).not.toBeInTheDocument();
+            expect(screen.queryByTestId("account-button")).not.toBeInTheDocument();
+        });
+
+        it("calls the backend logout endpoint, clears the auth store, and navigates to /login", async () => {
+            const user = userEvent.setup();
+            useAuthStore.getState().setUser(mockUser);
+            let logoutCalled = false;
+            server.use(
+                http.get(`${API}/canvases`, () => HttpResponse.json([])),
+                http.post(`${API}/auth/logout`, () => {
+                    logoutCalled = true;
+                    return HttpResponse.json({ ok: true });
+                })
+            );
+
+            renderChatPageWithLoginRoute("empty");
+
+            await user.click(screen.getByTestId("logout-button"));
+
+            await waitFor(() => {
+                expect(logoutCalled).toBe(true);
+            });
+            await waitFor(() => {
+                expect(useAuthStore.getState().status).toBe("unauthenticated");
+                expect(useAuthStore.getState().user).toBeNull();
+            });
+            expect(screen.getByTestId("login-page")).toBeInTheDocument();
+        });
+
+        it("still clears the auth store and navigates to /login even if the backend logout call fails", async () => {
+            const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+            const user = userEvent.setup();
+            useAuthStore.getState().setUser(mockUser);
+            server.use(
+                http.get(`${API}/canvases`, () => HttpResponse.json([])),
+                http.post(`${API}/auth/logout`, () => new HttpResponse(null, { status: 500 }))
+            );
+
+            renderChatPageWithLoginRoute("empty");
+
+            await user.click(screen.getByTestId("logout-button"));
+
+            await waitFor(() => {
+                expect(useAuthStore.getState().status).toBe("unauthenticated");
+            });
+            expect(screen.getByTestId("login-page")).toBeInTheDocument();
+            consoleSpy.mockRestore();
         });
     });
 });

@@ -17,6 +17,7 @@ import {
   deleteCanvas,
   importCanvas,
   importCanvasZip,
+  logout as logoutApi,
 } from "@/lib/api";
 import { decodeCanvasResponse } from "@/lib/canvasGraphCodec";
 import {
@@ -32,6 +33,7 @@ import {
   Check,
   MessageSquare,
   UserCog,
+  LogOut,
 } from "lucide-react";
 import type { CanvasListItem, CanvasSavePayload } from "@/types";
 import type { Node } from "@xyflow/react";
@@ -173,12 +175,31 @@ function LandingPage({
   const resetStore = useCanvasStore((s) => s.reset);
   const theme = useThemeStore((s) => s.theme);
   const user = useAuthStore((s) => s.user);
+  const clearAuth = useAuthStore((s) => s.clear);
+  const [loggingOut, setLoggingOut] = useState(false);
 
   useEffect(() => {
     resetStore();
     loadCanvases();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const handleLogout = async () => {
+    setLoggingOut(true);
+    try {
+      await logoutApi();
+    } catch (err) {
+      // Even if the backend call fails (network down, server error), clear the
+      // local session and return to /login — the cookie is httpOnly so we
+      // can't clear it client-side, but the user is effectively logged out of
+      // this client. They'll be re-prompted on next /auth/me.
+      console.error("Logout request failed:", err);
+    } finally {
+      clearAuth();
+      setLoggingOut(false);
+      navigate("/login", { replace: true });
+    }
+  };
 
   const handleDrag = (e: React.DragEvent) => {
     e.preventDefault();
@@ -271,6 +292,17 @@ function LandingPage({
             >
               <UserCog className="w-4 h-4" />
             </Link>
+          )}
+          {user && (
+            <button
+              onClick={handleLogout}
+              disabled={loggingOut}
+              data-testid="logout-button"
+              title="Log out"
+              className="flex items-center justify-center w-9 h-9 rounded-lg border border-[var(--color-border-default)] text-[var(--color-text-secondary)] hover:bg-[var(--color-elevated)] hover:text-[var(--color-danger)] transition-colors disabled:opacity-50 cursor-pointer"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
           )}
         </div>
       </header>

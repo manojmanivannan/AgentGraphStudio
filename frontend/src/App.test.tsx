@@ -421,6 +421,86 @@ describe("App — landing page", () => {
     expect(screen.getByRole("button", { name: "Select All" })).toBeInTheDocument();
   });
 
+  describe("landing page header — logout", () => {
+    it("renders a logout button on the landing page when authenticated", async () => {
+      server.use(http.get("http://localhost:8000/api/canvases", () => HttpResponse.json([])));
+
+      render(
+        <MemoryRouter initialEntries={["/"]}>
+          <App />
+        </MemoryRouter>
+      );
+
+      expect(screen.getByTestId("logout-button")).toBeInTheDocument();
+    });
+
+    it("does not render a logout button when not authenticated", async () => {
+      useAuthStore.getState().clear();
+      render(
+        <MemoryRouter initialEntries={["/"]}>
+          <App />
+        </MemoryRouter>
+      );
+
+      await waitFor(() => {
+        expect(screen.getByText("Welcome back")).toBeInTheDocument();
+      });
+      expect(screen.queryByTestId("logout-button")).not.toBeInTheDocument();
+    });
+
+    it("calls the backend logout endpoint, clears the auth store, and navigates to /login", async () => {
+      const user = userEvent.setup();
+      let logoutCalled = false;
+      server.use(
+        http.get("http://localhost:8000/api/canvases", () => HttpResponse.json([])),
+        http.post("http://localhost:8000/api/auth/logout", () => {
+          logoutCalled = true;
+          return HttpResponse.json({ ok: true });
+        })
+      );
+
+      render(
+        <MemoryRouter initialEntries={["/"]}>
+          <App />
+        </MemoryRouter>
+      );
+
+      await user.click(screen.getByTestId("logout-button"));
+
+      await waitFor(() => {
+        expect(logoutCalled).toBe(true);
+      });
+      await waitFor(() => {
+        expect(useAuthStore.getState().status).toBe("unauthenticated");
+        expect(useAuthStore.getState().user).toBeNull();
+      });
+      expect(screen.getByText("Welcome back")).toBeInTheDocument();
+    });
+
+    it("still clears the auth store and navigates to /login even if the backend logout call fails", async () => {
+      const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      const user = userEvent.setup();
+      server.use(
+        http.get("http://localhost:8000/api/canvases", () => HttpResponse.json([])),
+        http.post("http://localhost:8000/api/auth/logout", () => new HttpResponse(null, { status: 500 }))
+      );
+
+      render(
+        <MemoryRouter initialEntries={["/"]}>
+          <App />
+        </MemoryRouter>
+      );
+
+      await user.click(screen.getByTestId("logout-button"));
+
+      await waitFor(() => {
+        expect(useAuthStore.getState().status).toBe("unauthenticated");
+      });
+      expect(screen.getByText("Welcome back")).toBeInTheDocument();
+      consoleSpy.mockRestore();
+    });
+  });
+
   it("shows Agent Chat card on the landing page if canvases are available and navigates on click", async () => {
     const user = userEvent.setup();
     server.use(

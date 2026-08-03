@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 import { useCanvasStore } from "@/store/canvasStore";
 import { useThemeStore } from "@/store/themeStore";
-import { ThemeToggle } from "@/components/ThemeToggle";
+import { AccountControls } from "@/components/layout/AccountControls";
 import {
   createConversation,
   listConversations,
@@ -509,7 +509,8 @@ export default function ChatPage() {
                 </select>
               </div>
             )}
-            <ThemeToggle className="hover:bg-[var(--color-elevated)]" />
+            {/* Theme toggle + account + logout (shared chrome) */}
+            <AccountControls />
           </div>
         </header>
 
