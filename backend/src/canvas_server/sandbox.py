@@ -17,6 +17,8 @@ from llm_sandbox import ArtifactSandboxSession
 from llm_sandbox.pool import PoolConfig
 from llm_sandbox.pool.base import ContainerPoolManager
 
+from canvas_server.config import settings
+
 logger = logging.getLogger("canvas_server.sandbox")
 
 # Configuration constants
@@ -29,6 +31,23 @@ class SandboxError(Exception):
     """Base exception for sandbox operations."""
 
     pass
+
+
+def build_runtime_configs() -> dict[str, Any]:
+    """Build docker ``runtime_configs`` for sandbox container resource limits.
+
+    Translates the ``sandbox_mem_limit`` / ``sandbox_cpus`` settings into the
+    docker-py keys ``llm-sandbox`` spreads into ``containers.create(...)``:
+    ``mem_limit`` (string) and ``nano_cpus`` (int nanocpus). When a setting is
+    unset (empty / 0.0) the corresponding key is omitted so the pool falls back
+    to the library default (uncapped) behavior.
+    """
+    configs: dict[str, Any] = {}
+    if settings.sandbox_mem_limit:
+        configs["mem_limit"] = settings.sandbox_mem_limit
+    if settings.sandbox_cpus:
+        configs["nano_cpus"] = int(settings.sandbox_cpus * 1_000_000_000)
+    return configs
 
 
 def create_named_pool_manager(
@@ -107,6 +126,7 @@ class SandboxManager:
                 lang=DEFAULT_LANG,
                 backend="docker",
                 libraries=["matplotlib", "plotly"],
+                runtime_configs=build_runtime_configs(),
             )
             self._initialized = True
             logger.info("Sandbox pool initialized successfully")

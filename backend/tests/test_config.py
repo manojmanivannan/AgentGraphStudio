@@ -25,6 +25,13 @@ class TestSettings:
         assert settings.database_url == "postgresql+asyncpg://user:pass@host/db"
         assert settings.llm_base_url == "http://ollama:1234/v1"
 
+    def test_default_sandbox_limits(self):
+        """Sandbox container resource limits have conservative defaults applied
+        out of the box so warm sandbox containers are capped without config."""
+        settings = Settings()
+        assert settings.sandbox_mem_limit == "512m"
+        assert settings.sandbox_cpus == 1.0
+
 
 class TestMemoryConfig:
     def test_build_mem0_config_ollama(self, monkeypatch):
