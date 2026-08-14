@@ -63,6 +63,11 @@ services:
       - pgdata:/var/lib/postgresql/data
     networks:
       - agent_network
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256m
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 5s
@@ -87,6 +92,11 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1024m
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 5s
@@ -122,6 +132,11 @@ services:
         condition: service_healthy
       backend:
         condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512m
     develop:
       watch:
         - action: sync
@@ -145,6 +160,11 @@ services:
       - agent_network
     depends_on:
       - backend
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 256m
     develop:
       watch:
         - action: sync
@@ -168,6 +188,11 @@ services:
       - mlflow_data:/app/mlflow
     networks:
       - agent_network
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 3g
     healthcheck:
       test:
         [
@@ -199,13 +224,15 @@ services:
     networks:
       - agent_network
     entrypoint: ["/usr/bin/bash", "/entrypoint.sh"]
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
+    devices:
+      - nvidia.com/gpu=all
+#   deploy:
+#     resources:
+#       reservations:
+#         devices:
+#           - driver: nvidia
+#             count: 1
+#             capabilities: [gpu]
 
 networks:
   agent_network:

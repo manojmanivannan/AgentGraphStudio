@@ -106,3 +106,62 @@ async def test_sandbox_manager_error():
     manager = SandboxManager()
     with pytest.raises(SandboxError, match="SandboxManager not initialized"):
         manager.get_session("any_conv")
+
+
+@pytest.mark.asyncio
+async def test_sandbox_pool_receives_default_resource_limits(monkeypatch):
+    """Default sandbox limits are translated to docker runtime_configs and passed
+    to the pool manager so warm containers are capped at creation time."""
+    from canvas_server import sandbox
+    from canvas_server.config import settings
+
+    monkeypatch.setattr(settings, "sandbox_mem_limit", "512m")
+    monkeypatch.setattr(settings, "sandbox_cpus", 1.0)
+
+    with patch("canvas_server.sandbox.create_named_pool_manager") as mock_create_pool:
+        mock_create_pool.return_value = MockDockerPoolManager()
+        manager = SandboxManager()
+        await manager.initialize_pool()
+
+    _, kwargs = mock_create_pool.call_args
+    runtime_configs = kwargs["runtime_configs"]
+    assert runtime_configs["mem_limit"] == "512m"
+    assert runtime_configs["nano_cpus"] == 1_000_000_000
+
+
+@pytest.mark.asyncio
+async def test_sandbox_pool_resource_limits_env_override(monkeypatch):
+    """Sandbox limits can be overridden via settings, flowing through to
+    runtime_configs with the CPU value converted to nano_cpus."""
+    from canvas_server.config import settings
+
+    monkeypatch.setattr(settings, "sandbox_mem_limit", "1g")
+    monkeypatch.setattr(settings, "sandbox_cpus", 2.5)
+
+    with patch("canvas_server.sandbox.create_named_pool_manager") as mock_create_pool:
+        mock_create_pool.return_value = MockDockerPoolManager()
+        manager = SandboxManager()
+        await manager.initialize_pool()
+
+    _, kwargs = mock_create_pool.call_args
+    runtime_configs = kwargs["runtime_configs"]
+    assert runtime_configs["mem_limit"] == "1g"
+    assert runtime_configs["nano_cpus"] == 2_500_000_000
+
+
+@pytest.mark.asyncio
+async def test_sandbox_pool_resource_limits_disabled(monkeypatch):
+    """When both limit settings are unset, no resource keys are emitted so the
+    pool falls back to the library default (uncapped) behavior."""
+    from canvas_server.config import settings
+
+    monkeypatch.setattr(settings, "sandbox_mem_limit", "")
+    monkeypatch.setattr(settings, "sandbox_cpus", 0.0)
+
+    with patch("canvas_server.sandbox.create_named_pool_manager") as mock_create_pool:
+        mock_create_pool.return_value = MockDockerPoolManager()
+        manager = SandboxManager()
+        await manager.initialize_pool()
+
+    _, kwargs = mock_create_pool.call_args
+    assert kwargs["runtime_configs"] == {}

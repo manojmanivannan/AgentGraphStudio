@@ -39,6 +39,14 @@ class Settings(BaseSettings):
     # Defaults to the local Vite dev origin (served same-origin via the proxy).
     csrf_trusted_origins: list[str] = ["http://localhost:5173"]
 
+    # --- Sandbox (llm-sandbox) container resource limits ---
+    # Applied to warm pool containers at creation time via docker runtime_configs.
+    # sandbox_mem_limit is a docker mem_limit string (e.g. "512m", "1g"); empty
+    # disables the memory cap. sandbox_cpus is CPU cores (fractional allowed),
+    # converted to nano_cpus for docker-py; 0.0 disables the CPU cap.
+    sandbox_mem_limit: str = "512m"
+    sandbox_cpus: float = 1.0
+
     model_config = {
         "env_file": (".env", "../.env"),
         "env_file_encoding": "utf-8",
