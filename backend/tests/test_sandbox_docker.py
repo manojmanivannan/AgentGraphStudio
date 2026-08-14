@@ -112,7 +112,6 @@ async def test_sandbox_manager_error():
 async def test_sandbox_pool_receives_default_resource_limits(monkeypatch):
     """Default sandbox limits are translated to docker runtime_configs and passed
     to the pool manager so warm containers are capped at creation time."""
-    from canvas_server import sandbox
     from canvas_server.config import settings
 
     monkeypatch.setattr(settings, "sandbox_mem_limit", "512m")
