@@ -16,9 +16,12 @@ import asyncio
 import logging
 
 from llm_sandbox.exceptions import SandboxTimeoutError
-from llm_sandbox.pool import PoolExhaustedError
 
-from canvas_server.sandbox import get_sandbox
+from canvas_server.sandbox import (
+    SANDBOX_ACQUIRE_TIMEOUT,
+    bounded_acquire,
+    get_sandbox,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -27,15 +30,18 @@ MAX_OUTPUT_CHARS = 8000
 # Hard wall on a single code execution (passed to session.run).
 EXECUTION_TIMEOUT = 60  # seconds
 # Bounded wait for a free sandbox container before reporting the sandbox busy.
-# This is a per-call bound layered on top of the shared pool's own (longer)
-# acquisition timeout, so a saturated pool surfaces as a 'busy' observation
-# quickly instead of stalling the agent's turn.
-ACQUIRE_TIMEOUT = 10  # seconds
+# Re-exported from the shared ``bounded_acquire`` helper (sandbox.py) so the
+# per-call bound stays a single source of truth shared with future pip_install
+# (#56). A saturated pool surfaces as a 'busy' observation quickly instead of
+# stalling the agent's turn.
+ACQUIRE_TIMEOUT = SANDBOX_ACQUIRE_TIMEOUT
 TRUNCATION_MARKER = (
     "…[truncated at 8000 chars — narrow your print, or save to a file and read a slice]"
 )
 
 # Observation returned when no sandbox container is free within the bounded wait.
+# Kept in sync with ``canvas_server.sandbox.SANDBOX_BUSY_OBSERVATION`` (the shared
+# helper's canonical string).
 BUSY_OBSERVATION = (
     "Code sandbox busy — all sandboxes are currently in use. "
     "Try again shortly, or simplify your request."
@@ -78,22 +84,22 @@ class CodeProvider:
         try:
             sandbox = await get_sandbox()
             # enable_plotting=False: no plot detection, result.plots is always [].
-            session = sandbox.get_session(self.conversation_id, enable_plotting=False)
+            # network_pool="default": run_code runs in the locked (no-network)
+            # pool — a worker that needs network uses a separate tool (#56).
+            session = sandbox.get_session(
+                self.conversation_id,
+                enable_plotting=False,
+                network_pool="default",
+            )
 
             logger.info("Executing code in sandbox...")
-            # session.__enter__ blocks on pool.acquire() (WAIT strategy). Bound
-            # that wait at ACQUIRE_TIMEOUT so a saturated pool reports 'busy'
-            # instead of stalling the turn. shield() keeps the acquire running
-            # if we time out, and _release_after() returns whatever container it
-            # eventually grabs so it cannot leak into the shared pool.
-            enter_task = asyncio.ensure_future(asyncio.to_thread(session.__enter__))
-            try:
-                await asyncio.wait_for(asyncio.shield(enter_task), timeout=ACQUIRE_TIMEOUT)
-            except TimeoutError:
-                asyncio.create_task(self._release_after(enter_task, session))
-                return BUSY_OBSERVATION
-            except PoolExhaustedError:
-                return BUSY_OBSERVATION
+            # Bound the pool-acquire wait so a saturated pool reports 'busy'
+            # instead of stalling the turn. The shared helper never raises on
+            # exhaustion; on timeout it releases any container the orphaned
+            # acquire eventually grabs so it cannot leak into the shared pool.
+            acquired = await bounded_acquire(session, timeout=ACQUIRE_TIMEOUT)
+            if not acquired.acquired:
+                return acquired.observation or BUSY_OBSERVATION
 
             try:
                 result = await asyncio.to_thread(
@@ -114,21 +120,6 @@ class CodeProvider:
         except Exception as e:  # noqa: BLE001 - run_code must never raise
             logger.exception("run_code failed")
             return f"Error: {e}"
-
-    @staticmethod
-    async def _release_after(enter_task: asyncio.Future, session) -> None:
-        """Release a container acquired by an orphaned (timed-out) acquire.
-
-        When the bounded acquire wait times out, the underlying ``__enter__``
-        keeps running in a worker thread and may still acquire a container. This
-        awaits that orphaned acquire and, if it succeeded, exits the session so
-        the container is returned to the shared pool instead of leaking.
-        """
-        try:
-            await enter_task
-            await asyncio.to_thread(session.__exit__, None, None, None)
-        except Exception:  # noqa: BLE001 - acquire raised (e.g. PoolExhaustedError): nothing to release
-            logger.debug("Orphaned sandbox acquire raised; nothing to release")
 
     @staticmethod
     def _format_result(result) -> str:

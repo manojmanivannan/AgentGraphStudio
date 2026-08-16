@@ -185,24 +185,23 @@ def test_build_runtime_configs_locks_network_mode_none():
 
 
 def test_build_runtime_configs_network_mode_not_configurable(monkeypatch):
-    """network_mode="none" is NOT a Settings knob and cannot be relaxed via
-    config. There is no Settings field that controls it, and an attempt to set
-    one via the environment is ignored (Settings uses ``extra="ignore"``).
-    build_runtime_configs hardcodes the literal and never consults a setting."""
-    from canvas_server.config import Settings
+    """The *locked* pool's ``network_mode="none"`` is NOT controlled by the
+    ``sandbox_network_mode`` seam and cannot be relaxed via config.
 
-    # No Settings field exposes network_mode — the invariant is absent from the
-    # config surface by construction.
-    assert "sandbox_network_mode" not in Settings.model_fields
+    Note (#55): ``sandbox_network_mode`` *is* now a Settings field — but it
+    controls only the lazy **networked** pool (``build_networked_runtime_configs``),
+    not the locked default pool. ``build_runtime_configs`` (the locked pool)
+    hardcodes the ``"none"`` literal and never consults the seam, so setting the
+    seam to a networked value cannot relax the locked pool's invariant."""
+    from canvas_server.config import Settings, settings
+
+    # The seam exists (for the networked pool) but is NOT named for the locked
+    # pool's network_mode, and there is no field that the locked pool consults.
     assert "network_mode" not in Settings.model_fields
 
-    # An env var trying to relax it is ignored: a fresh Settings loads with no
-    # such attribute because no field declares it (extra="ignore").
-    monkeypatch.setenv("SANDBOX_NETWORK_MODE", "bridge")
-    fresh = Settings()
-    assert not hasattr(fresh, "sandbox_network_mode")
-
-    # And regardless, build_runtime_configs returns the hardcoded literal.
+    # Relaxing the seam does NOT affect the locked pool's build_runtime_configs:
+    # even with the seam set to a networked value, the locked pool stays "none".
+    monkeypatch.setattr(settings, "sandbox_network_mode", "bridge")
     from canvas_server.sandbox import build_runtime_configs
 
     assert build_runtime_configs()["network_mode"] == "none"

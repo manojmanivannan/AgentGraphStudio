@@ -37,7 +37,10 @@ async def test_code_provider_success():
         provider = CodeProvider(conversation_id="conv-1")
         result = await provider.run_code("print(40 + 2)")
 
-    mock_sandbox.get_session.assert_called_once_with("conv-1", enable_plotting=False)
+    # network_pool="default" routes to the locked (non-networked) pool (#55).
+    mock_sandbox.get_session.assert_called_once_with(
+        "conv-1", enable_plotting=False, network_pool="default"
+    )
     mock_session.__enter__.assert_called_once()
     mock_session.__exit__.assert_called_once()
     mock_session.run.assert_called_once()
@@ -253,13 +256,21 @@ async def test_code_provider_real_execution():
         await asyncio.sleep(2)
     assert result.strip() == "42"
 
-    # Files persist across run_code calls within the shared per-conversation
-    # session (same container): a file written here is readable in the next
-    # call — this is the run_code -> generate_plot handoff mechanism.
-    await provider.run_code("open('/tmp/ags_code_test.txt', 'w').write('21')")
-    result2 = await provider.run_code("print(open('/tmp/ags_code_test.txt').read())")
+    # Files persist across run_code calls within the turn's pinned container
+    # (#55 per-turn container pinning): a file written in the workdir here is
+    # readable in the next call — this is the run_code -> generate_plot handoff
+    # mechanism, and it only works because the container is held for the whole
+    # turn and the workdir is cleaned once (on first acquire), not per call.
+    await provider.run_code("open('/sandbox/ags_handoff.txt', 'w').write('21')")
+    result2 = await provider.run_code("print(open('/sandbox/ags_handoff.txt').read())")
     assert result2.strip() == "21"
 
     # Failures surface as observations instead of raising.
     result3 = await provider.run_code("print(undefined_name)")
     assert "Error executing code" in result3
+
+    # Release the turn's pinned container so the test does not leak it.
+    from canvas_server.sandbox import get_sandbox
+
+    sandbox = await get_sandbox()
+    sandbox.release_session("test-code-real-exec")

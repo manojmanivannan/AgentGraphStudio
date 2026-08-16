@@ -1,9 +1,13 @@
+import logging
 import uuid
 from collections.abc import Awaitable, Callable
 from typing import Any
 
 from canvas_server.exceptions import RunAbortedError
 from canvas_server.runner import CanvasRunner
+from canvas_server.sandbox import get_sandbox
+
+logger = logging.getLogger(__name__)
 
 EventSender = Callable[[dict[str, Any]], Awaitable[None]]
 
@@ -76,6 +80,21 @@ class ConversationRunCoordinator:
                 event["node_id"] = primary_agent["node_id"]
             await send_event(event)
         finally:
+            # Per-turn sandbox release hook (#55): release the conversation's
+            # sandbox session(s) at the end of each turn. Today sessions
+            # otherwise persist app-lifetime, leaking files/plots across
+            # conversations. Releasing here returns a locked-pool container to
+            # the warm pool for reuse and destroys a networked-pool container
+            # (no cross-conversation package bleed). This is independent of the
+            # shared AsyncSession (ADR 0006) — it touches only sandbox lifecycle.
+            try:
+                sandbox = await get_sandbox()
+                sandbox.release_session(str(conversation_id))
+            except Exception:  # noqa: BLE001 - never let cleanup block the turn
+                logger.debug(
+                    "Per-turn sandbox release skipped for %s",
+                    conversation_id,
+                )
             await self.session.commit()
 
     async def _build_runner(self, *, canvas, conversation_repo, conversation_id):
