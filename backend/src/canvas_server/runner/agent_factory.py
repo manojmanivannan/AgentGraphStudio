@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 
 import dspy
 
+from canvas_server.runner.code_provider import CodeProvider
 from canvas_server.runner.plot_provider import PlotProvider
 from canvas_server.streaming_react import StreamingReAct
 
@@ -118,6 +119,19 @@ class AgentFactory:
                 "a markdown image link (e.g. `![Plot](/api/plots/...)`), you MUST preserve this image "
                 "markdown link exactly and include it in your final answer/response (process_result). "
                 "Do not omit, summarize, or modify the image link."
+            )
+
+        if getattr(agent_node, "enable_coding", False):
+            full_instructions += (
+                "\n\n[CRITICAL SYSTEM RULE] You have a `run_code` tool that executes Python in an "
+                "isolated sandbox and returns the captured stdout to you as text. Use it to compute, "
+                "transform, or inspect data instead of guessing: call `run_code` with complete Python "
+                "and use `print()` to emit the output you want to read back — only printed stdout is "
+                "returned. If the output is large, narrow your print or save the data to a file and "
+                "read a slice in a follow-up `run_code` call. Files you write persist across "
+                "`run_code` calls within this conversation, so you can compute a file and hand it off "
+                "to `generate_plot` in the same turn. Reason over the returned stdout to answer the "
+                "user; do not dump raw tool output at the user."
             )
 
         if getattr(agent_node, "enable_hitl", False):
@@ -237,6 +251,10 @@ class AgentFactory:
         if getattr(agent_node, "enable_plotting", False) and self._conversation_id:
             plot_provider = PlotProvider(self._conversation_id, self._conversation_repo)
             tools.append(plot_provider.generate_plot)
+
+        if getattr(agent_node, "enable_coding", False) and self._conversation_id:
+            code_provider = CodeProvider(self._conversation_id)
+            tools.append(code_provider.run_code)
 
         if getattr(agent_node, "enable_hitl", False):
             async def ask_human(question: str) -> str:

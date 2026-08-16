@@ -195,6 +195,55 @@ describe("AgentEditor", () => {
     expect(stored?.data.enablePlotting).toBe(true);
   });
 
+  it("shows coding toggle for worker agents", () => {
+    useCanvasStore.getState().setNodes([agentNode]);
+    useCanvasStore.getState().selectNode("agent-1");
+    render(<AgentEditor />);
+
+    expect(screen.getByTestId("agent-enable-coding")).toBeInTheDocument();
+  });
+
+  it("does not show coding toggle for router agents", async () => {
+    const user = userEvent.setup();
+    useCanvasStore.getState().setNodes([agentNode]);
+    useCanvasStore.getState().selectNode("agent-1");
+    render(<AgentEditor />);
+
+    expect(screen.getByTestId("agent-enable-coding")).toBeInTheDocument();
+
+    await user.selectOptions(screen.getByTestId("agent-type-select"), "router");
+
+    expect(screen.queryByTestId("agent-enable-coding")).not.toBeInTheDocument();
+  });
+
+  it("resets enableCoding to false when agentType is changed to router", async () => {
+    const user = userEvent.setup();
+    const withCoding = {
+      ...agentNode,
+      data: { ...agentNode.data, enableCoding: true }
+    };
+    useCanvasStore.getState().setNodes([withCoding]);
+    useCanvasStore.getState().selectNode("agent-1");
+    render(<AgentEditor />);
+
+    await user.selectOptions(screen.getByTestId("agent-type-select"), "router");
+
+    const stored = useCanvasStore.getState().nodes.find((n) => n.id === "agent-1");
+    expect(stored?.data.enableCoding).toBe(false);
+  });
+
+  it("coding toggle updates store", async () => {
+    const user = userEvent.setup();
+    useCanvasStore.getState().setNodes([agentNode]);
+    useCanvasStore.getState().selectNode("agent-1");
+    render(<AgentEditor />);
+
+    await user.click(screen.getByTestId("agent-enable-coding"));
+
+    const stored = useCanvasStore.getState().nodes.find((n) => n.id === "agent-1");
+    expect(stored?.data.enableCoding).toBe(true);
+  });
+
   it("history toggle updates store for router agents", async () => {
     const user = userEvent.setup();
     const routerNode = { ...agentNode, data: { ...agentNode.data, agentType: "router" } };

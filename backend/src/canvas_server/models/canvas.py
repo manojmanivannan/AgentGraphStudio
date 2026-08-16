@@ -96,6 +96,16 @@ class AgentNode(Base):
     enable_plotting: Mapped[bool] = mapped_column(
         sa.Boolean(), default=False, server_default=sa.text("false"), nullable=False
     )
+    enable_coding: Mapped[bool] = mapped_column(
+        sa.Boolean(), default=False, server_default=sa.text("false"), nullable=False
+    )
+    # Reserved for a later ticket: enables network access inside the sandbox.
+    # The column is added now (one migration with enable_coding) so future work
+    # only flips behavior; it is not yet wired through the Pydantic model, repo,
+    # routes, or frontend.
+    enable_network: Mapped[bool] = mapped_column(
+        sa.Boolean(), default=False, server_default=sa.text("false"), nullable=False
+    )
     enable_hitl: Mapped[bool] = mapped_column(
         sa.Boolean(), default=False, server_default=sa.text("false"), nullable=False
     )
