@@ -1,4 +1,4 @@
-.PHONY: help up up-gpu down down-v clean-sandbox test test-backend test-frontend
+.PHONY: help up up-gpu down down-v clean-sandbox sandbox-image test test-backend test-frontend
 
 help:
 	@echo "Available commands:"
@@ -7,14 +7,21 @@ help:
 	@echo "  make down           - Stop docker containers (including ollama) without removing volumes"
 	@echo "  make down-v         - Stop docker containers (including ollama) and remove volumes"
 	@echo "  make clean-sandbox  - Clean up sandbox containers running python3"
+	@echo "  make sandbox-image  - Build the baked-floor sandbox image (matplotlib/plotly/numpy)"
 	@echo "  make test            - Run backend and frontend tests"
 	@echo "  make test-backend   - Run backend tests (uv run pytest)"
 	@echo "  make test-frontend  - Run frontend tests (npx vitest run)"
 
-up:
+# Baked-floor image shared by the locked (network_mode="none") default pool and
+# the networked pool. Must exist on the host docker daemon before the backend
+# starts, since sandbox containers are created via the host docker.sock.
+sandbox-image:
+	docker build -t agentbuilder-sandbox-floor:latest ./sandbox
+
+up: sandbox-image
 	docker compose up --build
 
-up-gpu:
+up-gpu: sandbox-image
 	docker compose --profile gpu up --build -d
 
 down:

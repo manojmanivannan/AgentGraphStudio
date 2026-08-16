@@ -381,20 +381,51 @@ async def canvas_with_nodes(test_session, test_user):
 async def autouse_sandbox():
     import logging
     import shutil
+    import subprocess
+    from pathlib import Path
 
-    from canvas_server.sandbox import SandboxManager
+    from canvas_server.sandbox import SANDBOX_FLOOR_IMAGE, SandboxManager
 
-    if shutil.which("docker"):
-        manager = SandboxManager.get()
-        try:
-            await manager.initialize_pool()
-        except Exception as e:
-            logging.getLogger("canvas_server.tests").warning(
-                f"Failed to initialize sandbox pool in tests: {e}"
-            )
-        yield manager
-        with contextlib.suppress(Exception):
-            await manager.shutdown()
-    else:
+    if not shutil.which("docker"):
         yield None
+        return
+
+    # The locked default pool runs on the baked-floor image (matplotlib + plotly
+    # + numpy pre-installed, network_mode="none"). Ensure it exists before
+    # initializing the pool so @requires_docker tests can acquire containers.
+    # Idempotent: a quick `docker image inspect` skips the build when present.
+    repo_root = Path(__file__).resolve().parents[2]
+    dockerfile_ctx = repo_root / "sandbox"
+    try:
+        subprocess.run(
+            ["docker", "image", "inspect", SANDBOX_FLOOR_IMAGE],
+            check=True,
+            capture_output=True,
+        )
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        try:
+            subprocess.run(
+                ["docker", "build", "-t", SANDBOX_FLOOR_IMAGE, str(dockerfile_ctx)],
+                check=True,
+                capture_output=True,
+            )
+        except (subprocess.CalledProcessError, FileNotFoundError) as e:
+            stderr = getattr(e, "stderr", b"") or b""
+            logging.getLogger("canvas_server.tests").warning(
+                "Failed to build sandbox floor image %s: %s\n%s",
+                SANDBOX_FLOOR_IMAGE,
+                e,
+                stderr.decode("utf-8", errors="replace"),
+            )
+
+    manager = SandboxManager.get()
+    try:
+        await manager.initialize_pool()
+    except Exception as e:
+        logging.getLogger("canvas_server.tests").warning(
+            f"Failed to initialize sandbox pool in tests: {e}"
+        )
+    yield manager
+    with contextlib.suppress(Exception):
+        await manager.shutdown()
 

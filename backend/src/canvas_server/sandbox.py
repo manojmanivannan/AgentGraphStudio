@@ -26,6 +26,22 @@ POOL_SIZE_MAX = 2
 POOL_SIZE_MIN = 1
 DEFAULT_LANG = "python"
 
+# Baked-floor custom Docker image shared by both sandbox pools (the locked
+# default pool here, and the lazy networked pool in #55). matplotlib + plotly +
+# numpy are pre-installed (along with a `/sandbox/.sandbox-venv` that inherits
+# them via --system-site-packages) so the locked pool needs *no* runtime pip —
+# which is impossible under ``network_mode="none"`` anyway. The two pools differ
+# only in ``network_mode``. Built from ``sandbox/Dockerfile`` (see
+# ``make sandbox-image``).
+SANDBOX_FLOOR_IMAGE = "agentbuilder-sandbox-floor:latest"
+
+# Hardcoded invariant of the default (locked) pool: the container is created
+# with no network stack, so agents without ``enable_network`` cannot make
+# outbound calls (CLAUDE.md §8: "no network by default"). This is deliberately
+# NOT a ``Settings`` knob and cannot be relaxed via config — see
+# ``build_runtime_configs``.
+LOCKED_POOL_NETWORK_MODE = "none"
+
 
 class SandboxError(Exception):
     """Base exception for sandbox operations."""
@@ -34,19 +50,28 @@ class SandboxError(Exception):
 
 
 def build_runtime_configs() -> dict[str, Any]:
-    """Build docker ``runtime_configs`` for sandbox container resource limits.
+    """Build docker ``runtime_configs`` for the default (locked) sandbox pool.
 
     Translates the ``sandbox_mem_limit`` / ``sandbox_cpus`` settings into the
     docker-py keys ``llm-sandbox`` spreads into ``containers.create(...)``:
     ``mem_limit`` (string) and ``nano_cpus`` (int nanocpus). When a setting is
     unset (empty / 0.0) the corresponding key is omitted so the pool falls back
     to the library default (uncapped) behavior.
+
+    ``network_mode`` is set to ``"none"`` as a **hardcoded invariant** — not a
+    ``Settings`` knob, not overridable. This finally honours CLAUDE.md §8's "no
+    network by default" contract: agents without ``enable_network`` run in this
+    pool and cannot make outbound network calls. Previously this never set
+    ``network_mode``, so containers ran on Docker's bridge with internet on.
+    The networked pool (#55) is a separate pool with its own runtime configs.
     """
     configs: dict[str, Any] = {}
     if settings.sandbox_mem_limit:
         configs["mem_limit"] = settings.sandbox_mem_limit
     if settings.sandbox_cpus:
         configs["nano_cpus"] = int(settings.sandbox_cpus * 1_000_000_000)
+    # Hardcoded security invariant — set last so nothing can override it.
+    configs["network_mode"] = LOCKED_POOL_NETWORK_MODE
     return configs
 
 
@@ -119,13 +144,18 @@ class SandboxManager:
 
         logger.info(f"Initializing llm-sandbox pool (max={POOL_SIZE_MAX}, min={POOL_SIZE_MIN})...")
         try:
-            # We pre-install matplotlib and plotly so that plotting tools
-            # work instantly without requiring inline pip installs.
+            # The default pool is the LOCKED pool: network_mode="none" (a
+            # hardcoded invariant in build_runtime_configs) + the baked-floor
+            # image (matplotlib/plotly/numpy pre-installed). skip_environment_setup
+            # means no venv/pip runs at container creation — which is required
+            # because pip is impossible under network_mode="none". Floor packages
+            # are baked into the image (and its /sandbox/.sandbox-venv) instead.
             self._pool_manager = create_named_pool_manager(
                 config=PoolConfig(max_pool_size=POOL_SIZE_MAX, min_pool_size=POOL_SIZE_MIN),
                 lang=DEFAULT_LANG,
                 backend="docker",
-                libraries=["matplotlib", "plotly"],
+                image=SANDBOX_FLOOR_IMAGE,
+                skip_environment_setup=True,
                 runtime_configs=build_runtime_configs(),
             )
             self._initialized = True
