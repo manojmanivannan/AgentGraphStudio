@@ -68,6 +68,7 @@ class CanvasRepo:
                 agent_type=a.agent_type,
                 enable_plotting=a.enable_plotting,
                 enable_coding=a.enable_coding,
+                enable_network=a.enable_network,
                 enable_hitl=a.enable_hitl,
                 enable_memory=a.enable_memory,
                 enable_conversation_history=a.enable_conversation_history,
@@ -232,6 +233,7 @@ class CanvasRepo:
                 node.agent_type = a.agent_type
                 node.enable_plotting = a.enable_plotting
                 node.enable_coding = a.enable_coding
+                node.enable_network = a.enable_network
                 node.enable_hitl = a.enable_hitl
                 node.enable_memory = a.enable_memory
                 node.enable_conversation_history = a.enable_conversation_history
@@ -253,6 +255,7 @@ class CanvasRepo:
                     agent_type=a.agent_type,
                     enable_plotting=a.enable_plotting,
                     enable_coding=a.enable_coding,
+                    enable_network=a.enable_network,
                     enable_hitl=a.enable_hitl,
                     enable_memory=a.enable_memory,
                     enable_conversation_history=a.enable_conversation_history,

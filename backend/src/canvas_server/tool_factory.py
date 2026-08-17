@@ -31,6 +31,7 @@ from canvas_server.models.api import (
     ToolInspectResponse,
     ToolTestResponse,
 )
+from canvas_server.pip_hardening import build_pip_install_command
 from canvas_server.sandbox import get_sandbox
 
 logger = logging.getLogger("canvas_server.tool_factory")
@@ -320,7 +321,10 @@ if __name__ == '__main__':
 """
         with session:
             if dependencies:
-                session.execute_command("pip install " + " ".join(dependencies))
+                # Hardened command (shared builder, #56): PEP 508 validation,
+                # flag rejection, shlex.quote per token, ≤ 20 packages. A bad
+                # token raises ValueError, which propagates as a tool error.
+                session.execute_command(build_pip_install_command(dependencies))
             result_obj = session.run(wrapped_code)
 
         if result_obj.exit_code != 0:
@@ -478,7 +482,8 @@ if __name__ == '__main__':
             # if they are already present.
             with session:
                 if dependencies:
-                    session.execute_command("pip install " + " ".join(dependencies))
+                    # Hardened command (shared builder, #56) — see compile path.
+                    session.execute_command(build_pip_install_command(dependencies))
                 result_obj = session.run(wrapped_code)  # , libraries=dependencies)
                 stdout = result_obj.stdout.strip()
 

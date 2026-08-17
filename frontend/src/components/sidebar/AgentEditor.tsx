@@ -95,6 +95,7 @@ export function AgentEditor() {
         if (value === "router") {
           newData.enablePlotting = false;
           newData.enableCoding = false;
+          newData.enableNetwork = false;
         }
         return { ...n, data: newData };
       }
@@ -291,6 +292,32 @@ export function AgentEditor() {
               <div>
                 <span className="text-[12px] font-medium text-[var(--color-text-secondary)] group-hover:text-[var(--color-text-primary)] transition-colors">Enable Coding</span>
                 <p className="text-[10px] text-[var(--color-text-tertiary)] mt-0.5">Agent can write and run its own Python</p>
+              </div>
+            </label>
+          </div>
+        )}
+
+        {(data as any).agentType !== "router" && (
+          <div>
+            <label className="flex items-center gap-2.5 cursor-pointer group">
+              <input
+                type="checkbox"
+                checked={(data as any).enableNetwork ?? false}
+                onChange={(e) => {
+                  const checked = e.target.checked;
+                  const updatedNodes = nodes.map((n) =>
+                    n.id === selectedNodeId
+                      ? { ...n, data: { ...n.data, enableNetwork: checked } }
+                      : n
+                  );
+                  setNodes(updatedNodes);
+                }}
+                data-testid="agent-enable-network"
+                className="rounded border-[var(--color-border-default)] text-[var(--color-accent)] focus:ring-[var(--color-accent)] bg-[var(--color-base)]"
+              />
+              <div>
+                <span className="text-[12px] font-medium text-[var(--color-text-secondary)] group-hover:text-[var(--color-text-primary)] transition-colors">Enable Network</span>
+                <p className="text-[10px] text-[var(--color-text-tertiary)] mt-0.5">Sandbox gets internet + a pip_install tool (open egress)</p>
               </div>
             </label>
           </div>

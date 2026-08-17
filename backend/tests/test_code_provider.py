@@ -239,6 +239,214 @@ async def test_code_provider_session_exited_on_run_error():
     mock_session.__exit__.assert_called_once()
 
 
+# ── pip_install tool (#56) ──────────────────────────────────────────────
+
+
+def _console_output(exit_code=0, stdout="", stderr=""):
+    """llm-sandbox ConsoleOutput shape returned by session.execute_command."""
+    return MagicMock(exit_code=exit_code, stdout=stdout, stderr=stderr)
+
+
+@pytest.mark.asyncio
+async def test_pip_install_success_runs_hardened_command_in_networked_pool():
+    """pip_install routes to the networked pool and runs the hardened command;
+    exit 0 returns pip's stdout as the observation."""
+    mock_sandbox = MagicMock()
+    mock_session = MagicMock()
+    mock_sandbox.get_session.return_value = mock_session
+    mock_session.execute_command.return_value = _console_output(
+        exit_code=0, stdout="Successfully installed requests-2.31.0\n"
+    )
+
+    with _patch_sandbox(mock_sandbox):
+        provider = CodeProvider(conversation_id="conv-1", network_pool="networked")
+        result = await provider.pip_install(["requests"])
+
+    # Routed to the networked pool, no plot detection.
+    mock_sandbox.get_session.assert_called_once_with(
+        "conv-1", enable_plotting=False, network_pool="networked"
+    )
+    # Hardened command built via the shared helper (validated + quoted).
+    cmd = mock_session.execute_command.call_args.args[0]
+    assert cmd == "pip install requests"
+    assert "Successfully installed requests" in result
+
+
+@pytest.mark.asyncio
+async def test_pip_install_quotes_specifier_tokens():
+    """A PEP 508 specifier token is shell-quoted in the executed command."""
+    mock_sandbox = MagicMock()
+    mock_session = MagicMock()
+    mock_sandbox.get_session.return_value = mock_session
+    mock_session.execute_command.return_value = _console_output(stdout="ok")
+
+    with _patch_sandbox(mock_sandbox):
+        provider = CodeProvider(conversation_id="conv-1", network_pool="networked")
+        await provider.pip_install(["numpy>=1.26"])
+
+    cmd = mock_session.execute_command.call_args.args[0]
+    assert cmd == "pip install 'numpy>=1.26'"
+
+
+@pytest.mark.asyncio
+async def test_pip_install_bad_token_never_raises_no_execute():
+    """An invalid token rejects the whole install — returned as an observation
+    string, never raised, and execute_command is NOT called."""
+    mock_sandbox = MagicMock()
+    mock_session = MagicMock()
+    mock_sandbox.get_session.return_value = mock_session
+
+    with _patch_sandbox(mock_sandbox):
+        provider = CodeProvider(conversation_id="conv-1", network_pool="networked")
+        result = await provider.pip_install(["requests", "--index-url=http://evil"])
+
+    assert isinstance(result, str)
+    assert "index-url" in result.lower() or "flag" in result.lower()
+    mock_session.execute_command.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_pip_install_over_limit_never_raises_no_execute():
+    """More than MAX_PACKAGES tokens rejects the install as an observation."""
+    from canvas_server.pip_hardening import MAX_PACKAGES
+
+    mock_sandbox = MagicMock()
+    mock_session = MagicMock()
+    mock_sandbox.get_session.return_value = mock_session
+
+    with _patch_sandbox(mock_sandbox):
+        provider = CodeProvider(conversation_id="conv-1", network_pool="networked")
+        result = await provider.pip_install([f"pkg{i}" for i in range(MAX_PACKAGES + 1)])
+
+    assert isinstance(result, str)
+    mock_session.execute_command.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_pip_install_nonzero_exit_returns_stderr_observation():
+    """A failed pip install (nonzero exit) surfaces stderr, never raises."""
+    mock_sandbox = MagicMock()
+    mock_session = MagicMock()
+    mock_sandbox.get_session.return_value = mock_session
+    mock_session.execute_command.return_value = _console_output(
+        exit_code=1, stdout="", stderr="ERROR: Could not find a version for boguspkg"
+    )
+
+    with _patch_sandbox(mock_sandbox):
+        provider = CodeProvider(conversation_id="conv-1", network_pool="networked")
+        result = await provider.pip_install(["boguspkg"])
+
+    assert "Could not find a version" in result
+    assert "boguspkg" in result
+
+
+@pytest.mark.asyncio
+async def test_pip_install_timeout_returns_observation(monkeypatch):
+    """A pip install that overruns the timeout is aborted and surfaced as an
+    observation, never raised."""
+    monkeypatch.setattr(
+        "canvas_server.runner.code_provider.settings.sandbox_pip_install_timeout", 0.1
+    )
+
+    mock_sandbox = MagicMock()
+    mock_session = MagicMock()
+    mock_sandbox.get_session.return_value = mock_session
+
+    def slow_execute(_cmd):
+        import time
+        time.sleep(0.3)
+
+    mock_session.execute_command.side_effect = slow_execute
+
+    with _patch_sandbox(mock_sandbox):
+        provider = CodeProvider(conversation_id="conv-1", network_pool="networked")
+        result = await asyncio.wait_for(provider.pip_install(["requests"]), timeout=5)
+
+    assert "timed out" in result.lower() or "timeout" in result.lower()
+    # Let the orphaned execute_command finish so no thread is left mid-call.
+    await asyncio.sleep(0.4)
+
+
+@pytest.mark.asyncio
+async def test_pip_install_pool_exhausted_returns_busy():
+    """Pool exhaustion on acquire surfaces as the 'busy' observation."""
+    mock_sandbox = MagicMock()
+    mock_session = MagicMock()
+    mock_sandbox.get_session.return_value = mock_session
+    mock_session.__enter__.side_effect = PoolExhaustedError("no containers")
+
+    with _patch_sandbox(mock_sandbox):
+        provider = CodeProvider(conversation_id="conv-1", network_pool="networked")
+        result = await provider.pip_install(["requests"])
+
+    assert "busy" in result.lower()
+    mock_session.execute_command.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_pip_install_never_raises_on_internal_error():
+    """Any unexpected internal error is caught and returned as an observation."""
+    with patch(
+        "canvas_server.runner.code_provider.get_sandbox", new_callable=AsyncMock
+    ) as gs:
+        gs.side_effect = RuntimeError("sandbox blew up")
+        provider = CodeProvider(conversation_id="conv-1", network_pool="networked")
+        result = await provider.pip_install(["requests"])
+
+    assert result.startswith("Error")
+    assert "sandbox blew up" in result
+
+
+@pytest.mark.asyncio
+async def test_pip_install_session_exited_after_run():
+    """The sandbox session is released (context exited) after a pip_install."""
+    mock_sandbox = MagicMock()
+    mock_session = MagicMock()
+    mock_sandbox.get_session.return_value = mock_session
+    mock_session.execute_command.return_value = _console_output(stdout="ok")
+
+    with _patch_sandbox(mock_sandbox):
+        provider = CodeProvider(conversation_id="conv-1", network_pool="networked")
+        await provider.pip_install(["requests"])
+
+    mock_session.__exit__.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_run_code_routes_to_networked_pool_when_configured():
+    """A networked worker's run_code uses the networked pool so pip-installed
+    packages are available to subsequent run_code calls in the same session."""
+    mock_sandbox = MagicMock()
+    mock_session = MagicMock()
+    mock_sandbox.get_session.return_value = mock_session
+    mock_session.run.return_value = _result(stdout="ok")
+
+    with _patch_sandbox(mock_sandbox):
+        provider = CodeProvider(conversation_id="conv-1", network_pool="networked")
+        await provider.run_code("print('ok')")
+
+    mock_sandbox.get_session.assert_called_once_with(
+        "conv-1", enable_plotting=False, network_pool="networked"
+    )
+
+
+@pytest.mark.asyncio
+async def test_run_code_default_pool_when_not_configured():
+    """Without network, run_code stays on the locked (default) pool."""
+    mock_sandbox = MagicMock()
+    mock_session = MagicMock()
+    mock_sandbox.get_session.return_value = mock_session
+    mock_session.run.return_value = _result(stdout="ok")
+
+    with _patch_sandbox(mock_sandbox):
+        provider = CodeProvider(conversation_id="conv-1")
+        await provider.run_code("print('ok')")
+
+    mock_sandbox.get_session.assert_called_once_with(
+        "conv-1", enable_plotting=False, network_pool="default"
+    )
+
+
 @requires_docker
 @pytest.mark.asyncio
 async def test_code_provider_real_execution():
@@ -274,3 +482,41 @@ async def test_code_provider_real_execution():
 
     sandbox = await get_sandbox()
     sandbox.release_session("test-code-real-exec")
+
+
+@requires_docker
+@pytest.mark.asyncio
+async def test_pip_install_real_execution_then_import():
+    """pip_install actually installs a package in the networked Docker sandbox,
+    and the package is importable from a subsequent run_code call in the same
+    turn/session (no mocks). Skipped without Docker."""
+    from canvas_server.sandbox import NETWORK_POOL_NETWORKED, get_sandbox
+
+    provider = CodeProvider(
+        conversation_id="test-pip-real-exec", network_pool=NETWORK_POOL_NETWORKED
+    )
+
+    # Tolerate cold-start: the networked pool is lazy (min=0) so the first
+    # acquire grows a fresh container and may exceed the 10s bounded wait.
+    install_result = ""
+    for _ in range(8):
+        install_result = await provider.pip_install(["six"])
+        if "busy" not in install_result.lower() and "Error" not in install_result:
+            break
+        await asyncio.sleep(2)
+    assert "Successfully installed" in install_result or "already satisfied" in install_result
+
+    # The installed package is importable from run_code in the same networked
+    # session (pip_install and run_code share the per-conversation session).
+    import_result = ""
+    for _ in range(8):
+        import_result = await provider.run_code("import six; print(six.__version__)")
+        if "busy" not in import_result.lower():
+            break
+        await asyncio.sleep(2)
+    assert import_result.strip()  # printed a version string, no ImportError
+
+    # Release the turn's pinned networked container (destroyed on release so
+    # the install does not bleed across conversations).
+    sandbox = await get_sandbox()
+    sandbox.release_session("test-pip-real-exec")

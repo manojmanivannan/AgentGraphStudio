@@ -743,6 +743,42 @@ dangerous host-side execution.
 **Security:** The sandbox executes inside isolated Docker containers, preventing
 unauthorized access to the host filesystem and environment variables.
 
+**Two-pool architecture + network toggle (#55/#56):** `SandboxManager` runs two
+pools, selected per worker via the `enable_network` capability:
+
+- **Locked (default) pool** — eager/warm, `network_mode="none"` (a *hardcoded
+  invariant*, not a config knob), reused on release. Serves workers without
+  `enable_network`, plotting, and author-tool compilation. No outbound calls
+  are possible.
+- **Networked pool** — lazy (`min=0`/`max=2`, no idle cost), `network_mode` from
+  the `sandbox_network_mode` seam (default `"bridge"` — internet egress),
+  *destroyed* on release so a networked worker's pip installs / files never
+  bleed across conversations.
+
+The session cache is keyed by `(conversation_id, network_pool)`, so enabling
+network on one worker does not network any other worker's session — it is a
+per-agent session capability. A networked worker's `run_code` and `pip_install`
+share the same networked session, so packages installed by `pip_install` are
+importable from subsequent `run_code` calls in the same turn.
+
+`pip_install` (and the author-tool dependency-install paths in `tool_factory`
+and `package_manager`) build their `pip install` command through the shared
+`canvas_server.pip_hardening` module: PEP 508 validation per token, rejection
+of flag-like tokens (`--index-url` / `--trusted-host` / `--no-deps` — default
+PyPI only), `shlex.quote` per token, and a ≤ 20 package cap. The agent
+`pip_install` tool never raises — failures become observation strings the agent
+reasons over — and is bounded by `sandbox_pip_install_timeout` (default 120s).
+Typosquat risk is accepted (no package allowlist).
+
+**Open-egress risk posture (explicit trade-off):** the networked pool has
+**no egress proxy, no SSRF guard, no outbound allowlist, and no transfer cap**.
+A worker with `enable_network` can reach any public host and download any
+PyPI package. This is a deliberate trade-off for capability and simplicity, not
+an oversight. The `sandbox_network_mode` config seam is the place a future
+custom egress network + proxy can be swapped in with no code change. Routers
+never get network sessions or `pip_install` (worker-only, enforced by the
+`AgentNodeBase` validator).
+
 **Plotting Support:**
 If the `enable_plotting` capability flag is checked on an Agent Node (Worker or Router):
 1. The `AgentFactory` instantiates a `PlotProvider` initialized with the current `conversation_id`.

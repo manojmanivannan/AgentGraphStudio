@@ -73,6 +73,19 @@ class TestAgentNodeInput:
         agent = AgentNodeInput(id=uuid.uuid4())
         assert agent.enable_coding is False
 
+    def test_enable_network_defaults_false(self):
+        agent = AgentNodeInput(id=uuid.uuid4())
+        assert agent.enable_network is False
+
+    def test_worker_can_enable_network(self):
+        agent = AgentNodeInput(id=uuid.uuid4(), agent_type="worker", enable_network=True)
+        assert agent.enable_network is True
+
+    def test_router_cannot_enable_network(self):
+        with pytest.raises(ValidationError) as exc_info:
+            AgentNodeInput(id=uuid.uuid4(), agent_type="router", enable_network=True)
+        assert "Network is only supported for worker agents" in str(exc_info.value)
+
 
 
 class TestAgentNodeResponse:

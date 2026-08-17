@@ -151,6 +151,59 @@ class TestCompileToolFromCode:
         assert result == 123
         assert manager.get_session.call_args_list[1].args[0] == "syntax_check_global"
 
+    async def test_runtime_pip_install_uses_hardened_command(self):
+        """Author-tool dependency install uses the shared hardened command builder
+        — valid tokens are quoted and passed to execute_command (#56)."""
+        code = "def value() -> int:\n    return 123"
+
+        syntax_session = MagicMock()
+        syntax_session.__enter__.return_value = syntax_session
+        syntax_session.__exit__.return_value = None
+        syntax_session.run.return_value = MagicMock(exit_code=0, stdout="", stderr="")
+
+        runtime_session = MagicMock()
+        runtime_session.__enter__.return_value = runtime_session
+        runtime_session.__exit__.return_value = None
+        runtime_session.run.return_value = MagicMock(exit_code=0, stdout="123", stderr="")
+
+        manager = MagicMock()
+        manager.get_session.side_effect = [syntax_session, runtime_session]
+
+        with patch("canvas_server.tool_factory.get_sandbox", new=AsyncMock(return_value=manager)):
+            fn = await compile_tool_from_code(
+                "value_tool", code, dependencies=["numpy>=1.26"]
+            )
+            await fn()
+
+        cmd = runtime_session.execute_command.call_args.args[0]
+        assert cmd == "pip install 'numpy>=1.26'"
+
+    async def test_runtime_pip_install_rejects_bad_dependency_token(self):
+        """A bad dependency token (pip flag) is rejected by the hardened builder
+        before execute_command runs — the compiled tool raises (#56)."""
+        code = "def value() -> int:\n    return 123"
+
+        syntax_session = MagicMock()
+        syntax_session.__enter__.return_value = syntax_session
+        syntax_session.__exit__.return_value = None
+        syntax_session.run.return_value = MagicMock(exit_code=0, stdout="", stderr="")
+
+        runtime_session = MagicMock()
+        runtime_session.__enter__.return_value = runtime_session
+        runtime_session.__exit__.return_value = None
+
+        manager = MagicMock()
+        manager.get_session.side_effect = [syntax_session, runtime_session]
+
+        with patch("canvas_server.tool_factory.get_sandbox", new=AsyncMock(return_value=manager)):
+            fn = await compile_tool_from_code(
+                "value_tool", code, dependencies=["--index-url=http://evil"]
+            )
+            with pytest.raises(ValueError):
+                await fn()
+
+        runtime_session.execute_command.assert_not_called()
+
 
 # ── inspect_tool_code ───────────────────────────────────────────────────────
 

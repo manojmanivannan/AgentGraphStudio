@@ -198,6 +198,41 @@ class TestCanvasRepoSaveNodesAndEdges:
         canvas = await repo.get_or_404(blank_canvas.id)
         assert canvas.agent_nodes[0].enable_coding is False
 
+    async def test_save_persists_enable_network(self, blank_canvas, test_session):
+        """enable_network round-trips through both the new-node and upsert branches."""
+        repo = CanvasRepo(test_session)
+        aid = uuid.uuid4()
+
+        # New-node branch (constructor call in save_nodes_and_edges)
+        await repo.save_nodes_and_edges(
+            blank_canvas.id, "Networked",
+            [AgentNodeInput(id=aid, name="NetWorker", agent_type="worker", enable_network=True)],
+            [],
+            [],
+        )
+        canvas = await repo.get_or_404(blank_canvas.id)
+        assert canvas.agent_nodes[0].enable_network is True
+
+        # Upsert branch (existing node assignment in save_nodes_and_edges)
+        await repo.save_nodes_and_edges(
+            blank_canvas.id, "Networked",
+            [AgentNodeInput(id=aid, name="NetWorker", agent_type="worker", enable_network=True)],
+            [],
+            [],
+        )
+        canvas = await repo.get_or_404(blank_canvas.id)
+        assert canvas.agent_nodes[0].enable_network is True
+
+        # Toggle off via upsert
+        await repo.save_nodes_and_edges(
+            blank_canvas.id, "Networked",
+            [AgentNodeInput(id=aid, name="NetWorker", agent_type="worker", enable_network=False)],
+            [],
+            [],
+        )
+        canvas = await repo.get_or_404(blank_canvas.id)
+        assert canvas.agent_nodes[0].enable_network is False
+
 
 class TestCanvasRepoCreateFull:
     async def test_create_full(self, test_session, test_user):
@@ -236,3 +271,12 @@ class TestCanvasRepoCreateFull:
         ]
         canvas = await repo.create_full("Coding Canvas", agents, [], [], owner_id=test_user.id)
         assert canvas.agent_nodes[0].enable_coding is True
+
+    async def test_create_full_persists_enable_network(self, test_session, test_user):
+        repo = CanvasRepo(test_session)
+        worker_id = uuid.uuid4()
+        agents = [
+            AgentNodeInput(id=worker_id, name="NetWorker", agent_type="worker", enable_network=True),
+        ]
+        canvas = await repo.create_full("Networked Canvas", agents, [], [], owner_id=test_user.id)
+        assert canvas.agent_nodes[0].enable_network is True

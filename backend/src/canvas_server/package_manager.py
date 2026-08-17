@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 
+from canvas_server.pip_hardening import build_pip_install_command
 from canvas_server.sandbox import get_sandbox
 
 logger = logging.getLogger("canvas_server.package_manager")
@@ -23,6 +24,10 @@ class PackageManager:
     ) -> None:
         """Installs the specified Python packages in the sandbox session.
 
+        Uses the shared hardened command builder (#56): PEP 508 validation,
+        flag rejection, ``shlex.quote`` per token, ≤ 20 packages. A bad token
+        raises ``ValueError`` before the sandbox is touched.
+
         Args:
             packages: A list of package names to install.
             runtime_session_id: Optional conversation-scoped session ID.
@@ -33,13 +38,17 @@ class PackageManager:
             logger.info("No valid packages to install.")
             return
 
+        # Build the hardened command up front — a bad token / over-limit batch
+        # raises ValueError before any sandbox call.
+        command = build_pip_install_command(cleaned_packages)
+
         manager = await get_sandbox()
         session_id = runtime_session_id or "syntax_check_global"
         session = manager.get_session(session_id, enable_plotting=False)
         try:
             logger.info(f"Installing packages in sandbox: {cleaned_packages}")
             with session:
-                result = session.execute_command("pip install " + " ".join(cleaned_packages))
+                result = session.execute_command(command)
                 if result.exit_code != 0:
                     raise Exception(result.stderr or result.stdout)
             logger.info("Packages installed successfully.")

@@ -56,6 +56,13 @@ class Settings(BaseSettings):
     # this knob.
     sandbox_network_mode: str = "bridge"
 
+    # --- pip_install hardening (#56) ---
+    # Wall-clock timeout for a single ``pip_install`` call (and the hardened
+    # author-tool pip installs). A pip install that overruns this is aborted
+    # and surfaced as an observation string (agent path) / error (author path)
+    # — never allowed to stall the turn indefinitely.
+    sandbox_pip_install_timeout: int = 120
+
     model_config = {
         "env_file": (".env", "../.env"),
         "env_file_encoding": "utf-8",

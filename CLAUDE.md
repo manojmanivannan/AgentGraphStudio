@@ -203,6 +203,19 @@ and edges on a ReactFlow canvas, then run workflows against a FastAPI + DSPy bac
    DSPy needs to build tool descriptors — never for execution. The sandbox has
    no access to the host's filesystem, network, or env vars by default.
 
+   **Two-pool architecture + `enable_network` toggle (#55/#56):**
+   `SandboxManager` runs a **locked** pool (`network_mode="none"`, hardcoded
+   invariant, warm/reused) and a lazy **networked** pool (`network_mode` from
+   the `sandbox_network_mode` seam, destroyed on release so pip installs don't
+   bleed across conversations). A worker with `enable_network` routes to the
+   networked pool and gets a hardened `pip_install` tool (PEP 508 validation,
+   flag rejection, `shlex.quote`, ≤20 packages, 120s timeout, never raises);
+   the same hardening is shared by the author-tool pip paths in
+   `tool_factory.py` / `package_manager.py` via `canvas_server.pip_hardening`.
+   **Open egress is a documented risk**: the networked pool has no proxy / SSRF
+   guard / allowlist / transfer cap — see `docs/ARCHITECTURE.md`. Routers never
+   get network sessions or `pip_install` (worker-only).
+
 9. **Sandbox pool** — The Docker containers are managed as a pool of warm instances
    to avoid container startup overhead. Managed by `canvas_server.sandbox.SandboxManager`.
 
