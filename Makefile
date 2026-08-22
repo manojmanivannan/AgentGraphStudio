@@ -16,7 +16,7 @@ help:
 # the networked pool. Must exist on the host docker daemon before the backend
 # starts, since sandbox containers are created via the host docker.sock.
 sandbox-image:
-	docker build -t agentbuilder-sandbox-floor:latest ./sandbox
+	docker build -t agentgraphstudio-sandbox-floor:latest ./sandbox
 
 up: sandbox-image
 	docker compose up --build
