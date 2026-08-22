@@ -32,6 +32,22 @@ class TestSettings:
         assert settings.sandbox_mem_limit == "512m"
         assert settings.sandbox_cpus == 1.0
 
+    def test_default_sandbox_network_mode(self):
+        """The networked-pool network_mode seam defaults to Docker's bridge
+        (internet egress) — see #55/#56."""
+        settings = Settings()
+        assert settings.sandbox_network_mode == "bridge"
+
+    def test_default_sandbox_pip_install_timeout(self):
+        """pip_install calls time out after 120s by default (#56)."""
+        settings = Settings()
+        assert settings.sandbox_pip_install_timeout == 120
+        assert "sandbox_pip_install_timeout" in Settings.model_fields
+
+    def test_sandbox_pip_install_timeout_env_override(self, monkeypatch):
+        monkeypatch.setenv("SANDBOX_PIP_INSTALL_TIMEOUT", "30")
+        assert Settings().sandbox_pip_install_timeout == 30
+
 
 class TestMemoryConfig:
     def test_build_mem0_config_ollama(self, monkeypatch):

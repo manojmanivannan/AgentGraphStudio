@@ -16,6 +16,8 @@ export interface AgentNodeData {
   modelName: string;
   agentType: "worker" | "router";
   enablePlotting?: boolean;
+  enableCoding?: boolean;
+  enableNetwork?: boolean;
   enableMemory?: boolean;
   enableConversationHistory?: boolean;
   enableRag?: boolean;
@@ -89,6 +91,8 @@ export interface CanvasSavePayload {
       model_name: string;
       agent_type: string;
       enable_plotting: boolean;
+      enable_coding: boolean;
+      enable_network: boolean;
       enable_hitl: boolean;
       enable_memory: boolean;
       enable_conversation_history: boolean;
@@ -132,6 +136,8 @@ export interface CanvasResponse {
       model_name: string;
       agent_type: string;
       enable_plotting: boolean;
+      enable_coding: boolean;
+      enable_network: boolean;
       enable_hitl: boolean;
       enable_memory: boolean;
       enable_conversation_history: boolean;

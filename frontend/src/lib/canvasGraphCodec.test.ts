@@ -52,6 +52,8 @@ describe("canvasGraphCodec", () => {
             model_name: "ollama:llama3.1",
             agent_type: "worker",
             enable_plotting: false,
+            enable_coding: false,
+            enable_network: false,
             enable_hitl: false,
             enable_memory: false,
             enable_conversation_history: false,
@@ -103,6 +105,8 @@ describe("canvasGraphCodec", () => {
             model_name: "ollama:llama3.1",
             agent_type: "router",
             enable_plotting: true,
+            enable_coding: false,
+            enable_network: true,
             enable_memory: true,
             enable_conversation_history: true,
             enable_rag: true,
@@ -152,6 +156,8 @@ describe("canvasGraphCodec", () => {
           modelName: "ollama:llama3.1",
           agentType: "router",
           enablePlotting: true,
+          enableCoding: false,
+          enableNetwork: true,
           enableMemory: true,
           enableConversationHistory: true,
           enableRag: true,
@@ -230,6 +236,7 @@ describe("canvasGraphCodec", () => {
         modelName: "ollama:llama3.1",
         agentType: "worker",
         enablePlotting: false,
+        enableCoding: false,
         enableMemory: false,
         enableConversationHistory: false,
         enableRag: false,
@@ -238,5 +245,117 @@ describe("canvasGraphCodec", () => {
         enableHitl: false,
       },
     });
+  });
+
+  it("round-trips enable_coding: true through encode and decode", () => {
+    const encoded = encodeCanvasGraph({
+      canvasName: "Coding RoundTrip",
+      nodes: [
+        {
+          id: "agent-1",
+          type: "agent",
+          position: { x: 1, y: 2 },
+          data: {
+            id: "agent-1",
+            name: "Coder",
+            role: "",
+            instructions: "",
+            modelName: "ollama:llama3.1",
+            agentType: "worker",
+            enableCoding: true,
+          },
+        },
+      ],
+      edges: [],
+    });
+
+    // Encoded payload carries enable_coding: true.
+    expect(encoded.nodes.agents[0].enable_coding).toBe(true);
+
+    const decoded = decodeCanvasResponse({
+      id: "canvas-1",
+      name: encoded.name,
+      created_at: "2026-06-17T00:00:00Z",
+      updated_at: "2026-06-17T00:00:00Z",
+      nodes: {
+        agents: encoded.nodes.agents.map((agent) => ({
+          ...agent,
+          canvas_id: "canvas-1",
+        })),
+        tools: [],
+      },
+      edges: [],
+    });
+
+    // Decoded store data carries enableCoding: true.
+    expect(decoded.nodes[0].data.enableCoding).toBe(true);
+  });
+
+  it("round-trips enable_network: true through encode and decode", () => {
+    const encoded = encodeCanvasGraph({
+      canvasName: "Network RoundTrip",
+      nodes: [
+        {
+          id: "agent-1",
+          type: "agent",
+          position: { x: 1, y: 2 },
+          data: {
+            id: "agent-1",
+            name: "NetWorker",
+            role: "",
+            instructions: "",
+            modelName: "ollama:llama3.1",
+            agentType: "worker",
+            enableNetwork: true,
+          },
+        },
+      ],
+      edges: [],
+    });
+
+    // Encoded payload carries enable_network: true.
+    expect(encoded.nodes.agents[0].enable_network).toBe(true);
+
+    const decoded = decodeCanvasResponse({
+      id: "canvas-1",
+      name: encoded.name,
+      created_at: "2026-06-17T00:00:00Z",
+      updated_at: "2026-06-17T00:00:00Z",
+      nodes: {
+        agents: encoded.nodes.agents.map((agent) => ({
+          ...agent,
+          canvas_id: "canvas-1",
+        })),
+        tools: [],
+      },
+      edges: [],
+    });
+
+    // Decoded store data carries enableNetwork: true.
+    expect(decoded.nodes[0].data.enableNetwork).toBe(true);
+  });
+
+  it("defaults enable_network to false when unset on encode", () => {
+    const encoded = encodeCanvasGraph({
+      canvasName: "Default Network",
+      nodes: [
+        {
+          id: "agent-1",
+          type: "agent",
+          position: { x: 0, y: 0 },
+          data: {
+            id: "agent-1",
+            name: "Agent",
+            role: "",
+            instructions: "",
+            modelName: "ollama:llama3.1",
+            agentType: "worker",
+          },
+        },
+      ],
+      edges: [],
+    });
+
+    expect(encoded.nodes.agents[0].enable_network).toBe(false);
   });
 });

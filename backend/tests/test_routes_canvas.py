@@ -350,6 +350,54 @@ class TestExportImportRoundTrip:
         )
         assert exported["nodes"]["agents"][0]["enable_plotting"] is True
 
+    async def test_export_then_import_enable_coding(self, authed_client):
+        """enable_coding round-trips through import (create_full) and export."""
+        aid = str(uuid.uuid4())
+        payload = {
+            "name": "Coding RoundTrip Canvas",
+            "nodes": {
+                "agents": [{"id": aid, "name": "Coder", "agent_type": "worker", "enable_coding": True}],
+                "tools": [],
+            },
+            "edges": [],
+        }
+
+        import_resp = await authed_client.post("/api/canvases/import", json=payload)
+        assert import_resp.status_code == 200
+        original_id = import_resp.json()["id"]
+        original_data = import_resp.json()
+        # The save/import response surfaces enable_coding via _canvas_to_response
+        assert original_data["nodes"]["agents"][0]["enable_coding"] is True
+
+        export_resp = await authed_client.get(f"/api/canvases/{original_id}/export")
+        assert export_resp.status_code == 200
+        exported = export_resp.json()
+        assert exported["nodes"]["agents"][0]["enable_coding"] is True
+
+    async def test_export_then_import_enable_network(self, authed_client):
+        """enable_network round-trips through import (create_full) and export."""
+        aid = str(uuid.uuid4())
+        payload = {
+            "name": "Networked RoundTrip Canvas",
+            "nodes": {
+                "agents": [{"id": aid, "name": "NetWorker", "agent_type": "worker", "enable_network": True}],
+                "tools": [],
+            },
+            "edges": [],
+        }
+
+        import_resp = await authed_client.post("/api/canvases/import", json=payload)
+        assert import_resp.status_code == 200
+        original_id = import_resp.json()["id"]
+        original_data = import_resp.json()
+        # The save/import response surfaces enable_network via _canvas_to_response
+        assert original_data["nodes"]["agents"][0]["enable_network"] is True
+
+        export_resp = await authed_client.get(f"/api/canvases/{original_id}/export")
+        assert export_resp.status_code == 200
+        exported = export_resp.json()
+        assert exported["nodes"]["agents"][0]["enable_network"] is True
+
 
 class TestZipExportImport:
     async def test_export_zip_and_import_zip_with_documents(

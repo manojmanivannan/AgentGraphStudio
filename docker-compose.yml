@@ -92,6 +92,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      mlflow:
+        condition: service_healthy
     deploy:
       resources:
         limits:
@@ -202,8 +204,8 @@ services:
           "import urllib.request; urllib.request.urlopen('http://localhost:5000/health')",
         ]
       interval: 10s
-      timeout: 5s
-      retries: 5
+      timeout: 10s
+      retries: 10
 
   ollama:
     image: ollama/ollama:latest

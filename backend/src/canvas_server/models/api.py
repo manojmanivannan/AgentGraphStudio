@@ -12,6 +12,8 @@ class AgentNodeBase(BaseModel):
     model_name: str = "ollama:llama3.1"
     agent_type: str = "worker"
     enable_plotting: bool = False
+    enable_coding: bool = False
+    enable_network: bool = False
     enable_hitl: bool = False
     enable_memory: bool = False
     enable_conversation_history: bool = False
@@ -25,6 +27,23 @@ class AgentNodeBase(BaseModel):
     def validate_plotting_for_workers_only(self) -> "AgentNodeBase":
         if self.agent_type == "router" and self.enable_plotting:
             raise ValueError("Plotting is only supported for worker agents, not Router agents.")
+        return self
+
+    @model_validator(mode="after")
+    def validate_coding_for_workers_only(self) -> "AgentNodeBase":
+        if self.agent_type == "router" and self.enable_coding:
+            raise ValueError("Coding is only supported for worker agents, not Router agents.")
+        return self
+
+    @model_validator(mode="after")
+    def validate_network_for_workers_only(self) -> "AgentNodeBase":
+        # enable_network is a per-worker session capability (#56): it routes
+        # the worker's sandbox session to the networked pool and injects the
+        # pip_install tool. Routers never get network sessions or pip_install.
+        if self.agent_type == "router" and self.enable_network:
+            raise ValueError(
+                "Network is only supported for worker agents, not Router agents."
+            )
         return self
 
 

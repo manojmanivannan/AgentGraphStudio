@@ -8,7 +8,8 @@ from canvas_server.streaming_react import StreamingReAct
 
 
 class FakeAgentNode:
-    def __init__(self, id=None, name="Agent", agent_type="worker", enable_hitl=False):
+    def __init__(self, id=None, name="Agent", agent_type="worker", enable_hitl=False,
+                 enable_coding=False, enable_plotting=False):
         self.id = id or uuid.uuid4()
         self.name = name
         self.role = "You are a helpful assistant"
@@ -16,6 +17,8 @@ class FakeAgentNode:
         self.model_name = "ollama:llama3.1"
         self.agent_type = agent_type
         self.enable_hitl = enable_hitl
+        self.enable_coding = enable_coding
+        self.enable_plotting = enable_plotting
         self.is_entry_point = False
         self.position_x = 0
         self.position_y = 0
@@ -57,6 +60,70 @@ async def test_ask_human_tool_registration():
 
         assert "ask_human" in tools_with_hitl
         assert "ask_human" not in tools_without_hitl
+
+
+@pytest.mark.asyncio
+async def test_run_code_tool_registration():
+    # run_code is injected for enable_coding workers (and only with a conversation_id)
+    node_with_coding = FakeAgentNode(enable_coding=True)
+    node_without_coding = FakeAgentNode(enable_coding=False)
+
+    factory = AgentFactory(
+        lm=MagicMock(),
+        tool_registry=MagicMock(),
+        memory_manager=MagicMock(),
+        edges=[],
+        conversation_id="conv-1",
+    )
+
+    with patch.object(factory, "build_signature", return_value=MagicMock()):
+        agent_with_coding = await factory.build_worker(node_with_coding)
+        agent_without_coding = await factory.build_worker(node_without_coding)
+
+        tools_with_coding = [getattr(t, "__name__", str(t)) for t in agent_with_coding.tools]
+        tools_without_coding = [getattr(t, "__name__", str(t)) for t in agent_without_coding.tools]
+
+        assert "run_code" in tools_with_coding
+        assert "run_code" not in tools_without_coding
+
+
+@pytest.mark.asyncio
+async def test_run_code_not_injected_without_conversation_id():
+    # Even with enable_coding=True, run_code is not injected when there is no
+    # per-conversation sandbox session to run code in.
+    node_with_coding = FakeAgentNode(enable_coding=True)
+
+    factory = AgentFactory(
+        lm=MagicMock(),
+        tool_registry=MagicMock(),
+        memory_manager=MagicMock(),
+        edges=[],
+        conversation_id=None,
+    )
+
+    with patch.object(factory, "build_signature", return_value=MagicMock()):
+        agent = await factory.build_worker(node_with_coding)
+        tools = [getattr(t, "__name__", str(t)) for t in agent.tools]
+        assert "run_code" not in tools
+
+
+def test_run_code_prompt_instructions():
+    # The run_code [CRITICAL SYSTEM RULE] is appended only when enable_coding=True
+    node_with_coding = FakeAgentNode(enable_coding=True)
+    node_without_coding = FakeAgentNode(enable_coding=False)
+
+    factory = AgentFactory(
+        lm=MagicMock(),
+        tool_registry=MagicMock(),
+        memory_manager=MagicMock(),
+        edges=[],
+    )
+
+    sig_with_coding = factory.build_signature(node_with_coding)
+    sig_without_coding = factory.build_signature(node_without_coding)
+
+    assert "run_code" in sig_with_coding.__doc__
+    assert "run_code" not in sig_without_coding.__doc__
 
 
 @pytest.mark.asyncio

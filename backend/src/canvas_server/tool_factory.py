@@ -31,6 +31,7 @@ from canvas_server.models.api import (
     ToolInspectResponse,
     ToolTestResponse,
 )
+from canvas_server.pip_hardening import build_pip_install_command
 from canvas_server.sandbox import get_sandbox
 
 logger = logging.getLogger("canvas_server.tool_factory")
@@ -277,8 +278,11 @@ async def compile_tool_from_code(
     except Exception as e:
         raise PythonSyntaxError(f"Syntax error in tool '{name}': {e}") from e
     finally:
-        # We don't release the global syntax session as it's shared
-        pass
+        # Compilation is not part of a turn, so release the session's container
+        # back to the warm pool now (the per-turn release hook does not run for
+        # tool compilation). Without this the held container would never return
+        # to the pool under the per-turn pinning model (#55).
+        manager.release_session(syntax_session_id)
 
     # Extract function metadata using AST (safe -- no exec of imports on host)
     user_func = _extract_function_ast(code, name)
@@ -317,7 +321,10 @@ if __name__ == '__main__':
 """
         with session:
             if dependencies:
-                session.execute_command("pip install " + " ".join(dependencies))
+                # Hardened command (shared builder, #56): PEP 508 validation,
+                # flag rejection, shlex.quote per token, ≤ 20 packages. A bad
+                # token raises ValueError, which propagates as a tool error.
+                session.execute_command(build_pip_install_command(dependencies))
             result_obj = session.run(wrapped_code)
 
         if result_obj.exit_code != 0:
@@ -475,7 +482,8 @@ if __name__ == '__main__':
             # if they are already present.
             with session:
                 if dependencies:
-                    session.execute_command("pip install " + " ".join(dependencies))
+                    # Hardened command (shared builder, #56) — see compile path.
+                    session.execute_command(build_pip_install_command(dependencies))
                 result_obj = session.run(wrapped_code)  # , libraries=dependencies)
                 stdout = result_obj.stdout.strip()
 
@@ -492,9 +500,12 @@ if __name__ == '__main__':
             except json.JSONDecodeError:
                 result = stdout
         finally:
-            # We DO NOT release the session here so that subsequent tests
-            # for the same tool reuse the same warm container with libraries installed.
-            pass
+            # Tool testing is not part of a turn, so release the session's
+            # container back to the warm pool now (the per-turn release hook does
+            # not run for the tool-test endpoint). pip-installed libraries live in
+            # the container's site-packages (not the workdir), so they survive the
+            # release and are reused when a warm container is re-acquired.
+            manager.release_session(test_session_id)
 
         elapsed_ms = (time.perf_counter() - start) * 1000
         return ToolTestResponse(

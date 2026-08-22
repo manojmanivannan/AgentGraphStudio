@@ -8,7 +8,9 @@ from typing import TYPE_CHECKING
 
 import dspy
 
+from canvas_server.runner.code_provider import CodeProvider
 from canvas_server.runner.plot_provider import PlotProvider
+from canvas_server.sandbox import NETWORK_POOL_DEFAULT, NETWORK_POOL_NETWORKED
 from canvas_server.streaming_react import StreamingReAct
 
 if TYPE_CHECKING:
@@ -118,6 +120,37 @@ class AgentFactory:
                 "a markdown image link (e.g. `![Plot](/api/plots/...)`), you MUST preserve this image "
                 "markdown link exactly and include it in your final answer/response (process_result). "
                 "Do not omit, summarize, or modify the image link."
+            )
+
+        if getattr(agent_node, "enable_coding", False):
+            full_instructions += (
+                "\n\n[CRITICAL SYSTEM RULE] You have a `run_code` tool that executes Python in an "
+                "isolated sandbox and returns the captured stdout to you as text. Use it to compute, "
+                "transform, or inspect data instead of guessing: call `run_code` with complete Python "
+                "and use `print()` to emit the output you want to read back — only printed stdout is "
+                "returned. If the output is large, narrow your print or save the data to a file and "
+                "read a slice in a follow-up `run_code` call. Files you write persist across "
+                "`run_code` calls within this conversation, so you can compute a file and hand it off "
+                "to `generate_plot` in the same turn. Reason over the returned stdout to answer the "
+                "user; do not dump raw tool output at the user."
+            )
+
+        if getattr(agent_node, "enable_network", False):
+            # The import-after-install instruction references run_code only when
+            # the agent actually has it. A network-only worker has pip_install but
+            # no run_code (its sandbox session may be shared with other tools), so
+            # telling it to import "in a subsequent run_code call" would point at a
+            # tool it does not possess (#56).
+            import_clause = (
+                "then import the package in a subsequent `run_code` call."
+                if getattr(agent_node, "enable_coding", False)
+                else "then import the package."
+            )
+            full_instructions += (
+                "\n\n[CRITICAL SYSTEM RULE] You have a `pip_install` tool that installs Python packages "
+                "into your sandbox from PyPI. Before importing an unfamiliar package (one that is not "
+                "already available), call `pip_install` with the list of package names first, wait for "
+                f"it to succeed, {import_clause} Install only the packages you actually need."
             )
 
         if getattr(agent_node, "enable_hitl", False):
@@ -237,6 +270,25 @@ class AgentFactory:
         if getattr(agent_node, "enable_plotting", False) and self._conversation_id:
             plot_provider = PlotProvider(self._conversation_id, self._conversation_repo)
             tools.append(plot_provider.generate_plot)
+
+        # Coding + network share one CodeProvider so run_code and pip_install
+        # use the *same* per-conversation sandbox session (keyed by
+        # (conversation_id, network_pool)): a networked worker's pip-installed
+        # packages are then importable from its run_code calls in the same turn.
+        # enable_network is a per-worker session capability independent of
+        # coding (#56): a network-only worker still gets pip_install (and a
+        # CodeProvider on the networked pool) even without run_code.
+        enable_coding = getattr(agent_node, "enable_coding", False)
+        enable_network = getattr(agent_node, "enable_network", False)
+        if (enable_coding or enable_network) and self._conversation_id:
+            network_pool = (
+                NETWORK_POOL_NETWORKED if enable_network else NETWORK_POOL_DEFAULT
+            )
+            code_provider = CodeProvider(self._conversation_id, network_pool=network_pool)
+            if enable_coding:
+                tools.append(code_provider.run_code)
+            if enable_network:
+                tools.append(code_provider.pip_install)
 
         if getattr(agent_node, "enable_hitl", False):
             async def ask_human(question: str) -> str:

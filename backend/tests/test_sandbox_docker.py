@@ -2,7 +2,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from canvas_server.sandbox import SandboxError, SandboxManager
+from canvas_server.sandbox import SANDBOX_FLOOR_IMAGE, SandboxError, SandboxManager
 
 
 class MockDockerPoolManager(MagicMock):
@@ -151,7 +151,11 @@ async def test_sandbox_pool_resource_limits_env_override(monkeypatch):
 @pytest.mark.asyncio
 async def test_sandbox_pool_resource_limits_disabled(monkeypatch):
     """When both limit settings are unset, no resource keys are emitted so the
-    pool falls back to the library default (uncapped) behavior."""
+    pool falls back to the library default (uncapped) behavior.
+
+    ``network_mode="none"`` is always present — it is a hardcoded invariant of
+    the default (locked) pool, not a resource limit and not a Settings knob
+    (see ``test_build_runtime_configs_locks_network_mode_none``)."""
     from canvas_server.config import settings
 
     monkeypatch.setattr(settings, "sandbox_mem_limit", "")
@@ -163,4 +167,99 @@ async def test_sandbox_pool_resource_limits_disabled(monkeypatch):
         await manager.initialize_pool()
 
     _, kwargs = mock_create_pool.call_args
-    assert kwargs["runtime_configs"] == {}
+    assert kwargs["runtime_configs"] == {"network_mode": "none"}
+
+
+# ── Default (locked) pool: network_mode="none" hardcoded invariant (#54) ──
+
+
+def test_build_runtime_configs_locks_network_mode_none():
+    """The default pool's runtime_configs always carry network_mode="none" as a
+    hardcoded invariant (CLAUDE.md §8: "no network by default"). This is what
+    finally prevents agents without enable_network from making outbound calls —
+    previously build_runtime_configs never set network_mode, so containers ran
+    on Docker's bridge with internet on."""
+    from canvas_server.sandbox import build_runtime_configs
+
+    assert build_runtime_configs()["network_mode"] == "none"
+
+
+def test_build_runtime_configs_network_mode_not_configurable(monkeypatch):
+    """The *locked* pool's ``network_mode="none"`` is NOT controlled by the
+    ``sandbox_network_mode`` seam and cannot be relaxed via config.
+
+    Note (#55): ``sandbox_network_mode`` *is* now a Settings field — but it
+    controls only the lazy **networked** pool (``build_networked_runtime_configs``),
+    not the locked default pool. ``build_runtime_configs`` (the locked pool)
+    hardcodes the ``"none"`` literal and never consults the seam, so setting the
+    seam to a networked value cannot relax the locked pool's invariant."""
+    from canvas_server.config import Settings, settings
+
+    # The seam exists (for the networked pool) but is NOT named for the locked
+    # pool's network_mode, and there is no field that the locked pool consults.
+    assert "network_mode" not in Settings.model_fields
+
+    # Relaxing the seam does NOT affect the locked pool's build_runtime_configs:
+    # even with the seam set to a networked value, the locked pool stays "none".
+    monkeypatch.setattr(settings, "sandbox_network_mode", "bridge")
+    from canvas_server.sandbox import build_runtime_configs
+
+    assert build_runtime_configs()["network_mode"] == "none"
+
+
+@pytest.mark.asyncio
+async def test_sandbox_pool_created_with_network_mode_none():
+    """The default pool is created with network_mode="none" passed through to
+    the pool manager's runtime_configs (mirrors the mocked-pool pattern)."""
+    with patch("canvas_server.sandbox.create_named_pool_manager") as mock_create_pool:
+        mock_create_pool.return_value = MockDockerPoolManager()
+        manager = SandboxManager()
+        await manager.initialize_pool()
+
+    _, kwargs = mock_create_pool.call_args
+    assert kwargs["runtime_configs"]["network_mode"] == "none"
+
+
+@pytest.mark.asyncio
+async def test_sandbox_pool_uses_baked_floor_image():
+    """The default pool runs on the baked-floor custom image (matplotlib +
+    plotly + numpy pre-installed) so it needs no runtime pip — which is
+    impossible under network_mode="none". The networked pool (#55) will share
+    this same image, differing only in network_mode."""
+    with patch("canvas_server.sandbox.create_named_pool_manager") as mock_create_pool:
+        mock_create_pool.return_value = MockDockerPoolManager()
+        manager = SandboxManager()
+        await manager.initialize_pool()
+
+    _, kwargs = mock_create_pool.call_args
+    assert kwargs["image"] == SANDBOX_FLOOR_IMAGE
+
+
+@pytest.mark.asyncio
+async def test_sandbox_pool_skips_environment_setup():
+    """The default pool is created with skip_environment_setup=True so the
+    baked-floor image is used as-is: no venv creation, no `pip install
+    --upgrade pip`, no library install — none of which can reach the network
+    under network_mode="none". Floor packages are baked into the image."""
+    with patch("canvas_server.sandbox.create_named_pool_manager") as mock_create_pool:
+        mock_create_pool.return_value = MockDockerPoolManager()
+        manager = SandboxManager()
+        await manager.initialize_pool()
+
+    _, kwargs = mock_create_pool.call_args
+    assert kwargs.get("skip_environment_setup") is True
+
+
+@pytest.mark.asyncio
+async def test_sandbox_pool_no_runtime_libraries():
+    """The default pool does NOT pass `libraries` for runtime pip install —
+    matplotlib/plotly/numpy are baked into the floor image, and pip is
+    impossible under network_mode="none" anyway. Passing libraries here would
+    make container creation fail at environment_setup time."""
+    with patch("canvas_server.sandbox.create_named_pool_manager") as mock_create_pool:
+        mock_create_pool.return_value = MockDockerPoolManager()
+        manager = SandboxManager()
+        await manager.initialize_pool()
+
+    _, kwargs = mock_create_pool.call_args
+    assert "libraries" not in kwargs

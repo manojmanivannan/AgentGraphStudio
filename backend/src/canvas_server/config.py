@@ -47,6 +47,22 @@ class Settings(BaseSettings):
     sandbox_mem_limit: str = "512m"
     sandbox_cpus: float = 1.0
 
+    # --- Sandbox networked pool (#55) ---
+    # ``network_mode`` for the *lazy networked* pool (the pool that agents with
+    # ``enable_network`` run in). This is a **config seam**: it defaults to
+    # Docker's ``"bridge"`` (internet egress) so a future custom egress network
+    # + proxy can be swapped with no code change. The *locked* default pool is
+    # always ``network_mode="none"`` — a hardcoded invariant (CLAUDE.md §8), NOT
+    # this knob.
+    sandbox_network_mode: str = "bridge"
+
+    # --- pip_install hardening (#56) ---
+    # Wall-clock timeout for a single ``pip_install`` call (and the hardened
+    # author-tool pip installs). A pip install that overruns this is aborted
+    # and surfaced as an observation string (agent path) / error (author path)
+    # — never allowed to stall the turn indefinitely.
+    sandbox_pip_install_timeout: int = 120
+
     model_config = {
         "env_file": (".env", "../.env"),
         "env_file_encoding": "utf-8",
