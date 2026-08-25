@@ -167,6 +167,34 @@ def test_canvas_sandbox_session_enable_plotting_sync():
     assert session._pooled_impl.enable_plotting is False
 
 
+def test_sandbox_manager_session_reuse_switches_enable_plotting():
+    """Verify that when SandboxManager reuses an existing session for a conversation,
+    setting enable_plotting=True properly updates the session so plotting works."""
+    from canvas_server.sandbox import SandboxManager
+
+    class FakeDockerPool:
+        lang = "python"
+        image = "image"
+        client = MagicMock()
+        runtime_configs = {}
+        session_kwargs = {}
+
+    mgr = SandboxManager()
+    mgr._locked_pool = FakeDockerPool()
+    mgr._initialized = True
+
+    # 1. First tool (e.g. get_weather_forecast or run_code) acquires session with enable_plotting=False
+    session1 = mgr.get_session("conv-123", enable_plotting=False)
+    assert session1.enable_plotting is False
+    assert session1._pooled_impl.enable_plotting is False
+
+    # 2. Next tool (generate_plot) acquires the same session with enable_plotting=True
+    session2 = mgr.get_session("conv-123", enable_plotting=True)
+    assert session2 is session1
+    assert session2.enable_plotting is True
+    assert session2._pooled_impl.enable_plotting is True
+
+
 def test_ensure_plots_in_result():
     """Test ensure_plots_in_result extracts plot markdown and appends it if missing."""
     from canvas_server.runner.execution import ensure_plots_in_result
