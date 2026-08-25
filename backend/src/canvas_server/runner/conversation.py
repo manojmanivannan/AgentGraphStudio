@@ -43,13 +43,16 @@ class ConversationService:
         agent_name: str | None = None,
         node_id: uuid.UUID | None = None,
         event_type: str | None = None,
+        tool: str | None = None,
+        args: dict | None = None,
     ):
         has_repo = self.conversation_repo is not None
         logger.info(
-            "persist_message called: role=%s, event_type=%s, agent_name=%s, repo=%s, conv_id=%s",
+            "persist_message called: role=%s, event_type=%s, agent_name=%s, tool=%s, repo=%s, conv_id=%s",
             role,
             event_type,
             agent_name,
+            tool,
             has_repo,
             self.conversation_id,
         )
@@ -65,6 +68,8 @@ class ConversationService:
                     agent_name=agent_name,
                     node_id=node_id,
                     event_type=event_type,
+                    tool=tool,
+                    args=args,
                 )
             except Exception as e:
                 logger.error("Failed to persist message: %s", e, exc_info=True)

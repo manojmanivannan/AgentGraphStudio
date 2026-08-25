@@ -238,6 +238,8 @@ class CanvasRunState:
                         agent_name=classification.agent_name,
                         node_id=resolved_node_id,
                         event_type=classification.event_type,
+                        tool=tool_name,
+                        args=event.get("input") or event.get("args"),
                     )
                     return
 
@@ -258,6 +260,8 @@ class CanvasRunState:
                         agent_name=aname,
                         node_id=event.get("node_id") or aid,
                         event_type="tool_approval_request",
+                        tool=event.get("tool"),
+                        args=event.get("args"),
                     )
 
             agent.on_event(callback)

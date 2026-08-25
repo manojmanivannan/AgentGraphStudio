@@ -79,6 +79,35 @@ describe("executionEventToMessage", () => {
       agent_name: "get_weather_forecast",
       node_id: "tool-node-1",
       event_type: "tool_result",
+      tool: "get_weather_forecast",
+      created_at: "2026-01-01T00:00:00.000Z",
+    });
+  });
+
+  it("maps coding tool results with python_code input args", () => {
+    const code = "import math\nprint(math.pi)";
+    const message = executionEventToMessage(
+      {
+        type: "tool_result",
+        agent: "CoderAgent",
+        tool: "run_code",
+        input: { python_code: code },
+        output: "3.141592653589793\n",
+        node_id: "agent-1",
+      },
+      baseContext
+    );
+
+    expect(message).toEqual({
+      id: "msg-1",
+      conversation_id: "conv-1",
+      role: "tool",
+      content: "3.141592653589793\n",
+      agent_name: "run_code",
+      node_id: "agent-1",
+      event_type: "tool_result",
+      tool: "run_code",
+      args: { python_code: code },
       created_at: "2026-01-01T00:00:00.000Z",
     });
   });

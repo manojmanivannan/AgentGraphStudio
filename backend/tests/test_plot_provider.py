@@ -31,7 +31,7 @@ async def test_plot_provider_success():
         result_str = await provider.generate_plot("import matplotlib.pyplot as plt; plt.show()")
 
         mock_get_sandbox.assert_called_once()
-        mock_sandbox_manager.get_session.assert_called_once_with("test_conv_id")
+        mock_sandbox_manager.get_session.assert_called_once_with("test_conv_id", enable_plotting=True)
         mock_session.__enter__.assert_called_once()
         mock_session.run.assert_called_once_with("import matplotlib.pyplot as plt; plt.show()")
         mock_session.__exit__.assert_called_once()
@@ -42,7 +42,6 @@ async def test_plot_provider_success():
         assert "Plot generated" in result_str
         assert "![Plot](/api/static/plots/" in result_str
         assert ".png" in result_str
-
 
 
 @pytest.mark.asyncio
@@ -133,7 +132,7 @@ async def test_plot_provider_success_db():
         result_str = await provider.generate_plot("import matplotlib.pyplot as plt; plt.show()")
 
         mock_get_sandbox.assert_called_once()
-        mock_sandbox_manager.get_session.assert_called_once_with("8cf53a28-98cc-4d37-88eb-116dbec8e2cb")
+        mock_sandbox_manager.get_session.assert_called_once_with("8cf53a28-98cc-4d37-88eb-116dbec8e2cb", enable_plotting=True)
         mock_session.__enter__.assert_called_once()
         mock_session.run.assert_called_once_with("import matplotlib.pyplot as plt; plt.show()")
         mock_session.__exit__.assert_called_once()
@@ -141,6 +140,59 @@ async def test_plot_provider_success_db():
         mock_repo.save_plot.assert_called_once()
         assert "Plot generated" in result_str
         assert "![Plot](/api/plots/mocked-plot-uuid)" in result_str
+
+
+def test_canvas_sandbox_session_enable_plotting_sync():
+    """Verify CanvasSandboxSession's enable_plotting property keeps _pooled_impl in sync."""
+    from canvas_server.sandbox import CanvasSandboxSession
+
+    class FakeDockerPool:
+        lang = "python"
+        image = "image"
+        client = MagicMock()
+        runtime_configs = {}
+        session_kwargs = {}
+
+    session = CanvasSandboxSession(pool=FakeDockerPool(), enable_plotting=False)
+
+    assert session.enable_plotting is False
+    assert session._pooled_impl.enable_plotting is False
+
+    session.enable_plotting = True
+    assert session.enable_plotting is True
+    assert session._pooled_impl.enable_plotting is True
+
+    session.enable_plotting = False
+    assert session.enable_plotting is False
+    assert session._pooled_impl.enable_plotting is False
+
+
+def test_sandbox_manager_session_reuse_switches_enable_plotting():
+    """Verify that when SandboxManager reuses an existing session for a conversation,
+    setting enable_plotting=True properly updates the session so plotting works."""
+    from canvas_server.sandbox import SandboxManager
+
+    class FakeDockerPool:
+        lang = "python"
+        image = "image"
+        client = MagicMock()
+        runtime_configs = {}
+        session_kwargs = {}
+
+    mgr = SandboxManager()
+    mgr._locked_pool = FakeDockerPool()
+    mgr._initialized = True
+
+    # 1. First tool (e.g. get_weather_forecast or run_code) acquires session with enable_plotting=False
+    session1 = mgr.get_session("conv-123", enable_plotting=False)
+    assert session1.enable_plotting is False
+    assert session1._pooled_impl.enable_plotting is False
+
+    # 2. Next tool (generate_plot) acquires the same session with enable_plotting=True
+    session2 = mgr.get_session("conv-123", enable_plotting=True)
+    assert session2 is session1
+    assert session2.enable_plotting is True
+    assert session2._pooled_impl.enable_plotting is True
 
 
 def test_ensure_plots_in_result():

@@ -33,7 +33,7 @@ class PlotProvider:
         try:
             sandbox = await get_sandbox()
             # The session returned is now an ArtifactSandboxSession
-            session = sandbox.get_session(self.conversation_id)
+            session = sandbox.get_session(self.conversation_id, enable_plotting=True)
 
             logger.info("Executing plot code in sandbox...")
             with session:

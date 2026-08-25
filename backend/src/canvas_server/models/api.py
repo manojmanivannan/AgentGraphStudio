@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime
+from typing import Any
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -153,6 +154,8 @@ class MessageResponse(BaseModel):
     agent_name: str | None = None
     node_id: uuid.UUID | None = None
     event_type: str | None = None
+    tool: str | None = None
+    args: dict[str, Any] | None = None
     created_at: datetime
 
     model_config = {"from_attributes": True}
