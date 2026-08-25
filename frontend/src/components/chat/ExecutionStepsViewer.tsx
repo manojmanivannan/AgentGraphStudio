@@ -3,7 +3,8 @@
  * tool executions, routing events) generated during the ReAct loop.
  */
 
-import { ChevronDown, ChevronRight } from "lucide-react";
+import { useState } from "react";
+import { ChevronDown, ChevronRight, Code, Terminal, Copy, Check } from "lucide-react";
 import type { Message } from "@/types";
 
 interface ActiveInterrupt {
@@ -26,6 +27,42 @@ interface ExecutionStepsViewerProps {
   renderMessageContent: (content: string, isSmall?: boolean) => React.ReactNode;
 }
 
+function extractPythonCode(stepMsg: Message): string | null {
+  if (typeof stepMsg.args === "string") {
+    return stepMsg.args;
+  }
+  if (stepMsg.args && typeof stepMsg.args === "object") {
+    if (typeof stepMsg.args.python_code === "string") {
+      return stepMsg.args.python_code;
+    }
+    if (typeof stepMsg.args.code === "string") {
+      return stepMsg.args.code;
+    }
+  }
+  return null;
+}
+
+function extractPipPackages(stepMsg: Message): string[] | null {
+  if (stepMsg.args && typeof stepMsg.args === "object" && stepMsg.args.packages) {
+    if (Array.isArray(stepMsg.args.packages)) {
+      return stepMsg.args.packages;
+    }
+    if (typeof stepMsg.args.packages === "string") {
+      return [stepMsg.args.packages];
+    }
+  }
+  return null;
+}
+
+function extractOtherArgs(stepMsg: Message): Record<string, any> | null {
+  if (!stepMsg.args || typeof stepMsg.args !== "object") return null;
+  const copy = { ...stepMsg.args };
+  delete copy.python_code;
+  delete copy.code;
+  delete copy.packages;
+  return Object.keys(copy).length > 0 ? copy : null;
+}
+
 export function ExecutionStepsViewer({
   steps,
   isStreaming,
@@ -39,6 +76,8 @@ export function ExecutionStepsViewer({
   inlineInputRef,
   renderMessageContent,
 }: ExecutionStepsViewerProps) {
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
   const hasSteps = steps.length > 0;
   if (!hasSteps || (!isStreaming && !isExpanded)) return null;
 
@@ -55,6 +94,11 @@ export function ExecutionStepsViewer({
 
         const level = getMessageNestingLevel(stepMsg);
         const isStepCollapsed = collapsedSteps.has(stepMsg.id);
+
+        const pythonCode = isToolResult ? extractPythonCode(stepMsg) : null;
+        const pipPackages = isToolResult ? extractPipPackages(stepMsg) : null;
+        const otherArgs = isToolResult ? extractOtherArgs(stepMsg) : null;
+        const hasStructuredToolInput = Boolean(pythonCode || pipPackages || otherArgs);
 
         return (
           <div
@@ -77,7 +121,11 @@ export function ExecutionStepsViewer({
               )}
               <span>
                 {stepMsg.agent_name || (isError || isWarning || isHandoff ? "System" : "Agent")}
-                {stepMsg.event_type && stepMsg.event_type !== "final_answer" && ` · ${stepMsg.event_type}`}
+                {stepMsg.tool
+                  ? ` · ${stepMsg.tool}`
+                  : stepMsg.event_type && stepMsg.event_type !== "final_answer"
+                  ? ` · ${stepMsg.event_type}`
+                  : ""}
               </span>
             </button>
 
@@ -95,7 +143,7 @@ export function ExecutionStepsViewer({
                     : stepMsg.event_type === "human_input_request"
                     ? "bg-[var(--color-agent-subtle)] text-[var(--color-agent)] border border-[var(--color-agent)]/20 rounded-bl-sm"
                     : isToolResult
-                    ? "bg-[var(--color-success-subtle)] text-[var(--color-success)] border border-[var(--color-success)]/20 rounded-bl-sm font-mono"
+                    ? "bg-[var(--color-success-subtle)] text-[var(--color-text-primary)] border border-[var(--color-success)]/20 rounded-bl-sm font-mono"
                     : isResponse
                     ? "bg-[var(--color-agent-subtle)] text-[var(--color-agent)] border border-[var(--color-agent)]/20 rounded-bl-sm"
                     : isSubAnswer
@@ -166,6 +214,80 @@ export function ExecutionStepsViewer({
                         Deny
                       </button>
                     </div>
+                  </div>
+                ) : isToolResult && hasStructuredToolInput ? (
+                  <div className="space-y-2.5 w-full">
+                    {pythonCode && (
+                      <div className="rounded-lg overflow-hidden border border-[var(--color-border-subtle)] bg-[var(--color-base)] text-[var(--color-text-primary)]">
+                        <div className="flex items-center justify-between px-3 py-1.5 bg-[var(--color-surface)] border-b border-[var(--color-border-subtle)] text-[11px] font-mono text-[var(--color-text-secondary)]">
+                          <div className="flex items-center gap-1.5 font-semibold text-[var(--color-text-primary)]">
+                            <Code className="w-3.5 h-3.5 text-[var(--color-accent)]" />
+                            <span>Python Code</span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              navigator.clipboard.writeText(pythonCode);
+                              setCopiedId(stepMsg.id);
+                              setTimeout(() => setCopiedId(null), 2000);
+                            }}
+                            className="flex items-center gap-1 text-[10px] text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)] transition-colors px-1.5 py-0.5 rounded hover:bg-[var(--color-elevated)] cursor-pointer"
+                            title="Copy code"
+                          >
+                            {copiedId === stepMsg.id ? (
+                              <>
+                                <Check className="w-3 h-3 text-[var(--color-success)]" />
+                                <span className="text-[var(--color-success)]">Copied</span>
+                              </>
+                            ) : (
+                              <>
+                                <Copy className="w-3 h-3" />
+                                <span>Copy</span>
+                              </>
+                            )}
+                          </button>
+                        </div>
+                        <pre className="p-3 text-[11px] font-mono leading-relaxed overflow-x-auto whitespace-pre">
+                          <code>{pythonCode}</code>
+                        </pre>
+                      </div>
+                    )}
+
+                    {pipPackages && (
+                      <div className="rounded-lg overflow-hidden border border-[var(--color-border-subtle)] bg-[var(--color-base)] text-[var(--color-text-primary)]">
+                        <div className="flex items-center gap-1.5 px-3 py-1.5 bg-[var(--color-surface)] border-b border-[var(--color-border-subtle)] text-[11px] font-mono font-semibold text-[var(--color-text-primary)]">
+                          <Terminal className="w-3.5 h-3.5 text-[var(--color-secondary)]" />
+                          <span>pip install</span>
+                        </div>
+                        <pre className="p-2.5 text-[11px] font-mono leading-relaxed overflow-x-auto whitespace-pre">
+                          <code>pip install {pipPackages.join(" ")}</code>
+                        </pre>
+                      </div>
+                    )}
+
+                    {otherArgs && (
+                      <div className="rounded-lg overflow-hidden border border-[var(--color-border-subtle)] bg-[var(--color-base)] text-[var(--color-text-primary)]">
+                        <div className="flex items-center gap-1.5 px-3 py-1.5 bg-[var(--color-surface)] border-b border-[var(--color-border-subtle)] text-[11px] font-mono font-semibold text-[var(--color-text-primary)]">
+                          <Terminal className="w-3.5 h-3.5 text-[var(--color-secondary)]" />
+                          <span>Arguments</span>
+                        </div>
+                        <pre className="p-2.5 text-[10px] font-mono leading-relaxed overflow-x-auto whitespace-pre-wrap">
+                          {JSON.stringify(otherArgs, null, 2)}
+                        </pre>
+                      </div>
+                    )}
+
+                    {stepMsg.content && (
+                      <div className="space-y-1">
+                        <div className="text-[10px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-wider px-0.5">
+                          Output
+                        </div>
+                        <div className="bg-[var(--color-base)] rounded-lg p-2.5 border border-[var(--color-border-subtle)] font-mono text-[11px] text-[var(--color-text-secondary)] overflow-x-auto">
+                          {renderMessageContent(stepMsg.content, true)}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 ) : (
                   renderMessageContent(stepMsg.content, true)

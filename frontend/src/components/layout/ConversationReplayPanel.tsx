@@ -109,7 +109,7 @@ function resolveReplayNodeId(message: Message | null, nodes: Node[]): string | n
 
 type ReplaySemanticType = "router" | "worker" | "tool" | "user" | "unknown";
 
-const BUILTIN_TOOL_NAMES = new Set(["generate_plot"]);
+const BUILTIN_TOOL_NAMES = new Set(["generate_plot", "run_code", "pip_install"]);
 
 function isBuiltinToolActor(message: Message): boolean {
   const actorName = message.agent_name?.trim().toLowerCase();

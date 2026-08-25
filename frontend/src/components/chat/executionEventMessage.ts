@@ -134,6 +134,7 @@ export function executionEventToMessage(
 
   if (event.type === "tool_result") {
     const classification = classifyToolResult(event.tool, event.agent);
+    const args = (event as any).input || (event as any).args;
     return {
       ...baseMessage,
       role: classification.eventType === "response" ? "assistant" : "tool",
@@ -141,6 +142,8 @@ export function executionEventToMessage(
       agent_name: classification.agentName,
       node_id: event.node_id ?? null,
       event_type: classification.eventType,
+      ...(event.tool && classification.eventType === "tool_result" ? { tool: event.tool } : {}),
+      ...(args ? { args } : {}),
     };
   }
 

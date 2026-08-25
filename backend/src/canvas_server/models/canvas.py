@@ -358,6 +358,12 @@ class Message(Base):
     event_type: Mapped[str | None] = mapped_column(
         String(30), nullable=True, default=None
     )
+    tool: Mapped[str | None] = mapped_column(
+        String(255), nullable=True, default=None
+    )
+    args: Mapped[dict | None] = mapped_column(
+        JSON, nullable=True, default=None
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=_utcnow,

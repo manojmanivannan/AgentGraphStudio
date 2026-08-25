@@ -90,8 +90,10 @@ class StreamingReAct(dspy.ReAct):
             if pred.next_tool_name == "finish":
                 break
 
+            tool_input = pred.next_tool_args if isinstance(pred.next_tool_args, dict) else {}
+
             await self._emit(
-                {"type": "tool_start", "tool": pred.next_tool_name}
+                {"type": "tool_start", "tool": pred.next_tool_name, "input": tool_input}
             )
 
             # Check if this tool requires human approval before executing
@@ -126,6 +128,7 @@ class StreamingReAct(dspy.ReAct):
                     {
                         "type": "tool_result",
                         "tool": pred.next_tool_name,
+                        "input": tool_input,
                         "output": str(observation),
                     }
                 )
@@ -150,6 +153,7 @@ class StreamingReAct(dspy.ReAct):
                 {
                     "type": "tool_result",
                     "tool": pred.next_tool_name,
+                    "input": tool_input,
                     "output": str(observation),
                 }
             )

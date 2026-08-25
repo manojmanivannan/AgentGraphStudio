@@ -249,6 +249,18 @@ class CanvasSandboxSession(ArtifactSandboxSession):
         # session per turn (the pooled session has a single container slot).
         self._canvas_lock = threading.Lock()
 
+    @property
+    def enable_plotting(self) -> bool:
+        if hasattr(self, "_pooled_impl") and self._pooled_impl is not None:
+            return getattr(self._pooled_impl, "enable_plotting", False)
+        return getattr(self, "_enable_plotting", False)
+
+    @enable_plotting.setter
+    def enable_plotting(self, value: bool) -> None:
+        self._enable_plotting = bool(value)
+        if hasattr(self, "_pooled_impl") and self._pooled_impl is not None:
+            self._pooled_impl.enable_plotting = bool(value)
+
     def __enter__(self) -> CanvasSandboxSession:  # type: ignore[override]
         with self._canvas_lock:
             if self._canvas_held:

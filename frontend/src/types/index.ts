@@ -49,8 +49,8 @@ export type ExecutionEvent = ExecutionEventBase & (
   | { type: "run_start"; canvas_id: string; node_id?: string }
   | { type: "agent_start"; agent: string; agentType?: string; node_id?: string }
   | { type: "thought"; agent: string; content: string; node_id?: string }
-  | { type: "tool_start"; agent: string; tool: string; input?: Record<string, unknown>; node_id?: string }
-  | { type: "tool_result"; agent: string; tool: string; output: string; node_id?: string }
+  | { type: "tool_start"; agent: string; tool: string; input?: Record<string, unknown>; args?: Record<string, unknown>; node_id?: string }
+  | { type: "tool_result"; agent: string; tool: string; output: string; input?: Record<string, unknown>; args?: Record<string, unknown>; node_id?: string }
   | { type: "handoff"; from: string; to: string; node_id?: string }
   | { type: "final_answer"; agent?: string; content: string; node_id?: string }
   | { type: "run_complete"; result: string }
@@ -192,9 +192,10 @@ export interface Message {
   agent_name?: string | null;
   node_id?: string | null;
   event_type?: string | null;
+  tool?: string | null;
+  args?: Record<string, any> | null;
   created_at: string;
   request_id?: string | null;
-  args?: Record<string, any> | null;
 }
 
 export interface Conversation {

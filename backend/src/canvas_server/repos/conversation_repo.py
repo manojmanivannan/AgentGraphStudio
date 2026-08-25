@@ -72,6 +72,8 @@ class ConversationRepo:
         agent_name: str | None = None,
         node_id: uuid.UUID | None = None,
         event_type: str | None = None,
+        tool: str | None = None,
+        args: dict | None = None,
     ) -> Message:
         msg = Message(
             conversation_id=conversation_id,
@@ -80,6 +82,8 @@ class ConversationRepo:
             agent_name=agent_name,
             node_id=node_id,
             event_type=event_type,
+            tool=tool,
+            args=args,
         )
         self.session.add(msg)
         await self.session.flush()
