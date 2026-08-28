@@ -37,9 +37,10 @@ Provider configuration moves into the app, backed by a **single global
   every stored RAG chunk and mem0 vector, so `PUT` returns 409 unless
   `confirm_reindex` is set; with confirmation the backend deletes all
   `agent_document_chunks` and drops the local Qdrant store.
-- `models/canvas.py` still sizes the `SafeVector` column from `.env`, because
-  that is a schema-time constant. The purge above is what keeps stored data
-  consistent when the runtime dimension changes.
+- `agent_document_chunks.embedding` is an **unsized** pgvector column. Pinning it
+  to a dimension (as the ORM previously did from `.env`) makes every query bind
+  fail with `expected N dimensions` once the provider changes. Consistency comes
+  from the purge above, not from the column width.
 
 ## Consequences
 

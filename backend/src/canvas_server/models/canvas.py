@@ -18,7 +18,6 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import JSON
 
-from canvas_server.config import settings
 from canvas_server.database import Base
 from canvas_server.models.auth import User
 
@@ -236,9 +235,9 @@ class AgentDocumentChunk(Base):
     )
     chunk_index: Mapped[int] = mapped_column(sa.Integer)
     content: Mapped[str] = mapped_column(Text)
-    embedding: Mapped[list[float]] = mapped_column(
-        SafeVector(dimensions=settings.mem0_embedder_dimensions)
-    )
+    # Unsized on purpose: the embedding dimension is runtime configuration, and
+    # a pinned pgvector width rejects binds after the provider changes.
+    embedding: Mapped[list[float]] = mapped_column(SafeVector())
 
     agent_node: Mapped[AgentNode] = relationship("AgentNode", back_populates="chunks")
     document: Mapped[AgentDocument] = relationship(

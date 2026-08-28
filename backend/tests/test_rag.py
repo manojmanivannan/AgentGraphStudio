@@ -11,6 +11,12 @@ from canvas_server.repos.canvas_repo import CanvasRepo
 from canvas_server.runner.rag_helper import RAGIndexManager, chunk_text, run_rag_search
 
 
+def test_chunk_embedding_column_is_not_dimension_pinned():
+    """A pinned pgvector width rejects binds once the provider dimension changes."""
+    column_type = AgentDocumentChunk.__table__.c.embedding.type
+    assert column_type.dimensions is None
+
+
 def test_chunk_text():
     text = "Paragraph 1. Paragraph 2 is short. Paragraph 3 is very long and has lots of words."
 

@@ -237,7 +237,9 @@ and edges on a ReactFlow canvas, then run workflows against a FastAPI + DSPy bac
     a synchronous process-local cache refreshed at API startup, after every settings
     `PUT`, and before each durable run claimed by the background worker (the worker is a
     separate process). Changing the embedding dimension requires explicit confirmation and
-    purges `agent_document_chunks` plus the local Qdrant store. See `docs/adr/0008-in-app-provider-configuration.md`.
+    purges `agent_document_chunks` plus the local Qdrant store. The chunk `embedding`
+    column is intentionally an unsized pgvector column so binds survive a dimension change.
+    See `docs/adr/0008-in-app-provider-configuration.md`.
 
 ---
 
