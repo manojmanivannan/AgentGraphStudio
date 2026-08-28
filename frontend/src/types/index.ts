@@ -8,6 +8,41 @@ export interface AuthResponse {
   user: User;
 }
 
+export type ProviderProfileId =
+  | "external_ollama"
+  | "docker_ollama"
+  | "openai"
+  | "openrouter"
+  | "custom";
+
+export interface ProviderSettingsForm {
+  profile: ProviderProfileId;
+  llm_provider_type: string;
+  llm_base_url: string;
+  llm_model: string;
+  mem0_llm_model: string;
+  mem0_embedder_model: string;
+  mem0_embedder_dimensions: number;
+}
+
+export interface ProviderSettings extends ProviderSettingsForm {
+  /** The key itself is never returned by the API. */
+  api_key_set: boolean;
+  source: "env" | "database";
+}
+
+export interface ProviderCheckResult {
+  name: string;
+  ok: boolean;
+  detail: string;
+  latency_ms: number;
+}
+
+export interface ProviderTestResponse {
+  ok: boolean;
+  checks: ProviderCheckResult[];
+}
+
 export interface AgentNodeData {
   id: string;
   name: string;

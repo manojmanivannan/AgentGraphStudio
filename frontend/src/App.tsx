@@ -6,6 +6,7 @@ import ObservabilityPage from "@/components/observability/ObservabilityPage";
 import LoginPage from "@/components/auth/LoginPage";
 import RegisterPage from "@/components/auth/RegisterPage";
 import AccountPage from "@/components/account/AccountPage";
+import SettingsPage from "@/components/settings/SettingsPage";
 import { RequireAuth, RedirectIfAuthed } from "@/components/auth/guards";
 import { useAuthStore } from "@/store/authStore";
 import { onUnauthorized } from "@/lib/api";
@@ -33,6 +34,7 @@ import {
   Check,
   MessageSquare,
   UserCog,
+  Settings as SettingsIcon,
   LogOut,
 } from "lucide-react";
 import type { CanvasListItem, CanvasSavePayload } from "@/types";
@@ -284,6 +286,15 @@ function LandingPage({
         </div>
         <div className="flex items-center gap-2">
           <ThemeToggle className="!border !border-[var(--color-border-default)] hover:bg-[var(--color-elevated)] shadow-[0_2px_8px_rgba(0,0,0,0.2)]" />
+          {user && (
+            <Link
+              to="/settings"
+              title="Settings"
+              className="flex items-center justify-center w-9 h-9 rounded-lg border border-[var(--color-border-default)] text-[var(--color-text-secondary)] hover:bg-[var(--color-elevated)] hover:text-[var(--color-text-primary)] transition-colors"
+            >
+              <SettingsIcon className="w-4 h-4" />
+            </Link>
+          )}
           {user && (
             <Link
               to="/account"
@@ -802,6 +813,7 @@ function AppRoutes() {
         <Route path="/chat/:conversation_id" element={<ChatPage />} />
         <Route path="/observability/:canvas_id" element={<ObservabilityPage />} />
         <Route path="/account" element={<AccountPage />} />
+        <Route path="/settings" element={<SettingsPage />} />
       </Route>
 
       {/* Unknown routes → home (the guard there redirects to /login if needed) */}

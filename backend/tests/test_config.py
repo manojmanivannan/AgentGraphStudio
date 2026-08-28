@@ -1,3 +1,5 @@
+import pytest
+
 from canvas_server.config import Settings
 
 
@@ -50,6 +52,15 @@ class TestSettings:
 
 
 class TestMemoryConfig:
+    @pytest.fixture(autouse=True)
+    def _env_fallback(self):
+        """build_mem0_config reads the provider cache; empty it so .env applies."""
+        from canvas_server.provider_config import reset_provider_config
+
+        reset_provider_config()
+        yield
+        reset_provider_config()
+
     def test_build_mem0_config_ollama(self, monkeypatch):
         from canvas_server.config import settings
         from canvas_server.memory_config import build_mem0_config

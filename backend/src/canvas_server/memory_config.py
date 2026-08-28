@@ -1,28 +1,30 @@
-"""Build mem0 config from application settings."""
+"""Build mem0 config from the active provider configuration."""
 
 from canvas_server.config import settings
+from canvas_server.provider_config import get_provider_config
 
 
 def build_mem0_config() -> dict:
-    provider = settings.llm_provider_type
+    active = get_provider_config()
+    provider = active.llm_provider_type
     llm_config = {
-        "model": settings.mem0_llm_model,
-        "api_key": settings.llm_api_key,
+        "model": active.mem0_llm_model,
+        "api_key": active.llm_api_key,
         "temperature": 0.1,
     }
     if provider == "ollama":
-        llm_config["ollama_base_url"] = settings.llm_base_url
+        llm_config["ollama_base_url"] = active.llm_base_url
     elif provider == "openai":
-        llm_config["openai_base_url"] = settings.llm_base_url
+        llm_config["openai_base_url"] = active.llm_base_url
 
     embedder_config = {
-        "model": settings.mem0_embedder_model,
-        "api_key": settings.llm_api_key,
+        "model": active.mem0_embedder_model,
+        "api_key": active.llm_api_key,
     }
     if provider == "ollama":
-        embedder_config["ollama_base_url"] = settings.llm_base_url
+        embedder_config["ollama_base_url"] = active.llm_base_url
     elif provider == "openai":
-        embedder_config["openai_base_url"] = settings.llm_base_url
+        embedder_config["openai_base_url"] = active.llm_base_url
 
     return {
         "llm": {
@@ -36,7 +38,7 @@ def build_mem0_config() -> dict:
         "vector_store": {
             "provider": "qdrant",
             "config": {
-                "embedding_model_dims": settings.mem0_embedder_dimensions,
+                "embedding_model_dims": active.mem0_embedder_dimensions,
                 "path": settings.mem0_qdrant_path,
                 "on_disk": settings.mem0_qdrant_on_disk,
             },

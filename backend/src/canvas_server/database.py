@@ -22,6 +22,7 @@ def get_engine(database_url: str | None = None):
         # Ensure ORM table mappings are imported before metadata is used.
         import canvas_server.models.auth  # noqa: F401
         import canvas_server.models.canvas  # noqa: F401
+        import canvas_server.models.provider  # noqa: F401
 
         _engine = create_async_engine(url, echo=False)
         _configured_url = url

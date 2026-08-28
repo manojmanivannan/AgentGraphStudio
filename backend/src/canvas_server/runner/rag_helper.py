@@ -8,10 +8,10 @@ import dspy
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from canvas_server.config import settings
 from canvas_server.database import get_session_factory
 from canvas_server.exceptions import RAGEmbeddingError
 from canvas_server.models.canvas import AgentDocument, AgentDocumentChunk, AgentNode
+from canvas_server.provider_config import ProviderConfig, get_provider_config
 
 logger = logging.getLogger("canvas_server.runner.rag_helper")
 
@@ -81,9 +81,10 @@ def chunk_text(text: str, max_chars: int) -> list[str]:
     return chunks
 
 
-def get_embedder() -> dspy.Embedder:
-    provider = settings.llm_provider_type
-    model_name = settings.mem0_embedder_model
+def get_embedder(config: ProviderConfig | None = None) -> dspy.Embedder:
+    active = config or get_provider_config()
+    provider = active.llm_provider_type
+    model_name = active.mem0_embedder_model
 
     if provider and not model_name.startswith(f"{provider}/"):
         model_name = f"{provider}/{model_name}"
@@ -102,17 +103,17 @@ def get_embedder() -> dspy.Embedder:
     if provider == "openai":
         kwargs["encoding_format"] = "float"
         if "text-embedding-3" in model_name:
-            kwargs["dimensions"] = settings.mem0_embedder_dimensions
+            kwargs["dimensions"] = active.mem0_embedder_dimensions
 
     if provider == "ollama":
         embedder = dspy.Embedder(
-            model=model_name, api_base=settings.llm_base_url, **kwargs
+            model=model_name, api_base=active.llm_base_url, **kwargs
         )
     else:
         embedder = dspy.Embedder(
             model=model_name,
-            api_key=settings.llm_api_key,
-            api_base=settings.llm_base_url,
+            api_key=active.llm_api_key,
+            api_base=active.llm_base_url,
             **kwargs,
         )
     return embedder
@@ -202,7 +203,7 @@ class RAGIndexManager:
                         logger.warning(
                             "Embedding generation timed out after 5s. Using zero vector fallback."
                         )
-                        dims = settings.mem0_embedder_dimensions
+                        dims = get_provider_config().mem0_embedder_dimensions
                         embeddings = [[0.0] * dims for _ in range(len(all_chunks))]
                     else:
                         # Convert to standard Python float lists if they are numpy arrays or other wrappers
@@ -217,7 +218,7 @@ class RAGIndexManager:
                         "Failed to generate embeddings during index: %s. Using zero vector fallback.",
                         e,
                     )
-                    dims = settings.mem0_embedder_dimensions
+                    dims = get_provider_config().mem0_embedder_dimensions
                     embeddings = [[0.0] * dims for _ in range(len(all_chunks))]
 
                 # 5. Insert chunks with embeddings
@@ -275,7 +276,7 @@ async def _run_rag_search_impl(
         except TimeoutError as e:
             err_msg = (
                 f"RAG embedding generation timed out after 5.0s. Please check your "
-                f"embedder model ('{settings.mem0_embedder_model}') and configuration."
+                f"embedder model ('{get_provider_config().mem0_embedder_model}') and configuration."
             )
             logger.error("Query embedding timed out: %s", err_msg)
             raise RAGEmbeddingError(err_msg) from e
@@ -288,10 +289,11 @@ async def _run_rag_search_impl(
     except RAGEmbeddingError:
         raise
     except Exception as e:
+        active = get_provider_config()
         err_msg = (
             f"RAG embedding generation failed. Please check your embedder configuration "
-            f"(provider: '{settings.llm_provider_type}', model: '{settings.mem0_embedder_model}', "
-            f"base URL: '{settings.llm_base_url}').\n"
+            f"(provider: '{active.llm_provider_type}', model: '{active.mem0_embedder_model}', "
+            f"base URL: '{active.llm_base_url}').\n"
             f"Details: {e}"
         )
         logger.error("Query embedding failed: %s", err_msg)

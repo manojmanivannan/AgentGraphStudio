@@ -254,3 +254,46 @@ class SessionsRevokedResponse(BaseModel):
     """Number of sessions destroyed by logout-other-sessions (or implicitly by
     change-password). The calling session is never counted — it's kept alive."""
     revoked: int
+
+
+# --- Provider settings ---
+
+
+class ProviderSettingsBase(BaseModel):
+    profile: str = "custom"
+    llm_provider_type: str = "ollama"
+    llm_base_url: str = ""
+    llm_model: str = ""
+    mem0_llm_model: str = ""
+    mem0_embedder_model: str = ""
+    mem0_embedder_dimensions: int = Field(default=768, gt=0, le=16384)
+
+
+class ProviderSettingsResponse(ProviderSettingsBase):
+    """The API key itself is never returned — only whether one is stored."""
+    api_key_set: bool
+    source: str
+
+
+class ProviderSettingsUpdate(ProviderSettingsBase):
+    # None keeps the stored key; "" clears it.
+    api_key: str | None = None
+    # Required when mem0_embedder_dimensions changes: RAG chunks and memories
+    # embedded at the old size become unusable and are purged.
+    confirm_reindex: bool = False
+
+
+class ProviderTestRequest(ProviderSettingsBase):
+    api_key: str | None = None
+
+
+class ProviderCheckResult(BaseModel):
+    name: str
+    ok: bool
+    detail: str
+    latency_ms: int
+
+
+class ProviderTestResponse(BaseModel):
+    ok: bool
+    checks: list[ProviderCheckResult]

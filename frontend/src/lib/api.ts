@@ -10,6 +10,9 @@ import type {
   ToolInspectResponse,
   ToolTestResponse,
   AgentDocument,
+  ProviderSettings,
+  ProviderSettingsForm,
+  ProviderTestResponse,
   User,
 } from "@/types";
 
@@ -182,6 +185,59 @@ export async function logoutOtherSessions(): Promise<{ revoked: number }> {
     throw new Error(await readErrorDetail(res, "Failed to log out other sessions"));
   }
   return (await res.json()) as { revoked: number };
+}
+
+// --- Provider settings ---
+
+export async function getProviderSettings(): Promise<ProviderSettings> {
+  const res = await apiFetch(`${API_BASE}/settings/provider`);
+  if (!res.ok) {
+    throw new Error(await readErrorDetail(res, "Failed to load provider settings"));
+  }
+  return (await res.json()) as ProviderSettings;
+}
+
+/**
+ * Persist provider settings. `apiKey` of `undefined` keeps the stored key,
+ * `""` clears it. `confirmReindex` is required by the backend when the
+ * embedding dimension changes (it purges RAG chunks and stored memories).
+ */
+export async function updateProviderSettings(
+  form: ProviderSettingsForm,
+  options: { apiKey?: string; confirmReindex?: boolean } = {}
+): Promise<ProviderSettings> {
+  const res = await apiFetch(`${API_BASE}/settings/provider`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      ...form,
+      api_key: options.apiKey ?? null,
+      confirm_reindex: options.confirmReindex ?? false,
+    }),
+  });
+  if (!res.ok) {
+    const error = new Error(
+      await readErrorDetail(res, "Failed to save provider settings")
+    ) as Error & { status?: number };
+    error.status = res.status;
+    throw error;
+  }
+  return (await res.json()) as ProviderSettings;
+}
+
+export async function testProviderSettings(
+  form: ProviderSettingsForm,
+  apiKey?: string
+): Promise<ProviderTestResponse> {
+  const res = await apiFetch(`${API_BASE}/settings/provider/test`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ...form, api_key: apiKey ?? null }),
+  });
+  if (!res.ok) {
+    throw new Error(await readErrorDetail(res, "Failed to test provider settings"));
+  }
+  return (await res.json()) as ProviderTestResponse;
 }
 
 export async function createCanvas(

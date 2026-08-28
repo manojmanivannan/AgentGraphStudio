@@ -608,6 +608,27 @@ but only `tool_result` is used for display. The TS `ExecutionEvent` union includ
 | `MLFLOW_TRACKING_URI` | `http://mlflow:5000` | MLflow server |
 | `MLFLOW_EXPERIMENT_NAME` | `canvas-agents` | MLflow experiment |
 
+The `LLM_*` / `MEM0_*` entries above are only the **seed/fallback** for the
+provider configuration — see below.
+
+### provider_config.py — active provider configuration
+
+The LLM/embedder provider is configured in-app (Settings page) and stored in the
+singleton `provider_settings` table. `get_provider_config()` returns the active
+`ProviderConfig` from a synchronous process-local cache, which resolves to the
+database row when one exists and to `.env` otherwise. Consumers
+(`runner.py`, `memory_config.py`, `runner/rag_helper.py`) never read
+`settings.llm_*` directly.
+
+The cache is refreshed explicitly: at API startup, after `PUT
+/api/settings/provider`, and — because the execution worker runs in its own
+process — before each durable run the worker claims. `provider_probe.py` backs
+the Settings page Test button with independent chat and embedding probes that
+report provider failures as results rather than HTTP errors. Changing the
+embedding dimension requires `confirm_reindex` and purges
+`agent_document_chunks` plus the local Qdrant store. See
+`docs/adr/0008-in-app-provider-configuration.md`.
+
 ### models/canvas.py — SQLAlchemy ORM
 
 Six tables: `Canvas`, `AgentNode`, `ToolNode`, `Edge`, `Conversation`, `Message`.
