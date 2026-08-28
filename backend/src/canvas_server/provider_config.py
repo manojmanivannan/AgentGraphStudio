@@ -118,6 +118,6 @@ def invalidate_derived_caches() -> None:
     try:
         from canvas_server.runner.memory import MemoryManager
 
-        MemoryManager._shared_memory = None
+        MemoryManager.reset_shared_memory()
     except Exception as exc:  # pragma: no cover - defensive
         logger.warning("Could not reset shared mem0 instance: %s", exc)

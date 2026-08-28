@@ -98,7 +98,25 @@ async def test_refresh_loads_persisted_row(test_session):
 async def test_refresh_resets_shared_mem0_singleton(test_session):
     from canvas_server.runner.memory import MemoryManager
 
-    MemoryManager._shared_memory = object()
+    class FakeClient:
+        def __init__(self):
+            self.closed = False
+
+        def close(self):
+            self.closed = True
+
+    class FakeStore:
+        def __init__(self):
+            self.client = FakeClient()
+
+    class FakeMemory:
+        def __init__(self):
+            self.vector_store = FakeStore()
+            self._telemetry_vector_store = FakeStore()
+            self._entity_store = None
+
+    memory = FakeMemory()
+    MemoryManager._shared_memory = memory
     repo = ProviderSettingsRepo(test_session)
     await repo.upsert(
         profile="openai",
@@ -113,6 +131,9 @@ async def test_refresh_resets_shared_mem0_singleton(test_session):
 
     await refresh_provider_config(test_session)
     assert MemoryManager._shared_memory is None
+    # Local Qdrant stores must be closed or the rebuild hits a directory lock.
+    assert memory.vector_store.client.closed is True
+    assert memory._telemetry_vector_store.client.closed is True
 
 
 @pytest.mark.asyncio
