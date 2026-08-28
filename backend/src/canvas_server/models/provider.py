@@ -28,7 +28,6 @@ class ProviderSettings(Base):
     # Stored in plaintext at the same trust level as the .env it replaces.
     llm_api_key: Mapped[str] = mapped_column(String(512), default="")
     llm_model: Mapped[str] = mapped_column(String(255), default="")
-    mem0_llm_model: Mapped[str] = mapped_column(String(255), default="")
     mem0_embedder_model: Mapped[str] = mapped_column(String(255), default="")
     mem0_embedder_dimensions: Mapped[int] = mapped_column(sa.Integer, default=768)
     updated_at: Mapped[datetime] = mapped_column(

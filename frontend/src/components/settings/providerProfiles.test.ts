@@ -7,7 +7,6 @@ const current: ProviderSettingsForm = {
   llm_provider_type: "ollama",
   llm_base_url: "http://old",
   llm_model: "old-model",
-  mem0_llm_model: "old-mem0",
   mem0_embedder_model: "old-embed",
   mem0_embedder_dimensions: 512,
 };

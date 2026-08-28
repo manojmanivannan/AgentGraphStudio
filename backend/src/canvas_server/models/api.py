@@ -264,7 +264,6 @@ class ProviderSettingsBase(BaseModel):
     llm_provider_type: str = "ollama"
     llm_base_url: str = ""
     llm_model: str = ""
-    mem0_llm_model: str = ""
     mem0_embedder_model: str = ""
     mem0_embedder_dimensions: int = Field(default=768, gt=0, le=16384)
 

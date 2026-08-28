@@ -40,7 +40,6 @@ def _to_response(config: ProviderConfig) -> ProviderSettingsResponse:
         llm_provider_type=config.llm_provider_type,
         llm_base_url=config.llm_base_url,
         llm_model=config.llm_model,
-        mem0_llm_model=config.mem0_llm_model,
         mem0_embedder_model=config.mem0_embedder_model,
         mem0_embedder_dimensions=config.mem0_embedder_dimensions,
         api_key_set=bool(config.llm_api_key),
@@ -82,7 +81,6 @@ async def update_provider_settings(
         llm_provider_type=body.llm_provider_type,
         llm_base_url=body.llm_base_url,
         llm_model=body.llm_model,
-        mem0_llm_model=body.mem0_llm_model,
         mem0_embedder_model=body.mem0_embedder_model,
         mem0_embedder_dimensions=body.mem0_embedder_dimensions,
         # None keeps the stored key; "" clears it (upsert skips None).
@@ -115,7 +113,6 @@ async def test_provider_settings(
         llm_base_url=body.llm_base_url,
         llm_api_key=api_key,
         llm_model=body.llm_model,
-        mem0_llm_model=body.mem0_llm_model,
         mem0_embedder_model=body.mem0_embedder_model,
         mem0_embedder_dimensions=body.mem0_embedder_dimensions,
         source="candidate",

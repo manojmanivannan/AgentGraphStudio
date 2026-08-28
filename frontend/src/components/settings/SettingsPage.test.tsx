@@ -13,7 +13,6 @@ const savedSettings = {
   llm_provider_type: "ollama",
   llm_base_url: "http://localhost:11434",
   llm_model: "ollama_chat/llama3.1",
-  mem0_llm_model: "llama3.1",
   mem0_embedder_model: "nomic-embed-text:latest",
   mem0_embedder_dimensions: 768,
   api_key_set: false,

@@ -13,7 +13,6 @@ class Settings(BaseSettings):
 
     # Memory (mem0) settings
     llm_provider_type: str = "ollama"
-    mem0_llm_model: str = "gemma4:31b"
     mem0_embedder_model: str = "nomic-embed-text"
     mem0_embedder_dimensions: int = 768
     mem0_qdrant_path: str = "/tmp/qdrant"

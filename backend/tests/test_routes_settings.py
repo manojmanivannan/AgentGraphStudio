@@ -12,7 +12,6 @@ BASE_BODY = {
     "llm_provider_type": "openai",
     "llm_base_url": "https://api.openai.com/v1",
     "llm_model": "gpt-4o-mini",
-    "mem0_llm_model": "gpt-4o-mini",
     "mem0_embedder_model": "text-embedding-3-small",
     "mem0_embedder_dimensions": 768,
 }

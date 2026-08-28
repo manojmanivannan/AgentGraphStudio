@@ -602,7 +602,6 @@ but only `tool_result` is used for display. The TS `ExecutionEvent` union includ
 | `LLM_BASE_URL` | `http://192.168.1.120:11434` | Ollama server URL |
 | `LLM_MODEL` | `ollama_chat/gemma4:31b` | Default model |
 | `LLM_PROVIDER_TYPE` | `ollama` | Provider (e.g. `ollama`, `openai`) used by mem0 & RAG for LLM and embedding |
-| `MEM0_LLM_MODEL` | `gemma4:31b` | mem0 LLM model |
 | `MEM0_EMBEDDER_MODEL` | `nomic-embed-text` | Embedding model |
 | `MLFLOW_ENABLED` | `True` | Enable/disable MLflow init |
 | `MLFLOW_TRACKING_URI` | `http://mlflow:5000` | MLflow server |

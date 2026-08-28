@@ -20,7 +20,6 @@ export interface ProviderSettingsForm {
   llm_provider_type: string;
   llm_base_url: string;
   llm_model: string;
-  mem0_llm_model: string;
   mem0_embedder_model: string;
   mem0_embedder_dimensions: number;
 }

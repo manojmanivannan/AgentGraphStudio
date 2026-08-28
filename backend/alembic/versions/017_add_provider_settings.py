@@ -40,7 +40,6 @@ def upgrade() -> None:
         sa.Column("llm_base_url", sa.String(512), nullable=False, server_default=""),
         sa.Column("llm_api_key", sa.String(512), nullable=False, server_default=""),
         sa.Column("llm_model", sa.String(255), nullable=False, server_default=""),
-        sa.Column("mem0_llm_model", sa.String(255), nullable=False, server_default=""),
         sa.Column(
             "mem0_embedder_model", sa.String(255), nullable=False, server_default=""
         ),

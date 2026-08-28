@@ -381,7 +381,7 @@ export default function SettingsPage() {
               <Field
                 id="provider-chat-model"
                 label="Chat model"
-                hint="Used by every agent on the canvas."
+                hint="Used by every agent on the canvas, and by mem0 to summarise memories."
               >
                 {(id) => (
                   <input
@@ -391,22 +391,6 @@ export default function SettingsPage() {
                     onChange={(e) => update({ llm_model: e.target.value })}
                     className={inputClass}
                     placeholder="ollama_chat/llama3.1"
-                  />
-                )}
-              </Field>
-
-              <Field
-                id="provider-memory-model"
-                label="Memory chat model"
-                hint="Used by mem0 to summarise and store memories."
-              >
-                {(id) => (
-                  <input
-                    id={id}
-                    type="text"
-                    value={form.mem0_llm_model}
-                    onChange={(e) => update({ mem0_llm_model: e.target.value })}
-                    className={inputClass}
                   />
                 )}
               </Field>

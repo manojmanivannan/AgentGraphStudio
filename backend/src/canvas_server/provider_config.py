@@ -18,6 +18,28 @@ from canvas_server.config import settings
 
 logger = logging.getLogger("canvas_server.provider_config")
 
+# litellm-style routing prefixes that mem0 does not want on the model name.
+_LITELLM_PREFIXES = {
+    "ollama",
+    "ollama_chat",
+    "openai",
+    "azure",
+    "anthropic",
+    "gemini",
+    "groq",
+    "mistral",
+    "deepseek",
+    "openrouter",
+}
+
+
+def derive_mem0_llm_model(llm_model: str) -> str:
+    """mem0 takes the bare model name; the chat model may carry a route prefix."""
+    head, sep, tail = llm_model.partition("/")
+    if sep and head in _LITELLM_PREFIXES:
+        return tail
+    return llm_model
+
 
 @dataclass(frozen=True)
 class ProviderConfig:
@@ -26,10 +48,13 @@ class ProviderConfig:
     llm_base_url: str
     llm_api_key: str
     llm_model: str
-    mem0_llm_model: str
     mem0_embedder_model: str
     mem0_embedder_dimensions: int
     source: str = "env"
+
+    @property
+    def mem0_llm_model(self) -> str:
+        return derive_mem0_llm_model(self.llm_model)
 
 
 def provider_config_from_env() -> ProviderConfig:
@@ -39,7 +64,6 @@ def provider_config_from_env() -> ProviderConfig:
         llm_base_url=settings.llm_base_url,
         llm_api_key=settings.llm_api_key,
         llm_model=settings.llm_model,
-        mem0_llm_model=settings.mem0_llm_model,
         mem0_embedder_model=settings.mem0_embedder_model,
         mem0_embedder_dimensions=settings.mem0_embedder_dimensions,
         source="env",
@@ -53,7 +77,6 @@ def provider_config_from_row(row) -> ProviderConfig:
         llm_base_url=row.llm_base_url,
         llm_api_key=row.llm_api_key,
         llm_model=row.llm_model,
-        mem0_llm_model=row.mem0_llm_model,
         mem0_embedder_model=row.mem0_embedder_model,
         mem0_embedder_dimensions=row.mem0_embedder_dimensions,
         source="database",

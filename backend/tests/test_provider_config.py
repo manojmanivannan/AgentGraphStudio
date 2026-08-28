@@ -5,6 +5,7 @@ import pytest
 from canvas_server.config import settings
 from canvas_server.provider_config import (
     ProviderConfig,
+    derive_mem0_llm_model,
     get_provider_config,
     provider_config_from_env,
     refresh_provider_config,
@@ -29,6 +30,19 @@ def test_falls_back_to_env_when_cache_empty():
     assert cfg.source == "env"
 
 
+@pytest.mark.parametrize(
+    ("llm_model", "expected"),
+    [
+        ("ollama_chat/gemma3:27b", "gemma3:27b"),
+        ("openrouter/google/gemma-3-27b-it:free", "google/gemma-3-27b-it:free"),
+        ("gpt-4o-mini", "gpt-4o-mini"),
+        ("myorg/custom-model", "myorg/custom-model"),
+    ],
+)
+def test_mem0_model_is_derived_from_chat_model(llm_model, expected):
+    assert derive_mem0_llm_model(llm_model) == expected
+
+
 def test_set_provider_config_takes_precedence():
     env_cfg = provider_config_from_env()
     set_provider_config(
@@ -38,7 +52,6 @@ def test_set_provider_config_takes_precedence():
             llm_base_url="https://api.openai.com/v1",
             llm_api_key="sk-test",
             llm_model="gpt-4o-mini",
-            mem0_llm_model="gpt-4o-mini",
             mem0_embedder_model="text-embedding-3-small",
             mem0_embedder_dimensions=1536,
             source="database",
@@ -68,7 +81,6 @@ async def test_refresh_loads_persisted_row(test_session):
         llm_base_url="https://openrouter.ai/api/v1",
         llm_api_key="or-key",
         llm_model="openrouter/some/model",
-        mem0_llm_model="some/model",
         mem0_embedder_model="some/embed",
         mem0_embedder_dimensions=2048,
     )
@@ -94,7 +106,6 @@ async def test_refresh_resets_shared_mem0_singleton(test_session):
         llm_base_url="https://api.openai.com/v1",
         llm_api_key="sk",
         llm_model="gpt-4o-mini",
-        mem0_llm_model="gpt-4o-mini",
         mem0_embedder_model="text-embedding-3-small",
         mem0_embedder_dimensions=1536,
     )
