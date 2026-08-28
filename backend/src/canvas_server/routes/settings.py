@@ -25,6 +25,7 @@ from canvas_server.models.canvas import AgentDocumentChunk
 from canvas_server.provider_config import (
     ProviderConfig,
     get_provider_config,
+    invalidate_derived_caches,
     refresh_provider_config,
 )
 from canvas_server.provider_probe import probe_provider
@@ -89,6 +90,8 @@ async def update_provider_settings(
 
     if dims_changed:
         await session.execute(delete(AgentDocumentChunk))
+        # Release local Qdrant handles before deleting the files underneath them.
+        invalidate_derived_caches()
         _purge_vector_store()
 
     await session.commit()
@@ -124,11 +127,19 @@ async def test_provider_settings(
 
 
 def _purge_vector_store() -> None:
-    """Drop the local Qdrant store so mem0 rebuilds it at the new dimension."""
+    """Empty the local Qdrant store so mem0 rebuilds it at the new dimension.
+
+    Only the contents are removed: the directory itself is usually a container
+    mount point, and unlinking it fails with EBUSY.
+    """
     path = Path(settings.mem0_qdrant_path)
     if not path.is_dir():
         return
-    try:
-        shutil.rmtree(path)
-    except OSError as exc:
-        logger.warning("Could not purge vector store at %s: %s", path, exc)
+    for entry in path.iterdir():
+        try:
+            if entry.is_dir() and not entry.is_symlink():
+                shutil.rmtree(entry)
+            else:
+                entry.unlink()
+        except OSError as exc:
+            logger.warning("Could not purge vector store entry %s: %s", entry, exc)

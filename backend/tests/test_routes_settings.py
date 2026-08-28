@@ -169,6 +169,30 @@ class TestDimensionChange:
         )
         assert remaining == 0
 
+    async def test_purge_empties_the_store_without_removing_the_mount(
+        self, authed_client, monkeypatch, tmp_path
+    ):
+        from canvas_server.config import settings
+
+        store = tmp_path / "qdrant"
+        (store / "collection").mkdir(parents=True)
+        (store / "collection" / "data").write_text("x")
+        (store / "meta.json").write_text("{}")
+        monkeypatch.setattr(settings, "mem0_qdrant_path", str(store))
+
+        res = await authed_client.put(
+            "/api/settings/provider",
+            json={
+                **BASE_BODY,
+                "mem0_embedder_dimensions": 1536,
+                "confirm_reindex": True,
+            },
+            headers=ORIGIN,
+        )
+        assert res.status_code == 200, res.text
+        assert store.is_dir()
+        assert list(store.iterdir()) == []
+
 
 class TestProbe:
     async def test_reports_failures_as_ok_false(self, authed_client, monkeypatch):
