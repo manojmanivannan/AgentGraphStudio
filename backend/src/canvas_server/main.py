@@ -12,9 +12,11 @@ from fastapi.staticfiles import StaticFiles
 import canvas_server
 from canvas_server.background_run_worker import shutdown_background_run_worker
 from canvas_server.config import settings
+from canvas_server.provider_config import get_provider_config, refresh_provider_config
 from canvas_server.routes.auth import auth_router
 from canvas_server.routes.canvas import canvas_router
 from canvas_server.routes.execute import execute_router
+from canvas_server.routes.settings import settings_router
 from canvas_server.routes.tools import tools_router
 
 logging.basicConfig(
@@ -38,7 +40,18 @@ async def lifespan(app: FastAPI):
         settings.database_url.split("@")[1] if "@" in settings.database_url else "..."
     )
     logger.debug("Config: database_url=%s", url_part)
-    logger.debug("Config: llm_model=%s", settings.llm_model)
+
+    # App-managed provider settings win over .env once a row exists.
+    try:
+        from canvas_server.database import get_session_factory
+
+        factory = get_session_factory()
+        async with factory() as session:
+            await refresh_provider_config(session)
+    except Exception as exc:
+        logger.warning("Could not load provider settings from database: %s", exc)
+
+    logger.debug("Config: llm_model=%s", get_provider_config().llm_model)
     logger.debug(f"Config: cors_origins={settings.cors_origins}")
 
     # Pre-warm the llm-sandbox pool for tool execution
@@ -137,6 +150,7 @@ async def global_exception_handler(request: Request, exc: Exception):
 app.include_router(auth_router)
 app.include_router(canvas_router)
 app.include_router(execute_router)
+app.include_router(settings_router)
 app.include_router(tools_router)
 
 

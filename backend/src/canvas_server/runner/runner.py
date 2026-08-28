@@ -25,6 +25,7 @@ import mlflow
 from canvas_server.config import settings
 from canvas_server.exceptions import LLMConfigurationError
 from canvas_server.package_manager import PackageManager
+from canvas_server.provider_config import get_provider_config
 from canvas_server.runner.agent_factory import AgentFactory
 from canvas_server.runner.config import RunContext
 from canvas_server.runner.conversation import ConversationService
@@ -62,10 +63,11 @@ class CanvasRunner:
         self.canvas = canvas
 
         # ---- LM (cheap to construct, needs no I/O) ----
+        provider = get_provider_config()
         self._lm = dspy.LM(
-            settings.llm_model,
-            api_base=settings.llm_base_url,
-            api_key=settings.llm_api_key,
+            provider.llm_model,
+            api_base=provider.llm_base_url,
+            api_key=provider.llm_api_key,
         )
 
         # ---- services ----
@@ -247,10 +249,11 @@ class CanvasRunner:
                     )
                 elif len(err_details) > 300:
                     err_details = err_details[:300] + "..."
+                provider = get_provider_config()
                 err_msg = (
                     f"LLM configuration is incorrect. Please check your LLM settings "
-                    f"(model name: '{settings.llm_model}', base URL: '{settings.llm_base_url}', "
-                    f"API key: '{'***' if settings.llm_api_key else 'None'}').\n"
+                    f"(model name: '{provider.llm_model}', base URL: '{provider.llm_base_url}', "
+                    f"API key: '{'***' if provider.llm_api_key else 'None'}').\n"
                     f"Details: {err_details}"
                 )
                 logger.error("LLM configuration validation failed: %s", err_msg)

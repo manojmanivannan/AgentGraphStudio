@@ -5,10 +5,16 @@ import uuid
 import pytest
 from sqlalchemy import select
 
-from canvas_server.models.api import AgentNodeInput
+from canvas_server.models.api import AgentDocumentInput, AgentNodeInput
 from canvas_server.models.canvas import AgentDocument, AgentDocumentChunk
 from canvas_server.repos.canvas_repo import CanvasRepo
 from canvas_server.runner.rag_helper import RAGIndexManager, chunk_text, run_rag_search
+
+
+def test_chunk_embedding_column_is_not_dimension_pinned():
+    """A pinned pgvector width rejects binds once the provider dimension changes."""
+    column_type = AgentDocumentChunk.__table__.c.embedding.type
+    assert column_type.dimensions is None
 
 
 def test_chunk_text():
@@ -423,3 +429,116 @@ async def test_rag_chunk_size_invalidation(test_session, blank_canvas):
         await asyncio.sleep(0.1)
 
     assert len(chunks) == 3
+
+
+@pytest.mark.asyncio
+async def test_create_full_indexes_rag_documents(test_session, test_user):
+    repo = CanvasRepo(test_session)
+    agent_id = uuid.uuid4()
+    doc_id = uuid.uuid4()
+
+    agents = [
+        AgentNodeInput(
+            id=agent_id,
+            name="RAGAgent",
+            role="Worker",
+            instructions="Context: {{ rag_document }}",
+            agent_type="worker",
+            model_name="ollama:llama3.1",
+            enable_rag=True,
+            rag_chunk_size=1000,
+        )
+    ]
+    documents = [
+        AgentDocumentInput(
+            id=doc_id,
+            agent_node_id=agent_id,
+            name="imported_notes.txt",
+            content="Imported document knowledge base about Antigravity system.",
+        )
+    ]
+
+    canvas = await repo.create_full(
+        name="Imported RAG Canvas",
+        agents=agents,
+        tools=[],
+        edges=[],
+        documents=documents,
+        owner_id=test_user.id,
+    )
+
+    imported_agent = canvas.agent_nodes[0]
+
+    # Verify that run_rag_search finds passages from the imported document
+    passages = await run_rag_search(
+        imported_agent.id, "Antigravity system", session=test_session
+    )
+    assert "Imported document knowledge base" in passages
+
+
+@pytest.mark.asyncio
+async def test_rag_search_on_demand_indexing_when_unindexed(test_session, blank_canvas):
+    repo = CanvasRepo(test_session)
+    agent_id = uuid.uuid4()
+
+    await repo.save_nodes_and_edges(
+        blank_canvas.id,
+        "RAG Canvas",
+        agents=[
+            AgentNodeInput(
+                id=agent_id,
+                name="RAGAgent",
+                role="Assistant",
+                instructions="Context: {{ rag_document }}",
+                agent_type="worker",
+                model_name="ollama:llama3.1",
+                enable_rag=True,
+                rag_chunk_size=1000,
+            )
+        ],
+        tools=[],
+        edges=[],
+    )
+
+    # Insert document directly without triggering background indexing
+    doc = AgentDocument(
+        id=uuid.uuid4(),
+        canvas_id=blank_canvas.id,
+        agent_node_id=agent_id,
+        name="direct_doc.txt",
+        content="Direct document content on artificial intelligence.",
+    )
+    test_session.add(doc)
+    await test_session.commit()
+    test_session.expire_all()
+
+    # Search should trigger on-demand indexing and return retrieved content
+    passages = await run_rag_search(
+        agent_id, "artificial intelligence", session=test_session
+    )
+    assert "Direct document content on artificial intelligence" in passages
+
+
+@pytest.mark.asyncio
+async def test_import_example_rag_zip_retrieves_context(authed_client, test_session):
+    from pathlib import Path
+    zip_path = Path(__file__).resolve().parent.parent.parent / "examples" / "team_math_weather_with_plot_with_rag.zip"
+    if not zip_path.exists():
+        pytest.skip("Example zip file not found")
+
+    with open(zip_path, "rb") as f:
+        zip_bytes = f.read()
+
+    res = await authed_client.post(
+        "/api/canvases/import-zip",
+        files={"file": ("team_math_weather_with_plot_with_rag.zip", zip_bytes, "application/zip")},
+    )
+    assert res.status_code == 200
+    canvas_data = res.json()
+    weather_agent = next(a for a in canvas_data["nodes"]["agents"] if a["name"] == "WeatherAgent")
+    weather_agent_id = uuid.UUID(weather_agent["id"])
+
+    # Search RAG for WeatherAgent
+    passages = await run_rag_search(weather_agent_id, "weather story", session=test_session)
+    assert len(passages) > 0
+    assert "Lorem ipsum" in passages

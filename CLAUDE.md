@@ -26,7 +26,9 @@ and edges on a ReactFlow canvas, then run workflows against a FastAPI + DSPy bac
 | What | Where | Why |
 |---|---|---|
 | FastAPI app | `backend/src/canvas_server/main.py` | CORS, lifespan, MLflow init, sandbox init, routers |
-| Settings | `backend/src/canvas_server/config.py` | All env vars |
+| Settings | `backend/src/canvas_server/config.py` | All env vars (seed/fallback for provider config) |
+| Active provider config | `backend/src/canvas_server/provider_config.py` | DB-backed LLM/embedder config + process cache |
+| Provider probe | `backend/src/canvas_server/provider_probe.py` | Chat + embedding connectivity checks for the Test button |
 | DB engine | `backend/src/canvas_server/database.py` | Singleton async engine, session factory |
 | ORM models | `backend/src/canvas_server/models/canvas.py` | Canvas, AgentNode, ToolNode, Edge, Conversation, Message |
 | Pydantic schemas | `backend/src/canvas_server/models/api.py` | All request/response models |
@@ -34,6 +36,7 @@ and edges on a ReactFlow canvas, then run workflows against a FastAPI + DSPy bac
 | Conversation CRUD | `backend/src/canvas_server/repos/conversation_repo.py` | ConversationRepo class |
 | REST routes | `backend/src/canvas_server/routes/canvas.py` | `/api/canvases/**` (canvas CRUD + RAG documents CRUD) |
 | Tool test routes | `backend/src/canvas_server/routes/tools.py` | `/api/tools/inspect` + `/api/tools/test` |
+| Settings routes | `backend/src/canvas_server/routes/settings.py` | `/api/settings/provider` GET/PUT + `/test` |
 | WebSocket route | `backend/src/canvas_server/routes/execute.py` | `/ws/conversations/{id}/run` |
 | **Execution engine** | `backend/src/canvas_server/runner/` | Package containing `runner.py` (CanvasRunner orchestrator), `execution.py` (individual worker execution), `agent_factory.py` (agent builder), and `rag_helper.py` (RAG chunking and search helper) |
 | Custom DSPy agent | `backend/src/canvas_server/streaming_react.py` | **StreamingReAct** — emits events per iteration |
@@ -55,6 +58,7 @@ and edges on a ReactFlow canvas, then run workflows against a FastAPI + DSPy bac
 | Tool editor | `frontend/src/components/sidebar/ToolEditor.tsx` | Monaco Python editor + Test Tool panel |
 | Chat overlay | `frontend/src/components/chat/ChatOverlay.tsx` | Conversations, WebSocket, streaming UI |
 | Observability | `frontend/src/components/observability/ObservabilityView.tsx` | MLflow iframe |
+| Settings page | `frontend/src/components/settings/SettingsPage.tsx` | Provider profiles, form, Test connection |
 | CSS design system | `frontend/src/styles/globals.css` | All CSS variables, utility classes, animations |
 | Shared types | `frontend/src/types/index.ts` | All TypeScript interfaces |
 | Alembic config | `backend/alembic.ini` | Migration configuration |
@@ -226,6 +230,16 @@ and edges on a ReactFlow canvas, then run workflows against a FastAPI + DSPy bac
 11. **In-Memory RAG for Workers** — RAG documents are stored as standard relational rows in PostgreSQL. Chunks are computed using a paragraph-aligned splitter and embedded dynamically in-memory at run-time using DSPy embedders. This avoids vector synchronization bugs during canvas auto-saves, which are supported by delta upserting nodes instead of destroying/recreating them.
 
 12. **Graceful Exception Tool Output Propagation** — Memory initialization failures and tool compilation/syntax/import errors do not crash runner setup. Instead, they register fallback stubs that raise the exception at call-time. In `StreamingReAct.aforward`, these exceptions are caught and returned to the agent as standard tool output observations (e.g. `Execution error in broken_tool: Syntax error in tool...`), allowing the agent to reason about the failure and explicitly inform the user so they can correct the configuration or code.
+
+13. **DB-backed provider config** — The LLM/embedder provider is configured in-app
+    (Settings page → `provider_settings` singleton row); `.env` LLM_*/MEM0_* values
+    are only the seed/fallback. Runtime consumers read `provider_config.get_provider_config()`,
+    a synchronous process-local cache refreshed at API startup, after every settings
+    `PUT`, and before each durable run claimed by the background worker (the worker is a
+    separate process). Changing the embedding dimension requires explicit confirmation and
+    purges `agent_document_chunks` plus the local Qdrant store. The chunk `embedding`
+    column is intentionally an unsized pgvector column so binds survive a dimension change.
+    See `docs/adr/0008-in-app-provider-configuration.md`.
 
 ---
 

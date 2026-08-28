@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from canvas_server.conversation_run_coordinator import ConversationRunCoordinator
 from canvas_server.database import get_session_factory
 from canvas_server.exceptions import RunAbortedError
+from canvas_server.provider_config import refresh_provider_config
 from canvas_server.repos.canvas_repo import CanvasRepo
 from canvas_server.repos.conversation_repo import ConversationRepo
 from canvas_server.repos.durable_run_repo import DurableRunRepo
@@ -157,6 +158,8 @@ class BackgroundRunWorker:
             prompt = run.prompt
             target_agent_id = run.target_agent_id
             conversation_id = run.conversation_id
+            # The API process owns the settings UI, so re-read the config here.
+            await refresh_provider_config(session)
             await session.commit()
 
         await self._execute_run(

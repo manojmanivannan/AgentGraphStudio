@@ -1,3 +1,5 @@
+import pytest
+
 from canvas_server.config import Settings
 
 
@@ -50,6 +52,15 @@ class TestSettings:
 
 
 class TestMemoryConfig:
+    @pytest.fixture(autouse=True)
+    def _env_fallback(self):
+        """build_mem0_config reads the provider cache; empty it so .env applies."""
+        from canvas_server.provider_config import reset_provider_config
+
+        reset_provider_config()
+        yield
+        reset_provider_config()
+
     def test_build_mem0_config_ollama(self, monkeypatch):
         from canvas_server.config import settings
         from canvas_server.memory_config import build_mem0_config
@@ -57,12 +68,13 @@ class TestMemoryConfig:
         monkeypatch.setattr(settings, "llm_provider_type", "ollama")
         monkeypatch.setattr(settings, "llm_base_url", "http://ollama-host:11434")
         monkeypatch.setattr(settings, "llm_api_key", "test-key")
-        monkeypatch.setattr(settings, "mem0_llm_model", "test-llm-model")
+        monkeypatch.setattr(settings, "llm_model", "ollama_chat/test-llm-model")
         monkeypatch.setattr(settings, "mem0_embedder_model", "test-embed-model")
         monkeypatch.setattr(settings, "mem0_embedder_dimensions", 2048)
 
         config = build_mem0_config()
         assert config["llm"]["provider"] == "ollama"
+        # mem0 gets the bare model name, derived from the chat model.
         assert config["llm"]["config"]["model"] == "test-llm-model"
         assert config["llm"]["config"]["ollama_base_url"] == "http://ollama-host:11434"
         assert "embedding_model_dims" not in config["llm"]["config"]
@@ -83,7 +95,7 @@ class TestMemoryConfig:
         monkeypatch.setattr(settings, "llm_provider_type", "openai")
         monkeypatch.setattr(settings, "llm_base_url", "https://openrouter.ai/api/v1")
         monkeypatch.setattr(settings, "llm_api_key", "sk-test-key")
-        monkeypatch.setattr(settings, "mem0_llm_model", "test-openai-model")
+        monkeypatch.setattr(settings, "llm_model", "test-openai-model")
         monkeypatch.setattr(settings, "mem0_embedder_model", "test-embed-model")
         monkeypatch.setattr(settings, "mem0_qdrant_path", "/data/qdrant")
         monkeypatch.setattr(settings, "mem0_qdrant_on_disk", True)

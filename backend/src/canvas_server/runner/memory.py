@@ -46,6 +46,32 @@ class MemoryManager:
             self.__class__._shared_memory = shared
         return self.__class__._shared_memory
 
+    @classmethod
+    def reset_shared_memory(cls) -> None:
+        """Drop the shared instance, releasing the local Qdrant directory locks.
+
+        Without closing the clients first, rebuilding mem0 (e.g. after a provider
+        config change) fails with "already accessed by another instance of
+        qdrant client".
+        """
+        shared = cls._shared_memory
+        cls._shared_memory = None
+        if shared is None:
+            return
+
+        # mem0 opens several local stores: the memory store, a telemetry store
+        # under ~/.mem0/migrations_qdrant, and a lazily-built entity store.
+        for attr in ("vector_store", "_telemetry_vector_store", "_entity_store"):
+            store = getattr(shared, attr, None)
+            client = getattr(store, "client", None)
+            close = getattr(client, "close", None)
+            if not callable(close):
+                continue
+            try:
+                close()
+            except Exception as exc:
+                logger.warning("Failed to close mem0 %s client: %s", attr, exc)
+
     def build_provider(self, agent_node) -> MemoryProvider | None:
         """Return a ``MemoryProvider`` for *agent_node*, or ``None`` if memory
         is disabled. If initialization fails, returns a MemoryProvider that raises the error when called."""
