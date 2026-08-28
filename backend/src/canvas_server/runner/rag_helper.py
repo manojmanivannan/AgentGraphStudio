@@ -139,107 +139,40 @@ class RAGIndexManager:
             cls._tasks[agent_id] = asyncio.create_task(cls._reindex_agent(agent_id))
 
     @classmethod
+    async def wait_for_indexing(cls, agent_id: uuid.UUID):
+        """Wait for an active indexing task for the given agent if one exists."""
+        task = cls._tasks.get(agent_id)
+        if task and not task.done():
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+            except Exception as e:
+                logger.warning(
+                    "Error waiting for active RAG indexing task for agent %s: %s",
+                    agent_id,
+                    e,
+                )
+
+    @classmethod
+    async def reindex_agent_sync(
+        cls, agent_id: uuid.UUID, session: AsyncSession | None = None
+    ):
+        """Synchronously index all documents for an agent and wait for completion."""
+        if session is not None:
+            await cls._reindex_agent_with_session(agent_id, session)
+        else:
+            factory = get_session_factory()
+            async with factory() as new_session:
+                await cls._reindex_agent_with_session(agent_id, new_session)
+
+    @classmethod
     async def _reindex_agent(cls, agent_id: uuid.UUID):
         try:
             logger.info("Starting background RAG indexing for agent: %s", agent_id)
             factory = get_session_factory()
             async with factory() as session:
-                # 1. Fetch agent and its documents
-                stmt = select(AgentNode).where(AgentNode.id == agent_id)
-                res = await session.execute(stmt)
-                agent = res.scalar_one_or_none()
-                if not agent:
-                    logger.warning("RAG indexing failed: agent %s not found", agent_id)
-                    return
-
-                # Fetch documents
-                stmt = select(AgentDocument).where(
-                    AgentDocument.agent_node_id == agent_id
-                )
-                res = await session.execute(stmt)
-                documents = res.scalars().all()
-
-                # 2. Delete existing chunks for this agent
-                await session.execute(
-                    delete(AgentDocumentChunk).where(
-                        AgentDocumentChunk.agent_node_id == agent_id
-                    )
-                )
-                await session.flush()
-
-                if not documents:
-                    await session.commit()
-                    logger.info("No documents to index for agent: %s", agent_id)
-                    return
-
-                # 3. Chunk documents
-                all_chunks = []
-                for doc in documents:
-                    chunks = chunk_text(doc.content, agent.rag_chunk_size)
-                    for idx, chunk_content in enumerate(chunks):
-                        all_chunks.append(
-                            {
-                                "canvas_id": agent.canvas_id,
-                                "agent_node_id": agent_id,
-                                "document_id": doc.id,
-                                "chunk_index": idx,
-                                "content": chunk_content,
-                            }
-                        )
-
-                if not all_chunks:
-                    await session.commit()
-                    return
-
-                # 4. Generate embeddings
-                texts = [c["content"] for c in all_chunks]
-                try:
-                    embedder = get_embedder()
-                    try:
-                        embeddings_raw = await asyncio.wait_for(
-                            asyncio.to_thread(embedder, texts), timeout=5.0
-                        )
-                    except TimeoutError:
-                        logger.warning(
-                            "Embedding generation timed out after 5s. Using zero vector fallback."
-                        )
-                        dims = get_provider_config().mem0_embedder_dimensions
-                        embeddings = [[0.0] * dims for _ in range(len(all_chunks))]
-                    else:
-                        # Convert to standard Python float lists if they are numpy arrays or other wrappers
-                        embeddings = []
-                        for vec in embeddings_raw:
-                            if hasattr(vec, "tolist"):
-                                embeddings.append(vec.tolist())
-                            else:
-                                embeddings.append(list(vec))
-                except Exception as e:
-                    logger.warning(
-                        "Failed to generate embeddings during index: %s. Using zero vector fallback.",
-                        e,
-                    )
-                    dims = get_provider_config().mem0_embedder_dimensions
-                    embeddings = [[0.0] * dims for _ in range(len(all_chunks))]
-
-                # 5. Insert chunks with embeddings
-                for chunk_data, emb in zip(all_chunks, embeddings, strict=False):
-                    chunk_obj = AgentDocumentChunk(
-                        id=uuid.uuid4(),
-                        canvas_id=chunk_data["canvas_id"],
-                        agent_node_id=chunk_data["agent_node_id"],
-                        document_id=chunk_data["document_id"],
-                        chunk_index=chunk_data["chunk_index"],
-                        content=chunk_data["content"],
-                        embedding=emb,
-                    )
-                    session.add(chunk_obj)
-
-                await session.commit()
-                logger.info(
-                    "Successfully indexed %d chunks for agent: %s",
-                    len(all_chunks),
-                    agent_id,
-                )
+                await cls._reindex_agent_with_session(agent_id, session)
         except asyncio.CancelledError:
             logger.info("RAG indexing task for agent %s was cancelled", agent_id)
             raise
@@ -250,6 +183,107 @@ class RAGIndexManager:
                 e,
                 exc_info=True,
             )
+
+    @classmethod
+    async def _reindex_agent_with_session(
+        cls, agent_id: uuid.UUID, session: AsyncSession
+    ):
+        # 1. Fetch agent and its documents
+        stmt = select(AgentNode).where(AgentNode.id == agent_id)
+        res = await session.execute(stmt)
+        agent = res.scalar_one_or_none()
+        if not agent:
+            logger.warning("RAG indexing failed: agent %s not found", agent_id)
+            return
+
+        # Fetch documents
+        stmt = select(AgentDocument).where(
+            AgentDocument.agent_node_id == agent_id
+        )
+        res = await session.execute(stmt)
+        documents = res.scalars().all()
+
+        # 2. Delete existing chunks for this agent
+        await session.execute(
+            delete(AgentDocumentChunk).where(
+                AgentDocumentChunk.agent_node_id == agent_id
+            )
+        )
+        await session.flush()
+
+        if not documents:
+            await session.commit()
+            logger.info("No documents to index for agent: %s", agent_id)
+            return
+
+        # 3. Chunk documents
+        all_chunks = []
+        for doc in documents:
+            chunks = chunk_text(doc.content, agent.rag_chunk_size)
+            for idx, chunk_content in enumerate(chunks):
+                all_chunks.append(
+                    {
+                        "canvas_id": agent.canvas_id,
+                        "agent_node_id": agent_id,
+                        "document_id": doc.id,
+                        "chunk_index": idx,
+                        "content": chunk_content,
+                    }
+                )
+
+        if not all_chunks:
+            await session.commit()
+            return
+
+        # 4. Generate embeddings
+        texts = [c["content"] for c in all_chunks]
+        try:
+            embedder = get_embedder()
+            try:
+                embeddings_raw = await asyncio.wait_for(
+                    asyncio.to_thread(embedder, texts), timeout=5.0
+                )
+            except TimeoutError:
+                logger.warning(
+                    "Embedding generation timed out after 5s. Using zero vector fallback."
+                )
+                dims = get_provider_config().mem0_embedder_dimensions
+                embeddings = [[0.0] * dims for _ in range(len(all_chunks))]
+            else:
+                # Convert to standard Python float lists if they are numpy arrays or other wrappers
+                embeddings = []
+                for vec in embeddings_raw:
+                    if hasattr(vec, "tolist"):
+                        embeddings.append(vec.tolist())
+                    else:
+                        embeddings.append(list(vec))
+        except Exception as e:
+            logger.warning(
+                "Failed to generate embeddings during index: %s. Using zero vector fallback.",
+                e,
+            )
+            dims = get_provider_config().mem0_embedder_dimensions
+            embeddings = [[0.0] * dims for _ in range(len(all_chunks))]
+
+        # 5. Insert chunks with embeddings
+        for chunk_data, emb in zip(all_chunks, embeddings, strict=False):
+            chunk_obj = AgentDocumentChunk(
+                id=uuid.uuid4(),
+                canvas_id=chunk_data["canvas_id"],
+                agent_node_id=chunk_data["agent_node_id"],
+                document_id=chunk_data["document_id"],
+                chunk_index=chunk_data["chunk_index"],
+                content=chunk_data["content"],
+                embedding=emb,
+            )
+            session.add(chunk_obj)
+
+        await session.commit()
+        logger.info(
+            "Successfully indexed %d chunks for agent: %s",
+            len(all_chunks),
+            agent_id,
+        )
 
 
 async def run_rag_search(
@@ -266,6 +300,9 @@ async def run_rag_search(
 async def _run_rag_search_impl(
     agent_id: uuid.UUID, query: str, session: AsyncSession
 ) -> str:
+    # 0. Wait for active in-flight indexing task if any
+    await RAGIndexManager.wait_for_indexing(agent_id)
+
     # 1. Embed query
     try:
         embedder = get_embedder()
@@ -299,7 +336,29 @@ async def _run_rag_search_impl(
         logger.error("Query embedding failed: %s", err_msg)
         raise RAGEmbeddingError(err_msg) from e
 
-    # 2. Retrieve top matching chunks
+    # 2. Check if chunks exist or on-demand indexing is required
+    stmt_check = (
+        select(AgentDocumentChunk.id)
+        .where(AgentDocumentChunk.agent_node_id == agent_id)
+        .limit(1)
+    )
+    chunk_exists = (await session.execute(stmt_check)).scalar_one_or_none() is not None
+
+    if not chunk_exists:
+        stmt_docs = (
+            select(AgentDocument.id)
+            .where(AgentDocument.agent_node_id == agent_id)
+            .limit(1)
+        )
+        doc_exists = (await session.execute(stmt_docs)).scalar_one_or_none() is not None
+        if doc_exists:
+            logger.info(
+                "No chunks found but documents exist for agent %s. Indexing on-demand.",
+                agent_id,
+            )
+            await RAGIndexManager._reindex_agent_with_session(agent_id, session)
+
+    # 3. Retrieve top matching chunks
     bind = session.get_bind()
     dialect_name = bind.dialect.name if bind else "postgresql"
 

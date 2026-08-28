@@ -55,9 +55,12 @@ class CanvasRepo:
         canvas_id = canvas.id
         id_map = {}
 
+        agents_to_reindex = set()
         for a in agents:
             new_id = uuid.uuid4()
             id_map[a.id] = new_id
+            if a.enable_rag:
+                agents_to_reindex.add(new_id)
             node = AgentNode(
                 id=new_id,
                 canvas_id=canvas_id,
@@ -133,8 +136,15 @@ class CanvasRepo:
             if d.created_at is not None:
                 doc.created_at = d.created_at
             self.session.add(doc)
+            agents_to_reindex.add(target_agent_id)
 
         await self.session.commit()
+
+        if agents_to_reindex:
+            from canvas_server.runner.rag_helper import RAGIndexManager
+
+            for aid in agents_to_reindex:
+                await RAGIndexManager.trigger_reindex(aid)
 
         result = await self.session.execute(
             self._eager_query().where(Canvas.id == canvas_id)
