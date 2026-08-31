@@ -7,8 +7,11 @@ existing user's password.
 """
 
 import base64
+import os
 
 from canvas_server.bootstrap import seed_default_user
+
+TEST_DB_URL = os.environ.get("TEST_DATABASE_URL", "sqlite+aiosqlite:///test.db")
 
 
 def _b64(plaintext: str) -> str:
@@ -40,7 +43,7 @@ class TestSeedDefaultUser:
 
         from canvas_server.database import get_session_factory
 
-        factory = get_session_factory()
+        factory = get_session_factory(TEST_DB_URL)
         async with factory() as session:
             await seed_default_user(session)
             await session.commit()
@@ -51,6 +54,25 @@ class TestSeedDefaultUser:
             headers={"Origin": "http://test"},
         )
         assert r.status_code == 200, r.text
+
+    async def test_seed_persists_without_explicit_commit(self, fresh_db, monkeypatch):
+        """The lifespan call pattern: seed via one factory session, no caller
+        commit — the row must still exist in a *fresh* session afterwards.
+        (Regression: create_user only flushes, so the insert was rolling back
+        on session close and no user ever reached the database.)"""
+        _configure_default_user(monkeypatch, email="boot@example.com", password="bootstrap-pw-1")
+
+        from canvas_server.database import get_session_factory
+
+        factory = get_session_factory(TEST_DB_URL)
+        async with factory() as session:
+            user = await seed_default_user(session)
+        assert user is not None
+
+        async with factory() as session:
+            from canvas_server.repos.auth_repo import AuthRepo
+
+            assert await AuthRepo(session).get_user_by_email("boot@example.com") is not None
 
     async def test_idempotent_does_not_reset_existing_password(self, test_session, monkeypatch):
         _configure_default_user(monkeypatch, password="a-fresh-password")
@@ -112,9 +134,11 @@ class TestSeedDefaultUser:
 
 class TestDefaultUserSettings:
     def test_defaults_are_empty(self):
+        # _env_file=None keeps the test hermetic: the developer's real .env may
+        # legitimately set DEFAULT_USER_EMAIL for local runs.
         from canvas_server.config import Settings
 
-        s = Settings()
+        s = Settings(_env_file=None)
         assert s.default_user_email == ""
         assert s.default_password == ""
 
@@ -123,7 +147,7 @@ class TestDefaultUserSettings:
 
         monkeypatch.setenv("DEFAULT_USER_EMAIL", "demo@demo.com")
         monkeypatch.setenv("DEFAULT_PASSWORD", _b64("hunter2-secret"))
-        s = Settings()
+        s = Settings(_env_file=None)
         assert s.default_user_email == "demo@demo.com"
         import base64 as b64mod
 

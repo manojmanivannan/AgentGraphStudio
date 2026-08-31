@@ -65,5 +65,9 @@ async def seed_default_user(session: AsyncSession):
         return existing
 
     user = await repo.create_user(handle, hash_password(password))
+    # Repos only flush; this is a self-contained startup task and the lifespan
+    # caller passes a fire-and-forget session, so commit here or the insert is
+    # rolled back when the session closes.
+    await session.commit()
     logger.info("Seeded default user %s from DEFAULT_USER_EMAIL", handle)
     return user
