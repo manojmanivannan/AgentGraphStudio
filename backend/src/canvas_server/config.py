@@ -32,6 +32,12 @@ class Settings(BaseSettings):
     session_absolute_timeout_seconds: int = 604800  # 7 days
     # Cookie attributes (per #32).
     session_cookie_name: str = "agentbuilder_session"
+    # Optional bootstrap login: when both are set, startup seeds this user
+    # account (see canvas_server.bootstrap). default_password is the
+    # base64-encoded plaintext (e.g. `echo -n 'pw' | base64`); seeding is
+    # idempotent — an existing account is never reset.
+    default_user_email: str = ""
+    default_password: str = ""
     # Origins trusted for the CSRF same-origin check on state-changing routes.
     # Deliberately separate from cors_origins: CORS is for intentionally
     # third-party API access, while CSRF trust must be same-origin only.
