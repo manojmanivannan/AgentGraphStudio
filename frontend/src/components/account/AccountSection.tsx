@@ -1,7 +1,5 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
 import { AlertCircle, Check, Loader2, MonitorSmartphone } from "lucide-react";
-import { AuthLayout } from "@/components/auth/AuthLayout";
 import { changePassword, logoutOtherSessions } from "@/lib/api";
 import { useAuthStore } from "@/store/authStore";
 
@@ -10,7 +8,15 @@ type Feedback =
   | { kind: "error"; message: string }
   | null;
 
-export default function AccountPage() {
+const inputClass =
+  "px-3 py-2 bg-[var(--color-inset)] border border-[var(--color-border-default)] rounded-lg text-sm outline-none focus:border-[var(--color-accent)] transition-colors text-[var(--color-text-primary)] placeholder-[var(--color-text-tertiary)]";
+
+/**
+ * Settings dialog "Account" tab: the signed-in identity, change-password form,
+ * and the sign-out-other-sessions control extracted from the former
+ * /account page (AccountPage).
+ */
+export function AccountSection() {
   const user = useAuthStore((s) => s.user);
 
   const [current, setCurrent] = useState("");
@@ -60,17 +66,9 @@ export default function AccountPage() {
   };
 
   return (
-    <AuthLayout
-      title="Account"
-      subtitle="Manage your password and active sessions"
-      footer={
-        <Link to="/" className="text-[var(--color-accent)] hover:opacity-80 font-medium">
-          Back to AgentGraph Studio
-        </Link>
-      }
-    >
+    <div className="flex flex-col gap-6">
       {/* Current user */}
-      <div className="mb-6 pb-4 border-b border-[var(--color-border-subtle)]">
+      <div className="pb-4 border-b border-[var(--color-border-subtle)]">
         <p className="text-[10px] uppercase tracking-wider text-[var(--color-text-tertiary)] font-medium">
           Signed in as
         </p>
@@ -80,7 +78,7 @@ export default function AccountPage() {
       </div>
 
       {/* Change password */}
-      <form onSubmit={handleChangePassword} className="flex flex-col gap-4 mb-6">
+      <form onSubmit={handleChangePassword} className="flex flex-col gap-4">
         <h2 className="text-sm font-semibold text-[var(--color-text-primary)]">Change password</h2>
 
         {pwFeedback && (
@@ -109,7 +107,7 @@ export default function AccountPage() {
             onChange={(e) => setCurrent(e.target.value)}
             required
             autoComplete="current-password"
-            className="px-3 py-2 bg-[var(--color-inset)] border border-[var(--color-border-default)] rounded-lg text-sm outline-none focus:border-[var(--color-accent)] transition-colors text-[var(--color-text-primary)] placeholder-[var(--color-text-tertiary)]"
+            className={inputClass}
             placeholder="••••••••"
           />
         </label>
@@ -122,7 +120,7 @@ export default function AccountPage() {
             onChange={(e) => setNext(e.target.value)}
             required
             autoComplete="new-password"
-            className="px-3 py-2 bg-[var(--color-inset)] border border-[var(--color-border-default)] rounded-lg text-sm outline-none focus:border-[var(--color-accent)] transition-colors text-[var(--color-text-primary)] placeholder-[var(--color-text-tertiary)]"
+            className={inputClass}
             placeholder="••••••••"
           />
         </label>
@@ -135,7 +133,7 @@ export default function AccountPage() {
             onChange={(e) => setConfirm(e.target.value)}
             required
             autoComplete="new-password"
-            className="px-3 py-2 bg-[var(--color-inset)] border border-[var(--color-border-default)] rounded-lg text-sm outline-none focus:border-[var(--color-accent)] transition-colors text-[var(--color-text-primary)] placeholder-[var(--color-text-tertiary)]"
+            className={inputClass}
             placeholder="••••••••"
           />
         </label>
@@ -188,6 +186,6 @@ export default function AccountPage() {
           {loggingOut ? "Signing out…" : "Log out other sessions"}
         </button>
       </div>
-    </AuthLayout>
+    </div>
   );
 }

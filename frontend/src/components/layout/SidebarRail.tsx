@@ -13,9 +13,11 @@ import {
   MessageSquare,
   Home,
   Activity,
+  Settings as SettingsIcon,
 } from "lucide-react";
 import { useCanvasStore } from "@/store/canvasStore";
 import { useThemeStore } from "@/store/themeStore";
+import { useSettingsModalStore } from "@/store/settingsModalStore";
 import {
   exportCanvasZip,
   importCanvas,
@@ -303,6 +305,15 @@ export function SidebarRail() {
           >
             <Activity className="w-4 h-4 text-[var(--color-success)] shrink-0" />
             {!sidebarCollapsed && "Observability"}
+          </button>
+          <button
+            onClick={() => useSettingsModalStore.getState().openSettings()}
+            data-testid="settings-rail-button"
+            className={navItemClass("/settings")}
+            title="Settings"
+          >
+            <SettingsIcon className="w-4 h-4 text-[var(--color-text-secondary)] shrink-0" />
+            {!sidebarCollapsed && "Settings"}
           </button>
         </div>
       </div>

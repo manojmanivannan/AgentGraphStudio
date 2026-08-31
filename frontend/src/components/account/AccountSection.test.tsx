@@ -1,11 +1,10 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { server } from "@/test/mocks/server";
-import { MemoryRouter, Routes, Route } from "react-router-dom";
 import { useAuthStore } from "@/store/authStore";
-import AccountPage from "./AccountPage";
+import { AccountSection } from "@/components/account/AccountSection";
 
 const API = "http://localhost:8000/api";
 
@@ -15,24 +14,13 @@ const mockUser = {
   created_at: "2024-01-01T00:00:00Z",
 };
 
-function renderAt(path = "/account") {
-  return render(
-    <MemoryRouter initialEntries={[path]}>
-      <Routes>
-        <Route path="/account" element={<AccountPage />} />
-        <Route path="/" element={<div data-testid="home" />} />
-      </Routes>
-    </MemoryRouter>
-  );
-}
-
 beforeEach(() => {
   useAuthStore.setState({ user: mockUser, status: "authenticated" });
 });
 
-describe("AccountPage", () => {
+describe("AccountSection", () => {
   it("renders the current user's email and the change-password + logout-others controls", () => {
-    renderAt();
+    render(<AccountSection />);
     expect(screen.getByText(/tester@example.com/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/current password/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/^new password$/i)).toBeInTheDocument();
@@ -47,7 +35,7 @@ describe("AccountPage", () => {
 
   it("shows a client-side error when the new passwords do not match", async () => {
     const user = userEvent.setup();
-    renderAt();
+    render(<AccountSection />);
     await user.type(screen.getByLabelText(/current password/i), "old-secret-123");
     await user.type(screen.getByLabelText(/^new password$/i), "new-secret-456");
     await user.type(
@@ -73,7 +61,7 @@ describe("AccountPage", () => {
       })
     );
     const user = userEvent.setup();
-    renderAt();
+    render(<AccountSection />);
     await user.type(screen.getByLabelText(/current password/i), "old-secret-123");
     await user.type(screen.getByLabelText(/^new password$/i), "new-secret-456");
     await user.type(screen.getByLabelText(/confirm new password/i), "new-secret-456");
@@ -101,7 +89,7 @@ describe("AccountPage", () => {
       )
     );
     const user = userEvent.setup();
-    renderAt();
+    render(<AccountSection />);
     await user.type(screen.getByLabelText(/current password/i), "wrong-current");
     await user.type(screen.getByLabelText(/^new password$/i), "new-secret-456");
     await user.type(screen.getByLabelText(/confirm new password/i), "new-secret-456");
@@ -120,7 +108,7 @@ describe("AccountPage", () => {
       )
     );
     const user = userEvent.setup();
-    renderAt();
+    render(<AccountSection />);
     await user.click(screen.getByRole("button", { name: /log out other sessions/i }));
 
     await waitFor(() => {
@@ -140,7 +128,7 @@ describe("AccountPage", () => {
       })
     );
     const user = userEvent.setup();
-    renderAt();
+    render(<AccountSection />);
     await user.type(screen.getByLabelText(/current password/i), "old-secret-123");
     await user.type(screen.getByLabelText(/^new password$/i), "new-secret-456");
     await user.type(screen.getByLabelText(/confirm new password/i), "new-secret-456");

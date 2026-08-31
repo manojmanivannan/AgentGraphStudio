@@ -5,10 +5,10 @@ import ChatPage from "@/components/chat/ChatPage";
 import ObservabilityPage from "@/components/observability/ObservabilityPage";
 import LoginPage from "@/components/auth/LoginPage";
 import RegisterPage from "@/components/auth/RegisterPage";
-import AccountPage from "@/components/account/AccountPage";
-import SettingsPage from "@/components/settings/SettingsPage";
+import { SettingsDialog } from "@/components/settings/SettingsDialog";
 import { RequireAuth, RedirectIfAuthed } from "@/components/auth/guards";
 import { useAuthStore } from "@/store/authStore";
+import { useSettingsModalStore } from "@/store/settingsModalStore";
 import { onUnauthorized } from "@/lib/api";
 import { useCanvasStore } from "@/store/canvasStore";
 import {
@@ -24,7 +24,6 @@ import { decodeCanvasResponse } from "@/lib/canvasGraphCodec";
 import {
   Plus,
   FileText,
-  Workflow,
   Upload,
   Trash2,
   Search,
@@ -33,7 +32,6 @@ import {
   HelpCircle,
   Check,
   MessageSquare,
-  UserCog,
   Settings as SettingsIcon,
   LogOut,
 } from "lucide-react";
@@ -287,22 +285,14 @@ function LandingPage({
         <div className="flex items-center gap-2">
           <ThemeToggle className="!border !border-[var(--color-border-default)] hover:bg-[var(--color-elevated)] shadow-[0_2px_8px_rgba(0,0,0,0.2)]" />
           {user && (
-            <Link
-              to="/settings"
+            <button
+              onClick={() => useSettingsModalStore.getState().openSettings("account")}
+              data-testid="settings-button"
               title="Settings"
-              className="flex items-center justify-center w-9 h-9 rounded-lg border border-[var(--color-border-default)] text-[var(--color-text-secondary)] hover:bg-[var(--color-elevated)] hover:text-[var(--color-text-primary)] transition-colors"
+              className="flex items-center justify-center w-9 h-9 rounded-lg border border-[var(--color-border-default)] text-[var(--color-text-secondary)] hover:bg-[var(--color-elevated)] hover:text-[var(--color-text-primary)] transition-colors cursor-pointer"
             >
               <SettingsIcon className="w-4 h-4" />
-            </Link>
-          )}
-          {user && (
-            <Link
-              to="/account"
-              title="Account"
-              className="flex items-center justify-center w-9 h-9 rounded-lg border border-[var(--color-border-default)] text-[var(--color-text-secondary)] hover:bg-[var(--color-elevated)] hover:text-[var(--color-text-primary)] transition-colors"
-            >
-              <UserCog className="w-4 h-4" />
-            </Link>
+            </button>
           )}
           {user && (
             <button
@@ -812,8 +802,11 @@ function AppRoutes() {
         />
         <Route path="/chat/:conversation_id" element={<ChatPage />} />
         <Route path="/observability/:canvas_id" element={<ObservabilityPage />} />
-        <Route path="/account" element={<AccountPage />} />
-        <Route path="/settings" element={<SettingsPage />} />
+        {/* Legacy full-page routes now deep-link into the unified settings
+            dialog: /settings was the provider config, /account the account
+            page. Both land on / with the dialog auto-opened. */}
+        <Route path="/settings" element={<Navigate to="/?section=providers" replace />} />
+        <Route path="/account" element={<Navigate to="/?section=account" replace />} />
       </Route>
 
       {/* Unknown routes → home (the guard there redirects to /login if needed) */}
@@ -864,5 +857,12 @@ export default function App() {
     return <BootSplash />;
   }
 
-  return <AppRoutes />;
+  return (
+    <>
+      <AppRoutes />
+      {/* One global settings dialog, openable from any surface. Gated on
+          auth so a 401 (which clears the auth store) unmounts it. */}
+      {status === "authenticated" && <SettingsDialog />}
+    </>
+  );
 }

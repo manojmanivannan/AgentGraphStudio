@@ -51,6 +51,17 @@ async def lifespan(app: FastAPI):
     except Exception as exc:
         logger.warning("Could not load provider settings from database: %s", exc)
 
+    # Seed the optional default user (DEFAULT_USER_EMAIL / DEFAULT_PASSWORD).
+    # Never fatal: misconfiguration logs a warning and startup continues.
+    try:
+        from canvas_server.bootstrap import seed_default_user
+
+        factory = get_session_factory()
+        async with factory() as session:
+            await seed_default_user(session)
+    except Exception as exc:
+        logger.warning("Could not seed default user: %s", exc)
+
     logger.debug("Config: llm_model=%s", get_provider_config().llm_model)
     logger.debug(f"Config: cors_origins={settings.cors_origins}")
 

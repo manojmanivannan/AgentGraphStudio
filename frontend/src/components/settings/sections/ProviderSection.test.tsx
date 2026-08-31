@@ -1,10 +1,9 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { server } from "@/test/mocks/server";
-import { MemoryRouter } from "react-router-dom";
-import SettingsPage from "./SettingsPage";
+import { ProviderSection } from "./ProviderSection";
 
 const API = "http://localhost:8000/api";
 
@@ -19,12 +18,8 @@ const savedSettings = {
   source: "database",
 };
 
-function renderPage() {
-  return render(
-    <MemoryRouter>
-      <SettingsPage />
-    </MemoryRouter>
-  );
+function renderSection() {
+  return render(<ProviderSection />);
 }
 
 beforeEach(() => {
@@ -33,9 +28,9 @@ beforeEach(() => {
   );
 });
 
-describe("SettingsPage", () => {
+describe("ProviderSection", () => {
   it("loads the stored provider settings into the form", async () => {
-    renderPage();
+    renderSection();
     expect(await screen.findByLabelText(/base url/i)).toHaveValue(
       "http://localhost:11434"
     );
@@ -45,7 +40,7 @@ describe("SettingsPage", () => {
 
   it("fills the form when a profile is selected", async () => {
     const user = userEvent.setup();
-    renderPage();
+    renderSection();
     await screen.findByLabelText(/base url/i);
 
     await user.click(screen.getByRole("radio", { name: /^openai$/i }));
@@ -75,7 +70,7 @@ describe("SettingsPage", () => {
       )
     );
 
-    renderPage();
+    renderSection();
     await screen.findByLabelText(/base url/i);
     await user.click(screen.getByRole("button", { name: /test connection/i }));
 
@@ -94,7 +89,7 @@ describe("SettingsPage", () => {
       })
     );
 
-    renderPage();
+    renderSection();
     await screen.findByLabelText(/base url/i);
     await user.clear(screen.getByLabelText(/^chat model$/i));
     await user.type(screen.getByLabelText(/^chat model$/i), "ollama_chat/qwen3");
@@ -117,12 +112,14 @@ describe("SettingsPage", () => {
       })
     );
 
-    renderPage();
+    renderSection();
     await screen.findByLabelText(/base url/i);
     await user.click(screen.getByRole("radio", { name: /^openai$/i }));
     await user.click(screen.getByRole("button", { name: /save changes/i }));
 
-    const dialog = await screen.findByRole("dialog");
+    const dialog = await screen.findByRole("dialog", {
+      name: /clear stored embeddings/i,
+    });
     expect(dialog).toHaveTextContent(/768/);
     expect(dialog).toHaveTextContent(/1536/);
     expect(bodies).toHaveLength(0);
@@ -145,7 +142,7 @@ describe("SettingsPage", () => {
       })
     );
 
-    renderPage();
+    renderSection();
     await screen.findByLabelText(/base url/i);
     await user.click(screen.getByRole("button", { name: /save changes/i }));
     await waitFor(() => expect(bodies).toHaveLength(1));

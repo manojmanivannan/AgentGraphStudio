@@ -58,7 +58,11 @@ and edges on a ReactFlow canvas, then run workflows against a FastAPI + DSPy bac
 | Tool editor | `frontend/src/components/sidebar/ToolEditor.tsx` | Monaco Python editor + Test Tool panel |
 | Chat overlay | `frontend/src/components/chat/ChatOverlay.tsx` | Conversations, WebSocket, streaming UI |
 | Observability | `frontend/src/components/observability/ObservabilityView.tsx` | MLflow iframe |
-| Settings page | `frontend/src/components/settings/SettingsPage.tsx` | Provider profiles, form, Test connection |
+| Settings dialog | `frontend/src/components/settings/SettingsDialog.tsx` | Unified tabbed Settings modal (Account / Providers / Appearance), openable from any surface |
+| Settings registry | `frontend/src/components/settings/registry.ts` | Section registry — add a future section here |
+| Provider section | `frontend/src/components/settings/sections/ProviderSection.tsx` | Provider profiles, form, Test connection (dialog tab) |
+| Account section | `frontend/src/components/account/AccountSection.tsx` | Change password, sign out other sessions (dialog tab) |
+| Modal shell | `frontend/src/components/ui/Modal.tsx` | Shared portal dialog: Escape/backdrop, focus trap, nested-modal stack |
 | CSS design system | `frontend/src/styles/globals.css` | All CSS variables, utility classes, animations |
 | Shared types | `frontend/src/types/index.ts` | All TypeScript interfaces |
 | Alembic config | `backend/alembic.ini` | Migration configuration |

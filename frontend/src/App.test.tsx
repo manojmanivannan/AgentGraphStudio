@@ -6,6 +6,7 @@ import { server } from "@/test/mocks/server";
 import { mockCanvas, mockCanvasListItem } from "@/test/mocks/handlers";
 import { useCanvasStore } from "@/store/canvasStore";
 import { useAuthStore } from "@/store/authStore";
+import { useSettingsModalStore } from "@/store/settingsModalStore";
 import App from "./App";
 import { MemoryRouter } from "react-router-dom";
 
@@ -629,5 +630,70 @@ describe("App — auth guards", () => {
       expect(screen.getByText("Welcome back")).toBeInTheDocument();
     });
     expect(useAuthStore.getState().user).toBeNull();
+  });
+});
+
+describe("App — unified settings dialog", () => {
+  beforeEach(() => {
+    useSettingsModalStore.getState().reset();
+  });
+
+  it("opens the settings dialog from the landing header gear without navigating", async () => {
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter initialEntries={["/"]}>
+        <App />
+      </MemoryRouter>
+    );
+    expect(screen.getByText("New Canvas")).toBeInTheDocument();
+
+    await user.click(screen.getByTestId("settings-button"));
+
+    expect(screen.getByRole("dialog", { name: "Settings" })).toBeInTheDocument();
+    // The landing page stays mounted behind the dialog.
+    expect(screen.getByText("New Canvas")).toBeInTheDocument();
+    expect(useSettingsModalStore.getState().section).toBe("account");
+  });
+
+  it("redirects /settings to the dialog's Providers section", async () => {
+    render(
+      <MemoryRouter initialEntries={["/settings"]}>
+        <App />
+      </MemoryRouter>
+    );
+
+    expect(
+      await screen.findByLabelText(/base url/i)
+    ).toBeInTheDocument();
+    expect(useSettingsModalStore.getState().open).toBe(true);
+    expect(useSettingsModalStore.getState().section).toBe("providers");
+
+  });
+
+  it("redirects /account to the dialog's Account section", async () => {
+    render(
+      <MemoryRouter initialEntries={["/account"]}>
+        <App />
+      </MemoryRouter>
+    );
+
+    expect(
+      await screen.findByLabelText(/current password/i)
+    ).toBeInTheDocument();
+    expect(useSettingsModalStore.getState().open).toBe(true);
+    expect(useSettingsModalStore.getState().section).toBe("account");
+  });
+
+  it("opens the default section when the ?section= value is unknown", async () => {
+    render(
+      <MemoryRouter initialEntries={["/?section=bogus"]}>
+        <App />
+      </MemoryRouter>
+    );
+
+    expect(
+      await screen.findByLabelText(/current password/i)
+    ).toBeInTheDocument();
+    expect(useSettingsModalStore.getState().section).toBe("account");
   });
 });

@@ -54,12 +54,28 @@ export const mockUser = {
   created_at: "2024-01-01T00:00:00Z",
 };
 
+export const mockProviderSettings = (overrides?: Record<string, unknown>) => ({
+  profile: "external_ollama",
+  llm_provider_type: "ollama",
+  llm_base_url: "http://localhost:11434",
+  llm_model: "ollama_chat/llama3.1",
+  mem0_embedder_model: "nomic-embed-text:latest",
+  mem0_embedder_dimensions: 768,
+  api_key_set: false,
+  source: "database",
+  ...overrides,
+});
+
 export const handlers = [
   // Auth — default to an authenticated session so tests that render the app
   // without overriding auth state are treated as logged in (mirrors the
   // default /canvases handler). Tests that need a different outcome override
   // these with server.use(...).
   http.get(`${API}/auth/me`, () => HttpResponse.json(mockUser)),
+
+  // Provider settings — read by the Settings dialog's Providers tab whenever
+  // it mounts.
+  http.get(`${API}/settings/provider`, () => HttpResponse.json(mockProviderSettings())),
 
   // Canvas CRUD
   http.get(`${API}/canvases`, () =>

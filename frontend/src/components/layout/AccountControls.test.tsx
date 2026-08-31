@@ -3,6 +3,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { useAuthStore } from "@/store/authStore";
+import { useSettingsModalStore } from "@/store/settingsModalStore";
 import { server } from "@/test/mocks/server";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { AccountControls } from "./AccountControls";
@@ -38,26 +39,30 @@ describe("AccountControls", () => {
     expect(screen.getByTestId("theme-toggle")).toBeInTheDocument();
     // No account cluster when unauthenticated.
     expect(screen.queryByTestId("logout-button")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("account-button")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("settings-button")).not.toBeInTheDocument();
   });
 
-  it("renders the logged-in user's email, account link, and logout button", () => {
+  it("renders the logged-in user's email, settings button, and logout button", () => {
     useAuthStore.getState().setUser(mockUser);
     renderControls();
 
     expect(screen.getByText(/tester@example\.com/)).toBeInTheDocument();
-    expect(screen.getByTestId("account-button")).toBeInTheDocument();
+    expect(screen.getByTestId("settings-button")).toBeInTheDocument();
     expect(screen.getByTestId("logout-button")).toBeInTheDocument();
   });
 
-  it("navigates to /account when the account button is clicked", async () => {
+  it("opens the settings dialog on the account section without navigating", async () => {
     const user = userEvent.setup();
     useAuthStore.getState().setUser(mockUser);
+    useSettingsModalStore.getState().reset();
     renderControls();
 
-    await user.click(screen.getByTestId("account-button"));
+    await user.click(screen.getByTestId("settings-button"));
 
-    expect(screen.getByTestId("account-page")).toBeInTheDocument();
+    expect(useSettingsModalStore.getState().open).toBe(true);
+    expect(useSettingsModalStore.getState().section).toBe("account");
+    // Opening settings is an in-place overlay — no route change happened.
+    expect(screen.queryByTestId("account-page")).not.toBeInTheDocument();
   });
 
   it("calls the backend logout endpoint, clears the auth store, and navigates to /login", async () => {
