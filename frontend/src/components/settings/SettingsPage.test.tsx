@@ -156,4 +156,16 @@ describe("SettingsPage", () => {
     await waitFor(() => expect(bodies).toHaveLength(2));
     expect(bodies[1].api_key).toBe("sk-new");
   });
+
+  it("is its own scroll container so content below the fold is reachable", async () => {
+    // body and #root are overflow:hidden (globals.css), so the page root must
+    // clip-and-scroll itself or everything past the viewport is unreachable.
+    // (Regression: min-h-screen grew the page but nothing could scroll it.)
+    renderPage();
+    const page = await screen.findByLabelText(/base url/i);
+    const root = page.closest(".min-h-screen, .h-screen") as HTMLElement | null;
+    expect(root).not.toBeNull();
+    expect(root).toHaveClass("h-screen");
+    expect(root).toHaveClass("overflow-y-auto");
+  });
 });

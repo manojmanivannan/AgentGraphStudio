@@ -192,8 +192,9 @@ export default function SettingsPage() {
     await persist(false);
   };
 
+  // body/#root are overflow:hidden, so this page must scroll itself.
   return (
-    <div className="min-h-screen w-full bg-gradient-to-b from-[var(--color-base)] to-[var(--color-inset)] noise-bg px-4 py-10">
+    <div className="h-screen w-full overflow-y-auto bg-gradient-to-b from-[var(--color-base)] to-[var(--color-inset)] noise-bg px-4 py-10">
       <div className="mx-auto w-full max-w-3xl">
         <header className="flex items-center gap-3 mb-8">
           <img
