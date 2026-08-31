@@ -1829,7 +1829,7 @@ describe("ChatPage component", () => {
 
             await waitFor(() => {
                 expect(screen.getByTestId("logout-button")).toBeInTheDocument();
-                expect(screen.getByTestId("account-button")).toBeInTheDocument();
+                expect(screen.getByTestId("settings-button")).toBeInTheDocument();
             });
             expect(screen.getByText(/tester@example\.com/)).toBeInTheDocument();
         });
@@ -1846,7 +1846,7 @@ describe("ChatPage component", () => {
                 expect(screen.getByText("No Chat Active")).toBeInTheDocument();
             });
             expect(screen.queryByTestId("logout-button")).not.toBeInTheDocument();
-            expect(screen.queryByTestId("account-button")).not.toBeInTheDocument();
+            expect(screen.queryByTestId("settings-button")).not.toBeInTheDocument();
         });
 
         it("calls the backend logout endpoint, clears the auth store, and navigates to /login", async () => {

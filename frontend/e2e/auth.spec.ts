@@ -130,10 +130,14 @@ test.describe("Account — change password", () => {
     await expect(page).toHaveURL(/\/$/);
     await expect(page.getByRole("button", { name: "New Canvas" })).toBeVisible({ timeout: 10_000 });
 
-    // Open the account page from the landing-page header.
-    await page.getByRole("link", { name: "Account" }).click();
-    await expect(page).toHaveURL(/\/account$/);
-    await expect(page.getByRole("heading", { name: "Account" })).toBeVisible();
+    // Open the Settings dialog's Account tab from the landing-page header.
+    await page.getByTestId("settings-button").click();
+    await expect(page).toHaveURL(/section=account/);
+    await expect(page.getByRole("dialog", { name: "Settings" })).toBeVisible();
+    await expect(page.getByRole("tab", { name: "Account" })).toHaveAttribute(
+      "aria-selected",
+      "true"
+    );
     await expect(page.getByText(email)).toBeVisible();
 
     // Change the password.
@@ -198,10 +202,14 @@ test.describe("Account — logout other sessions", () => {
       });
       expect(beforeMe.status()).toBe(200);
 
-      // The calling browser (suite-wide storageState, untouched) opens /account
-      // and clicks "Log out other sessions".
-      await page.goto("/account");
-      await expect(page.getByRole("heading", { name: "Account" })).toBeVisible({ timeout: 10_000 });
+      // The calling browser (suite-wide storageState, untouched) opens the
+      // settings dialog's Account tab and clicks "Log out other sessions".
+      await page.goto("/?section=account");
+      await expect(page.getByRole("dialog", { name: "Settings" })).toBeVisible({ timeout: 10_000 });
+      await expect(page.getByRole("tab", { name: "Account" })).toHaveAttribute(
+        "aria-selected",
+        "true"
+      );
       await page.getByRole("button", { name: "Log out other sessions" }).click();
       await expect(page.getByText(/signed out/i)).toBeVisible({ timeout: 10_000 });
 

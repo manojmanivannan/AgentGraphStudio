@@ -1,21 +1,24 @@
 import { useState } from "react";
-import { LogOut, UserCog } from "lucide-react";
-import { Link, useNavigate } from "react-router-dom";
+import { LogOut, Settings as SettingsIcon } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import { useAuthStore } from "@/store/authStore";
+import { useSettingsModalStore } from "@/store/settingsModalStore";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { logout as logoutApi } from "@/lib/api";
 
 /**
  * Shared right-side account chrome used by the page top bars (Canvas TopBar
  * and the Chat page header): theme toggle + (when authenticated) the user's
- * email, an Account link, and a Log out button. Owns the logout flow so each
- * page bar doesn't duplicate it.
+ * email, a Settings button (the single entry point into the unified settings
+ * dialog, opened in place — no navigation), and a Log out button. Owns the
+ * logout flow so each page bar doesn't duplicate it.
  */
 export function AccountControls({ themeToggleClassName = "hover:bg-[var(--color-elevated)]" }: {
   themeToggleClassName?: string;
 }) {
   const user = useAuthStore((s) => s.user);
   const clearAuth = useAuthStore((s) => s.clear);
+  const openSettings = useSettingsModalStore((s) => s.openSettings);
   const navigate = useNavigate();
   const [loggingOut, setLoggingOut] = useState(false);
 
@@ -47,14 +50,14 @@ export function AccountControls({ themeToggleClassName = "hover:bg-[var(--color-
           <span className="text-[11px] text-[var(--color-text-tertiary)] truncate max-w-[140px]" title={user.email}>
             {user.email}
           </span>
-          <Link
-            to="/account"
-            data-testid="account-button"
-            title="Account"
-            className="flex items-center justify-center p-1 rounded-md text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-elevated)] transition-all"
+          <button
+            onClick={() => openSettings("account")}
+            data-testid="settings-button"
+            title="Settings"
+            className="flex items-center justify-center p-1 rounded-md text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-elevated)] transition-all cursor-pointer"
           >
-            <UserCog className="w-4 h-4" />
-          </Link>
+            <SettingsIcon className="w-4 h-4" />
+          </button>
           <button
             onClick={handleLogout}
             disabled={loggingOut}
