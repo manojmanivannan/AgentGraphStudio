@@ -21,6 +21,7 @@ from canvas_server.exceptions import (
     RAGEmbeddingError,
 )
 from canvas_server.runner.config import RunContext
+from canvas_server.runner.tracing import agent_span
 
 
 def ensure_plots_in_result(result, text: str) -> str:
@@ -266,19 +267,31 @@ class ExecutionStrategy(ABC):
 
         needs_history = self._services.agent_factory.needs_history(agent_node)
         prompt = self._services.agent_factory.build_worker_prompt(user_prompt)
+        canvas_name = getattr(
+            getattr(self._services.run_state, "canvas", None), "name", None
+        )
 
         try:
-            if dspy_history is not None and needs_history:
-                result = await agent.aforward(
-                    user_request=prompt,
-                    history=dspy_history,
-                    get_client_response=self._services.run_state.get_client_response,
-                )
-            else:
-                result = await agent.aforward(
-                    user_request=prompt,
-                    get_client_response=self._services.run_state.get_client_response,
-                )
+            # Name the MLflow span after the real agent so DSPy autolog's
+            # generic ``Predict.forward`` / ``LM.__call__`` spans nest under
+            # a readable parent. Tracing is best-effort and never raises.
+            with agent_span(
+                agent_node.name,
+                node_id=agent_id,
+                agent_type=getattr(agent_node, "agent_type", None),
+                canvas_name=canvas_name,
+            ):
+                if dspy_history is not None and needs_history:
+                    result = await agent.aforward(
+                        user_request=prompt,
+                        history=dspy_history,
+                        get_client_response=self._services.run_state.get_client_response,
+                    )
+                else:
+                    result = await agent.aforward(
+                        user_request=prompt,
+                        get_client_response=self._services.run_state.get_client_response,
+                    )
             text = result.process_result
             text = ensure_plots_in_result(result, text)
             logger.info("Agent %s completed: result=%s", agent_node.name, text[:200])
@@ -371,18 +384,27 @@ class RouterExecution(ExecutionStrategy):
         prompt = self._services.agent_factory.build_worker_prompt(
             ctx.user_prompt, ctx.history_text
         )
+        canvas_name = getattr(
+            getattr(self._services.run_state, "canvas", None), "name", None
+        )
         try:
-            if ctx.dspy_history is not None:
-                result = await agent.aforward(
-                    user_request=prompt,
-                    history=ctx.dspy_history,
-                    get_client_response=self._services.run_state.get_client_response,
-                )
-            else:
-                result = await agent.aforward(
-                    user_request=prompt,
-                    get_client_response=self._services.run_state.get_client_response,
-                )
+            with agent_span(
+                agent_node.name,
+                node_id=agent_id,
+                agent_type=getattr(agent_node, "agent_type", None),
+                canvas_name=canvas_name,
+            ):
+                if ctx.dspy_history is not None:
+                    result = await agent.aforward(
+                        user_request=prompt,
+                        history=ctx.dspy_history,
+                        get_client_response=self._services.run_state.get_client_response,
+                    )
+                else:
+                    result = await agent.aforward(
+                        user_request=prompt,
+                        get_client_response=self._services.run_state.get_client_response,
+                    )
             final_text = result.process_result
 
             await self._services.conversation_service.persist_message(

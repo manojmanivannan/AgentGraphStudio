@@ -7,6 +7,8 @@ import logging
 import uuid
 from collections.abc import Callable
 
+from canvas_server.runner.tracing import agent_span
+
 logger = logging.getLogger("canvas_server.runner.handoff")
 
 
@@ -97,20 +99,25 @@ class HandoffToolBuilder:
 
             prompt = self.agent_factory.build_worker_prompt(task, history)
             try:
-                needs_history = self.agent_factory.needs_history(target_node)
-                if dspy_history is not None and needs_history:
-                    result = await target_agent.aforward(
-                        user_request=prompt,
-                        history=dspy_history,
-                        get_client_response=self.run_state.get_client_response,
-                    )
-                else:
-                    result = await target_agent.aforward(
-                        user_request=prompt,
-                        get_client_response=self.run_state.get_client_response,
-                    )
-                from canvas_server.runner.execution import ensure_plots_in_result
-                answer = ensure_plots_in_result(result, result.process_result)
+                with agent_span(
+                    target_name,
+                    node_id=target_id,
+                    agent_type=target_node.agent_type,
+                ):
+                    needs_history = self.agent_factory.needs_history(target_node)
+                    if dspy_history is not None and needs_history:
+                        result = await target_agent.aforward(
+                            user_request=prompt,
+                            history=dspy_history,
+                            get_client_response=self.run_state.get_client_response,
+                        )
+                    else:
+                        result = await target_agent.aforward(
+                            user_request=prompt,
+                            get_client_response=self.run_state.get_client_response,
+                        )
+                    from canvas_server.runner.execution import ensure_plots_in_result
+                    answer = ensure_plots_in_result(result, result.process_result)
             except Exception as e:
                 answer = f"Error: {e}"
                 logger.error("Sub-agent %s failed: %s", target_name, e, exc_info=True)

@@ -409,6 +409,41 @@ class CanvasRunner:
         # Legacy chain strategy for worker-only canvases
         return ChainExecution(services)
 
+    def _set_canvas_run_span_attributes(self, entry_node=None) -> None:
+        """Enrich the active ``canvas_run`` span with canvas metadata.
+
+        Best-effort: when MLflow is disabled, there is no active span, or the
+        span rejects attributes, this logs at debug level and returns without
+        raising so execution is never affected.
+        """
+        if not settings.mlflow_enabled:
+            return
+
+        try:
+            span = mlflow.get_current_active_span()
+        except Exception:
+            logger.debug("MLflow tracing unavailable; no active canvas_run span")
+            return
+        if span is None:
+            return
+
+        attributes: dict = {
+            "canvas_id": str(self.canvas.id),
+            "num_agents": len(self.canvas.agent_nodes),
+        }
+        canvas_name = getattr(self.canvas, "name", None)
+        if canvas_name:
+            attributes["canvas_name"] = canvas_name
+        if entry_node is None and self.canvas.agent_nodes:
+            entry_node = self.canvas.agent_nodes[0]
+        if entry_node is not None:
+            attributes["entry_agent"] = entry_node.name
+
+        try:
+            span.set_attributes(attributes)
+        except Exception:
+            logger.debug("Failed to set canvas_run span attributes", exc_info=True)
+
     @mlflow.trace(
         name="canvas_run", span_type="CHAIN", attributes={"component": "agent"}
     )
@@ -436,11 +471,16 @@ class CanvasRunner:
 
         await send_event(self._event("run_start", canvas_id=str(self.canvas.id)))
 
+        entry_node = next(
+            (n for n in self.canvas.agent_nodes if getattr(n, "is_entry_point", False)),
+            None,
+        )
+        self._set_canvas_run_span_attributes(entry_node=entry_node)
+
         # ---- Load conversation history ----
         history_messages = await self._conversation.load_messages()
         agent_ids = [n.id for n in self.canvas.agent_nodes]
 
-        entry_node = next((n for n in self.canvas.agent_nodes if getattr(n, "is_entry_point", False)), None)
         default_agent_id = entry_node.id if entry_node else (agent_ids[0] if agent_ids else None)
 
         first_agent_id = (
