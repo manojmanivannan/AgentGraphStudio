@@ -68,7 +68,7 @@ SANDBOX_BUSY_OBSERVATION = (
 # which is impossible under ``network_mode="none"`` anyway. The two pools differ
 # only in ``network_mode``. Built from ``sandbox/Dockerfile`` (see
 # ``make sandbox-image``).
-SANDBOX_FLOOR_IMAGE = "agentbuilder-sandbox-floor:latest"
+SANDBOX_FLOOR_IMAGE = "agentgraphstudio-sandbox-floor:latest"
 
 # Hardcoded invariant of the default (locked) pool: the container is created
 # with no network stack, so agents without ``enable_network`` cannot make

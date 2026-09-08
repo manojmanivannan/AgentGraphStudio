@@ -8,6 +8,22 @@ import { ChevronDown, ChevronRight } from "lucide-react";
 import type { Message } from "@/types";
 import { ExecutionStepsViewer } from "./ExecutionStepsViewer";
 
+/**
+ * Formats a message's ISO timestamp as "YYYY-MM-DD HH:MM:SS" in local time.
+ * Rendered in grey below each chat bubble so users can see how long a
+ * response took. Returns an empty string when the timestamp is missing.
+ */
+export function formatMessageTimestamp(iso?: string): string {
+  if (!iso) return "";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return (
+    `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}` +
+    ` ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
+  );
+}
+
 export interface TurnGroup {
   id: string;
   userMessage: Message;
@@ -57,6 +73,15 @@ export function MessageTurn({
         <div className="max-w-[85%] rounded-2xl px-4 py-2.5 text-[13px] leading-relaxed bg-[var(--color-accent)] text-[var(--color-text-inverse)] rounded-br-sm shadow-md font-medium">
           {turn.userMessage.content}
         </div>
+        {formatMessageTimestamp(turn.userMessage.created_at) && (
+          <time
+            dateTime={turn.userMessage.created_at}
+            title={formatMessageTimestamp(turn.userMessage.created_at)}
+            className="text-[10px] text-[var(--color-text-tertiary)] mt-0.5 px-1"
+          >
+            {formatMessageTimestamp(turn.userMessage.created_at)}
+          </time>
+        )}
       </div>
 
       {/* Steps toggle */}
@@ -199,6 +224,15 @@ export function MessageTurn({
           <div className="max-w-[85%] rounded-2xl px-4 py-3 text-[14px] leading-relaxed bg-[var(--color-elevated)] text-[var(--color-text-primary)] border border-[var(--color-border-subtle)] shadow-sm rounded-bl-sm">
             {renderMessageContent(turn.finalAnswer.content, false)}
           </div>
+          {formatMessageTimestamp(turn.finalAnswer.created_at) && (
+            <time
+              dateTime={turn.finalAnswer.created_at}
+              title={formatMessageTimestamp(turn.finalAnswer.created_at)}
+              className="text-[10px] text-[var(--color-text-tertiary)] mt-0.5 px-1"
+            >
+              {formatMessageTimestamp(turn.finalAnswer.created_at)}
+            </time>
+          )}
         </div>
       )}
     </div>
