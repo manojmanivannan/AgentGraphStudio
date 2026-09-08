@@ -79,11 +79,23 @@ def _friendly_error_message(exc: Exception) -> str:
     exc_str = str(exc)
     exc_type = type(exc).__name__
 
-    # Detect HTTP 401 Unauthorized (auth/budget errors from OpenAI-compatible gateways)
+    # Detect HTTP status codes and provider exceptions from OpenAI-compatible
+    # gateways (OpenRouter, LiteLLM proxies, etc.)
     is_401 = "401" in exc_str or "Unauthorized" in exc_str or "AuthenticationError" in exc_type
     is_403 = "403" in exc_str or "Forbidden" in exc_str
     is_429 = "429" in exc_str or "RateLimitError" in exc_type or "Too Many Requests" in exc_str
+    # 502 is checked before 500: gateways like OpenRouter wrap an upstream
+    # provider's 500 (e.g. Google AI Studio INTERNAL) inside a 502 response.
+    is_502 = "502" in exc_str or "Bad Gateway" in exc_str
+    is_500 = "500" in exc_str or "InternalServerError" in exc_type or "Internal error" in exc_str
+    is_504 = "504" in exc_str or "Gateway Timeout" in exc_str
     is_503 = "503" in exc_str or "ServiceUnavailable" in exc_type
+    is_connection = (
+        "APIConnectionError" in exc_type
+        or "Connection error" in exc_str
+        or "Connection reset" in exc_str
+        or "connection refused" in exc_str.lower()
+    )
 
     if is_401:
         return (
@@ -98,8 +110,29 @@ def _friendly_error_message(exc: Exception) -> str:
         )
     if is_429:
         return "LLM rate limit exceeded (429). Please wait a moment and try again."
+    if is_502:
+        return (
+            "LLM provider returned a bad gateway (502). "
+            "The upstream provider may be temporarily down or overloaded. "
+            "Please try again in a moment."
+        )
+    if is_500:
+        return "LLM provider hit an internal error (500). Please try again in a moment."
+    if is_504:
+        return "LLM request timed out (504 Gateway Timeout). Please try again in a moment."
     if is_503:
         return "LLM service unavailable (503). The LLM endpoint may be down or overloaded."
+    if is_connection:
+        return (
+            "Could not connect to the LLM endpoint. "
+            "Check that the provider URL is reachable and try again."
+        )
+    # Any other LLM API error: never echo raw provider JSON to the chat UI.
+    if "APIError" in exc_type or '{"error"' in exc_str:
+        return (
+            "LLM provider returned an unexpected error. "
+            "Please verify your provider settings in Settings or try again later."
+        )
 
     # Truncate very long messages to avoid flooding the UI
     if len(exc_str) > 400:
