@@ -34,3 +34,11 @@ def test_backend_healthcheck_does_not_require_curl() -> None:
 
     assert '["CMD", "curl"' not in compose
     assert "urllib.request.urlopen('http://localhost:8000/health')" in compose
+
+
+def test_sandbox_image_uses_a_slim_runtime_base() -> None:
+    dockerfile = (REPO_ROOT / "sandbox" / "Dockerfile").read_text()
+
+    assert "FROM python:3.11-slim-trixie" in dockerfile
+    assert "ghcr.io/vndee/sandbox-python-311-bullseye" not in dockerfile
+    assert "pip install --no-cache-dir --no-compile" in dockerfile
