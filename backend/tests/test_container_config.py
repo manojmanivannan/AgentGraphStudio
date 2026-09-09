@@ -41,14 +41,22 @@ def test_sandbox_image_uses_a_slim_runtime_base() -> None:
 
     assert "FROM python:3.11-slim-trixie" in dockerfile
     assert "ghcr.io/vndee/sandbox-python-311-bullseye" not in dockerfile
-    assert "pip install --no-cache-dir --no-compile" in dockerfile
+    assert "pip install --no-cache-dir matplotlib plotly numpy" in dockerfile
+    # --no-compile must NOT be used here either: it defers all bytecode
+    # compilation to the first execution inside every pooled container.
+    assert "--no-compile" not in dockerfile
 
 
 def test_mlflow_image_avoids_pip_cache_and_runs_unprivileged() -> None:
     dockerfile = (REPO_ROOT / "mlflow" / "Dockerfile").read_text()
 
     assert "FROM python:3.12-slim" in dockerfile
-    assert "pip install --no-cache-dir --no-compile --only-binary=:all: mlflow" in dockerfile
+    assert "pip install --no-cache-dir --only-binary=:all: mlflow" in dockerfile
+    # --no-compile must NOT be used: site-packages stays root-owned while the
+    # server runs as the unprivileged mlflow user, so bytecode can never be
+    # written lazily at runtime — every worker would recompile the whole
+    # package (~40s import) and blow past the compose healthcheck window.
+    assert "--no-compile" not in dockerfile
     assert "USER mlflow" in dockerfile
 
 

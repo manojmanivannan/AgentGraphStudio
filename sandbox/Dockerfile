@@ -19,8 +19,10 @@
 # with pip and a shell when environment setup is skipped.
 FROM python:3.11-slim-trixie
 
-# Floor packages baked into the system interpreter.
-RUN pip install --no-cache-dir --no-compile matplotlib plotly numpy
+# Floor packages baked into the system interpreter. Bytecode is compiled at
+# build time so pooled sessions never pay an import-compile cost inside each
+# container.
+RUN pip install --no-cache-dir matplotlib plotly numpy
 
 # Bake the venv the pooled sessions execute against. --system-site-packages lets
 # it see the floor packages above, so no per-container install is needed.

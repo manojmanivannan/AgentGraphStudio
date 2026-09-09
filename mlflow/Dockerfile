@@ -1,6 +1,6 @@
 FROM python:3.12-slim
 
-RUN pip install --no-cache-dir --no-compile --only-binary=:all: mlflow \
+RUN pip install --no-cache-dir --only-binary=:all: mlflow \
 	&& addgroup --system --gid 10001 mlflow \
 	&& adduser --system --uid 10001 --ingroup mlflow --home /app --no-create-home mlflow \
 	&& mkdir -p /app/mlflow \
