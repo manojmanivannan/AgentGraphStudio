@@ -23,7 +23,7 @@ dependencies = [
     "passlib[bcrypt]>=1.7.4",
     # passlib 1.7.4 needs to read bcrypt's version (bcrypt<4 ships __about__)
     # so it can skip its broken detect_wrap_bug probe against modern bcrypt.
-    "bcrypt<4",
+    "bcrypt<6",
 ]
 
 [dependency-groups]
