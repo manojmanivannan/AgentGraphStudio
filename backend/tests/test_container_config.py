@@ -42,3 +42,13 @@ def test_sandbox_image_uses_a_slim_runtime_base() -> None:
     assert "FROM python:3.11-slim-trixie" in dockerfile
     assert "ghcr.io/vndee/sandbox-python-311-bullseye" not in dockerfile
     assert "pip install --no-cache-dir --no-compile" in dockerfile
+
+
+def test_dependabot_covers_all_dependency_ecosystems() -> None:
+    dependabot = (REPO_ROOT / ".github" / "dependabot.yml").read_text()
+
+    assert 'package-ecosystem: "github-actions"' in dependabot
+    assert 'package-ecosystem: "uv"\n    directory: "/backend"' in dependabot
+    assert 'package-ecosystem: "npm"\n    directory: "/frontend"' in dependabot
+    for directory in ("/backend", "/frontend", "/mlflow", "/sandbox"):
+        assert f'package-ecosystem: "docker"\n    directory: "{directory}"' in dependabot
