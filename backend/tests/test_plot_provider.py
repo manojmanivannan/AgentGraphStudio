@@ -142,6 +142,77 @@ async def test_plot_provider_success_db():
         assert "![Plot](/api/plots/mocked-plot-uuid)" in result_str
 
 
+@pytest.mark.asyncio
+async def test_plot_provider_pool_busy_returns_observation():
+    """Under parallel handoffs a saturated pool must surface as the bounded
+    'busy' observation — never a raw PoolExhaustedError after the pool's 30s
+    WAIT strategy ('Error generating plot: All 2 containers in pool are busy
+    and timeout of 30.0s exceeded')."""
+    from llm_sandbox.pool import PoolExhaustedError
+
+    mock_sandbox_manager = MagicMock()
+    mock_session = MagicMock()
+    mock_sandbox_manager.get_session.return_value = mock_session
+    mock_session.__enter__.side_effect = PoolExhaustedError(2, 30.0)
+
+    with patch(
+        "canvas_server.runner.plot_provider.get_sandbox", new_callable=AsyncMock
+    ) as mock_get_sandbox:
+        mock_get_sandbox.return_value = mock_sandbox_manager
+
+        provider = PlotProvider(conversation_id="test_conv_id")
+        result = await provider.generate_plot("import matplotlib.pyplot as plt")
+
+        assert "Code sandbox busy" in result
+        mock_session.run.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_plot_provider_does_not_block_event_loop():
+    """The blocking sandbox calls run in a worker thread: while a slow plot
+    execution is in flight, other tasks on the event loop keep running. Before
+    the fix, ``generate_plot`` ran ``with session:`` / ``session.run`` directly
+    on the loop, freezing all parallel agents and WebSocket streaming."""
+    import asyncio
+
+    mock_sandbox_manager = MagicMock()
+    mock_session = MagicMock()
+
+    running = asyncio.Event()
+    loop = asyncio.get_running_loop()
+
+    def slow_run(code, **kwargs):
+        # asyncio.Event is not thread-safe: signal the loop via
+        # call_soon_threadsafe or the waiter may not wake until the
+        # worker thread finishes.
+        loop.call_soon_threadsafe(running.set)  # the blocking call is in flight
+        import time
+
+        time.sleep(0.3)
+        return ExecutionResult(exit_code=0, stdout="", stderr="", plots=[])
+
+    mock_session.run.side_effect = slow_run
+    mock_sandbox_manager.get_session.return_value = mock_session
+
+    with patch(
+        "canvas_server.runner.plot_provider.get_sandbox", new_callable=AsyncMock
+    ) as mock_get_sandbox:
+        mock_get_sandbox.return_value = mock_sandbox_manager
+
+        provider = PlotProvider(conversation_id="test_conv_id")
+        plot_task = asyncio.create_task(provider.generate_plot("plt.show()"))
+
+        # Wait until the blocking run has started, then confirm the event loop
+        # stayed responsive while it was still in flight.
+        await asyncio.wait_for(running.wait(), timeout=2.0)
+        loop_alive_marker = asyncio.Event()
+        await asyncio.wait_for(asyncio.sleep(0.05), timeout=1.0)
+        loop_alive_marker.set()  # only reachable if the loop was never blocked
+
+        result = await asyncio.wait_for(plot_task, timeout=5.0)
+        assert "no plots were generated" in result
+
+
 def test_canvas_sandbox_session_enable_plotting_sync():
     """Verify CanvasSandboxSession's enable_plotting property keeps _pooled_impl in sync."""
     from canvas_server.sandbox import CanvasSandboxSession

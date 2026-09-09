@@ -13,6 +13,7 @@ coercing them to the correct Python types via type hints.
 from __future__ import annotations
 
 import ast
+import asyncio
 import functools
 import inspect
 import json
@@ -268,11 +269,15 @@ async def compile_tool_from_code(
     syntax_session_id = "syntax_check_global"
     session = manager.get_session(syntax_session_id, enable_plotting=False)
     try:
-        # Run simple compilation check
-        with session:
-            result_obj = session.run(f"compile({repr(code)}, '<tool>', 'exec')")
-            if result_obj.exit_code != 0:
-                raise PythonSyntaxError(result_obj.stderr or result_obj.stdout)
+        # Run simple compilation check (blocking sandbox calls in a worker
+        # thread so they never stall the event loop).
+        def _syntax_check():
+            with session:
+                return session.run(f"compile({repr(code)}, '<tool>', 'exec')")
+
+        result_obj = await asyncio.to_thread(_syntax_check)
+        if result_obj.exit_code != 0:
+            raise PythonSyntaxError(result_obj.stderr or result_obj.stdout)
     except PythonSyntaxError:
         raise
     except Exception as e:
@@ -319,13 +324,20 @@ if __name__ == '__main__':
     res = run_tool()
     print(json.dumps(res))
 """
-        with session:
-            if dependencies:
-                # Hardened command (shared builder, #56): PEP 508 validation,
-                # flag rejection, shlex.quote per token, ≤ 20 packages. A bad
-                # token raises ValueError, which propagates as a tool error.
-                session.execute_command(build_pip_install_command(dependencies))
-            result_obj = session.run(wrapped_code)
+        # All blocking sandbox calls (acquire + exec) run in a worker thread:
+        # custom tool calls happen inside parallel handoff branches, and a
+        # blocking call on the event loop would freeze the sibling agents'
+        # LLM streaming and the WebSocket for the whole execution.
+        def _blocking():
+            with session:
+                if dependencies:
+                    # Hardened command (shared builder, #56): PEP 508 validation,
+                    # flag rejection, shlex.quote per token, ≤ 20 packages. A bad
+                    # token raises ValueError, which propagates as a tool error.
+                    session.execute_command(build_pip_install_command(dependencies))
+                return session.run(wrapped_code)
+
+        result_obj = await asyncio.to_thread(_blocking)
 
         if result_obj.exit_code != 0:
             stderr = result_obj.stderr or ""

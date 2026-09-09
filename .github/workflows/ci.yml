@@ -145,7 +145,7 @@ jobs:
 
       - name: Install backend dependencies
         working-directory: backend
-        run: uv sync
+        run: uv sync --group test
 
       - name: Run E2E tests
         working-directory: frontend

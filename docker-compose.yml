@@ -100,7 +100,7 @@ services:
           cpus: '1.0'
           memory: 1024m
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -115,7 +115,7 @@ services:
   execution-worker:
     build:
       context: ./backend
-    command: ["uv", "run", "python", "-m", "canvas_server.worker_main"]
+    command: ["python", "-m", "canvas_server.worker_main"]
     env_file: ./.env
     environment:
       DATABASE_URL: ${DATABASE_URL}

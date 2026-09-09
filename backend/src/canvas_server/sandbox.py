@@ -344,6 +344,42 @@ async def bounded_acquire(
     return AcquireResult(acquired=True, observation=None)
 
 
+async def bounded_session_work(
+    session: Any,
+    work: Any,
+    *,
+    timeout: float = SANDBOX_ACQUIRE_TIMEOUT,
+) -> tuple[bool, Any]:
+    """Shared scaffold for one sandbox tool call: bounded acquire → work → exit.
+
+    Used by the provider tool functions (``CodeProvider`` run_code /
+    pip_install, ``PlotProvider.generate_plot``) so a saturated pool surfaces
+    as the 'busy' observation instead of stalling the agent's turn, and the
+    blocking session calls never run on the event loop.
+
+    Bounds the pool-acquire wait via :func:`bounded_acquire`, runs
+    ``work(session)`` (the work callable is responsible for wrapping its own
+    blocking ``session.run`` / ``execute_command`` calls in
+    ``asyncio.to_thread``), and always exits the session in a ``finally`` —
+    a no-op for the per-turn-hold :class:`CanvasSandboxSession`, so the
+    container stays pinned until the per-turn release hook.
+
+    Returns ``(acquired, value)``: on success the work result; on exhaustion
+    ``(False, SANDBOX_BUSY_OBSERVATION)``. Exceptions raised by ``work``
+    propagate to the caller's never-raise guard.
+    """
+    acquired = await bounded_acquire(session, timeout=timeout)
+    if not acquired.acquired:
+        return False, acquired.observation or SANDBOX_BUSY_OBSERVATION
+    try:
+        return True, await work(session)
+    finally:
+        try:
+            await asyncio.to_thread(session.__exit__, None, None, None)
+        except Exception:  # noqa: BLE001 - never let cleanup raise out
+            logger.warning("Failed to exit sandbox session cleanly")
+
+
 async def _release_orphaned_acquire(enter_task: asyncio.Future, session: Any) -> None:
     """Clean up after a bounded-acquire timeout.
 
@@ -520,7 +556,15 @@ class SandboxManager:
             SandboxError: If the locked pool has not been initialised and a
                 default-pool session is requested.
         """
-        key = (conversation_id, network_pool)
+        # Normalize the conversation id so UUID and str inputs for the same
+        # conversation map to ONE session. CodeProvider/PlotProvider pass a
+        # raw ``uuid.UUID`` (from AgentFactory) while custom author tools and
+        # the per-turn release hook (``release_session(str(...))``) use the
+        # string form; without normalization the two keys created two
+        # sessions — each pinning a pool container — exhausting the max-2 pool
+        # under parallel handoffs and leaking the UUID-keyed session across
+        # turns (the release hook never matched it).
+        key = (str(conversation_id), network_pool)
         if key in self._active_sessions:
             session = self._active_sessions[key]
             session.enable_plotting = enable_plotting

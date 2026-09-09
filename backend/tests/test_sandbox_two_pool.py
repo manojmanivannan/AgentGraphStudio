@@ -177,6 +177,51 @@ async def test_get_session_same_pool_reused_for_same_conversation():
 
 
 @pytest.mark.asyncio
+async def test_get_session_uuid_and_str_normalize_to_same_session():
+    """UUID and str conversation ids for the same conversation must map to ONE
+    session: CodeProvider/PlotProvider pass a ``uuid.UUID`` while custom author
+    tools and the per-turn release hook use ``str(...)``. Before normalization
+    the two keys created two sessions — each pinning a pool container — which
+    exhausted the max-2 pool under parallel handoffs and leaked the UUID-keyed
+    session across turns (release only matches the str key)."""
+    import uuid
+
+    with patch("canvas_server.sandbox.create_named_pool_manager") as mock_create:
+        mock_create.return_value = MockDockerPoolManager()
+        manager = SandboxManager()
+        await manager.initialize_pool()
+
+        conv_id = uuid.uuid4()
+        via_uuid = manager.get_session(conv_id, enable_plotting=False)
+        via_str = manager.get_session(str(conv_id), enable_plotting=False)
+        assert via_uuid is via_str
+
+
+@pytest.mark.asyncio
+async def test_release_session_str_releases_uuid_acquired_session():
+    """The per-turn release hook calls ``release_session(str(conversation_id))``;
+    a session acquired with the raw UUID input must be released by it (its
+    ``close()`` runs and it leaves the cache), not leak its pinned container
+    across turns."""
+    import uuid
+
+    with patch("canvas_server.sandbox.create_named_pool_manager") as mock_create:
+        mock_create.return_value = MockDockerPoolManager()
+        manager = SandboxManager()
+        await manager.initialize_pool()
+
+        conv_id = uuid.uuid4()
+        session = manager.get_session(conv_id, enable_plotting=False)
+        assert (str(conv_id), NETWORK_POOL_DEFAULT) in manager._active_sessions
+
+        manager.release_session(str(conv_id))
+
+        assert (str(conv_id), NETWORK_POOL_DEFAULT) not in manager._active_sessions
+        # Next turn: a fresh session is created (the old one does not linger).
+        assert manager.get_session(str(conv_id), enable_plotting=False) is not session
+
+
+@pytest.mark.asyncio
 async def test_get_session_default_pool_compatible_without_network_pool():
     """``network_pool`` is a *defaulted* parameter: the coding ticket's existing
     ``get_session(conversation_id, enable_plotting=False)`` call stays
