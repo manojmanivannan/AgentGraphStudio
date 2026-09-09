@@ -22,7 +22,7 @@ from canvas_server.pip_hardening import build_pip_install_command
 from canvas_server.sandbox import (
     NETWORK_POOL_DEFAULT,
     SANDBOX_ACQUIRE_TIMEOUT,
-    bounded_acquire,
+    bounded_session_work,
     get_sandbox,
 )
 
@@ -80,13 +80,14 @@ class CodeProvider:
         """Acquire the per-conversation sandbox session, run ``work(session)``,
         and always release the session afterwards.
 
-        Shared scaffold for :meth:`run_code` and :meth:`pip_install`: bounds the
-        pool-acquire wait (a saturated pool surfaces as the 'busy' observation
-        instead of stalling the turn — never raises) and guarantees the session
-        is exited in a ``finally``. ``work`` is an awaitable taking the acquired
-        session and returning the observation string; its own timeout handling
-        lives in the caller. Any exception from ``work`` propagates to the
-        caller's outer never-raise guard.
+        Delegates to the shared :func:`bounded_session_work` scaffold (also
+        used by ``PlotProvider.generate_plot``): bounds the pool-acquire wait
+        (a saturated pool surfaces as the 'busy' observation instead of
+        stalling the turn — never raises) and guarantees the session is exited
+        in a ``finally``. ``work`` is an awaitable taking the acquired session
+        and returning the observation string; its own timeout handling lives
+        in the caller. Any exception from ``work`` propagates to the caller's
+        outer never-raise guard.
         """
         sandbox = await get_sandbox()
         session = sandbox.get_session(
@@ -94,16 +95,12 @@ class CodeProvider:
             enable_plotting=False,
             network_pool=self.network_pool,
         )
-        acquired = await bounded_acquire(session, timeout=ACQUIRE_TIMEOUT)
-        if not acquired.acquired:
-            return acquired.observation or BUSY_OBSERVATION
-        try:
-            return await work(session)
-        finally:
-            try:
-                await asyncio.to_thread(session.__exit__, None, None, None)
-            except Exception:  # noqa: BLE001 - never let cleanup raise out
-                logger.warning("Failed to exit sandbox session cleanly")
+        acquired, observation = await bounded_session_work(
+            session, work, timeout=ACQUIRE_TIMEOUT
+        )
+        if not acquired:
+            return observation or BUSY_OBSERVATION
+        return observation
 
     async def run_code(self, python_code: str) -> str:
         """Execute Python code in an isolated sandbox and return stdout as text.

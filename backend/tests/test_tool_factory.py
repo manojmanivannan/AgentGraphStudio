@@ -1,5 +1,7 @@
+import asyncio
 import inspect
 import shutil
+import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -177,6 +179,57 @@ class TestCompileToolFromCode:
 
         cmd = runtime_session.execute_command.call_args.args[0]
         assert cmd == "pip install 'numpy>=1.26'"
+
+    async def test_runtime_does_not_block_event_loop(self):
+        """A slow sandbox call in a compiled tool runs in a worker thread — the
+        event loop stays responsive while it is in flight. Custom tool calls
+        happen inside parallel handoff branches; before the fix the blocking
+        ``with session:`` / ``session.run`` ran directly on the loop and froze
+        the sibling agents and WebSocket streaming."""
+        code = "def value() -> int:\n    return 123"
+
+        syntax_session = MagicMock()
+        syntax_session.__enter__.return_value = syntax_session
+        syntax_session.__exit__.return_value = None
+        syntax_session.run.return_value = MagicMock(exit_code=0, stdout="", stderr="")
+
+        runtime_session = MagicMock()
+        runtime_session.__enter__.return_value = runtime_session
+        runtime_session.__exit__.return_value = None
+
+        started = asyncio.Event()
+        loop = asyncio.get_running_loop()
+
+        def slow_run(wrapped_code):
+            # asyncio.Event is not thread-safe: signal the loop via
+            # call_soon_threadsafe or the waiter may not wake until the
+            # worker thread finishes.
+            loop.call_soon_threadsafe(started.set)
+            time.sleep(0.3)
+            return MagicMock(exit_code=0, stdout="123", stderr="")
+
+        runtime_session.run.side_effect = slow_run
+
+        manager = MagicMock()
+        manager.get_session.side_effect = [syntax_session, runtime_session]
+
+        with patch("canvas_server.tool_factory.get_sandbox", new=AsyncMock(return_value=manager)):
+            fn = await compile_tool_from_code(
+                "value_tool",
+                code,
+                runtime_session_id="conversation-123",
+            )
+            tool_task = asyncio.create_task(fn())
+
+            await asyncio.wait_for(started.wait(), timeout=2.0)
+            # Reached while the blocking run is still in flight → the loop
+            # never stalled (a direct session.run would block it ~0.3s here).
+            await asyncio.wait_for(asyncio.sleep(0.05), timeout=1.0)
+            assert not tool_task.done()
+
+            result = await asyncio.wait_for(tool_task, timeout=5.0)
+
+        assert result == 123
 
     async def test_runtime_pip_install_rejects_bad_dependency_token(self):
         """A bad dependency token (pip flag) is rejected by the hardened builder

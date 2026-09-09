@@ -99,3 +99,47 @@ class TestPackageManager:
             await pm.install_packages(["--index-url=http://evil", "requests"])
 
         session.execute_command.assert_not_called()
+
+    async def test_install_packages_does_not_block_event_loop(self):
+        """A slow sandbox install runs in a worker thread — the event loop
+        stays responsive while it is in flight (dependency installs happen
+        during setup; a blocking call would freeze the whole API/worker)."""
+        import asyncio
+        import time
+
+        pm = PackageManager()
+
+        manager = MagicMock()
+        session = MagicMock()
+        session.__enter__.return_value = session
+        session.__exit__.return_value = None
+
+        started = asyncio.Event()
+        loop = asyncio.get_running_loop()
+
+        def slow_exec(cmd):
+            # asyncio.Event is not thread-safe: signal the loop via
+            # call_soon_threadsafe or the waiter may not wake until the
+            # worker thread finishes.
+            loop.call_soon_threadsafe(started.set)
+            time.sleep(0.3)
+            return MagicMock(exit_code=0, stdout="ok", stderr="")
+
+        session.execute_command.side_effect = slow_exec
+        manager.get_session.return_value = session
+
+        with patch(
+            "canvas_server.package_manager.get_sandbox",
+            new=AsyncMock(return_value=manager),
+        ):
+            install_task = asyncio.create_task(
+                pm.install_packages(["numpy"], runtime_session_id="conversation-7")
+            )
+
+            await asyncio.wait_for(started.wait(), timeout=2.0)
+            # Reached while the blocking execute_command is still in flight →
+            # the loop never stalled.
+            await asyncio.wait_for(asyncio.sleep(0.05), timeout=1.0)
+            assert not install_task.done()
+
+            await asyncio.wait_for(install_task, timeout=5.0)

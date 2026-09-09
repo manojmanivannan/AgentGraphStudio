@@ -6,6 +6,7 @@ Actual installation is handled by the sandbox session via the `libraries` argume
 
 from __future__ import annotations
 
+import asyncio
 import logging
 
 from canvas_server.pip_hardening import build_pip_install_command
@@ -47,10 +48,17 @@ class PackageManager:
         session = manager.get_session(session_id, enable_plotting=False)
         try:
             logger.info(f"Installing packages in sandbox: {cleaned_packages}")
-            with session:
-                result = session.execute_command(command)
-                if result.exit_code != 0:
-                    raise Exception(result.stderr or result.stdout)
+
+            # Blocking sandbox calls run in a worker thread so they never
+            # stall the event loop (installs can take tens of seconds).
+            def _blocking():
+                with session:
+                    result = session.execute_command(command)
+                    if result.exit_code != 0:
+                        raise Exception(result.stderr or result.stdout)
+                    return result
+
+            await asyncio.to_thread(_blocking)
             logger.info("Packages installed successfully.")
         except Exception as e:
             logger.error(f"Failed to install packages in sandbox: {e}")
