@@ -44,6 +44,14 @@ def test_sandbox_image_uses_a_slim_runtime_base() -> None:
     assert "pip install --no-cache-dir --no-compile" in dockerfile
 
 
+def test_mlflow_image_avoids_pip_cache_and_runs_unprivileged() -> None:
+    dockerfile = (REPO_ROOT / "mlflow" / "Dockerfile").read_text()
+
+    assert "FROM python:3.12-slim" in dockerfile
+    assert "pip install --no-cache-dir --no-compile --only-binary=:all: mlflow" in dockerfile
+    assert "USER mlflow" in dockerfile
+
+
 def test_dependabot_covers_all_dependency_ecosystems() -> None:
     dependabot = (REPO_ROOT / ".github" / "dependabot.yml").read_text()
 
