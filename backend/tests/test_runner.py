@@ -24,6 +24,7 @@ class FakeAgentNode:
         model_name="ollama:llama3.1",
         agent_type="worker",
         is_entry_point=False,
+        rag_top_k=5,
     ):
         self.id = id or uuid.uuid4()
         self.name = name
@@ -32,6 +33,7 @@ class FakeAgentNode:
         self.model_name = model_name
         self.agent_type = agent_type
         self.is_entry_point = is_entry_point
+        self.rag_top_k = rag_top_k
         self.position_x = 0
         self.position_y = 0
 
@@ -883,7 +885,7 @@ class TestCanvasRunner:
         from unittest.mock import patch
         with patch("canvas_server.runner.rag_helper.run_rag_search", return_value="dummy passages") as mock_rag:
             agent_rag = await runner_rag.run_state.get_or_build_agent(worker_rag.id)
-            mock_rag.assert_called_once()
+            mock_rag.assert_called_once_with(worker_rag.id, "what is the humidity", top_k=worker_rag.rag_top_k)
 
         # Verify that the tools of the built RAG agent include the handoff tool
         assert "transfer_to_WeatherRouter" in agent_rag.tools
