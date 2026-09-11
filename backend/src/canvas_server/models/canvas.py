@@ -120,6 +120,9 @@ class AgentNode(Base):
     rag_chunk_size: Mapped[int] = mapped_column(
         sa.Integer(), default=1000, server_default=sa.text("1000"), nullable=False
     )
+    rag_top_k: Mapped[int] = mapped_column(
+        sa.Integer(), default=5, server_default=sa.text("5"), nullable=False
+    )
     is_entry_point: Mapped[bool] = mapped_column(
         sa.Boolean(), default=False, server_default=sa.text("false"), nullable=False
     )

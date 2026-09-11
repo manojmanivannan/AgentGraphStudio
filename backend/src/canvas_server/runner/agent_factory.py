@@ -385,7 +385,9 @@ class AgentFactory:
         from canvas_server.runner.rag_helper import run_rag_search
 
         try:
-            passages = await run_rag_search(agent_node.id, task)
+            passages = await run_rag_search(
+                agent_node.id, task, top_k=agent_node.rag_top_k
+            )
         except Exception as e:
             warn_msg = f"RAG document retrieval failed for agent '{agent_node.name}': {e}"
             logger.warning(warn_msg)

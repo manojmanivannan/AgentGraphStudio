@@ -10,6 +10,7 @@ import type {
 const DEFAULT_AGENT_MODEL = "ollama:llama3.1";
 const DEFAULT_AGENT_TYPE = "worker";
 const DEFAULT_RAG_CHUNK_SIZE = 1000;
+const DEFAULT_RAG_TOP_K = 5;
 const AGENT_NODE_WIDTH = 280;
 const TOOL_NODE_WIDTH = 220;
 
@@ -54,6 +55,7 @@ export function encodeCanvasGraph({ canvasName, nodes, edges }: CanvasGraph): Ca
             enable_conversation_history: data.enableConversationHistory ?? false,
             enable_rag: data.enableRag ?? false,
             rag_chunk_size: data.ragChunkSize ?? DEFAULT_RAG_CHUNK_SIZE,
+            rag_top_k: data.ragTopK ?? DEFAULT_RAG_TOP_K,
             is_entry_point: data.isEntryPoint ?? false,
             enable_hitl: data.enableHitl ?? false,
             position_x: node.position.x,
@@ -107,6 +109,7 @@ export function decodeCanvasResponse(canvas: CanvasResponse): DecodedCanvasGraph
           enableConversationHistory: agent.enable_conversation_history,
           enableRag: agent.enable_rag,
           ragChunkSize: agent.rag_chunk_size,
+          ragTopK: agent.rag_top_k,
           isEntryPoint: agent.is_entry_point,
           enableHitl: agent.enable_hitl,
         },
