@@ -396,6 +396,27 @@ export function AgentEditor() {
                   />
                 </div>
 
+                <div>
+                  <label className="block text-[10px] font-semibold text-[var(--color-text-tertiary)] mb-1 uppercase tracking-[0.06em]">Top K Chunks</label>
+                  <input
+                    type="number"
+                    value={(data as any).ragTopK ?? 5}
+                    onChange={(e) => {
+                      const val = parseInt(e.target.value) || 5;
+                      const updatedNodes = nodes.map((n) =>
+                        n.id === selectedNodeId
+                          ? { ...n, data: { ...n.data, ragTopK: val } }
+                          : n
+                      );
+                      setNodes(updatedNodes);
+                    }}
+                    data-testid="agent-rag-top-k"
+                    className="input-base w-full"
+                    min={1}
+                    max={50}
+                  />
+                </div>
+
                 <div className="space-y-2 pt-1">
                   <div className="flex items-center justify-between">
                     <span className="text-[10px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-[0.06em]">Documents</span>
