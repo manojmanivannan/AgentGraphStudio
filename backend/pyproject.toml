@@ -20,10 +20,9 @@ dependencies = [
     "pandas>=2.0.0",
     "llm-sandbox[docker]>=0.3.39",
     "pgvector>=0.2.5",
-    "passlib[bcrypt]>=1.7.4",
-    # passlib 1.7.4 needs to read bcrypt's version (bcrypt<4 ships __about__)
-    # so it can skip its broken detect_wrap_bug probe against modern bcrypt.
-    "bcrypt<6",
+    # Used directly (not via passlib, which is unmaintained and breaks
+    # against bcrypt>=5); security.py truncates to bcrypt's 72-byte limit.
+    "bcrypt>=4",
 ]
 
 [dependency-groups]
