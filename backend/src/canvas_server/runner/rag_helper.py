@@ -287,18 +287,21 @@ class RAGIndexManager:
 
 
 async def run_rag_search(
-    agent_id: uuid.UUID, query: str, session: AsyncSession | None = None
+    agent_id: uuid.UUID,
+    query: str,
+    session: AsyncSession | None = None,
+    top_k: int = 5,
 ) -> str:
-    """Embed the user's query and retrieve top 5 matching chunks from database using similarity search."""
+    """Embed the user's query and retrieve the top-k matching chunks from database using similarity search."""
     if not session:
         factory = get_session_factory()
         async with factory() as session:
-            return await _run_rag_search_impl(agent_id, query, session)
-    return await _run_rag_search_impl(agent_id, query, session)
+            return await _run_rag_search_impl(agent_id, query, session, top_k)
+    return await _run_rag_search_impl(agent_id, query, session, top_k)
 
 
 async def _run_rag_search_impl(
-    agent_id: uuid.UUID, query: str, session: AsyncSession
+    agent_id: uuid.UUID, query: str, session: AsyncSession, top_k: int = 5
 ) -> str:
     # 0. Wait for active in-flight indexing task if any
     await RAGIndexManager.wait_for_indexing(agent_id)
@@ -370,7 +373,7 @@ async def _run_rag_search_impl(
             select(AgentDocumentChunk)
             .where(AgentDocumentChunk.agent_node_id == agent_id)
             .order_by(AgentDocumentChunk.embedding.op("<=>")(query_embedding))
-            .limit(5)
+            .limit(top_k)
         )
         res = await session.execute(stmt)
         chunks = res.scalars().all()
@@ -402,7 +405,7 @@ async def _run_rag_search_impl(
 
         # Sort descending
         scored_chunks.sort(key=lambda x: x[0], reverse=True)
-        chunks = [c for score, c in scored_chunks[:5]]
+        chunks = [c for score, c in scored_chunks[:top_k]]
 
     if not chunks:
         logger.info("RAG search: no chunks found for agent %s", agent_id)
