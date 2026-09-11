@@ -1,3 +1,4 @@
+import re
 import tomllib
 from pathlib import Path
 
@@ -37,8 +38,10 @@ def test_backend_healthcheck_does_not_require_curl() -> None:
 def test_sandbox_image_uses_a_slim_runtime_base() -> None:
     dockerfile = (REPO_ROOT / "sandbox" / "Dockerfile").read_text()
 
-    assert "FROM python:3.11-slim-trixie" in dockerfile
-    assert "ghcr.io/vndee/sandbox-python-311-bullseye" not in dockerfile
+    # Version-agnostic: dependabot bumps this base image regularly and the
+    # pinned major.minor is not what this test is guarding.
+    assert re.search(r"FROM python:\d+\.\d+-slim-trixie", dockerfile)
+    assert "ghcr.io/vndee/sandbox-python" not in dockerfile
     assert "pip install --no-cache-dir matplotlib plotly numpy" in dockerfile
     # --no-compile must NOT be used here either: it defers all bytecode
     # compilation to the first execution inside every pooled container.
