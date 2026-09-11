@@ -164,6 +164,7 @@ describe("canvasGraphCodec", () => {
           enableConversationHistory: true,
           enableRag: true,
           ragChunkSize: 2048,
+          ragTopK: 5,
           isEntryPoint: true,
           enableHitl: true,
         },

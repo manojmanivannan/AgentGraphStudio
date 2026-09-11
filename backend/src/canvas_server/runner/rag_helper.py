@@ -81,7 +81,7 @@ def chunk_text(text: str, max_chars: int) -> list[str]:
     return chunks
 
 
-def get_embedder(config: ProviderConfig | None = None) -> dspy.Embedder:
+def get_embedder(config: ProviderConfig | None = None, **extra_kwargs) -> dspy.Embedder:
     active = config or get_provider_config()
     provider = active.llm_provider_type
     model_name = active.mem0_embedder_model
@@ -104,6 +104,7 @@ def get_embedder(config: ProviderConfig | None = None) -> dspy.Embedder:
         kwargs["encoding_format"] = "float"
         if "text-embedding-3" in model_name:
             kwargs["dimensions"] = active.mem0_embedder_dimensions
+    kwargs.update(extra_kwargs)
 
     if provider == "ollama":
         embedder = dspy.Embedder(
