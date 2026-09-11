@@ -69,17 +69,25 @@ async def probe_provider(config: ProviderConfig) -> list[ProbeResult]:
     """Probe the chat model and the embedder independently."""
 
     async def chat() -> None:
+        # num_retries=0 + a request-level timeout: litellm's built-in retry/backoff
+        # loop runs synchronously and does not honor asyncio cancellation, so
+        # without these a bad deployment can block the probe far longer than
+        # llm_validation_timeout_seconds (observed: ~100s instead of ~5s).
         lm = dspy.LM(
-            config.llm_model,
+            config.dspy_llm_model,
             api_base=config.llm_base_url,
             api_key=config.llm_api_key,
+            num_retries=0,
+            timeout=settings.llm_validation_timeout_seconds,
         )
         await lm.acall(prompt="Test connection. Respond with 'ok'.", max_tokens=5)
 
     async def embedding() -> None:
         from canvas_server.runner.rag_helper import get_embedder
 
-        embedder = get_embedder(config)
+        embedder = get_embedder(
+            config, num_retries=0, timeout=settings.llm_validation_timeout_seconds
+        )
         vectors = await asyncio.to_thread(embedder, ["connection test"])
         vector = vectors[0]
         dims = len(vector.tolist() if hasattr(vector, "tolist") else list(vector))

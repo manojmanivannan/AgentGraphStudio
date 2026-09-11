@@ -56,6 +56,25 @@ class ProviderConfig:
     def mem0_llm_model(self) -> str:
         return derive_mem0_llm_model(self.llm_model)
 
+    @property
+    def dspy_llm_model(self) -> str:
+        """Model string for dspy.LM/litellm construction.
+
+        Some custom gateways (e.g. an internal LiteLLM proxy) expect the model
+        alias itself to carry an unrelated routing prefix, such as
+        ``azure_ai/gpt-4o``. Without this, litellm treats that prefix as the
+        actual provider to call directly (bypassing ``llm_base_url``/
+        ``llm_provider_type``), which surfaces as provider-specific errors like
+        ``AzureException``. Prefixing with the configured provider forces
+        litellm to route through the configured base URL and send the model
+        name through verbatim.
+        """
+        if self.llm_provider_type and not self.llm_model.startswith(
+            f"{self.llm_provider_type}/"
+        ):
+            return f"{self.llm_provider_type}/{self.llm_model}"
+        return self.llm_model
+
 
 def provider_config_from_env() -> ProviderConfig:
     return ProviderConfig(
