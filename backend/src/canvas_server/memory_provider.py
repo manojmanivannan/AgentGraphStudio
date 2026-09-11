@@ -21,7 +21,8 @@ class MemoryProvider:
     async def store_memory(self, content: str) -> str:
         """
         Persist a fact, preference, or detail from the current conversation into long-term memory
-        so it can be recalled later. Call this whenever you learn something about the user or the task without the user explicitly requesting.
+        so it can be recalled later. Call this whenever you learn something about the user
+        or the task without the user explicitly requesting.
         """
         if self.initialization_error is not None:
             raise self.initialization_error
