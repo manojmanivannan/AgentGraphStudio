@@ -1,0 +1,14 @@
+node_modules/
+frontend/node_modules/
+backend/.venv/
+.venv/
+__pycache__/
+*.pyc
+.git/
+dist/
+build/
+coverage/
+junit/
+test-results/
+playwright-report/
+*.db

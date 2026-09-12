@@ -43,6 +43,34 @@ def test_mem0_model_is_derived_from_chat_model(llm_model, expected):
     assert derive_mem0_llm_model(llm_model) == expected
 
 
+@pytest.mark.parametrize(
+    ("provider_type", "llm_model", "expected"),
+    [
+        ("openai", "openrouter/google/gemma-4-31b-it:free", "openrouter/google/gemma-4-31b-it:free"),
+        ("openai", "openrouter/google/gemma-4-26b-a4b-it:free", "openrouter/google/gemma-4-26b-a4b-it:free"),
+        ("openai", "google/gemma-4-26b-a4b-it:free", "openai/google/gemma-4-26b-a4b-it:free"),
+        ("openai", "gpt-4o-mini", "openai/gpt-4o-mini"),
+        ("openai", "openai/gpt-4o-mini", "openai/gpt-4o-mini"),
+        ("openai", "azure_ai/gpt-4o", "openai/azure_ai/gpt-4o"),
+        ("ollama", "ollama_chat/llama3.1", "ollama_chat/llama3.1"),
+        ("ollama", "ollama/llama3.1", "ollama/llama3.1"),
+        ("ollama", "llama3.1", "ollama/llama3.1"),
+        ("", "some-model", "some-model"),
+    ],
+)
+def test_dspy_llm_model_routing(provider_type, llm_model, expected):
+    cfg = ProviderConfig(
+        profile="custom",
+        llm_provider_type=provider_type,
+        llm_base_url="https://example.com",
+        llm_api_key="key",
+        llm_model=llm_model,
+        mem0_embedder_model="embed",
+        mem0_embedder_dimensions=1536,
+    )
+    assert cfg.dspy_llm_model == expected
+
+
 def test_set_provider_config_takes_precedence():
     env_cfg = provider_config_from_env()
     set_provider_config(

@@ -86,7 +86,12 @@ def get_embedder(config: ProviderConfig | None = None, **extra_kwargs) -> dspy.E
     provider = active.llm_provider_type
     model_name = active.mem0_embedder_model
 
-    if provider and not model_name.startswith(f"{provider}/"):
+    if (
+        provider
+        and not model_name.startswith(f"{provider}/")
+        and not model_name.startswith("openrouter/")
+        and not (provider == "ollama" and model_name.startswith("ollama_chat/"))
+    ):
         model_name = f"{provider}/{model_name}"
 
     try:

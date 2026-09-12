@@ -17,7 +17,10 @@ import type {
 } from "@/types";
 
 const configuredApiHost = (import.meta.env.VITE_API_HOST as string | undefined)?.trim();
-const useProxyMode = ((import.meta.env.VITE_USE_PROXY as string | undefined)?.trim() || "").toLowerCase() === "true";
+const rawUseProxy = (import.meta.env.VITE_USE_PROXY as string | undefined)?.trim();
+const useProxyMode = rawUseProxy
+  ? rawUseProxy.toLowerCase() === "true"
+  : import.meta.env.MODE !== "test";
 const defaultApiOrigin =
   typeof window !== "undefined"
     ? `${window.location.protocol}//${window.location.hostname}:8000`

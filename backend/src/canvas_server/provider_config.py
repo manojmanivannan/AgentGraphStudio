@@ -69,11 +69,15 @@ class ProviderConfig:
         litellm to route through the configured base URL and send the model
         name through verbatim.
         """
-        if self.llm_provider_type and not self.llm_model.startswith(
-            f"{self.llm_provider_type}/"
-        ):
-            return f"{self.llm_provider_type}/{self.llm_model}"
-        return self.llm_model
+        if not self.llm_provider_type:
+            return self.llm_model
+        if self.llm_model.startswith(f"{self.llm_provider_type}/"):
+            return self.llm_model
+        if self.llm_provider_type == "ollama" and self.llm_model.startswith("ollama_chat/"):
+            return self.llm_model
+        if self.llm_model.startswith("openrouter/"):
+            return self.llm_model
+        return f"{self.llm_provider_type}/{self.llm_model}"
 
 
 def provider_config_from_env() -> ProviderConfig:
