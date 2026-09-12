@@ -29,6 +29,10 @@ jobs:
         working-directory: backend
         run: uv run ruff check .
 
+      - name: Type check (pyright)
+        working-directory: backend
+        run: uv run pyright src/canvas_server
+
       - name: Test
         working-directory: backend
         run: uv run pytest tests/ -v --junitxml=junit/test-results.xml
