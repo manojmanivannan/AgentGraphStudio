@@ -22,7 +22,9 @@ def test_backend_image_uses_only_python_runtime_tools() -> None:
     assert " AS builder" in dockerfile
     # Version-agnostic: dependabot bumps this base image regularly and the
     # pinned major.minor is not what this test is guarding.
-    assert re.search(r"FROM python:\d+\.\d+-slim-bookworm", dockerfile)
+    python_stages = re.findall(r"FROM python:\d+\.\d+-slim-bookworm", dockerfile)
+    assert len(python_stages) == 2, "Both builder and runtime stages must use python:*-slim-bookworm"
+    assert python_stages[0] == python_stages[1], "Builder and runtime Python base images must match"
     assert "COPY --from=builder /app/.venv /app/.venv" in dockerfile
     assert "apt-get" not in dockerfile
     assert "docker-ce-cli" not in dockerfile
