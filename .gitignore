@@ -85,7 +85,9 @@ backend/e2e_test.db
 # ----------------------
 # IDE / Editor
 # ----------------------
-.vscode/
+.vscode/*
+!.vscode/launch.json
+!.vscode/settings.json
 .idea/
 *.swp
 *.swo

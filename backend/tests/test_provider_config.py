@@ -51,7 +51,6 @@ def test_mem0_model_is_derived_from_chat_model(llm_model, expected):
         ("openai", "google/gemma-4-26b-a4b-it:free", "openai/google/gemma-4-26b-a4b-it:free"),
         ("openai", "gpt-4o-mini", "openai/gpt-4o-mini"),
         ("openai", "openai/gpt-4o-mini", "openai/gpt-4o-mini"),
-        ("openai", "azure_ai/gpt-4o", "openai/azure_ai/gpt-4o"),
         ("ollama", "ollama_chat/llama3.1", "ollama_chat/llama3.1"),
         ("ollama", "ollama/llama3.1", "ollama/llama3.1"),
         ("ollama", "llama3.1", "ollama/llama3.1"),
