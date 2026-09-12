@@ -5,7 +5,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Coroutine
+from typing import Any
 
 from canvas_server.runner.tracing import agent_span
 
@@ -59,7 +60,7 @@ class HandoffToolBuilder:
         send_event,
         history: str,
         dspy_history=None,
-    ) -> Callable[[str], asyncio.Future[str]]:
+    ) -> Callable[[str], Coroutine[Any, Any, str]]:
         """Create a DSPy tool function that delegates to a sub-agent.
 
         The target agent lookup is deferred to call time so that router→router
@@ -145,7 +146,7 @@ class HandoffToolBuilder:
         send_event,
         history: str,
         dspy_history=None,
-    ) -> Callable[[list[dict]], asyncio.Future[str]]:
+    ) -> Callable[[list[dict]], Coroutine[Any, Any, str]]:
         """Create a DSPy tool function that delegates to multiple sub-agents in parallel."""
         # Pre-build individual handoff tools for each target so we can invoke them easily
         handoff_tool_map = {}

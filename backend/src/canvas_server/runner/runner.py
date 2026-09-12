@@ -41,6 +41,7 @@ from canvas_server.runner.handoff import HandoffToolBuilder
 from canvas_server.runner.memory import MemoryManager
 from canvas_server.runner.run_state import CanvasRunState
 from canvas_server.runner.tool_registry import ToolRegistry
+from canvas_server.streaming_react import StreamingReAct
 
 logger = logging.getLogger("canvas_server.runner")
 
@@ -119,11 +120,11 @@ class CanvasRunner:
         self.run_state.tool_registry._tool_name_to_id = value
 
     @property
-    def agents(self) -> dict[uuid.UUID, object]:
+    def agents(self) -> dict[uuid.UUID, StreamingReAct]:
         return self.run_state.agents
 
     @agents.setter
-    def agents(self, value: dict[uuid.UUID, object]):
+    def agents(self, value: dict[uuid.UUID, StreamingReAct]):
         self.run_state.agents = value
 
     @property
@@ -392,7 +393,7 @@ class CanvasRunner:
 
         if target_agent_id is not None:
             agent_node = self.node_map.get(target_agent_id)
-            if agent_node and agent_node.agent_type == "router":
+            if agent_node and getattr(agent_node, "agent_type", None) == "router":
                 return RouterExecution(services)
             return WorkerExecution(services)
 
@@ -481,7 +482,9 @@ class CanvasRunner:
         history_messages = await self._conversation.load_messages()
         agent_ids = [n.id for n in self.canvas.agent_nodes]
 
-        default_agent_id = entry_node.id if entry_node else (agent_ids[0] if agent_ids else None)
+        # agent_ids is guaranteed non-empty: run() returned early above when the
+        # canvas has no agent nodes.
+        default_agent_id = entry_node.id if entry_node else agent_ids[0]
 
         first_agent_id = (
             target_agent_id

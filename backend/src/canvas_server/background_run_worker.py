@@ -4,7 +4,6 @@ import asyncio
 import logging
 import uuid
 from collections import defaultdict
-from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -96,7 +95,7 @@ class BackgroundRunWorker:
     def __init__(
         self,
         *,
-        session_factory: Callable[..., async_sessionmaker[AsyncSession]],
+        session_factory: async_sessionmaker[AsyncSession],
         worker_id: str | None = None,
         lease_seconds: int = 30,
         poll_interval_seconds: float = 0.5,
@@ -214,7 +213,7 @@ class BackgroundRunWorker:
     ) -> None:
         async with self._session_factory() as session:
             if not hasattr(session, "db_lock"):
-                session.db_lock = asyncio.Lock()
+                object.__setattr__(session, "db_lock", asyncio.Lock())
 
             conv_repo = ConversationRepo(session)
             canvas_repo = CanvasRepo(session)
@@ -229,7 +228,7 @@ class BackgroundRunWorker:
                 db_lock = getattr(session, "db_lock", None)
                 if db_lock is None:
                     db_lock = asyncio.Lock()
-                    session.db_lock = db_lock
+                    object.__setattr__(session, "db_lock", db_lock)
 
                 async with db_lock:
                     current_run = await run_repo.get_or_404(run_id)
@@ -265,7 +264,7 @@ class BackgroundRunWorker:
                 )
                 latest_run = await run_repo.get_or_404(run_id)
                 if latest_run.status == "aborting":
-                    aborted_payload = {
+                    aborted_payload: dict[str, Any] = {
                         "type": "run_aborted",
                         "message": "Run aborted by user",
                         "run_id": str(run_id),
@@ -284,7 +283,7 @@ class BackgroundRunWorker:
                 await run_repo.mark_completed(run_id)
                 await session.commit()
             except RunAbortedError as exc:
-                aborted_payload = {
+                aborted_payload: dict[str, Any] = {
                     "type": "run_aborted",
                     "message": str(exc),
                     "run_id": str(run_id),
@@ -299,7 +298,7 @@ class BackgroundRunWorker:
                 aborted_payload["sequence"] = durable_event.sequence
                 await self._broker.publish(run_id, aborted_payload)
             except Exception as exc:
-                error_payload = {
+                error_payload: dict[str, Any] = {
                     "type": "error",
                     "message": str(exc),
                     "run_id": str(run_id),

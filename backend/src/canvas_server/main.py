@@ -55,6 +55,7 @@ async def lifespan(app: FastAPI):
     # Never fatal: misconfiguration logs a warning and startup continues.
     try:
         from canvas_server.bootstrap import seed_default_user
+        from canvas_server.database import get_session_factory
 
         factory = get_session_factory()
         async with factory() as session:
@@ -78,9 +79,11 @@ async def lifespan(app: FastAPI):
     # Initialize MLflow tracing for DSPy — skip gracefully when unavailable
     if settings.mlflow_enabled:
         try:
+            import mlflow.dspy as mlflow_dspy
+
             mlflow.set_tracking_uri(settings.mlflow_tracking_uri)
             mlflow.set_experiment(settings.mlflow_experiment_name)
-            mlflow.dspy.autolog()
+            mlflow_dspy.autolog()
             logger.info(
                 "MLflow tracing enabled: tracking_uri=%s experiment=%s",
                 settings.mlflow_tracking_uri,

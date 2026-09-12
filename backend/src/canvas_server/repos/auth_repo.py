@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import delete, select
+from sqlalchemy import CursorResult, delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -88,4 +88,5 @@ class AuthRepo:
         )
         result = await self._session.execute(stmt)
         await self._session.flush()
+        assert isinstance(result, CursorResult)
         return result.rowcount or 0

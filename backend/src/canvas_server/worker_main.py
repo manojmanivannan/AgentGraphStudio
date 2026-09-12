@@ -41,10 +41,11 @@ async def _main_async() -> None:
     if settings.mlflow_enabled:
         try:
             import mlflow
+            from mlflow.dspy import autolog
 
             mlflow.set_tracking_uri(settings.mlflow_tracking_uri)
             mlflow.set_experiment(settings.mlflow_experiment_name)
-            mlflow.dspy.autolog()
+            autolog()
             logger.info(
                 "MLflow tracing enabled: tracking_uri=%s experiment=%s",
                 settings.mlflow_tracking_uri,

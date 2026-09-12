@@ -10,6 +10,17 @@ from canvas_server.tool_factory import compile_tool_from_code
 logger = logging.getLogger("canvas_server.runner.tool_registry")
 
 
+def _attach_tool_metadata(fn, requires_approval: bool, node_id: uuid.UUID) -> None:
+    """Attach approval/node metadata to a compiled tool callable.
+
+    Compiled tools are plain functions (DSPy tool callables); the approval flag
+    and owning node ID ride on them as dynamic attributes, read elsewhere via
+    ``getattr`` (see ``streaming_react``).
+    """
+    fn.requires_approval = requires_approval
+    fn.node_id = node_id
+
+
 class ToolRegistry:
     """Compiles ``ToolNode.code`` strings into callable functions and maintains
     the reverse mapping from tool name to node ID.
@@ -51,8 +62,11 @@ class ToolRegistry:
 
                 fn = make_failed_tool(tool_node.name, e)
 
-            fn.requires_approval = getattr(tool_node, "requires_approval", False)
-            fn.node_id = tool_node.id
+            _attach_tool_metadata(
+                fn,
+                requires_approval=getattr(tool_node, "requires_approval", False),
+                node_id=tool_node.id,
+            )
 
             self.tools[tool_node.id] = fn
             self._tool_name_to_id[tool_node.name] = tool_node.id

@@ -17,6 +17,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 
 import mlflow
+from mlflow.entities import Span
 
 from canvas_server.config import settings
 
@@ -31,7 +32,7 @@ def agent_span(
     node_id=None,
     agent_type: str | None = None,
     canvas_name: str | None = None,
-) -> Iterator[mlflow.entities.Span | None]:
+) -> Iterator[Span | None]:
     """Open a span named ``agent: <agent_name>`` around an agent execution.
 
     DSPy autolog spans opened inside this context nest beneath it, so the

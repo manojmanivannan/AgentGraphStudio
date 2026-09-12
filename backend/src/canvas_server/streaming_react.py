@@ -5,6 +5,7 @@ from contextlib import contextmanager
 
 import dspy
 import mlflow
+from mlflow.entities import Span
 
 from canvas_server.config import settings
 from canvas_server.exceptions import RunAbortedError
@@ -15,7 +16,7 @@ REACT_ITERATION_SPAN_TYPE = "STEP"
 
 
 @contextmanager
-def iteration_span(iteration: int) -> Iterator[mlflow.entities.Span | None]:
+def iteration_span(iteration: int) -> Iterator[Span | None]:
     """Open a span named ``react: iteration <n>`` around one ReAct iteration.
 
     DSPy autolog only emits generic span names (``Predict.forward``,

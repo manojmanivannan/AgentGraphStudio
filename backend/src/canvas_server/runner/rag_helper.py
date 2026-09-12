@@ -112,17 +112,12 @@ def get_embedder(config: ProviderConfig | None = None, **extra_kwargs) -> dspy.E
     kwargs.update(extra_kwargs)
 
     if provider == "ollama":
-        embedder = dspy.Embedder(
-            model=model_name, api_base=active.llm_base_url, **kwargs
-        )
+        kwargs["api_base"] = active.llm_base_url
     else:
-        embedder = dspy.Embedder(
-            model=model_name,
-            api_key=active.llm_api_key,
-            api_base=active.llm_base_url,
-            **kwargs,
-        )
-    return embedder
+        kwargs["api_key"] = active.llm_api_key
+        kwargs["api_base"] = active.llm_base_url
+
+    return dspy.Embedder(model=model_name, **kwargs)
 
 
 class RAGIndexManager:

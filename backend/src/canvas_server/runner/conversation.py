@@ -100,10 +100,9 @@ class ConversationService:
                 and msg.node_id not in history_enabled_node_ids
             ):
                 continue
+            is_dict = isinstance(msg, dict)
             event_type = (
-                getattr(msg, "event_type", None)
-                if not isinstance(msg, dict)
-                else msg.get("event_type")
+                msg.get("event_type") if is_dict else getattr(msg, "event_type", None)
             )
             if msg.role == "assistant" and event_type not in (None, "final_answer"):
                 continue
@@ -135,10 +134,11 @@ class ConversationService:
             elif msg.role == "user":
                 dspy_messages.append({"user_request": msg.content})
             elif msg.role == "assistant" and msg.node_id in history_enabled_node_ids:
+                is_dict = isinstance(msg, dict)
                 event_type = (
-                    getattr(msg, "event_type", None)
-                    if not isinstance(msg, dict)
-                    else msg.get("event_type")
+                    msg.get("event_type")
+                    if is_dict
+                    else getattr(msg, "event_type", None)
                 )
                 if event_type in (None, "final_answer"):
                     dspy_messages.append({"process_result": msg.content})

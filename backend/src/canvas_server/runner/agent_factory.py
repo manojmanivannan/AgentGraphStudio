@@ -15,6 +15,7 @@ from canvas_server.streaming_react import StreamingReAct
 
 if TYPE_CHECKING:
     from canvas_server.runner.handoff import HandoffToolBuilder
+    from canvas_server.runner.run_state import CanvasRunState
 
 logger = logging.getLogger("canvas_server.runner.agent_factory")
 
@@ -49,7 +50,7 @@ class AgentFactory:
         self._agent_names = agent_names or {}
         self._conversation_id = conversation_id
         self._conversation_repo = conversation_repo
-        self._run_state = None
+        self._run_state: CanvasRunState | None = None
 
     # ------------------------------------------------------------------
     # DSPy signature
@@ -184,12 +185,14 @@ class AgentFactory:
 
         if getattr(agent_node, "enable_conversation_history", False):
 
-            class _AgentSig(dspy.Signature):
+            class _AgentSigWithHistory(dspy.Signature):
                 user_request: str = dspy.InputField()
                 history: dspy.History = dspy.InputField()
                 process_result: str = dspy.OutputField(
                     desc="Final answer summarizing the result and information the user needs"
                 )
+
+            signature_cls = _AgentSigWithHistory
 
         else:
 
@@ -199,7 +202,9 @@ class AgentFactory:
                     desc="Final answer summarizing the result and information the user needs"
                 )
 
-        return _AgentSig.with_instructions(full_instructions)
+            signature_cls = _AgentSig
+
+        return signature_cls.with_instructions(full_instructions)
 
     # ------------------------------------------------------------------
     # Building worker agents (eager, during setup)

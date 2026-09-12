@@ -1,6 +1,6 @@
-from collections.abc import Callable
+from collections.abc import AsyncGenerator
 
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 
 from canvas_server.config import settings
@@ -10,12 +10,12 @@ class Base(DeclarativeBase):
     pass
 
 
-_engine = None
-_session_factory: Callable[..., async_sessionmaker[AsyncSession]] | None = None
+_engine: AsyncEngine | None = None
+_session_factory: async_sessionmaker[AsyncSession] | None = None
 _configured_url: str | None = None
 
 
-def get_engine(database_url: str | None = None):
+def get_engine(database_url: str | None = None) -> AsyncEngine:
     global _engine, _configured_url
     url = database_url or settings.database_url
     if _engine is None or url != _configured_url:
@@ -29,7 +29,7 @@ def get_engine(database_url: str | None = None):
     return _engine
 
 
-def get_session_factory(database_url: str | None = None):
+def get_session_factory(database_url: str | None = None) -> async_sessionmaker[AsyncSession]:
     global _session_factory
     engine = get_engine(database_url)
     if _session_factory is None:
@@ -55,7 +55,7 @@ async def async_reset_session_factory():
     _configured_url = None
 
 
-async def get_session() -> AsyncSession:
+async def get_session() -> AsyncGenerator[AsyncSession]:
     factory = get_session_factory()
     async with factory() as session:
         yield session
