@@ -20,7 +20,9 @@ def test_backend_image_uses_only_python_runtime_tools() -> None:
     dockerfile = (BACKEND_ROOT / "Dockerfile").read_text()
 
     assert " AS builder" in dockerfile
-    assert "FROM python:3.12-slim-bookworm" in dockerfile
+    # Version-agnostic: dependabot bumps this base image regularly and the
+    # pinned major.minor is not what this test is guarding.
+    assert re.search(r"FROM python:\d+\.\d+-slim-bookworm", dockerfile)
     assert "COPY --from=builder /app/.venv /app/.venv" in dockerfile
     assert "apt-get" not in dockerfile
     assert "docker-ce-cli" not in dockerfile
@@ -51,7 +53,9 @@ def test_sandbox_image_uses_a_slim_runtime_base() -> None:
 def test_mlflow_image_avoids_pip_cache_and_runs_unprivileged() -> None:
     dockerfile = (REPO_ROOT / "mlflow" / "Dockerfile").read_text()
 
-    assert "FROM python:3.12-slim" in dockerfile
+    # Version-agnostic: dependabot bumps this base image regularly and the
+    # pinned major.minor is not what this test is guarding.
+    assert re.search(r"FROM python:\d+\.\d+-slim", dockerfile)
     assert "pip install --no-cache-dir --only-binary=:all: mlflow" in dockerfile
     # --no-compile must NOT be used: site-packages stays root-owned while the
     # server runs as the unprivileged mlflow user, so bytecode can never be
