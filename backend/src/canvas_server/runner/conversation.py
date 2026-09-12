@@ -2,10 +2,17 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import uuid
+from typing import TYPE_CHECKING
 
 import dspy
+
+if TYPE_CHECKING:
+    from canvas_server.events import EventPayload
+    from canvas_server.models.canvas import Message
+    from canvas_server.repos.conversation_repo import ConversationRepo
 
 logger = logging.getLogger("canvas_server.runner.conversation")
 
@@ -18,13 +25,16 @@ class ConversationService:
     request context (e.g. tests).
     """
 
-    def __init__(self, conversation_repo=None, conversation_id=None):
-        self.conversation_repo = conversation_repo
-        self.conversation_id = conversation_id
-        import asyncio
+    def __init__(
+        self,
+        conversation_repo: ConversationRepo | None = None,
+        conversation_id: uuid.UUID | None = None,
+    ) -> None:
+        self.conversation_repo: ConversationRepo | None = conversation_repo
+        self.conversation_id: uuid.UUID | None = conversation_id
         self._lock = asyncio.Lock()
 
-    async def load_messages(self) -> list:
+    async def load_messages(self) -> list[Message]:
         """Return all messages for the current conversation, or ``[]``."""
         if not self.conversation_repo or not self.conversation_id:
             return []
@@ -44,8 +54,8 @@ class ConversationService:
         node_id: uuid.UUID | None = None,
         event_type: str | None = None,
         tool: str | None = None,
-        args: dict | None = None,
-    ):
+        args: EventPayload | None = None,
+    ) -> None:
         has_repo = self.conversation_repo is not None
         logger.info(
             "persist_message called: role=%s, event_type=%s, agent_name=%s, tool=%s, repo=%s, conv_id=%s",
@@ -76,7 +86,7 @@ class ConversationService:
 
     def format_history(
         self,
-        messages: list,
+        messages: list[Message],
         history_enabled_node_ids: set[uuid.UUID] | None = None,
     ) -> str:
         """Format *messages* as a plain-text conversation summary.
@@ -100,10 +110,9 @@ class ConversationService:
                 and msg.node_id not in history_enabled_node_ids
             ):
                 continue
+            is_dict = isinstance(msg, dict)
             event_type = (
-                getattr(msg, "event_type", None)
-                if not isinstance(msg, dict)
-                else msg.get("event_type")
+                msg.get("event_type") if is_dict else getattr(msg, "event_type", None)
             )
             if msg.role == "assistant" and event_type not in (None, "final_answer"):
                 continue
@@ -117,7 +126,7 @@ class ConversationService:
 
     def build_dspy_history(
         self,
-        messages: list,
+        messages: list[Message],
         history_enabled_node_ids: set[uuid.UUID],
     ) -> dspy.History | None:
         """Build a ``dspy.History`` from stored conversation messages.
@@ -135,10 +144,11 @@ class ConversationService:
             elif msg.role == "user":
                 dspy_messages.append({"user_request": msg.content})
             elif msg.role == "assistant" and msg.node_id in history_enabled_node_ids:
+                is_dict = isinstance(msg, dict)
                 event_type = (
-                    getattr(msg, "event_type", None)
-                    if not isinstance(msg, dict)
-                    else msg.get("event_type")
+                    msg.get("event_type")
+                    if is_dict
+                    else getattr(msg, "event_type", None)
                 )
                 if event_type in (None, "final_answer"):
                     dspy_messages.append({"process_result": msg.content})
@@ -148,7 +158,7 @@ class ConversationService:
 
     def build_conversation_history_context(
         self,
-        messages: list,
+        messages: list[Message],
         history_enabled_node_ids: set[uuid.UUID],
     ) -> tuple[str, dspy.History | None]:
         """Convenience: return ``(history_text, dspy_history)`` from *messages*.

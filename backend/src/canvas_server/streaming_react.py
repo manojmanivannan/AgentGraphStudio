@@ -1,12 +1,15 @@
 import logging
 import uuid
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
+from typing import Any
 
 import dspy
 import mlflow
+from mlflow.entities import LiveSpan
 
 from canvas_server.config import settings
+from canvas_server.events import EventCallback, EventPayload
 from canvas_server.exceptions import RunAbortedError
 
 logger = logging.getLogger("canvas_server.streaming_react")
@@ -15,7 +18,7 @@ REACT_ITERATION_SPAN_TYPE = "STEP"
 
 
 @contextmanager
-def iteration_span(iteration: int) -> Iterator[mlflow.entities.Span | None]:
+def iteration_span(iteration: int) -> Iterator[LiveSpan | None]:
     """Open a span named ``react: iteration <n>`` around one ReAct iteration.
 
     DSPy autolog only emits generic span names (``Predict.forward``,
@@ -50,7 +53,7 @@ def iteration_span(iteration: int) -> Iterator[mlflow.entities.Span | None]:
         yield span
 
 
-def set_span_attributes(span, attributes: dict) -> None:
+def set_span_attributes(span: LiveSpan | None, attributes: dict[str, Any]) -> None:
     """Best-effort attribute update on an MLflow span; never raises."""
     if span is None:
         return
@@ -74,11 +77,16 @@ class StreamingReAct(dspy.ReAct):
         max_iters (int, optional): Maximum number of ReAct loop iterations. Defaults to 10.
     """
 
-    def __init__(self, signature, tools, max_iters=10):
+    def __init__(
+        self,
+        signature: type[dspy.Signature],
+        tools: list[Callable[..., Any]],
+        max_iters: int = 10,
+    ) -> None:
         super().__init__(signature, tools, max_iters)
-        self._event_callbacks = []
+        self._event_callbacks: list[EventCallback] = []
 
-    def on_event(self, callback):
+    def on_event(self, callback: EventCallback) -> None:
         """Registers a callback function to receive streaming events.
 
         Args:
@@ -87,7 +95,7 @@ class StreamingReAct(dspy.ReAct):
         """
         self._event_callbacks.append(callback)
 
-    async def _emit(self, event: dict):
+    async def _emit(self, event: EventPayload):
         """Emits an event to all registered callbacks.
 
         Args:
@@ -104,7 +112,7 @@ class StreamingReAct(dspy.ReAct):
             except Exception:
                 logger.exception("Event callback failed")
 
-    async def aforward(self, **input_args):
+    async def aforward(self, **input_args: Any) -> dspy.Prediction:
         """Executes the asynchronous ReAct loop.
 
         This method overrides the default DSPy `aforward` to inject event emission

@@ -1,11 +1,17 @@
+from __future__ import annotations
+
 import asyncio
 import base64
 import logging
 import os
 import uuid
 from functools import partial
+from typing import TYPE_CHECKING
 
 from canvas_server.sandbox import bounded_session_work, get_sandbox
+
+if TYPE_CHECKING:
+    from canvas_server.repos.conversation_repo import ConversationRepo
 
 logger = logging.getLogger(__name__)
 
@@ -13,9 +19,13 @@ logger = logging.getLogger(__name__)
 class PlotProvider:
     """Wraps SandboxManager to expose generate_plot tool function to agents."""
 
-    def __init__(self, conversation_id: str, conversation_repo = None):
-        self.conversation_id = conversation_id
-        self.conversation_repo = conversation_repo
+    def __init__(
+        self,
+        conversation_id: str | uuid.UUID,
+        conversation_repo: ConversationRepo | None = None,
+    ) -> None:
+        self.conversation_id: str | uuid.UUID = conversation_id
+        self.conversation_repo: ConversationRepo | None = conversation_repo
 
     async def generate_plot(self, python_code: str) -> str:
         """

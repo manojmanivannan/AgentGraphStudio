@@ -5,9 +5,20 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Coroutine
+from typing import TYPE_CHECKING, Any
 
+from canvas_server.events import EventCallback
 from canvas_server.runner.tracing import agent_span
+
+if TYPE_CHECKING:
+    import dspy
+
+    from canvas_server.models.canvas import AgentNode
+    from canvas_server.runner.agent_factory import AgentFactory
+    from canvas_server.runner.conversation import ConversationService
+    from canvas_server.runner.run_state import CanvasRunState
+    from canvas_server.streaming_react import StreamingReAct
 
 logger = logging.getLogger("canvas_server.runner.handoff")
 
@@ -19,47 +30,47 @@ class HandoffToolBuilder:
     execution/tool-call time, avoiding circular references and callback passing.
     """
 
-    def __init__(self, run_state):
-        self.run_state = run_state
+    def __init__(self, run_state: CanvasRunState) -> None:
+        self.run_state: CanvasRunState = run_state
 
     # -- backward-compat properties for testing -----------------------------
 
     @property
-    def agents(self):
+    def agents(self) -> dict[uuid.UUID, StreamingReAct]:
         return self.run_state.agents
 
     @agents.setter
-    def agents(self, value):
+    def agents(self, value: dict[uuid.UUID, StreamingReAct]) -> None:
         self.run_state.agents = value
 
     @property
-    def node_map(self):
+    def node_map(self) -> dict[uuid.UUID, AgentNode]:
         return self.run_state.node_map
 
     @node_map.setter
-    def node_map(self, value):
+    def node_map(self, value: dict[uuid.UUID, AgentNode]) -> None:
         self.run_state.node_map = value
 
     @property
-    def agent_factory(self):
+    def agent_factory(self) -> AgentFactory:
         return self.run_state.agent_factory
 
     @property
-    def conversation_service(self):
+    def conversation_service(self) -> ConversationService:
         return self.run_state.conversation_service
 
     @property
-    def attach_events(self):
+    def attach_events(self) -> Callable[[uuid.UUID, bool], None]:
         return self.run_state.attach_events
 
     def make_handoff_tool(
         self,
         target_id: uuid.UUID,
         router_name: str,
-        send_event,
+        send_event: EventCallback | None,
         history: str,
-        dspy_history=None,
-    ) -> Callable[[str], asyncio.Future[str]]:
+        dspy_history: dspy.History | None = None,
+    ) -> Callable[[str], Coroutine[Any, Any, str]]:
         """Create a DSPy tool function that delegates to a sub-agent.
 
         The target agent lookup is deferred to call time so that router→router
@@ -73,6 +84,10 @@ class HandoffToolBuilder:
             # Delegate lookup, setup, lazy building, RAG assembly, and event wiring
             target_agent = await self.run_state.get_or_build_agent(target_id, task=task)
 
+            # Handoff tools are only created while a run is active (see
+            # AgentFactory.build_worker/build_router), so the callback is always
+            # set; narrow once for both emit sites below.
+            assert send_event is not None
             await send_event(
                 {
                     "type": "handoff",
@@ -142,13 +157,13 @@ class HandoffToolBuilder:
         self,
         handoff_targets: list[uuid.UUID],
         router_name: str,
-        send_event,
+        send_event: EventCallback | None,
         history: str,
-        dspy_history=None,
-    ) -> Callable[[list[dict]], asyncio.Future[str]]:
+        dspy_history: dspy.History | None = None,
+    ) -> Callable[[list[dict[str, Any]]], Coroutine[Any, Any, str]]:
         """Create a DSPy tool function that delegates to multiple sub-agents in parallel."""
         # Pre-build individual handoff tools for each target so we can invoke them easily
-        handoff_tool_map = {}
+        handoff_tool_map: dict[str, Callable[[str], Coroutine[Any, Any, str]]] = {}
         for target_id in handoff_targets:
             target_node = self.node_map.get(target_id)
             if target_node:
@@ -156,7 +171,7 @@ class HandoffToolBuilder:
                     target_id, router_name, send_event, history, dspy_history
                 )
 
-        async def execute_parallel_agents(agents_and_inputs: list[dict]) -> str:
+        async def execute_parallel_agents(agents_and_inputs: list[dict[str, Any]]) -> str:
             """Run multiple downstream worker agents in parallel and return their combined findings.
 
             Args:

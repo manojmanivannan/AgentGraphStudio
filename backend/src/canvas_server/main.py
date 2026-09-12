@@ -1,13 +1,15 @@
 import logging
 import os
 import time
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 import mlflow
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.base import RequestResponseEndpoint
 
 import canvas_server
 from canvas_server.background_run_worker import shutdown_background_run_worker
@@ -27,7 +29,7 @@ logger = logging.getLogger("canvas_server")
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     logger.info("Canvas server starting up")
 
     # Ensure plots storage directory exists
@@ -55,6 +57,7 @@ async def lifespan(app: FastAPI):
     # Never fatal: misconfiguration logs a warning and startup continues.
     try:
         from canvas_server.bootstrap import seed_default_user
+        from canvas_server.database import get_session_factory
 
         factory = get_session_factory()
         async with factory() as session:
@@ -78,13 +81,15 @@ async def lifespan(app: FastAPI):
     # Initialize MLflow tracing for DSPy — skip gracefully when unavailable
     if settings.mlflow_enabled:
         try:
+            import mlflow.dspy as mlflow_dspy
+
             mlflow.set_tracking_uri(settings.mlflow_tracking_uri)
             mlflow.set_experiment(settings.mlflow_experiment_name)
-            mlflow.dspy.autolog()
+            mlflow_dspy.autolog()
             logger.info(
                 "MLflow tracing enabled: tracking_uri=%s experiment=%s",
                 settings.mlflow_tracking_uri,
-                settings.mlflow_tracking_uri,
+                settings.mlflow_experiment_name,
             )
         except Exception as exc:
             logger.warning(
@@ -133,7 +138,7 @@ app.add_middleware(
 
 
 @app.middleware("http")
-async def log_requests(request: Request, call_next):
+async def log_requests(request: Request, call_next: RequestResponseEndpoint) -> Response:
     start = time.time()
     logger.debug(
         f"--> {request.method} {request.url.path} from {request.client.host if request.client else '?'}"
@@ -147,7 +152,7 @@ async def log_requests(request: Request, call_next):
 
 
 @app.exception_handler(Exception)
-async def global_exception_handler(request: Request, exc: Exception):
+async def global_exception_handler(request: Request, exc: Exception) -> JSONResponse:
     logger.error(
         f"Unhandled exception on {request.method} {request.url.path}: {exc}",
         exc_info=True,
@@ -166,6 +171,6 @@ app.include_router(tools_router)
 
 
 @app.get("/health")
-async def health():
+async def health() -> dict[str, str]:
     logger.debug("Health check requested")
     return {"status": "ok"}

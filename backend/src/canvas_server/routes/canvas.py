@@ -3,6 +3,7 @@ import json
 import logging
 import uuid
 import zipfile
+from collections.abc import Sequence
 from typing import Any
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
@@ -25,7 +26,7 @@ from canvas_server.models.api import (
     CreateConversationRequest,
 )
 from canvas_server.models.auth import User
-from canvas_server.models.canvas import Canvas
+from canvas_server.models.canvas import AgentDocument, Canvas, Conversation
 from canvas_server.repos.canvas_repo import CanvasRepo
 from canvas_server.repos.conversation_repo import ConversationRepo
 
@@ -118,7 +119,7 @@ async def create_canvas(
     body: CreateCanvasRequest = CreateCanvasRequest(),
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
-):
+) -> CanvasResponse:
     logger.info(f"Creating canvas: name={body.name} owner={current_user.id}")
     repo = CanvasRepo(session)
     canvas = await repo.create(name=body.name, owner_id=current_user.id)
@@ -130,7 +131,7 @@ async def create_canvas(
 async def list_canvases(
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
-):
+) -> list[CanvasListResponse]:
     logger.debug("Listing canvases for user=%s", current_user.id)
     repo = CanvasRepo(session)
     canvases = await repo.list_for_owner(current_user.id)
@@ -151,7 +152,7 @@ async def get_canvas(
     canvas_id: uuid.UUID,
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
-):
+) -> CanvasResponse:
     logger.debug(f"Getting canvas: id={canvas_id}")
     repo = CanvasRepo(session)
     canvas = await _owned_canvas_or_404(repo, canvas_id, current_user)
@@ -168,7 +169,7 @@ async def save_canvas(
     body: CanvasSaveRequest,
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
-):
+) -> CanvasResponse:
     logger.info(
         f"Saving canvas: id={canvas_id}, name={body.name}, "
         f"agents={len(body.nodes.agents)}, "
@@ -202,7 +203,7 @@ async def delete_canvas(
     canvas_id: uuid.UUID,
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
-):
+) -> None:
     logger.info(f"Deleting canvas: id={canvas_id}")
     repo = CanvasRepo(session)
     canvas = await _owned_canvas_or_404(repo, canvas_id, current_user)
@@ -281,7 +282,7 @@ async def export_canvas(
     canvas_id: uuid.UUID,
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
-):
+) -> Response:
     logger.info(f"Exporting canvas: id={canvas_id}")
     repo = CanvasRepo(session)
     canvas = await _owned_canvas_or_404(repo, canvas_id, current_user)
@@ -301,7 +302,7 @@ async def export_canvas_zip(
     canvas_id: uuid.UUID,
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
-):
+) -> Response:
     logger.info(f"Exporting canvas ZIP: id={canvas_id}")
     repo = CanvasRepo(session)
     canvas = await _owned_canvas_or_404(repo, canvas_id, current_user)
@@ -330,7 +331,7 @@ async def import_canvas(
     body: CanvasImportRequest,
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
-):
+) -> CanvasResponse:
     logger.info(
         f"Importing canvas: name={body.name}, "
         f"agents={len(body.nodes.agents)}, "
@@ -354,7 +355,7 @@ async def import_canvas_zip(
     file: UploadFile = File(...),
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
-):
+) -> CanvasResponse:
     logger.info("Importing canvas ZIP file")
     content_bytes = await file.read()
     try:
@@ -419,7 +420,7 @@ async def create_conversation(
     body: CreateConversationRequest = CreateConversationRequest(),
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
-):
+) -> Conversation:
     logger.info("Creating conversation for canvas=%s name=%s", canvas_id, body.name)
     canvas_repo = CanvasRepo(session)
     await _owned_canvas_or_404(canvas_repo, canvas_id, current_user)
@@ -435,7 +436,7 @@ async def list_conversations(
     canvas_id: uuid.UUID,
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
-):
+) -> list[Conversation]:
     logger.debug("Listing conversations for canvas=%s", canvas_id)
     canvas_repo = CanvasRepo(session)
     await _owned_canvas_or_404(canvas_repo, canvas_id, current_user)
@@ -453,7 +454,7 @@ async def get_conversation(
     conversation_id: uuid.UUID,
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
-):
+) -> Conversation:
     logger.debug("Getting conversation: canvas=%s conv=%s", canvas_id, conversation_id)
     canvas_repo = CanvasRepo(session)
     await _owned_canvas_or_404(canvas_repo, canvas_id, current_user)
@@ -475,7 +476,7 @@ async def get_conversation_by_id(
     conversation_id: uuid.UUID,
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
-):
+) -> Conversation:
     logger.debug("Getting conversation by id: conv=%s", conversation_id)
     repo = ConversationRepo(session)
     try:
@@ -492,7 +493,7 @@ async def delete_conversation_by_id(
     conversation_id: uuid.UUID,
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
-):
+) -> None:
     logger.info("Deleting conversation by id: conv=%s", conversation_id)
     repo = ConversationRepo(session)
     conv = await repo.get(conversation_id)
@@ -510,7 +511,7 @@ async def delete_conversation(
     conversation_id: uuid.UUID,
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
-):
+) -> None:
     logger.info("Deleting conversation: canvas=%s conv=%s", canvas_id, conversation_id)
     canvas_repo = CanvasRepo(session)
     await _owned_canvas_or_404(canvas_repo, canvas_id, current_user)
@@ -531,7 +532,7 @@ async def list_agent_documents(
     agent_id: uuid.UUID,
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
-):
+) -> Sequence[AgentDocument]:
     from sqlalchemy import select
 
     from canvas_server.models.canvas import AgentDocument, AgentNode
@@ -565,7 +566,7 @@ async def upload_agent_document(
     file: UploadFile = File(...),
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
-):
+) -> AgentDocument:
     from sqlalchemy import select
 
     from canvas_server.models.canvas import AgentDocument, AgentNode
@@ -615,7 +616,7 @@ async def delete_agent_document(
     document_id: uuid.UUID,
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
-):
+) -> None:
     from sqlalchemy import select
 
     from canvas_server.models.canvas import AgentDocument
@@ -650,7 +651,7 @@ async def export_conversation(
     conversation_id: uuid.UUID,
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
-):
+) -> Response:
     from sqlalchemy import select
     from sqlalchemy.orm import selectinload
 
@@ -731,7 +732,7 @@ async def import_conversation_zip(
     file: UploadFile = File(...),
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
-):
+) -> Conversation:
     from datetime import UTC, datetime
 
     from sqlalchemy import select

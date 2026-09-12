@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import delete, select
+from sqlalchemy import CursorResult, delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -14,7 +14,7 @@ from canvas_server.models.auth import Session, User, new_session_id
 
 class AuthRepo:
     def __init__(self, session: AsyncSession) -> None:
-        self._session = session
+        self._session: AsyncSession = session
 
     # --- users ---
 
@@ -88,4 +88,5 @@ class AuthRepo:
         )
         result = await self._session.execute(stmt)
         await self._session.flush()
+        assert isinstance(result, CursorResult)
         return result.rowcount or 0

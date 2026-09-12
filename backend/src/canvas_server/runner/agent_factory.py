@@ -8,13 +8,20 @@ from typing import TYPE_CHECKING
 
 import dspy
 
+from canvas_server.events import EventCallback
 from canvas_server.runner.code_provider import CodeProvider
 from canvas_server.runner.plot_provider import PlotProvider
 from canvas_server.sandbox import NETWORK_POOL_DEFAULT, NETWORK_POOL_NETWORKED
 from canvas_server.streaming_react import StreamingReAct
 
 if TYPE_CHECKING:
+    from canvas_server.models.canvas import AgentNode, Edge
+    from canvas_server.repos.conversation_repo import ConversationRepo
+    from canvas_server.runner.conversation import ConversationService
     from canvas_server.runner.handoff import HandoffToolBuilder
+    from canvas_server.runner.memory import MemoryManager
+    from canvas_server.runner.run_state import CanvasRunState
+    from canvas_server.runner.tool_registry import ToolRegistry
 
 logger = logging.getLogger("canvas_server.runner.agent_factory")
 
@@ -35,27 +42,29 @@ class AgentFactory:
     def __init__(
         self,
         lm: dspy.LM,
-        tool_registry,
-        memory_manager,
-        edges: list,
+        tool_registry: ToolRegistry,
+        memory_manager: MemoryManager,
+        edges: list[Edge],
         agent_names: dict[uuid.UUID, str] | None = None,
-        conversation_id: str | None = None,
-        conversation_repo = None,
-    ):
-        self._lm = lm
-        self._tool_registry = tool_registry
-        self._memory_manager = memory_manager
-        self._edges = edges
-        self._agent_names = agent_names or {}
-        self._conversation_id = conversation_id
-        self._conversation_repo = conversation_repo
-        self._run_state = None
+        conversation_id: uuid.UUID | None = None,
+        conversation_repo: ConversationRepo | None = None,
+    ) -> None:
+        self._lm: dspy.LM = lm
+        self._tool_registry: ToolRegistry = tool_registry
+        self._memory_manager: MemoryManager = memory_manager
+        self._edges: list[Edge] = edges
+        self._agent_names: dict[uuid.UUID, str] = agent_names or {}
+        self._conversation_id: uuid.UUID | None = conversation_id
+        self._conversation_repo: ConversationRepo | None = conversation_repo
+        self._run_state: CanvasRunState | None = None
 
     # ------------------------------------------------------------------
     # DSPy signature
     # ------------------------------------------------------------------
 
-    def build_signature(self, agent_node, passages: str | None = None) -> type[dspy.Signature]:
+    def build_signature(
+        self, agent_node: AgentNode, passages: str | None = None
+    ) -> type[dspy.Signature]:
         """Dynamically creates a `dspy.Signature` class for an agent node.
 
         The signature dictates the input/output structure for the DSPy LLM module
@@ -184,12 +193,14 @@ class AgentFactory:
 
         if getattr(agent_node, "enable_conversation_history", False):
 
-            class _AgentSig(dspy.Signature):
+            class _AgentSigWithHistory(dspy.Signature):
                 user_request: str = dspy.InputField()
                 history: dspy.History = dspy.InputField()
                 process_result: str = dspy.OutputField(
                     desc="Final answer summarizing the result and information the user needs"
                 )
+
+            signature_cls = _AgentSigWithHistory
 
         else:
 
@@ -199,13 +210,17 @@ class AgentFactory:
                     desc="Final answer summarizing the result and information the user needs"
                 )
 
-        return _AgentSig.with_instructions(full_instructions)
+            signature_cls = _AgentSig
+
+        return signature_cls.with_instructions(full_instructions)
 
     # ------------------------------------------------------------------
     # Building worker agents (eager, during setup)
     # ------------------------------------------------------------------
 
-    async def build_workers(self, agent_nodes: list) -> dict[uuid.UUID, StreamingReAct]:
+    async def build_workers(
+        self, agent_nodes: list[AgentNode]
+    ) -> dict[uuid.UUID, StreamingReAct]:
         """Eagerly builds all worker agents during runner setup.
 
         Worker agents do not depend on ephemeral run state (like event streams)
@@ -230,12 +245,12 @@ class AgentFactory:
 
     async def build_worker(
         self,
-        agent_node,
+        agent_node: AgentNode,
         passages: str | None = None,
         handoff_tool_builder: HandoffToolBuilder | None = None,
-        send_event=None,
+        send_event: EventCallback | None = None,
         history_text: str = "",
-        dspy_history=None,
+        dspy_history: dspy.History | None = None,
     ) -> StreamingReAct:
         """Builds a single worker agent instance.
 
@@ -373,13 +388,13 @@ class AgentFactory:
 
     async def assemble_rag_worker(
         self,
-        agent_node,
+        agent_node: AgentNode,
         task: str,
-        conversation_service,
-        send_event=None,
+        conversation_service: ConversationService,
+        send_event: EventCallback | None = None,
         handoff_tool_builder: HandoffToolBuilder | None = None,
         history_text: str = "",
-        dspy_history=None,
+        dspy_history: dspy.History | None = None,
     ) -> StreamingReAct:
         """Fetch RAG documents, perform similarity search, handle warnings/errors, and compile the worker agent."""
         from canvas_server.runner.rag_helper import run_rag_search
@@ -420,12 +435,12 @@ class AgentFactory:
 
     async def build_router(
         self,
-        agent_node,
+        agent_node: AgentNode,
         existing_agents: dict[uuid.UUID, StreamingReAct],
         router_name: str,
-        send_event,
+        send_event: EventCallback | None,
         history_text: str,
-        dspy_history,
+        dspy_history: dspy.History | None,
         handoff_tool_builder: HandoffToolBuilder,
     ) -> StreamingReAct:
         """Lazily builds a router agent at execution time.
@@ -501,5 +516,5 @@ class AgentFactory:
         return user_prompt
 
     @staticmethod
-    def needs_history(agent_node) -> bool:
+    def needs_history(agent_node: AgentNode) -> bool:
         return getattr(agent_node, "enable_conversation_history", False)

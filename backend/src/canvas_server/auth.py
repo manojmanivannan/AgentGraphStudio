@@ -7,7 +7,7 @@ import secrets
 from datetime import UTC, datetime, timedelta
 from urllib.parse import urlparse
 
-from fastapi import Depends, HTTPException, Request
+from fastapi import Depends, HTTPException, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.requests import HTTPConnection
 
@@ -33,7 +33,7 @@ def _aware(dt: datetime) -> datetime:
     return dt if dt.tzinfo is not None else dt.replace(tzinfo=UTC)
 
 
-def set_session_cookie(response, session_id: str, *, secure: bool) -> None:
+def set_session_cookie(response: Response, session_id: str, *, secure: bool) -> None:
     """Set the auth session cookie with the documented attributes.
 
     path=/, httpOnly, SameSite=Lax; Secure only when the request is https.
@@ -48,7 +48,7 @@ def set_session_cookie(response, session_id: str, *, secure: bool) -> None:
     )
 
 
-def clear_session_cookie(response) -> None:
+def clear_session_cookie(response: Response) -> None:
     response.delete_cookie(COOKIE_NAME, path="/")
 
 

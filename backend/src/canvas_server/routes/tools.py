@@ -23,7 +23,7 @@ tools_router = APIRouter(prefix="/api/tools", tags=["tools"])
 
 
 @tools_router.post("/inspect", response_model=ToolInspectResponse)
-async def inspect_tool(body: ToolInspectRequest):
+async def inspect_tool(body: ToolInspectRequest) -> ToolInspectResponse:
     """Inspect a Python tool function and return its argument metadata.
 
     Accepts a code string containing a Python function definition.
@@ -38,7 +38,7 @@ async def inspect_tool(body: ToolInspectRequest):
 
 
 @tools_router.post("/test", response_model=ToolTestResponse)
-async def test_tool(body: ToolTestRequest):
+async def test_tool(body: ToolTestRequest) -> ToolTestResponse:
     """Execute a Python tool function with the provided arguments.
 
     Accepts a code string and a dictionary of argument values (strings).

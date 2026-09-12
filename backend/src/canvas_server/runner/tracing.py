@@ -13,10 +13,12 @@ behavior when MLflow is disabled or unreachable.
 from __future__ import annotations
 
 import logging
+import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
 
 import mlflow
+from mlflow.entities import Span
 
 from canvas_server.config import settings
 
@@ -28,10 +30,10 @@ AGENT_SPAN_TYPE = "AGENT"
 @contextmanager
 def agent_span(
     agent_name: str,
-    node_id=None,
+    node_id: uuid.UUID | None = None,
     agent_type: str | None = None,
     canvas_name: str | None = None,
-) -> Iterator[mlflow.entities.Span | None]:
+) -> Iterator[Span | None]:
     """Open a span named ``agent: <agent_name>`` around an agent execution.
 
     DSPy autolog spans opened inside this context nest beneath it, so the

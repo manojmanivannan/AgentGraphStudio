@@ -3,6 +3,7 @@ import logging
 import math
 import re
 import uuid
+from typing import Any
 
 import dspy
 from sqlalchemy import delete, select
@@ -81,7 +82,9 @@ def chunk_text(text: str, max_chars: int) -> list[str]:
     return chunks
 
 
-def get_embedder(config: ProviderConfig | None = None, **extra_kwargs) -> dspy.Embedder:
+def get_embedder(
+    config: ProviderConfig | None = None, **extra_kwargs: Any
+) -> dspy.Embedder:
     active = config or get_provider_config()
     provider = active.llm_provider_type
     model_name = active.mem0_embedder_model
@@ -112,17 +115,12 @@ def get_embedder(config: ProviderConfig | None = None, **extra_kwargs) -> dspy.E
     kwargs.update(extra_kwargs)
 
     if provider == "ollama":
-        embedder = dspy.Embedder(
-            model=model_name, api_base=active.llm_base_url, **kwargs
-        )
+        kwargs["api_base"] = active.llm_base_url
     else:
-        embedder = dspy.Embedder(
-            model=model_name,
-            api_key=active.llm_api_key,
-            api_base=active.llm_base_url,
-            **kwargs,
-        )
-    return embedder
+        kwargs["api_key"] = active.llm_api_key
+        kwargs["api_base"] = active.llm_base_url
+
+    return dspy.Embedder(model=model_name, **kwargs)
 
 
 class RAGIndexManager:
@@ -130,7 +128,7 @@ class RAGIndexManager:
     _lock = asyncio.Lock()
 
     @classmethod
-    async def trigger_reindex(cls, agent_id: uuid.UUID):
+    async def trigger_reindex(cls, agent_id: uuid.UUID) -> None:
         """Trigger a background task to index (or re-index) all documents for the agent."""
         async with cls._lock:
             # Cancel any running indexing task for this agent
@@ -145,7 +143,7 @@ class RAGIndexManager:
             cls._tasks[agent_id] = asyncio.create_task(cls._reindex_agent(agent_id))
 
     @classmethod
-    async def wait_for_indexing(cls, agent_id: uuid.UUID):
+    async def wait_for_indexing(cls, agent_id: uuid.UUID) -> None:
         """Wait for an active indexing task for the given agent if one exists."""
         task = cls._tasks.get(agent_id)
         if task and not task.done():
@@ -163,7 +161,7 @@ class RAGIndexManager:
     @classmethod
     async def reindex_agent_sync(
         cls, agent_id: uuid.UUID, session: AsyncSession | None = None
-    ):
+    ) -> None:
         """Synchronously index all documents for an agent and wait for completion."""
         if session is not None:
             await cls._reindex_agent_with_session(agent_id, session)

@@ -26,7 +26,7 @@ dependencies = [
 ]
 
 [dependency-groups]
-dev = ["ruff>=0.15.12"]
+dev = ["ruff>=0.15.12", "pyright>=1.1.405"]
 test = [
     "pytest>=8.0",
     "pytest-asyncio>=0.24",
@@ -42,6 +42,15 @@ filterwarnings = [
     "ignore:.*asyncio.iscoroutinefunction.*:DeprecationWarning",
     "ignore::RuntimeWarning",
 ]
+
+[tool.pyright]
+typeCheckingMode = "standard"
+include = ["src/canvas_server"]
+exclude = ["**/__pycache__", ".venv"]
+# dspy/mem0/llm-sandbox ship no stubs; boundaries get local typed seams instead.
+reportMissingTypeStubs = false
+venvPath = "."
+venv = ".venv"
 
 [tool.ruff]
 target-version = "py313"

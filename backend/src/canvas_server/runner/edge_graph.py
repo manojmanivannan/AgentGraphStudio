@@ -4,6 +4,10 @@ from __future__ import annotations
 
 import logging
 import uuid
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from canvas_server.models.canvas import Edge
 
 logger = logging.getLogger("canvas_server.runner.edge_graph")
 
@@ -16,8 +20,8 @@ class EdgeGraph:
     "what tools can this agent access?"
     """
 
-    def __init__(self, edges: list):
-        self._edges = edges
+    def __init__(self, edges: list[Edge]) -> None:
+        self._edges: list[Edge] = edges
 
     def get_handoff_targets(self, agent_id: uuid.UUID) -> list[uuid.UUID]:
         """Return the node IDs that *agent_id* can hand off to, in edge order."""

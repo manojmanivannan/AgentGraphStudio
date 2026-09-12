@@ -4,7 +4,6 @@ import asyncio
 import logging
 import uuid
 from collections import defaultdict
-from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -20,13 +19,13 @@ from canvas_server.repos.durable_run_repo import DurableRunRepo
 
 logger = logging.getLogger("canvas_server.background_worker")
 
-TERMINAL_RUN_STATUSES = {"completed", "failed", "aborted"}
+TERMINAL_RUN_STATUSES: set[str] = {"completed", "failed", "aborted"}
 
 
 class RunEventBroker:
     def __init__(self) -> None:
         self._subscribers: dict[uuid.UUID, set[asyncio.Queue[dict[str, Any]]]] = defaultdict(set)
-        self._lock = asyncio.Lock()
+        self._lock: asyncio.Lock = asyncio.Lock()
 
     async def subscribe(self, run_id: uuid.UUID) -> asyncio.Queue[dict[str, Any]]:
         queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
@@ -61,7 +60,7 @@ class InterruptStore:
 
     def __init__(self) -> None:
         self._pending: dict[str, asyncio.Future[dict[str, Any]]] = {}
-        self._lock = asyncio.Lock()
+        self._lock: asyncio.Lock = asyncio.Lock()
 
     async def wait_for_response(self, request_id: str) -> dict[str, Any]:
         """Register *request_id* and await its resolution."""
@@ -96,20 +95,20 @@ class BackgroundRunWorker:
     def __init__(
         self,
         *,
-        session_factory: Callable[..., async_sessionmaker[AsyncSession]],
+        session_factory: async_sessionmaker[AsyncSession],
         worker_id: str | None = None,
         lease_seconds: int = 30,
         poll_interval_seconds: float = 0.5,
     ) -> None:
-        self._session_factory = session_factory
-        self.worker_id = worker_id or f"worker-{uuid.uuid4()}"
-        self.lease_seconds = lease_seconds
-        self.poll_interval_seconds = poll_interval_seconds
-        self._wake_event = asyncio.Event()
-        self._stop_event = asyncio.Event()
-        self._worker_task: asyncio.Task | None = None
-        self._broker = RunEventBroker()
-        self._interrupt_store = InterruptStore()
+        self._session_factory: async_sessionmaker[AsyncSession] = session_factory
+        self.worker_id: str = worker_id or f"worker-{uuid.uuid4()}"
+        self.lease_seconds: int = lease_seconds
+        self.poll_interval_seconds: float = poll_interval_seconds
+        self._wake_event: asyncio.Event = asyncio.Event()
+        self._stop_event: asyncio.Event = asyncio.Event()
+        self._worker_task: asyncio.Task[None] | None = None
+        self._broker: RunEventBroker = RunEventBroker()
+        self._interrupt_store: InterruptStore = InterruptStore()
 
     async def ensure_started(self) -> None:
         if self._worker_task and not self._worker_task.done():
@@ -214,7 +213,7 @@ class BackgroundRunWorker:
     ) -> None:
         async with self._session_factory() as session:
             if not hasattr(session, "db_lock"):
-                session.db_lock = asyncio.Lock()
+                object.__setattr__(session, "db_lock", asyncio.Lock())
 
             conv_repo = ConversationRepo(session)
             canvas_repo = CanvasRepo(session)
@@ -229,7 +228,7 @@ class BackgroundRunWorker:
                 db_lock = getattr(session, "db_lock", None)
                 if db_lock is None:
                     db_lock = asyncio.Lock()
-                    session.db_lock = db_lock
+                    object.__setattr__(session, "db_lock", db_lock)
 
                 async with db_lock:
                     current_run = await run_repo.get_or_404(run_id)
@@ -265,7 +264,7 @@ class BackgroundRunWorker:
                 )
                 latest_run = await run_repo.get_or_404(run_id)
                 if latest_run.status == "aborting":
-                    aborted_payload = {
+                    aborted_payload: dict[str, Any] = {
                         "type": "run_aborted",
                         "message": "Run aborted by user",
                         "run_id": str(run_id),
@@ -284,7 +283,7 @@ class BackgroundRunWorker:
                 await run_repo.mark_completed(run_id)
                 await session.commit()
             except RunAbortedError as exc:
-                aborted_payload = {
+                aborted_payload: dict[str, Any] = {
                     "type": "run_aborted",
                     "message": str(exc),
                     "run_id": str(run_id),
@@ -299,7 +298,7 @@ class BackgroundRunWorker:
                 aborted_payload["sequence"] = durable_event.sequence
                 await self._broker.publish(run_id, aborted_payload)
             except Exception as exc:
-                error_payload = {
+                error_payload: dict[str, Any] = {
                     "type": "error",
                     "message": str(exc),
                     "run_id": str(run_id),

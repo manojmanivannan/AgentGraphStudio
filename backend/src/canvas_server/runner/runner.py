@@ -18,11 +18,13 @@ import os
 import re
 import sys
 import uuid
+from typing import TYPE_CHECKING
 
 import dspy
 import mlflow
 
 from canvas_server.config import settings
+from canvas_server.events import EventCallback
 from canvas_server.exceptions import LLMConfigurationError
 from canvas_server.package_manager import PackageManager
 from canvas_server.provider_config import get_provider_config
@@ -39,8 +41,13 @@ from canvas_server.runner.execution import (
 )
 from canvas_server.runner.handoff import HandoffToolBuilder
 from canvas_server.runner.memory import MemoryManager
-from canvas_server.runner.run_state import CanvasRunState
+from canvas_server.runner.run_state import CanvasRunState, ClientResponseCallback
 from canvas_server.runner.tool_registry import ToolRegistry
+from canvas_server.streaming_react import StreamingReAct
+
+if TYPE_CHECKING:
+    from canvas_server.models.canvas import AgentNode, Canvas
+    from canvas_server.repos.conversation_repo import ConversationRepo
 
 logger = logging.getLogger("canvas_server.runner")
 
@@ -59,8 +66,13 @@ class CanvasRunner:
         conversation_id (str, optional): The UUID of the durable conversation.
     """
 
-    def __init__(self, canvas, conversation_repo=None, conversation_id=None):
-        self.canvas = canvas
+    def __init__(
+        self,
+        canvas: Canvas,
+        conversation_repo: ConversationRepo | None = None,
+        conversation_id: uuid.UUID | None = None,
+    ) -> None:
+        self.canvas: Canvas = canvas
 
         # ---- LM (cheap to construct, needs no I/O) ----
         provider = get_provider_config()
@@ -107,7 +119,7 @@ class CanvasRunner:
         return self.run_state.tool_registry.tools
 
     @tools.setter
-    def tools(self, value: dict[uuid.UUID, object]):
+    def tools(self, value: dict[uuid.UUID, object]) -> None:
         self.run_state.tool_registry.tools = value
 
     @property
@@ -115,15 +127,15 @@ class CanvasRunner:
         return self.run_state.tool_registry._tool_name_to_id
 
     @_tool_name_to_id.setter
-    def _tool_name_to_id(self, value: dict[str, uuid.UUID]):
+    def _tool_name_to_id(self, value: dict[str, uuid.UUID]) -> None:
         self.run_state.tool_registry._tool_name_to_id = value
 
     @property
-    def agents(self) -> dict[uuid.UUID, object]:
+    def agents(self) -> dict[uuid.UUID, StreamingReAct]:
         return self.run_state.agents
 
     @agents.setter
-    def agents(self, value: dict[uuid.UUID, object]):
+    def agents(self, value: dict[uuid.UUID, StreamingReAct]) -> None:
         self.run_state.agents = value
 
     @property
@@ -131,33 +143,33 @@ class CanvasRunner:
         return self.run_state.wired_agents
 
     @_wired_agents.setter
-    def _wired_agents(self, value: set[uuid.UUID]):
+    def _wired_agents(self, value: set[uuid.UUID]) -> None:
         self.run_state.wired_agents = value
 
     @property
-    def node_map(self) -> dict[uuid.UUID, object]:
+    def node_map(self) -> dict[uuid.UUID, AgentNode]:
         return self.run_state.node_map
 
     @node_map.setter
-    def node_map(self, value: dict[uuid.UUID, object]):
+    def node_map(self, value: dict[uuid.UUID, AgentNode]) -> None:
         self.run_state.node_map = value
         if hasattr(self, "_handoff_tool_builder"):
             self._handoff_tool_builder.node_map = value
 
     @property
-    def conversation_repo(self):
+    def conversation_repo(self) -> ConversationRepo | None:
         return self._conversation.conversation_repo
 
     @conversation_repo.setter
-    def conversation_repo(self, value):
+    def conversation_repo(self, value: ConversationRepo | None) -> None:
         self._conversation.conversation_repo = value
 
     @property
-    def conversation_id(self):
+    def conversation_id(self) -> uuid.UUID | None:
         return self._conversation.conversation_id
 
     @conversation_id.setter
-    def conversation_id(self, value):
+    def conversation_id(self, value: uuid.UUID | None) -> None:
         self._conversation.conversation_id = value
 
     async def generate_conversation_title(self, user_prompt: str) -> str | None:
@@ -209,7 +221,7 @@ class CanvasRunner:
     # Setup
     # ------------------------------------------------------------------
 
-    async def setup(self, send_event=None):
+    async def setup(self, send_event: EventCallback | None = None) -> None:
         """Initialise all services and build worker agents.
 
         Called at the start of every ``run()``.  Idempotent-ish: if a
@@ -392,7 +404,7 @@ class CanvasRunner:
 
         if target_agent_id is not None:
             agent_node = self.node_map.get(target_agent_id)
-            if agent_node and agent_node.agent_type == "router":
+            if agent_node and getattr(agent_node, "agent_type", None) == "router":
                 return RouterExecution(services)
             return WorkerExecution(services)
 
@@ -450,9 +462,9 @@ class CanvasRunner:
     async def run(
         self,
         user_prompt: str,
-        send_event,
+        send_event: EventCallback,
         target_agent_id: uuid.UUID | None = None,
-        get_client_response = None,
+        get_client_response: ClientResponseCallback | None = None,
     ) -> str | None:
         logger.info(
             "Starting canvas execution: canvas_id=%s prompt=%s target=%s",
@@ -481,7 +493,9 @@ class CanvasRunner:
         history_messages = await self._conversation.load_messages()
         agent_ids = [n.id for n in self.canvas.agent_nodes]
 
-        default_agent_id = entry_node.id if entry_node else (agent_ids[0] if agent_ids else None)
+        # agent_ids is guaranteed non-empty: run() returned early above when the
+        # canvas has no agent nodes.
+        default_agent_id = entry_node.id if entry_node else agent_ids[0]
 
         first_agent_id = (
             target_agent_id

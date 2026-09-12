@@ -1,6 +1,12 @@
 """Per-agent memory provider wrapping mem0 as DSPy-compatible tool functions."""
 
+from __future__ import annotations
+
 import logging
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from mem0 import Memory
 
 logger = logging.getLogger(__name__)
 
@@ -11,12 +17,21 @@ class MemoryProvider:
     Each agent gets its own MemoryProvider instance and user_id so memories
     are scoped per agent. All providers share a single mem0 Memory (and thus a
     single QdrantClient) to avoid local-qdrant file-locking issues.
+
+    Invariant: ``memory`` is ``None`` only when ``initialization_error`` is set
+    (see ``MemoryManager.build_provider``); the tool methods raise that stored
+    error before ever touching ``memory``.
     """
 
-    def __init__(self, user_id: str, memory, initialization_error: Exception | None = None):
-        self.user_id = user_id
-        self.memory = memory
-        self.initialization_error = initialization_error
+    def __init__(
+        self,
+        user_id: str,
+        memory: Memory | None,
+        initialization_error: Exception | None = None,
+    ) -> None:
+        self.user_id: str = user_id
+        self.memory: Memory | None = memory
+        self.initialization_error: Exception | None = initialization_error
 
     async def store_memory(self, content: str) -> str:
         """
@@ -27,6 +42,7 @@ class MemoryProvider:
         if self.initialization_error is not None:
             raise self.initialization_error
         try:
+            assert self.memory is not None
             self.memory.add(content, user_id=self.user_id, infer=False)
             return f"Stored memory: {content}"
         except Exception as e:
@@ -39,8 +55,9 @@ class MemoryProvider:
         if self.initialization_error is not None:
             raise self.initialization_error
         try:
+            assert self.memory is not None
             results = self.memory.search(
-                query, filters={"user_id": self.user_id}, limit=5
+                query, filters={"user_id": self.user_id}, top_k=5
             )
             if not results.get("results"):
                 return "No relevant memories found."
@@ -57,6 +74,7 @@ class MemoryProvider:
         if self.initialization_error is not None:
             raise self.initialization_error
         try:
+            assert self.memory is not None
             results = self.memory.get_all(filters={"user_id": self.user_id})
             if not results.get("results"):
                 return "No memories stored."

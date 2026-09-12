@@ -5,13 +5,14 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from canvas_server.events import EventPayload
 from canvas_server.exceptions import ConversationNotFoundError
 from canvas_server.models.canvas import Conversation, ConversationPlot, Message
 
 
 class ConversationRepo:
-    def __init__(self, session: AsyncSession):
-        self.session = session
+    def __init__(self, session: AsyncSession) -> None:
+        self.session: AsyncSession = session
 
     def _eager_query(self):
         return select(Conversation).options(
@@ -73,7 +74,7 @@ class ConversationRepo:
         node_id: uuid.UUID | None = None,
         event_type: str | None = None,
         tool: str | None = None,
-        args: dict | None = None,
+        args: EventPayload | None = None,
     ) -> Message:
         msg = Message(
             conversation_id=conversation_id,

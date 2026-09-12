@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import uuid
 
 from llm_sandbox.exceptions import SandboxTimeoutError
 
@@ -71,10 +72,10 @@ class CodeProvider:
     """
 
     def __init__(
-        self, conversation_id: str, network_pool: str = NETWORK_POOL_DEFAULT
-    ):
-        self.conversation_id = conversation_id
-        self.network_pool = network_pool
+        self, conversation_id: str | uuid.UUID, network_pool: str = NETWORK_POOL_DEFAULT
+    ) -> None:
+        self.conversation_id: str | uuid.UUID = conversation_id
+        self.network_pool: str = network_pool
 
     async def _with_session(self, work):
         """Acquire the per-conversation sandbox session, run ``work(session)``,

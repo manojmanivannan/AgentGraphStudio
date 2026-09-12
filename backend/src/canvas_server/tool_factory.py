@@ -19,6 +19,7 @@ import inspect
 import json
 import logging
 import time
+from collections.abc import Callable, Coroutine
 from typing import Any
 
 from canvas_server.exceptions import (
@@ -237,7 +238,7 @@ async def compile_tool_from_code(
     code: str,
     dependencies: list[str] | None = None,
     runtime_session_id: str | None = None,
-):
+) -> Callable[..., Coroutine[Any, Any, Any]]:
     """Compiles user tool code into a sandboxed async callable.
 
     The returned function has its metadata (`__name__`, `__doc__`, `__annotations__`)

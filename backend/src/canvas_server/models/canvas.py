@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING, Any
 
 import sqlalchemy as sa
 from sqlalchemy import (
@@ -20,6 +21,10 @@ from sqlalchemy.types import JSON
 
 from canvas_server.database import Base
 from canvas_server.models.auth import User
+
+if TYPE_CHECKING:
+    from sqlalchemy.engine import Dialect
+    from sqlalchemy.sql.type_api import TypeEngine
 
 
 def _utcnow():
@@ -195,11 +200,11 @@ class SafeVector(TypeDecorator):
     impl = JSON
     cache_ok = True
 
-    def __init__(self, dimensions=None):
+    def __init__(self, dimensions: int | None = None) -> None:
         super().__init__()
         self.dimensions = dimensions
 
-    def load_dialect_impl(self, dialect):
+    def load_dialect_impl(self, dialect: Dialect) -> TypeEngine[Any]:
         if dialect.name == "postgresql":
             if HAS_PGVECTOR and Vector is not None:
                 return dialect.type_descriptor(Vector(self.dimensions))
@@ -263,8 +268,8 @@ class ToolNode(Base):
     )
     name: Mapped[str] = mapped_column(String(255), default="Tool")
     code: Mapped[str] = mapped_column(Text, default="")
-    dependencies: Mapped[list] = mapped_column(JSON, default=[])
-    args: Mapped[list] = mapped_column(JSON, default=[])
+    dependencies: Mapped[list[str]] = mapped_column(JSON, default=[])
+    args: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=[])
     position_x: Mapped[float] = mapped_column(Double, default=0)
     position_y: Mapped[float] = mapped_column(Double, default=0)
     requires_approval: Mapped[bool] = mapped_column(
@@ -363,7 +368,7 @@ class Message(Base):
     tool: Mapped[str | None] = mapped_column(
         String(255), nullable=True, default=None
     )
-    args: Mapped[dict | None] = mapped_column(
+    args: Mapped[dict[str, Any] | None] = mapped_column(
         JSON, nullable=True, default=None
     )
     created_at: Mapped[datetime] = mapped_column(
@@ -481,7 +486,7 @@ class DurableRunEvent(Base):
     )
     sequence: Mapped[int] = mapped_column(sa.Integer(), nullable=False)
     event_type: Mapped[str] = mapped_column(String(50), nullable=False)
-    payload: Mapped[dict] = mapped_column(JSON, default=dict)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow
     )

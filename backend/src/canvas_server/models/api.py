@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from typing import Any
+from typing import Any, Self
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -26,19 +26,19 @@ class AgentNodeBase(BaseModel):
     position_y: float = 0
 
     @model_validator(mode="after")
-    def validate_plotting_for_workers_only(self) -> "AgentNodeBase":
+    def validate_plotting_for_workers_only(self) -> Self:
         if self.agent_type == "router" and self.enable_plotting:
             raise ValueError("Plotting is only supported for worker agents, not Router agents.")
         return self
 
     @model_validator(mode="after")
-    def validate_coding_for_workers_only(self) -> "AgentNodeBase":
+    def validate_coding_for_workers_only(self) -> Self:
         if self.agent_type == "router" and self.enable_coding:
             raise ValueError("Coding is only supported for worker agents, not Router agents.")
         return self
 
     @model_validator(mode="after")
-    def validate_network_for_workers_only(self) -> "AgentNodeBase":
+    def validate_network_for_workers_only(self) -> Self:
         # enable_network is a per-worker session capability (#56): it routes
         # the worker's sandbox session to the networked pool and injects the
         # pip_install tool. Routers never get network sessions or pip_install.

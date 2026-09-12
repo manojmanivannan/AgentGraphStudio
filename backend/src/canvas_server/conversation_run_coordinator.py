@@ -3,7 +3,11 @@ import uuid
 from collections.abc import Awaitable, Callable
 from typing import Any
 
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from canvas_server.exceptions import RunAbortedError
+from canvas_server.repos.canvas_repo import CanvasRepo
+from canvas_server.repos.conversation_repo import ConversationRepo
 from canvas_server.runner import CanvasRunner
 from canvas_server.sandbox import get_sandbox
 
@@ -16,15 +20,15 @@ class ConversationRunCoordinator:
     def __init__(
         self,
         *,
-        session,
-        conversation_repo,
-        canvas_repo,
-        runner_factory: Callable[..., Awaitable[Any]] | None = None,
-    ):
-        self.session = session
-        self.conversation_repo = conversation_repo
-        self.canvas_repo = canvas_repo
-        self.runner_factory = runner_factory or self._build_runner
+        session: AsyncSession,
+        conversation_repo: ConversationRepo,
+        canvas_repo: CanvasRepo,
+        runner_factory: Callable[..., Awaitable[CanvasRunner]] | None = None,
+    ) -> None:
+        self.session: AsyncSession = session
+        self.conversation_repo: ConversationRepo = conversation_repo
+        self.canvas_repo: CanvasRepo = canvas_repo
+        self.runner_factory: Callable[..., Awaitable[CanvasRunner]] = runner_factory or self._build_runner
 
     async def run(
         self,
@@ -33,7 +37,7 @@ class ConversationRunCoordinator:
         user_prompt: str,
         send_event: EventSender,
         target_agent_id: uuid.UUID | None = None,
-        get_client_response = None,
+        get_client_response: Callable[[str, str], Awaitable[dict[str, Any]]] | None = None,
     ) -> None:
         conversation = await self.conversation_repo.get_or_404(conversation_id)
         canvas = await self.canvas_repo.get_or_404(conversation.canvas_id)
