@@ -17,7 +17,7 @@
 # The upstream llm-sandbox image carries a build toolchain and a broad scientific
 # stack that this floor does not use. The library only requires a Python image
 # with pip and a shell when environment setup is skipped.
-FROM python:3.11-slim-trixie
+FROM python:3.14-slim-trixie
 
 # Floor packages baked into the system interpreter. Bytecode is compiled at
 # build time so pooled sessions never pay an import-compile cost inside each

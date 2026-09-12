@@ -65,7 +65,7 @@ class CanvasRunner:
         # ---- LM (cheap to construct, needs no I/O) ----
         provider = get_provider_config()
         self._lm = dspy.LM(
-            provider.llm_model,
+            provider.dspy_llm_model,
             api_base=provider.llm_base_url,
             api_key=provider.llm_api_key,
         )
