@@ -17,7 +17,10 @@ import {
 import type { Message, ExecutionEvent, ConversationSummary } from "@/types";
 import { executionEventToMessage } from "./executionEventMessage";
 
-const useProxyMode = ((import.meta.env.VITE_USE_PROXY as string | undefined)?.trim() || "").toLowerCase() === "true";
+const rawUseProxy = (import.meta.env.VITE_USE_PROXY as string | undefined)?.trim();
+const useProxyMode = rawUseProxy
+  ? rawUseProxy.toLowerCase() === "true"
+  : import.meta.env.MODE !== "test";
 const configuredWsHost = (import.meta.env.VITE_API_HOST as string | undefined)?.trim();
 const fallbackWsBase = configuredWsHost
   ? /^wss?:\/\//.test(configuredWsHost)

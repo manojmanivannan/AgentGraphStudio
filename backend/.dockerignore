@@ -1,0 +1,17 @@
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.ruff_cache/
+storage/
+tests/
+prototype/
+mlflow.db
+test.db
+e2e_test.db
+.git/
+.gitignore
+.env*
+!.env.example

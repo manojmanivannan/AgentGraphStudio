@@ -150,6 +150,9 @@ services:
   frontend:
     build:
       context: ./frontend
+      args:
+        VITE_USE_PROXY: ${VITE_USE_PROXY:-true}
+        VITE_API_HOST: ${VITE_API_HOST:-}
     ports:
       - "5173:5173"
     env_file: ./.env
@@ -167,6 +170,12 @@ services:
         limits:
           cpus: '0.25'
           memory: 256m
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:80/healthz"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
     develop:
       watch:
         - action: sync
