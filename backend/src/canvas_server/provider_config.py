@@ -11,10 +11,14 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from canvas_server.config import settings
+
+if TYPE_CHECKING:
+    from canvas_server.models.provider import ProviderSettings
 
 logger = logging.getLogger("canvas_server.provider_config")
 
@@ -93,7 +97,7 @@ def provider_config_from_env() -> ProviderConfig:
     )
 
 
-def provider_config_from_row(row) -> ProviderConfig:
+def provider_config_from_row(row: ProviderSettings) -> ProviderConfig:
     return ProviderConfig(
         profile=row.profile,
         llm_provider_type=row.llm_provider_type,

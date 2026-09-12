@@ -19,13 +19,13 @@ from canvas_server.repos.durable_run_repo import DurableRunRepo
 
 logger = logging.getLogger("canvas_server.background_worker")
 
-TERMINAL_RUN_STATUSES = {"completed", "failed", "aborted"}
+TERMINAL_RUN_STATUSES: set[str] = {"completed", "failed", "aborted"}
 
 
 class RunEventBroker:
     def __init__(self) -> None:
         self._subscribers: dict[uuid.UUID, set[asyncio.Queue[dict[str, Any]]]] = defaultdict(set)
-        self._lock = asyncio.Lock()
+        self._lock: asyncio.Lock = asyncio.Lock()
 
     async def subscribe(self, run_id: uuid.UUID) -> asyncio.Queue[dict[str, Any]]:
         queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
@@ -60,7 +60,7 @@ class InterruptStore:
 
     def __init__(self) -> None:
         self._pending: dict[str, asyncio.Future[dict[str, Any]]] = {}
-        self._lock = asyncio.Lock()
+        self._lock: asyncio.Lock = asyncio.Lock()
 
     async def wait_for_response(self, request_id: str) -> dict[str, Any]:
         """Register *request_id* and await its resolution."""
@@ -100,15 +100,15 @@ class BackgroundRunWorker:
         lease_seconds: int = 30,
         poll_interval_seconds: float = 0.5,
     ) -> None:
-        self._session_factory = session_factory
-        self.worker_id = worker_id or f"worker-{uuid.uuid4()}"
-        self.lease_seconds = lease_seconds
-        self.poll_interval_seconds = poll_interval_seconds
-        self._wake_event = asyncio.Event()
-        self._stop_event = asyncio.Event()
-        self._worker_task: asyncio.Task | None = None
-        self._broker = RunEventBroker()
-        self._interrupt_store = InterruptStore()
+        self._session_factory: async_sessionmaker[AsyncSession] = session_factory
+        self.worker_id: str = worker_id or f"worker-{uuid.uuid4()}"
+        self.lease_seconds: int = lease_seconds
+        self.poll_interval_seconds: float = poll_interval_seconds
+        self._wake_event: asyncio.Event = asyncio.Event()
+        self._stop_event: asyncio.Event = asyncio.Event()
+        self._worker_task: asyncio.Task[None] | None = None
+        self._broker: RunEventBroker = RunEventBroker()
+        self._interrupt_store: InterruptStore = InterruptStore()
 
     async def ensure_started(self) -> None:
         if self._worker_task and not self._worker_task.done():

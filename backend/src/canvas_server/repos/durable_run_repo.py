@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from canvas_server.events import EventPayload
 from canvas_server.exceptions import DurableRunNotFoundError
 from canvas_server.models.canvas import Conversation, DurableRun, DurableRunEvent
 
@@ -13,8 +14,8 @@ NON_TERMINAL_RUN_STATUSES = ("queued", "running", "aborting")
 
 
 class DurableRunRepo:
-    def __init__(self, session: AsyncSession):
-        self.session = session
+    def __init__(self, session: AsyncSession) -> None:
+        self.session: AsyncSession = session
 
     def _eager_query(self):
         return select(DurableRun).options(
@@ -133,7 +134,7 @@ class DurableRunRepo:
         self,
         run_id: uuid.UUID,
         event_type: str,
-        payload: dict | None = None,
+        payload: EventPayload | None = None,
     ) -> DurableRunEvent:
         max_sequence_result = await self.session.execute(
             select(sa.func.coalesce(sa.func.max(DurableRunEvent.sequence), 0)).where(

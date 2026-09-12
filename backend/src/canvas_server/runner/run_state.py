@@ -2,18 +2,26 @@ from __future__ import annotations
 
 import logging
 import uuid
-from collections.abc import Callable
-from typing import TYPE_CHECKING, Any
+from collections.abc import Awaitable, Callable
+from typing import TYPE_CHECKING
+
+from canvas_server.events import EventCallback, EventPayload
 
 if TYPE_CHECKING:
+    import dspy
+
+    from canvas_server.models.canvas import AgentNode, Canvas
     from canvas_server.runner.agent_factory import AgentFactory
     from canvas_server.runner.conversation import ConversationService
     from canvas_server.runner.handoff import HandoffToolBuilder
     from canvas_server.runner.tool_registry import ToolRegistry
+    from canvas_server.streaming_react import StreamingReAct
 
 from canvas_server.runner.transcript_classifier import classify_tool_result
 
 logger = logging.getLogger("canvas_server.runner.run_state")
+
+ClientResponseCallback = Callable[[str, str], Awaitable[EventPayload]]
 
 
 class CanvasRunState:
@@ -33,19 +41,19 @@ class CanvasRunState:
 
     def __init__(
         self,
-        canvas,
+        canvas: Canvas,
         agent_factory: AgentFactory,
         conversation_service: ConversationService,
         tool_registry: ToolRegistry,
-    ):
-        self.canvas = canvas
-        self.agent_factory = agent_factory
-        self.conversation_service = conversation_service
-        self.tool_registry = tool_registry
+    ) -> None:
+        self.canvas: Canvas = canvas
+        self.agent_factory: AgentFactory = agent_factory
+        self.conversation_service: ConversationService = conversation_service
+        self.tool_registry: ToolRegistry = tool_registry
 
         # Runtime collections
-        self.node_map: dict[uuid.UUID, Any] = {}
-        self.agents: dict[uuid.UUID, Any] = {}
+        self.node_map: dict[uuid.UUID, AgentNode] = {}
+        self.agents: dict[uuid.UUID, StreamingReAct] = {}
         self.wired_agents: set[uuid.UUID] = set()
 
         # Injected dependencies resolved at setup time
@@ -53,32 +61,33 @@ class CanvasRunState:
 
         # Ephemeral fields configured at run start
         self.user_prompt: str = ""
-        self.send_event: Callable | None = None
+        self.send_event: EventCallback | None = None
         self.history_text: str = ""
-        self.dspy_history: Any = None
-        self.get_client_response: Callable | None = None
+        self.dspy_history: dspy.History | None = None
+        self.get_client_response: ClientResponseCallback | None = None
 
     def set_run_context(
         self,
         user_prompt: str,
-        send_event: Callable,
+        send_event: EventCallback,
         history_text: str,
-        dspy_history: Any,
-    ):
+        dspy_history: dspy.History | None,
+    ) -> None:
         """Configures ephemeral fields for the duration of a single execution run.
 
         Args:
             user_prompt (str): The raw input message from the user.
-            send_event (Callable): Async callback to stream events over websocket.
+            send_event (EventCallback): Async callback to stream events over websocket.
             history_text (str): Serialized conversation history for prompt injection.
-            dspy_history (Any): Native DSPy history list.
+            dspy_history (dspy.History | None): Native DSPy history object, or None
+                when conversation history is disabled.
         """
         self.user_prompt = user_prompt
         self.send_event = send_event
         self.history_text = history_text
         self.dspy_history = dspy_history
 
-    async def get_or_build_agent(self, agent_id: uuid.UUID, task: str | None = None):
+    async def get_or_build_agent(self, agent_id: uuid.UUID, task: str | None = None) -> StreamingReAct:
         """Retrieves or dynamically builds an agent instance for execution.
 
         This method handles three distinct compilation pathways:
@@ -164,7 +173,7 @@ class CanvasRunState:
         self.attach_events(agent_id)
         return agent
 
-    def attach_events(self, agent_id: uuid.UUID, force: bool = False):
+    def attach_events(self, agent_id: uuid.UUID, force: bool = False) -> None:
         """Wires event callbacks to the agent's StreamingReAct loop.
 
         This ensures that intermediate steps (thoughts, tool invocations) are
@@ -191,7 +200,7 @@ class CanvasRunState:
             tool_name_to_id = self.tool_registry._tool_name_to_id
             send_event = self.send_event
 
-            async def callback(event, aid=agent_id, aname=agent_node.name):
+            async def callback(event: EventPayload, aid: uuid.UUID = agent_id, aname: str = agent_node.name) -> None:
                 event_type = event.get("type")
 
                 if event_type == "tool_start":

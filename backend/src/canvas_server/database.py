@@ -39,14 +39,14 @@ def get_session_factory(database_url: str | None = None) -> async_sessionmaker[A
     return _session_factory
 
 
-def reset_session_factory():
+def reset_session_factory() -> None:
     global _engine, _session_factory, _configured_url
     _engine = None
     _session_factory = None
     _configured_url = None
 
 
-async def async_reset_session_factory():
+async def async_reset_session_factory() -> None:
     global _engine, _session_factory, _configured_url
     if _engine is not None:
         await _engine.dispose()

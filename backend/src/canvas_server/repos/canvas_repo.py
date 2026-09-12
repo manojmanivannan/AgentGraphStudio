@@ -19,8 +19,8 @@ logger = logging.getLogger("canvas_server.repo")
 
 
 class CanvasRepo:
-    def __init__(self, session: AsyncSession):
-        self.session = session
+    def __init__(self, session: AsyncSession) -> None:
+        self.session: AsyncSession = session
 
     def _eager_query(self):
         return select(Canvas).options(

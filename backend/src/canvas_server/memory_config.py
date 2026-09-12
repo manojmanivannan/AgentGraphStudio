@@ -1,10 +1,12 @@
 """Build mem0 config from the active provider configuration."""
 
+from typing import Any
+
 from canvas_server.config import settings
 from canvas_server.provider_config import get_provider_config
 
 
-def build_mem0_config() -> dict:
+def build_mem0_config() -> dict[str, Any]:
     active = get_provider_config()
     provider = active.llm_provider_type
     llm_config = {

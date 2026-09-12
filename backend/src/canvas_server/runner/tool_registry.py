@@ -4,8 +4,13 @@ from __future__ import annotations
 
 import logging
 import uuid
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any
 
 from canvas_server.tool_factory import compile_tool_from_code
+
+if TYPE_CHECKING:
+    from canvas_server.models.canvas import Edge, ToolNode
 
 logger = logging.getLogger("canvas_server.runner.tool_registry")
 
@@ -31,13 +36,13 @@ class ToolRegistry:
         to resolve tool names to canonical node IDs (for canvas highlighting).
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.tools: dict[uuid.UUID, object] = {}
         self._tool_name_to_id: dict[str, uuid.UUID] = {}
 
     async def compile_all(
         self,
-        tool_nodes: list,
+        tool_nodes: list[ToolNode],
         runtime_session_id: str | None = None,
     ) -> None:
         """Compile every ``ToolNode`` in *tool_nodes*."""
@@ -75,7 +80,9 @@ class ToolRegistry:
             )
         logger.info("Built %d tools", len(self.tools))
 
-    def get_tools_for_agent(self, agent_id: uuid.UUID, edges: list) -> list:
+    def get_tools_for_agent(
+        self, agent_id: uuid.UUID, edges: list[Edge]
+    ) -> list[Callable[..., Any]]:
         """Return the list of compiled tool callables accessible to *agent_id*
         via ``tool_access`` edges."""
         agent_tools = []

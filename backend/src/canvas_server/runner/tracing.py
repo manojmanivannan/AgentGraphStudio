@@ -13,6 +13,7 @@ behavior when MLflow is disabled or unreachable.
 from __future__ import annotations
 
 import logging
+import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
 
@@ -29,7 +30,7 @@ AGENT_SPAN_TYPE = "AGENT"
 @contextmanager
 def agent_span(
     agent_name: str,
-    node_id=None,
+    node_id: uuid.UUID | None = None,
     agent_type: str | None = None,
     canvas_name: str | None = None,
 ) -> Iterator[Span | None]:

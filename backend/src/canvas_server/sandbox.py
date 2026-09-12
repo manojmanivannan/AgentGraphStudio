@@ -13,8 +13,10 @@ from __future__ import annotations
 import asyncio
 import logging
 import threading
+import uuid
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from llm_sandbox import ArtifactSandboxSession
 from llm_sandbox.pool import PoolConfig
@@ -22,6 +24,9 @@ from llm_sandbox.pool.base import ContainerPoolManager
 from llm_sandbox.pool.exceptions import PoolExhaustedError
 
 from canvas_server.config import settings
+
+if TYPE_CHECKING:
+    from types import TracebackType
 
 logger = logging.getLogger("canvas_server.sandbox")
 
@@ -155,8 +160,6 @@ def create_named_pool_manager(
         **kwargs: Forwarded to ``DockerPoolManager`` (``backend``, ``image``,
             ``skip_environment_setup``, ``runtime_configs``, ``client``, ...).
     """
-    import uuid
-
     from llm_sandbox.docker import SandboxDockerSession
     from llm_sandbox.pool.docker_pool import DockerPoolManager
 
@@ -244,10 +247,10 @@ class CanvasSandboxSession(ArtifactSandboxSession):
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         # Whether this session currently holds a container for the turn.
-        self._canvas_held = False
+        self._canvas_held: bool = False
         # Serializes the per-turn acquire so only one container is acquired per
         # session per turn (the pooled session has a single container slot).
-        self._canvas_lock = threading.Lock()
+        self._canvas_lock: threading.Lock = threading.Lock()
 
     @property
     def enable_plotting(self) -> bool:
@@ -279,7 +282,12 @@ class CanvasSandboxSession(ArtifactSandboxSession):
             logger.warning("Failed to clean sandbox workdir on acquire: %s", e)
         return self
 
-    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:  # type: ignore[override]
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:  # type: ignore[override]
         # Deliberately do NOT release the container here. It is held for the
         # duration of the turn so intra-turn run_code -> generate_plot file
         # handoffs work on the same container, and so no other conversation can
@@ -315,7 +323,7 @@ class AcquireResult:
 
 
 async def bounded_acquire(
-    session: Any, *, timeout: float = SANDBOX_ACQUIRE_TIMEOUT
+    session: ArtifactSandboxSession, *, timeout: float = SANDBOX_ACQUIRE_TIMEOUT
 ) -> AcquireResult:
     """Bound the wait for a free sandbox container; never raise on exhaustion.
 
@@ -345,8 +353,8 @@ async def bounded_acquire(
 
 
 async def bounded_session_work(
-    session: Any,
-    work: Any,
+    session: ArtifactSandboxSession,
+    work: Callable[[ArtifactSandboxSession], Awaitable[Any]],
     *,
     timeout: float = SANDBOX_ACQUIRE_TIMEOUT,
 ) -> tuple[bool, Any]:
@@ -380,7 +388,9 @@ async def bounded_session_work(
             logger.warning("Failed to exit sandbox session cleanly")
 
 
-async def _release_orphaned_acquire(enter_task: asyncio.Future, session: Any) -> None:
+async def _release_orphaned_acquire(
+    enter_task: asyncio.Future, session: ArtifactSandboxSession
+) -> None:
     """Clean up after a bounded-acquire timeout.
 
     When the bounded acquire wait times out, the underlying ``__enter__`` keeps
@@ -424,11 +434,11 @@ class SandboxManager:
 
     _instance: SandboxManager | None = None
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._locked_pool: ContainerPoolManager | None = None
         self._networked_pool: ContainerPoolManager | None = None
         self._active_sessions: dict[tuple[str, str], ArtifactSandboxSession] = {}
-        self._initialized = False
+        self._initialized: bool = False
 
     @classmethod
     def get(cls) -> SandboxManager:
@@ -522,7 +532,7 @@ class SandboxManager:
 
     def get_session(
         self,
-        conversation_id: str,
+        conversation_id: str | uuid.UUID,
         enable_plotting: bool = True,
         network_pool: str = NETWORK_POOL_DEFAULT,
     ) -> ArtifactSandboxSession:

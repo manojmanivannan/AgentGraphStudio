@@ -1,16 +1,19 @@
 import asyncio
 import json
 import uuid
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Response, WebSocket, WebSocketDisconnect
 
 from canvas_server.auth import get_current_user
 from canvas_server.background_run_worker import (
     TERMINAL_RUN_STATUSES,
+    BackgroundRunWorker,
     get_background_run_worker,
 )
 from canvas_server.config import settings
 from canvas_server.database import get_session_factory
+from canvas_server.events import EventPayload
 from canvas_server.exceptions import ConversationNotFoundError, DurableRunNotFoundError
 from canvas_server.models.auth import User
 from canvas_server.repos.conversation_repo import ConversationRepo
@@ -23,13 +26,13 @@ async def _get_run_events_after(
     *,
     run_id: uuid.UUID,
     after_sequence: int,
-) -> list[dict]:
+) -> list[EventPayload]:
     factory = get_session_factory()
     async with factory() as session:
         run_repo = DurableRunRepo(session)
         events = await run_repo.list_events(run_id, after_sequence=after_sequence)
 
-    replay: list[dict] = []
+    replay: list[EventPayload] = []
     for event in events:
         payload = dict(event.payload or {})
         payload.setdefault("type", event.event_type)
@@ -51,7 +54,7 @@ async def _get_run_status(run_id: uuid.UUID) -> str | None:
 async def get_plot(
     plot_id: uuid.UUID,
     current_user: User = Depends(get_current_user),
-):
+) -> Response:
     factory = get_session_factory()
     async with factory() as session:
         conv_repo = ConversationRepo(session)
@@ -72,7 +75,7 @@ async def get_plot(
 async def get_active_run(
     conversation_id: uuid.UUID,
     current_user: User = Depends(get_current_user),
-):
+) -> dict[str, Any] | None:
     factory = get_session_factory()
     async with factory() as session:
         conv_repo = ConversationRepo(session)
@@ -102,7 +105,7 @@ async def get_run_events(
     run_id: uuid.UUID,
     after_sequence: int = 0,
     current_user: User = Depends(get_current_user),
-):
+) -> list[EventPayload]:
     factory = get_session_factory()
     async with factory() as session:
         run_repo = DurableRunRepo(session)
@@ -118,7 +121,7 @@ async def get_run_events(
             raise HTTPException(status_code=404, detail="Run not found") from None
         events = await run_repo.list_events(run_id, after_sequence=after_sequence)
 
-    replay: list[dict] = []
+    replay: list[EventPayload] = []
     for event in events:
         payload = dict(event.payload or {})
         payload.setdefault("type", event.event_type)
@@ -131,9 +134,9 @@ async def get_run_events(
 @execute_router.post("/api/runs/{run_id}/interrupt-response")
 async def submit_interrupt_response(
     run_id: uuid.UUID,
-    body: dict,
+    body: dict[str, Any],
     current_user: User = Depends(get_current_user),
-):
+) -> dict[str, Any]:
     request_id = body.get("request_id")
     if not request_id:
         raise HTTPException(status_code=422, detail="request_id is required")
@@ -172,7 +175,7 @@ async def submit_interrupt_response(
 async def abort_run(
     run_id: uuid.UUID,
     current_user: User = Depends(get_current_user),
-):
+) -> dict[str, Any]:
     factory = get_session_factory()
     async with factory() as session:
         run_repo = DurableRunRepo(session)
@@ -208,15 +211,15 @@ async def run_conversation(
     websocket: WebSocket,
     conversation_id: uuid.UUID,
     current_user: User = Depends(get_current_user),
-):
+) -> None:
     # Handshake auth: Depends(get_current_user) runs before accept(); FastAPI
     # rejects the upgrade (closes the socket) when it raises HTTPException, so
     # no valid session -> no upgrade. get_current_user is typed HTTPConnection
     # precisely so it works on this WS path (see auth.py + ADR 0007).
     await websocket.accept()
     run_id: uuid.UUID | None = None
-    worker = None
-    queue = None
+    worker: BackgroundRunWorker | None = None
+    queue: asyncio.Queue[EventPayload] | None = None
 
     try:
         # Ownership re-check (per-handshake, before the prompt is read).

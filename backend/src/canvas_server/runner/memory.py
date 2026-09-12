@@ -4,9 +4,13 @@ from __future__ import annotations
 
 import logging
 import uuid
+from typing import TYPE_CHECKING
 
 from canvas_server.memory_config import build_mem0_config
 from canvas_server.memory_provider import MemoryProvider
+
+if TYPE_CHECKING:
+    from canvas_server.models.canvas import AgentNode
 
 logger = logging.getLogger("canvas_server.runner.memory")
 
@@ -24,12 +28,12 @@ class MemoryManager:
 
     _shared_memory = None
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._memory_providers: dict[uuid.UUID, MemoryProvider] = {}
         self.initialization_error: Exception | None = None
 
     @staticmethod
-    def needs_memory(agent_node) -> bool:
+    def needs_memory(agent_node: AgentNode) -> bool:
         return getattr(agent_node, "enable_memory", False)
 
     def _init_shared_memory(self):
@@ -42,7 +46,7 @@ class MemoryManager:
             # Dry-run search to verify embedder & vector-db connection
             # (skipped for tests using fake/mock Memory objects)
             if hasattr(shared, "search"):
-                shared.search("test_connection", filters={"user_id": "test_init_connection"}, limit=1)
+                shared.search("test_connection", filters={"user_id": "test_init_connection"}, top_k=1)
             self.__class__._shared_memory = shared
         return self.__class__._shared_memory
 
@@ -72,7 +76,7 @@ class MemoryManager:
             except Exception as exc:
                 logger.warning("Failed to close mem0 %s client: %s", attr, exc)
 
-    def build_provider(self, agent_node) -> MemoryProvider | None:
+    def build_provider(self, agent_node: AgentNode) -> MemoryProvider | None:
         """Return a ``MemoryProvider`` for *agent_node*, or ``None`` if memory
         is disabled. If initialization fails, returns a MemoryProvider that raises the error when called."""
         if not self.needs_memory(agent_node):

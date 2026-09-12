@@ -14,7 +14,7 @@ from canvas_server.models.auth import Session, User, new_session_id
 
 class AuthRepo:
     def __init__(self, session: AsyncSession) -> None:
-        self._session = session
+        self._session: AsyncSession = session
 
     # --- users ---
 
