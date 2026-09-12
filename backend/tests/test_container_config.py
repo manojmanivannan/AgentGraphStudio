@@ -59,6 +59,7 @@ def test_mlflow_image_avoids_pip_cache_and_runs_unprivileged() -> None:
     # pinned major.minor is not what this test is guarding.
     assert re.search(r"FROM python:\d+\.\d+-slim", dockerfile)
     assert "pip install --no-cache-dir --only-binary=:all: mlflow" in dockerfile
+    assert "pip uninstall -y scipy scikit-learn matplotlib fonttools pillow pyarrow" in dockerfile
     # --no-compile must NOT be used: site-packages stays root-owned while the
     # server runs as the unprivileged mlflow user, so bytecode can never be
     # written lazily at runtime — every worker would recompile the whole
