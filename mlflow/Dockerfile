@@ -1,4 +1,4 @@
-FROM python:3.12-slim
+FROM python:3.14-slim
 
 RUN pip install --no-cache-dir --only-binary=:all: mlflow \
 	&& addgroup --system --gid 10001 mlflow \
