@@ -68,6 +68,11 @@ class Settings(BaseSettings):
     # — never allowed to stall the turn indefinitely.
     sandbox_pip_install_timeout: int = 120
 
+    # --- Attachment storage (#79/#83) ---
+    # Hard cap per AttachmentInstance.content (Postgres LargeBinary/BYTEA row);
+    # anything over this is rejected at write time with AttachmentTooLargeError.
+    max_attachment_size_bytes: int = 25 * 1024 * 1024  # 25MB
+
     model_config = {
         "env_file": (".env", "../.env"),
         "env_file_encoding": "utf-8",

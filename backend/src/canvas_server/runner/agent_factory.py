@@ -126,7 +126,7 @@ class AgentFactory:
         if getattr(agent_node, "enable_plotting", False):
             full_instructions += (
                 "\n\n[CRITICAL SYSTEM RULE] If you call the plotting tool `generate_plot` and it returns "
-                "a markdown image link (e.g. `![Plot](/api/plots/...)`), you MUST preserve this image "
+                "a markdown image link (e.g. `![Plot](/api/attachments/...)`), you MUST preserve this image "
                 "markdown link exactly and include it in your final answer/response (process_result). "
                 "Do not omit, summarize, or modify the image link."
             )

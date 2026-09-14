@@ -5,9 +5,10 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from canvas_server.config import settings
 from canvas_server.events import EventPayload
-from canvas_server.exceptions import ConversationNotFoundError
-from canvas_server.models.canvas import Conversation, ConversationPlot, Message
+from canvas_server.exceptions import AttachmentTooLargeError, ConversationNotFoundError
+from canvas_server.models.canvas import AttachmentInstance, Conversation, Message
 
 
 class ConversationRepo:
@@ -115,18 +116,34 @@ class ConversationRepo:
         await self.session.flush()
         return conv
 
-    async def save_plot(
+    async def save_attachment(
         self,
         conversation_id: uuid.UUID,
         content: bytes,
         format: str = "png",
-    ) -> ConversationPlot:
-        plot = ConversationPlot(
+        file_type: str = "image",
+        source: str = "agent_output",
+        attachment_node_id: uuid.UUID | None = None,
+        produced_by_run_id: uuid.UUID | None = None,
+    ) -> AttachmentInstance:
+        size_bytes = len(content)
+        if size_bytes > settings.max_attachment_size_bytes:
+            raise AttachmentTooLargeError(
+                f"Attachment content is {size_bytes} bytes, which exceeds the "
+                f"{settings.max_attachment_size_bytes} byte limit."
+            )
+
+        attachment = AttachmentInstance(
             conversation_id=conversation_id,
             content=content,
+            size_bytes=size_bytes,
             format=format,
+            file_type=file_type,
+            source=source,
+            attachment_node_id=attachment_node_id,
+            produced_by_run_id=produced_by_run_id,
         )
-        self.session.add(plot)
+        self.session.add(attachment)
         await self.session.flush()
 
         conv_result = await self.session.execute(
@@ -137,17 +154,17 @@ class ConversationRepo:
             conv.updated_at = datetime.now(UTC)
 
         await self.session.commit()
-        return plot
+        return attachment
 
-    async def get_plot(self, plot_id: uuid.UUID) -> ConversationPlot | None:
+    async def get_attachment(self, attachment_id: uuid.UUID) -> AttachmentInstance | None:
         result = await self.session.execute(
-            select(ConversationPlot)
+            select(AttachmentInstance)
             .options(
-                selectinload(ConversationPlot.conversation).selectinload(
+                selectinload(AttachmentInstance.conversation).selectinload(
                     Conversation.canvas
                 )
             )
-            .where(ConversationPlot.id == plot_id)
+            .where(AttachmentInstance.id == attachment_id)
         )
         return result.scalar_one_or_none()
 

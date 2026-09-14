@@ -11,6 +11,7 @@ from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from canvas_server.auth import get_current_user
+from canvas_server.config import settings
 from canvas_server.database import get_session
 from canvas_server.exceptions import CanvasNotFoundError, ConversationNotFoundError
 from canvas_server.models.api import (
@@ -664,7 +665,7 @@ async def export_conversation(
         select(Conversation)
         .options(
             selectinload(Conversation.messages),
-            selectinload(Conversation.plots),
+            selectinload(Conversation.attachments),
         )
         .where(Conversation.id == conversation_id)
     )
@@ -698,21 +699,25 @@ async def export_conversation(
             }
             for msg in conv.messages
         ],
-        "plots": [
+        "attachments": [
             {
-                "id": str(plot.id),
-                "format": plot.format,
-                "created_at": plot.created_at.isoformat() if plot.created_at else None,
+                "id": str(attachment.id),
+                "file_type": attachment.file_type,
+                "source": attachment.source,
+                "format": attachment.format,
+                "created_at": attachment.created_at.isoformat()
+                if attachment.created_at
+                else None,
             }
-            for plot in conv.plots
+            for attachment in conv.attachments
         ],
     }
 
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
         zf.writestr("manifest.json", json.dumps(payload, indent=2, default=str))
-        for plot in conv.plots:
-            zf.writestr(f"plots/{plot.id}.{plot.format}", plot.content)
+        for attachment in conv.attachments:
+            zf.writestr(f"attachments/{attachment.id}.{attachment.format}", attachment.content)
     buffer.seek(0)
 
     safe_name = conv.name.replace(" ", "_").replace("/", "_")
@@ -738,7 +743,7 @@ async def import_conversation_zip(
     from sqlalchemy import select
     from sqlalchemy.orm import selectinload
 
-    from canvas_server.models.canvas import Conversation, ConversationPlot, Message
+    from canvas_server.models.canvas import AttachmentInstance, Conversation, Message
 
     logger.info("Importing conversation ZIP file to canvas=%s", canvas_id)
     canvas_repo = CanvasRepo(session)
@@ -792,40 +797,58 @@ async def import_conversation_zip(
     )
     session.add(new_conv)
 
-    plot_id_mapping = {}
-    for plot_data in manifest.get("plots", []):
-        old_plot_id = plot_data.get("id")
-        if not old_plot_id:
+    attachment_id_mapping = {}
+    for attachment_data in manifest.get("attachments", []):
+        old_attachment_id = attachment_data.get("id")
+        if not old_attachment_id:
             continue
-        plot_format = plot_data.get("format", "png")
-        plot_created_raw = plot_data.get("created_at")
-        plot_created_at = datetime.fromisoformat(plot_created_raw) if plot_created_raw else datetime.now(UTC)
-
-        path = f"plots/{old_plot_id}.{plot_format}"
-        try:
-            plot_content = archive.read(path)
-        except KeyError:
-            raise HTTPException(status_code=400, detail=f"Missing plot file in ZIP: {path}") from None
-
-        new_plot_id = uuid.uuid4()
-        plot_id_mapping[old_plot_id] = str(new_plot_id)
-
-        new_plot = ConversationPlot(
-            id=new_plot_id,
-            conversation_id=new_conv_id,
-            format=plot_format,
-            content=plot_content,
-            created_at=plot_created_at,
+        attachment_format = attachment_data.get("format", "png")
+        attachment_created_raw = attachment_data.get("created_at")
+        attachment_created_at = (
+            datetime.fromisoformat(attachment_created_raw)
+            if attachment_created_raw
+            else datetime.now(UTC)
         )
-        session.add(new_plot)
+
+        path = f"attachments/{old_attachment_id}.{attachment_format}"
+        try:
+            attachment_content = archive.read(path)
+        except KeyError:
+            raise HTTPException(
+                status_code=400, detail=f"Missing attachment file in ZIP: {path}"
+            ) from None
+
+        if len(attachment_content) > settings.max_attachment_size_bytes:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Attachment {path} is {len(attachment_content)} bytes, which "
+                    f"exceeds the {settings.max_attachment_size_bytes} byte limit."
+                ),
+            )
+
+        new_attachment_id = uuid.uuid4()
+        attachment_id_mapping[old_attachment_id] = str(new_attachment_id)
+
+        new_attachment = AttachmentInstance(
+            id=new_attachment_id,
+            conversation_id=new_conv_id,
+            file_type=attachment_data.get("file_type", "image"),
+            source=attachment_data.get("source", "agent_output"),
+            format=attachment_format,
+            content=attachment_content,
+            size_bytes=len(attachment_content),
+            created_at=attachment_created_at,
+        )
+        session.add(new_attachment)
 
     for msg_data in manifest.get("messages", []):
         msg_created_raw = msg_data.get("created_at")
         msg_created_at = datetime.fromisoformat(msg_created_raw) if msg_created_raw else datetime.now(UTC)
         content = msg_data.get("content", "")
 
-        # Replace old plot IDs with new plot IDs
-        for old_id, new_id in plot_id_mapping.items():
+        # Replace old attachment IDs with new attachment IDs
+        for old_id, new_id in attachment_id_mapping.items():
             content = content.replace(old_id, new_id)
 
         node_id_raw = msg_data.get("node_id")

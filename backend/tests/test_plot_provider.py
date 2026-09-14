@@ -1,3 +1,4 @@
+import uuid
 from unittest.mock import AsyncMock, MagicMock, mock_open, patch
 
 import pytest
@@ -123,7 +124,7 @@ async def test_plot_provider_success_db():
     mock_repo = AsyncMock()
     mock_record = MagicMock()
     mock_record.id = "mocked-plot-uuid"
-    mock_repo.save_plot.return_value = mock_record
+    mock_repo.save_attachment.return_value = mock_record
 
     with patch("canvas_server.runner.plot_provider.get_sandbox", new_callable=AsyncMock) as mock_get_sandbox:
         mock_get_sandbox.return_value = mock_sandbox_manager
@@ -137,9 +138,15 @@ async def test_plot_provider_success_db():
         mock_session.run.assert_called_once_with("import matplotlib.pyplot as plt; plt.show()")
         mock_session.__exit__.assert_called_once()
 
-        mock_repo.save_plot.assert_called_once()
+        mock_repo.save_attachment.assert_called_once_with(
+            conversation_id=uuid.UUID("8cf53a28-98cc-4d37-88eb-116dbec8e2cb"),
+            content=b"mock_base64_data",
+            format="png",
+            file_type="image",
+            source="agent_output",
+        )
         assert "Plot generated" in result_str
-        assert "![Plot](/api/plots/mocked-plot-uuid)" in result_str
+        assert "![Plot](/api/attachments/mocked-plot-uuid)" in result_str
 
 
 @pytest.mark.asyncio

@@ -96,12 +96,14 @@ class PlotProvider:
                         if isinstance(self.conversation_id, str)
                         else self.conversation_id
                     )
-                    plot_record = await self.conversation_repo.save_plot(
+                    plot_record = await self.conversation_repo.save_attachment(
                         conversation_id=conv_id,
                         content=plot_bytes,
                         format=ext,
+                        file_type="image",
+                        source="agent_output",
                     )
-                    markdown_links.append(f"![Plot](/api/plots/{plot_record.id})")
+                    markdown_links.append(f"![Plot](/api/attachments/{plot_record.id})")
                 else:
                     filename = f"{uuid.uuid4().hex}.{ext}"
                     filepath = os.path.join(plots_dir, filename)

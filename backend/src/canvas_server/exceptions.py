@@ -52,3 +52,9 @@ class RunAbortedError(Exception):
     pass
 
 
+class AttachmentTooLargeError(Exception):
+    """Raised when an attachment instance's content exceeds the size cap
+    (``settings.max_attachment_size_bytes``)."""
+    pass
+
+

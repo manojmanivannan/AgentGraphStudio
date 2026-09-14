@@ -331,8 +331,8 @@ class Conversation(Base):
         cascade="all, delete-orphan",
         order_by="Message.created_at",
     )
-    plots: Mapped[list[ConversationPlot]] = relationship(
-        "ConversationPlot",
+    attachments: Mapped[list[AttachmentInstance]] = relationship(
+        "AttachmentInstance",
         back_populates="conversation",
         cascade="all, delete-orphan",
     )
@@ -381,9 +381,20 @@ class Message(Base):
     )
 
 
-class ConversationPlot(Base):
-    __tablename__ = "conversation_plots"
-    __table_args__ = (Index("idx_conversation_plots_conversation", "conversation_id"),)
+class AttachmentInstance(Base):
+    """A stored attachment instance: unifies today's plot-only storage into a
+    generic table for any attachment content flowing through a conversation.
+
+    ``attachment_node_id`` is a placeholder linkage to a future Attachment
+    canvas node (#76/#80) — no FK constraint is enforced yet because that
+    table doesn't exist in this slice; it stays a bare nullable UUID, same
+    spirit as the cross-type ``edges.source_node_id``/``target_node_id``
+    columns. ``produced_by_run_id`` is similarly optional: chat-upload
+    instances have no producing run.
+    """
+
+    __tablename__ = "attachment_instances"
+    __table_args__ = (Index("idx_attachment_instances_conversation", "conversation_id"),)
 
     id: Mapped[uuid.UUID] = mapped_column(
         Uuid,
@@ -394,15 +405,27 @@ class ConversationPlot(Base):
         Uuid,
         ForeignKey("conversations.id", ondelete="CASCADE"),
     )
+    attachment_node_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, nullable=True, default=None
+    )
+    file_type: Mapped[str] = mapped_column(String(20), default="image")
+    source: Mapped[str] = mapped_column(String(20), default="agent_output")
+    produced_by_run_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid,
+        ForeignKey("durable_runs.id", ondelete="SET NULL"),
+        nullable=True,
+        default=None,
+    )
     format: Mapped[str] = mapped_column(String(10), default="png")
     content: Mapped[bytes] = mapped_column(sa.LargeBinary)
+    size_bytes: Mapped[int] = mapped_column(sa.Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=_utcnow,
     )
 
     conversation: Mapped[Conversation] = relationship(
-        "Conversation", back_populates="plots"
+        "Conversation", back_populates="attachments"
     )
 
 

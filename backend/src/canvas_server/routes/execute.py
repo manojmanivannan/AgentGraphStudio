@@ -1,5 +1,6 @@
 import asyncio
 import json
+import mimetypes
 import uuid
 from typing import Any
 
@@ -50,25 +51,41 @@ async def _get_run_status(run_id: uuid.UUID) -> str | None:
     return run.status if run else None
 
 
-@execute_router.get("/api/plots/{plot_id}", response_class=Response)
-async def get_plot(
-    plot_id: uuid.UUID,
+def _attachment_media_type(attachment: Any) -> str:
+    """Resolve a Content-Type for an attachment instance's binary content.
+
+    Image attachments (today's only producer, via ``generate_plot``) keep the
+    ``image/{format}`` shape callers already rely on; any other ``file_type``
+    falls back to a best-effort guess from the stored format/extension, or a
+    generic binary type.
+    """
+    if attachment.file_type == "image":
+        return f"image/{attachment.format}"
+    guessed, _ = mimetypes.guess_type(f"attachment.{attachment.format}")
+    return guessed or "application/octet-stream"
+
+
+@execute_router.get("/api/attachments/{attachment_id}", response_class=Response)
+async def get_attachment(
+    attachment_id: uuid.UUID,
     current_user: User = Depends(get_current_user),
 ) -> Response:
     factory = get_session_factory()
     async with factory() as session:
         conv_repo = ConversationRepo(session)
-        plot = await conv_repo.get_plot(plot_id)
-        if not plot:
-            raise HTTPException(status_code=404, detail="Plot not found")
-        # Plots are gated transitively through their conversation's canvas.
+        attachment = await conv_repo.get_attachment(attachment_id)
+        if not attachment:
+            raise HTTPException(status_code=404, detail="Attachment not found")
+        # Attachments are gated transitively through their conversation's canvas.
         if (
-            plot.conversation is None
-            or plot.conversation.canvas is None
-            or plot.conversation.canvas.owner_id != current_user.id
+            attachment.conversation is None
+            or attachment.conversation.canvas is None
+            or attachment.conversation.canvas.owner_id != current_user.id
         ):
-            raise HTTPException(status_code=404, detail="Plot not found")
-        return Response(content=plot.content, media_type=f"image/{plot.format}")
+            raise HTTPException(status_code=404, detail="Attachment not found")
+        return Response(
+            content=attachment.content, media_type=_attachment_media_type(attachment)
+        )
 
 
 @execute_router.get("/api/conversations/{conversation_id}/runs/active")
