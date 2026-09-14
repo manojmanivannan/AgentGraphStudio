@@ -3,7 +3,7 @@ consumption of attachment instances).
 
 Run: uv run python scripts/prototype_runtime_representation/tui.py   (from backend/)
 
-Lets you cycle through three candidate policies and eight scenarios (six
+Lets you cycle through four candidate policies and eight scenarios (six
 input-side, two output-side — see scenarios.py) to react to how each policy
 represents an attachment to the LLM, whether/when it materializes a file
 inside the Docker sandbox, and how a sandbox-computed output attachment gets

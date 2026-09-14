@@ -60,6 +60,42 @@ axes from the ticket consistently, so reacting to one gives a full answer:
                      a prefix check — same generalization as ALWAYS_INLINE,
                      combined with size-aware inlining on the input side.
 
+  PATH_REFERENCE     (added mid-reaction session, from live feedback) Content
+                     is never expanded into the prompt at all for a
+                     coding-enabled agent — the LLM only ever sees the
+                     materialized sandbox path as a short string, regardless
+                     of type or size (even binary/pdf/image). There's no
+                     dedicated `read_attachment` tool: *any* of the agent's
+                     own already-wired custom Python tool nodes can accept
+                     that path as a plain string argument and do whatever it
+                     wants with the file (`pd.read_csv(path)`, extract text
+                     from a pdf, load an image with PIL, etc.) — the
+                     attachment mechanism doesn't need to know what "reading"
+                     means for a given type, because tool authorship already
+                     owns that. Sandbox materialization is eager and
+                     unconditional (same timing as ALWAYS_INLINE), since the
+                     path is worthless without the file behind it. For a
+                     chat-only agent with no sandbox, a path is meaningless,
+                     so this policy falls back per type: image → multimodal
+                     block, small readable text → inline, everything else →
+                     opaque manifest note (same fallback as the other three
+                     policies use for that case).
+
+RESOLUTION (live reaction session, same day): PATH_REFERENCE was the winning
+shape, refined by two follow-up answers:
+
+  - `delivery_method` (`inline` | `file_path`) becomes a **new per-Attachment-
+    node field** (canvas designer's preference, like `file_type` — extends
+    #76's node fields the same way #80 added `description`), not a global
+    automatic policy. The framework still auto-falls-back per consumer when
+    the node's preference isn't actually usable for that agent (no sandbox →
+    `file_path` degrades to the inline/multimodal/manifest ladder above;
+    binary/pdf can never truly go `inline` regardless of preference).
+  - `image` type is special-cased to always be **dual** for a coding-enabled
+    consumer: both the multimodal image block AND the sandbox path are
+    injected together, regardless of the node's `delivery_method` — path
+    alone would lose vision reasoning, inline alone would lose tool access.
+
 This module is pure: no I/O, no terminal control codes, importable on its own.
 """
 
@@ -83,6 +119,7 @@ class Policy(str, Enum):
     ALWAYS_INLINE = "always_inline"
     TOOL_MEDIATED = "tool_mediated"
     SIZE_AWARE_HYBRID = "size_aware_hybrid"
+    PATH_REFERENCE = "path_reference"
 
 
 class LLMContentKind(str, Enum):
@@ -91,6 +128,7 @@ class LLMContentKind(str, Enum):
     IMAGE_BLOCK = "image_block"           # multimodal image content block
     MANIFEST_ONLY = "manifest_only"       # name/type/size line, no content
     TOOL_RESULT = "tool_result"           # returned only from a tool call
+    PATH_STRING = "path_string"           # bare sandbox path, no content at all
 
 
 @dataclass(frozen=True)
@@ -167,7 +205,7 @@ def plan_input_representation(
                 "opaque to a non-coding agent under any policy, not just this one."
             )
 
-    else:  # SIZE_AWARE_HYBRID
+    elif policy is Policy.SIZE_AWARE_HYBRID:
         if is_image:
             kind = LLMContentKind.IMAGE_BLOCK
             preview = "<multimodal image content block>"
@@ -188,6 +226,38 @@ def plan_input_representation(
                 "avoids ever re-typing large content through the LM, at the cost of a policy "
                 "decision the other two mechanisms don't need (the threshold itself)."
             )
+
+    elif policy is Policy.PATH_REFERENCE:
+        if agent.coding_enabled:
+            kind = LLMContentKind.PATH_STRING
+            preview = f"Attachment {attachment.name!r} available at {sandbox_path}"
+            sandbox_write = True  # unconditional — the path is worthless without the file
+            timing = "before ReAct loop starts"
+            notes.append(
+                "No dedicated read_attachment tool needed — any of the agent's own wired "
+                "custom Python tools that accept a path string can open this file however "
+                "it likes (pd.read_csv, PDF text extraction, PIL, etc.). Cheapest possible "
+                "prompt cost regardless of type or size, including binary/pdf/image."
+            )
+        elif is_image:
+            kind = LLMContentKind.IMAGE_BLOCK
+            preview = "<multimodal image content block>"
+            sandbox_write = False
+            timing = "n/a (agent has no sandbox)"
+        elif is_unreadable:
+            kind = LLMContentKind.MANIFEST_ONLY
+            preview = f"[{attachment.file_type} attachment, {attachment.size_bytes}B — not inlinable as text]"
+            sandbox_write = False
+            timing = "n/a (agent has no sandbox)"
+            notes.append(
+                "No sandbox and no path is meaningful outside one — falls back to the same "
+                "opaque-manifest case every other policy hits for a non-coding agent."
+            )
+        else:
+            kind = LLMContentKind.TEXT_INLINE
+            preview = attachment.content_text
+            sandbox_write = False
+            timing = "n/a (agent has no sandbox)"
 
     return InputRepresentationPlan(
         llm_content_kind=kind,
