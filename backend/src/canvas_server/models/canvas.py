@@ -67,6 +67,11 @@ class Canvas(Base):
         back_populates="canvas",
         cascade="all, delete-orphan",
     )
+    attachment_nodes: Mapped[list[AttachmentNode]] = relationship(
+        "AttachmentNode",
+        back_populates="canvas",
+        cascade="all, delete-orphan",
+    )
     edges: Mapped[list[Edge]] = relationship(
         "Edge",
         back_populates="canvas",
@@ -277,6 +282,36 @@ class ToolNode(Base):
     )
 
     canvas: Mapped[Canvas] = relationship("Canvas", back_populates="tool_nodes")
+
+
+class AttachmentNode(Base):
+    """A typed data artifact node (#76/#80): no direction field of its own —
+    whether it acts as input or output is derived purely from the ``produces``/
+    ``consumes`` edges connecting it to agent nodes.
+    """
+
+    __tablename__ = "attachment_nodes"
+    __table_args__ = (Index("idx_attachment_nodes_canvas", "canvas_id"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        Uuid,
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+    canvas_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid,
+        ForeignKey("canvases.id", ondelete="CASCADE"),
+    )
+    name: Mapped[str] = mapped_column(String(255), default="Attachment")
+    # Enum-plus-freeform taxonomy (#76): a curated common list, plus any
+    # custom string as an escape hatch. Stored as-is; validated at the
+    # Pydantic layer (both on save and on read).
+    file_type: Mapped[str] = mapped_column(String(50), default="text")
+    description: Mapped[str] = mapped_column(Text, default="")
+    position_x: Mapped[float] = mapped_column(Double, default=0)
+    position_y: Mapped[float] = mapped_column(Double, default=0)
+
+    canvas: Mapped[Canvas] = relationship("Canvas", back_populates="attachment_nodes")
 
 
 class Edge(Base):

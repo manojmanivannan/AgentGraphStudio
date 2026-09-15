@@ -4,6 +4,7 @@ import { Link, useNavigate } from "react-router-dom";
 import {
   Brain,
   Wrench,
+  Paperclip,
   Trash2,
   Download,
   Upload,
@@ -95,6 +96,24 @@ export function SidebarRail() {
         id: newId,
         name: `Tool ${nodes.filter((n) => n.type === "tool").length + 1}`,
         code: "",
+      },
+    };
+    setNodes([...nodes, newNode]);
+  };
+
+  const addAttachment = () => {
+    const nodes = useCanvasStore.getState().nodes;
+    const newId = uuidv4();
+    const newNode = {
+      id: newId,
+      type: "attachment" as const,
+      position: getViewportCenterPosition(),
+      style: { width: 180 },
+      data: {
+        id: newId,
+        name: `Attachment ${nodes.filter((n) => n.type === "attachment").length + 1}`,
+        fileType: "text",
+        description: "",
       },
     };
     setNodes([...nodes, newNode]);
@@ -216,6 +235,10 @@ export function SidebarRail() {
   const toolBtnClass = sidebarCollapsed
     ? "flex items-center justify-center w-10 h-10 mx-auto rounded-lg text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-elevated)] transition-all cursor-pointer"
     : "w-full flex items-center gap-2.5 px-3 h-10 rounded-lg text-xs font-medium text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-elevated)] transition-all text-left cursor-pointer whitespace-nowrap";
+
+  const attachmentBtnClass = sidebarCollapsed
+    ? "flex items-center justify-center w-10 h-10 mx-auto rounded-lg text-[var(--color-text-secondary)] hover:text-[var(--color-success)] hover:bg-[var(--color-success-subtle)] transition-all cursor-pointer"
+    : "w-full flex items-center gap-2.5 px-3 h-10 rounded-lg text-xs font-medium text-[var(--color-text-secondary)] hover:text-[var(--color-success)] hover:bg-[var(--color-success-subtle)] transition-all text-left cursor-pointer whitespace-nowrap";
 
   const importExportBtnClass = sidebarCollapsed
     ? "flex items-center justify-center w-10 h-10 mx-auto rounded-lg text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-elevated)] transition-all cursor-pointer"
@@ -356,6 +379,15 @@ export function SidebarRail() {
             >
               <Wrench className="w-4 h-4 text-[var(--color-secondary)] shrink-0" />
               {!sidebarCollapsed && "Add Custom Tool"}
+            </button>
+            <button
+              onClick={addAttachment}
+              data-testid="add-attachment-button"
+              className={attachmentBtnClass}
+              title="Add Attachment"
+            >
+              <Paperclip className="w-4 h-4 text-[var(--color-success)] shrink-0" />
+              {!sidebarCollapsed && "Add Attachment"}
             </button>
           </div>
         </div>

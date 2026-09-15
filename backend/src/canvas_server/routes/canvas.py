@@ -51,6 +51,7 @@ async def _owned_canvas_or_404(
 def _canvas_to_response(canvas: Canvas) -> CanvasResponse:
     from canvas_server.models.api import (
         AgentNodeResponse,
+        AttachmentNodeResponse,
         CanvasNodesResponse,
         EdgeResponse,
         ToolNodeResponse,
@@ -100,6 +101,18 @@ def _canvas_to_response(canvas: Canvas) -> CanvasResponse:
                     position_y=n.position_y,
                 )
                 for n in canvas.tool_nodes
+            ],
+            attachments=[
+                AttachmentNodeResponse(
+                    id=n.id,
+                    canvas_id=n.canvas_id,
+                    name=n.name,
+                    file_type=n.file_type,
+                    description=n.description,
+                    position_x=n.position_x,
+                    position_y=n.position_y,
+                )
+                for n in canvas.attachment_nodes
             ],
         ),
         edges=[
@@ -191,6 +204,7 @@ async def save_canvas(
             agents=body.nodes.agents,
             tools=body.nodes.tools,
             edges=body.edges,
+            attachments=body.nodes.attachments,
         )
     except CanvasNotFoundError:
         logger.warning(f"Canvas not found for save: id={canvas_id}")
@@ -263,6 +277,17 @@ def _canvas_to_import_payload(canvas: Canvas) -> dict[str, Any]:
                     "position_y": n.position_y,
                 }
                 for n in canvas.tool_nodes
+            ],
+            "attachments": [
+                {
+                    "id": n.id,
+                    "name": n.name,
+                    "file_type": n.file_type,
+                    "description": n.description,
+                    "position_x": n.position_x,
+                    "position_y": n.position_y,
+                }
+                for n in canvas.attachment_nodes
             ],
         },
         "edges": [
@@ -345,6 +370,7 @@ async def import_canvas(
         tools=body.nodes.tools,
         edges=body.edges,
         documents=body.documents,
+        attachments=body.nodes.attachments,
         owner_id=current_user.id,
     )
     logger.info(f"Canvas imported: id={canvas.id}")
@@ -409,6 +435,7 @@ async def import_canvas_zip(
         tools=body.nodes.tools,
         edges=body.edges,
         documents=body.documents,
+        attachments=body.nodes.attachments,
         owner_id=current_user.id,
     )
     logger.info(f"Canvas imported from ZIP: id={canvas.id}")

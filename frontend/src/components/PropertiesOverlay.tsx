@@ -1,8 +1,9 @@
-import { X, Brain, Wrench, GitBranch } from "lucide-react";
+import { X, Brain, Wrench, GitBranch, Paperclip } from "lucide-react";
 import { useCanvasStore } from "@/store/canvasStore";
 import { OverlayPanel } from "@/components/layout/OverlayPanel";
 import { AgentEditor } from "@/components/sidebar/AgentEditor";
 import { ToolEditor } from "@/components/sidebar/ToolEditor";
+import { AttachmentEditor } from "@/components/sidebar/AttachmentEditor";
 
 export function PropertiesOverlay() {
   const selectedNodeId = useCanvasStore((s) => s.selectedNodeId);
@@ -47,6 +48,9 @@ export function PropertiesOverlay() {
           {selectedNode?.type === "tool" && (
             <Wrench className="w-4 h-4 text-[var(--color-secondary)]" />
           )}
+          {selectedNode?.type === "attachment" && (
+            <Paperclip className="w-4 h-4 text-[var(--color-success)]" />
+          )}
           <span className="text-[13px] font-semibold text-[var(--color-text-primary)] truncate">
             {selectedNode
               ? (selectedNode.data as any)?.name ?? "Properties"
@@ -65,6 +69,7 @@ export function PropertiesOverlay() {
       <div className="flex-1 overflow-y-auto p-4">
         {selectedNode?.type === "agent" && <AgentEditor />}
         {selectedNode?.type === "tool" && <ToolEditor />}
+        {selectedNode?.type === "attachment" && <AttachmentEditor />}
       </div>
     </OverlayPanel>
   );

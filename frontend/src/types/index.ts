@@ -75,6 +75,24 @@ export interface ToolNodeData {
   requiresApproval?: boolean;
 }
 
+export type AttachmentFileType =
+  | "csv"
+  | "json"
+  | "text"
+  | "python"
+  | "yaml"
+  | "image"
+  | "pdf"
+  | "binary"
+  | string;
+
+export interface AttachmentNodeData {
+  id: string;
+  name: string;
+  fileType: AttachmentFileType;
+  description?: string;
+}
+
 type ExecutionEventBase = {
   run_id?: string;
   sequence?: number;
@@ -148,6 +166,14 @@ export interface CanvasSavePayload {
       position_x: number;
       position_y: number;
     }[];
+    attachments?: {
+      id: string;
+      name: string;
+      file_type: string;
+      description: string;
+      position_x: number;
+      position_y: number;
+    }[];
   };
   edges: {
     id: string;
@@ -192,6 +218,15 @@ export interface CanvasResponse {
       packages?: string;
       args: ToolArgument[];
       requires_approval: boolean;
+      position_x: number;
+      position_y: number;
+    }>;
+    attachments?: Array<{
+      id: string;
+      canvas_id: string;
+      name: string;
+      file_type: string;
+      description: string;
       position_x: number;
       position_y: number;
     }>;

@@ -67,6 +67,20 @@ describe("SidebarRail", () => {
     expect(nodes[0].type).toBe("tool");
   });
 
+  it("adds an attachment on button click", async () => {
+    const user = userEvent.setup();
+    useCanvasStore.getState().setCanvas("canvas-1", "Test Canvas");
+    renderSidebar();
+
+    const addAttachmentBtn = screen.getByTestId("add-attachment-button");
+    await user.click(addAttachmentBtn);
+
+    const nodes = useCanvasStore.getState().nodes;
+    expect(nodes).toHaveLength(1);
+    expect(nodes[0].type).toBe("attachment");
+    expect(nodes[0].data.fileType).toBe("text");
+  });
+
   it("opens clear popover and clears the canvas", async () => {
     const user = userEvent.setup();
     useCanvasStore.getState().setCanvas("canvas-1", "Test Canvas");

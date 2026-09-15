@@ -46,6 +46,7 @@
   /* Semantic */
   --color-success: #10b981;
   --color-success-subtle: rgba(16, 185, 129, 0.12);
+  --color-success-surface: rgba(16, 185, 129, 0.06);
   --color-danger: #ef4444;
   --color-danger-subtle: rgba(239, 68, 68, 0.12);
   --color-warning: #f59e0b;
@@ -106,6 +107,7 @@ html[data-theme="light"] {
   /* Semantic (adjusted for light bg) */
   --color-success: #059669;
   --color-success-subtle: rgba(5, 150, 105, 0.10);
+  --color-success-surface: rgba(5, 150, 105, 0.05);
   --color-danger: #dc2626;
   --color-danger-subtle: rgba(220, 38, 38, 0.08);
   --color-warning: #d97706;

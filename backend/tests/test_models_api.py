@@ -7,6 +7,8 @@ from pydantic import ValidationError
 from canvas_server.models.api import (
     AgentNodeInput,
     AgentNodeResponse,
+    AttachmentNodeInput,
+    AttachmentNodeResponse,
     CanvasNodesInput,
     CanvasNodesResponse,
     CanvasResponse,
@@ -221,3 +223,227 @@ class TestCreateCanvasRequest:
     def test_custom_name(self):
         req = CreateCanvasRequest(name="Custom")
         assert req.name == "Custom"
+
+
+class TestAttachmentNodeInput:
+    def test_minimal_creation(self):
+        att = AttachmentNodeInput(id=uuid.uuid4())
+        assert att.name == "Attachment"
+        assert att.file_type == "text"
+        assert att.description == ""
+        assert att.position_x == 0
+        assert att.position_y == 0
+
+    def test_id_required(self):
+        with pytest.raises(ValidationError):
+            AttachmentNodeInput()
+
+    @pytest.mark.parametrize(
+        "file_type", ["csv", "json", "text", "python", "yaml", "image", "pdf", "binary"]
+    )
+    def test_curated_file_types_accepted(self, file_type):
+        att = AttachmentNodeInput(id=uuid.uuid4(), file_type=file_type)
+        assert att.file_type == file_type
+
+    def test_freeform_file_type_accepted(self):
+        att = AttachmentNodeInput(id=uuid.uuid4(), file_type="parquet")
+        assert att.file_type == "parquet"
+
+    def test_file_type_trimmed(self):
+        att = AttachmentNodeInput(id=uuid.uuid4(), file_type="  csv  ")
+        assert att.file_type == "csv"
+
+    def test_empty_file_type_rejected(self):
+        with pytest.raises(ValidationError):
+            AttachmentNodeInput(id=uuid.uuid4(), file_type="")
+
+    def test_blank_file_type_rejected(self):
+        with pytest.raises(ValidationError):
+            AttachmentNodeInput(id=uuid.uuid4(), file_type="   ")
+
+    def test_description_optional(self):
+        att = AttachmentNodeInput(id=uuid.uuid4(), description="Sales data")
+        assert att.description == "Sales data"
+
+
+class TestAttachmentNodeResponse:
+    def test_creation(self):
+        aid = uuid.uuid4()
+        cid = uuid.uuid4()
+        resp = AttachmentNodeResponse(
+            id=aid, canvas_id=cid, name="Data", file_type="csv", description="d"
+        )
+        assert resp.id == aid
+        assert resp.canvas_id == cid
+        assert resp.file_type == "csv"
+
+
+class TestCanvasNodesInputAttachments:
+    def test_defaults(self):
+        nodes = CanvasNodesInput()
+        assert nodes.attachments == []
+
+    def test_with_attachments(self):
+        aid = uuid.uuid4()
+        nodes = CanvasNodesInput(attachments=[AttachmentNodeInput(id=aid, name="A1")])
+        assert len(nodes.attachments) == 1
+        assert nodes.attachments[0].id == aid
+
+
+class TestAttachmentEdgeWiringValidation:
+    def _make_ids(self):
+        return uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+
+    def test_agent_to_attachment_edge_allowed(self):
+        agent_id, _, attachment_id = self._make_ids()
+        req = CanvasSaveRequest(
+            nodes=CanvasNodesInput(
+                agents=[AgentNodeInput(id=agent_id)],
+                attachments=[AttachmentNodeInput(id=attachment_id)],
+            ),
+            edges=[
+                EdgeInput(
+                    id=uuid.uuid4(),
+                    source_node_id=agent_id,
+                    target_node_id=attachment_id,
+                    edge_type="produces",
+                )
+            ],
+        )
+        assert len(req.edges) == 1
+
+    def test_attachment_to_agent_edge_allowed(self):
+        agent_id, _, attachment_id = self._make_ids()
+        req = CanvasSaveRequest(
+            nodes=CanvasNodesInput(
+                agents=[AgentNodeInput(id=agent_id)],
+                attachments=[AttachmentNodeInput(id=attachment_id)],
+            ),
+            edges=[
+                EdgeInput(
+                    id=uuid.uuid4(),
+                    source_node_id=attachment_id,
+                    target_node_id=agent_id,
+                    edge_type="consumes",
+                )
+            ],
+        )
+        assert len(req.edges) == 1
+
+    def test_attachment_to_attachment_edge_rejected(self):
+        _, _, attachment_id = self._make_ids()
+        other_attachment_id = uuid.uuid4()
+        with pytest.raises(ValidationError) as exc_info:
+            CanvasSaveRequest(
+                nodes=CanvasNodesInput(
+                    attachments=[
+                        AttachmentNodeInput(id=attachment_id),
+                        AttachmentNodeInput(id=other_attachment_id),
+                    ],
+                ),
+                edges=[
+                    EdgeInput(
+                        id=uuid.uuid4(),
+                        source_node_id=attachment_id,
+                        target_node_id=other_attachment_id,
+                        edge_type="produces",
+                    )
+                ],
+            )
+        assert "attachment-to-attachment" in str(exc_info.value)
+
+    def test_attachment_to_tool_edge_rejected(self):
+        _, tool_id, attachment_id = self._make_ids()
+        with pytest.raises(ValidationError) as exc_info:
+            CanvasSaveRequest(
+                nodes=CanvasNodesInput(
+                    tools=[ToolNodeInput(id=tool_id)],
+                    attachments=[AttachmentNodeInput(id=attachment_id)],
+                ),
+                edges=[
+                    EdgeInput(
+                        id=uuid.uuid4(),
+                        source_node_id=tool_id,
+                        target_node_id=attachment_id,
+                        edge_type="produces",
+                    )
+                ],
+            )
+        assert "attachment-to-tool" in str(exc_info.value)
+
+    def test_tool_to_attachment_edge_rejected(self):
+        _, tool_id, attachment_id = self._make_ids()
+        with pytest.raises(ValidationError) as exc_info:
+            CanvasSaveRequest(
+                nodes=CanvasNodesInput(
+                    tools=[ToolNodeInput(id=tool_id)],
+                    attachments=[AttachmentNodeInput(id=attachment_id)],
+                ),
+                edges=[
+                    EdgeInput(
+                        id=uuid.uuid4(),
+                        source_node_id=attachment_id,
+                        target_node_id=tool_id,
+                        edge_type="consumes",
+                    )
+                ],
+            )
+        assert "attachment-to-tool" in str(exc_info.value)
+
+    def test_regular_agent_tool_edges_unaffected(self):
+        agent_id = uuid.uuid4()
+        tool_id = uuid.uuid4()
+        req = CanvasSaveRequest(
+            nodes=CanvasNodesInput(
+                agents=[AgentNodeInput(id=agent_id)],
+                tools=[ToolNodeInput(id=tool_id)],
+            ),
+            edges=[
+                EdgeInput(
+                    id=uuid.uuid4(),
+                    source_node_id=agent_id,
+                    target_node_id=tool_id,
+                    edge_type="tool_access",
+                )
+            ],
+        )
+        assert len(req.edges) == 1
+
+    def test_agent_to_attachment_edge_wrong_edge_type_rejected(self):
+        agent_id, _, attachment_id = self._make_ids()
+        with pytest.raises(ValidationError) as exc_info:
+            CanvasSaveRequest(
+                nodes=CanvasNodesInput(
+                    agents=[AgentNodeInput(id=agent_id)],
+                    attachments=[AttachmentNodeInput(id=attachment_id)],
+                ),
+                edges=[
+                    EdgeInput(
+                        id=uuid.uuid4(),
+                        source_node_id=agent_id,
+                        target_node_id=attachment_id,
+                        edge_type="handoff",
+                    )
+                ],
+            )
+        assert "edge_type='produces'" in str(exc_info.value)
+
+    def test_attachment_to_agent_edge_wrong_edge_type_rejected(self):
+        agent_id, _, attachment_id = self._make_ids()
+        with pytest.raises(ValidationError) as exc_info:
+            CanvasSaveRequest(
+                nodes=CanvasNodesInput(
+                    agents=[AgentNodeInput(id=agent_id)],
+                    attachments=[AttachmentNodeInput(id=attachment_id)],
+                ),
+                edges=[
+                    EdgeInput(
+                        id=uuid.uuid4(),
+                        source_node_id=attachment_id,
+                        target_node_id=agent_id,
+                        edge_type="tool_access",
+                    )
+                ],
+            )
+        assert "edge_type='consumes'" in str(exc_info.value)
+

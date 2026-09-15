@@ -77,6 +77,7 @@ describe("canvasGraphCodec", () => {
             position_y: 40,
           },
         ],
+        attachments: [],
       },
       edges: [
         {
@@ -360,5 +361,130 @@ describe("canvasGraphCodec", () => {
     });
 
     expect(encoded.nodes.agents[0].enable_network).toBe(false);
+  });
+
+  it("encodes attachment node data into a save payload", () => {
+    const result = encodeCanvasGraph({
+      canvasName: "Attachment Canvas",
+      nodes: [
+        {
+          id: "att-1",
+          type: "attachment",
+          position: { x: 5, y: 6 },
+          data: {
+            id: "att-1",
+            name: "Sales Data",
+            fileType: "csv",
+            description: "Q1 sales export",
+          },
+        },
+      ],
+      edges: [],
+    });
+
+    expect(result.nodes.attachments).toEqual([
+      {
+        id: "att-1",
+        name: "Sales Data",
+        file_type: "csv",
+        description: "Q1 sales export",
+        position_x: 5,
+        position_y: 6,
+      },
+    ]);
+  });
+
+  it("defaults attachment file_type to text and description to empty string on encode", () => {
+    const result = encodeCanvasGraph({
+      canvasName: "Default Attachment",
+      nodes: [
+        {
+          id: "att-1",
+          type: "attachment",
+          position: { x: 0, y: 0 },
+          data: { id: "att-1", name: "Untyped" },
+        },
+      ],
+      edges: [],
+    });
+
+    expect(result.nodes.attachments).toEqual([
+      {
+        id: "att-1",
+        name: "Untyped",
+        file_type: "text",
+        description: "",
+        position_x: 0,
+        position_y: 0,
+      },
+    ]);
+  });
+
+  it("decodes attachment nodes from a canvas response", () => {
+    const result = decodeCanvasResponse({
+      id: "canvas-1",
+      name: "Decoded Attachment Canvas",
+      created_at: "2026-06-17T00:00:00Z",
+      updated_at: "2026-06-17T00:00:00Z",
+      nodes: {
+        agents: [],
+        tools: [],
+        attachments: [
+          {
+            id: "att-1",
+            canvas_id: "canvas-1",
+            name: "Sales Data",
+            file_type: "csv",
+            description: "Q1 sales export",
+            position_x: 12,
+            position_y: 34,
+          },
+        ],
+      },
+      edges: [],
+    });
+
+    expect(result.nodes).toEqual([
+      {
+        id: "att-1",
+        type: "attachment",
+        position: { x: 12, y: 34 },
+        style: { width: 180 },
+        data: {
+          id: "att-1",
+          name: "Sales Data",
+          fileType: "csv",
+          description: "Q1 sales export",
+        },
+      },
+    ]);
+  });
+
+  it("decodes produces/consumes edges into store edges", () => {
+    const result = decodeCanvasResponse({
+      id: "canvas-1",
+      name: "Wired Canvas",
+      created_at: "2026-06-17T00:00:00Z",
+      updated_at: "2026-06-17T00:00:00Z",
+      nodes: { agents: [], tools: [], attachments: [] },
+      edges: [
+        {
+          id: "edge-1",
+          canvas_id: "canvas-1",
+          source_node_id: "agent-1",
+          target_node_id: "att-1",
+          edge_type: "produces",
+        },
+      ],
+    });
+
+    expect(result.edges).toEqual([
+      {
+        id: "edge-1",
+        source: "agent-1",
+        target: "att-1",
+        data: { edgeType: "produces" },
+      },
+    ]);
   });
 });

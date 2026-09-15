@@ -10,10 +10,18 @@ from canvas_server.exceptions import CanvasNotFoundError
 from canvas_server.models.api import (
     AgentDocumentInput,
     AgentNodeInput,
+    AttachmentNodeInput,
     EdgeInput,
     ToolNodeInput,
 )
-from canvas_server.models.canvas import AgentDocument, AgentNode, Canvas, Edge, ToolNode
+from canvas_server.models.canvas import (
+    AgentDocument,
+    AgentNode,
+    AttachmentNode,
+    Canvas,
+    Edge,
+    ToolNode,
+)
 
 logger = logging.getLogger("canvas_server.repo")
 
@@ -26,6 +34,7 @@ class CanvasRepo:
         return select(Canvas).options(
             selectinload(Canvas.agent_nodes).selectinload(AgentNode.documents),
             selectinload(Canvas.tool_nodes),
+            selectinload(Canvas.attachment_nodes),
             selectinload(Canvas.edges),
         )
 
@@ -45,6 +54,7 @@ class CanvasRepo:
         tools: list[ToolNodeInput],
         edges: list[EdgeInput],
         documents: list[AgentDocumentInput] | None = None,
+        attachments: list[AttachmentNodeInput] | None = None,
         *,
         owner_id: uuid.UUID,
     ) -> Canvas:
@@ -101,6 +111,20 @@ class CanvasRepo:
                 requires_approval=t.requires_approval,
                 position_x=t.position_x,
                 position_y=t.position_y,
+            )
+            self.session.add(node)
+
+        for att in attachments or []:
+            new_id = uuid.uuid4()
+            id_map[att.id] = new_id
+            node = AttachmentNode(
+                id=new_id,
+                canvas_id=canvas_id,
+                name=att.name,
+                file_type=att.file_type,
+                description=att.description,
+                position_x=att.position_x,
+                position_y=att.position_y,
             )
             self.session.add(node)
 
@@ -209,6 +233,7 @@ class CanvasRepo:
         agents: list[AgentNodeInput],
         tools: list[ToolNodeInput],
         edges: list[EdgeInput],
+        attachments: list[AttachmentNodeInput] | None = None,
     ) -> Canvas:
         canvas = await self.get_or_404(canvas_id)
         canvas.name = name
@@ -217,6 +242,9 @@ class CanvasRepo:
         await self.session.execute(delete(Edge).where(Edge.canvas_id == canvas_id))
         await self.session.execute(
             delete(ToolNode).where(ToolNode.canvas_id == canvas_id)
+        )
+        await self.session.execute(
+            delete(AttachmentNode).where(AttachmentNode.canvas_id == canvas_id)
         )
 
         existing_agents = {n.id: n for n in canvas.agent_nodes}
@@ -294,6 +322,18 @@ class CanvasRepo:
                 requires_approval=t.requires_approval,
                 position_x=t.position_x,
                 position_y=t.position_y,
+            )
+            self.session.add(node)
+
+        for att in attachments or []:
+            node = AttachmentNode(
+                id=att.id,
+                canvas_id=canvas_id,
+                name=att.name,
+                file_type=att.file_type,
+                description=att.description,
+                position_x=att.position_x,
+                position_y=att.position_y,
             )
             self.session.add(node)
 

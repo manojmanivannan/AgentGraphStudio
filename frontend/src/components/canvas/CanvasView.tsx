@@ -20,14 +20,17 @@ import {
 import "@xyflow/react/dist/style.css";
 import { AgentNode } from "./AgentNode";
 import { ToolNode } from "./ToolNode";
+import { AttachmentNode } from "./AttachmentNode";
 import { CustomEdge } from "./CustomEdge";
 import { useCanvasStore } from "@/store/canvasStore";
 import { useCanvasPersistence } from "@/hooks/useCanvasPersistence";
 import { useThemeStore } from "@/store/themeStore";
+import { deriveEdgeType, isValidNodeTypeConnection } from "@/lib/canvasConnectionRules";
 
 const nodeTypes = {
   agent: AgentNode,
   tool: ToolNode,
+  attachment: AttachmentNode,
 };
 
 const edgeTypes = {
@@ -49,9 +52,7 @@ function isValidConnection(connection: Connection): boolean {
   const targetNode = state.nodes.find((n) => n.id === connection.target);
 
   if (!sourceNode || !targetNode) return true;
-  if (sourceNode.type === "agent" && targetNode.type === "tool") return true;
-  if (sourceNode.type === "agent" && targetNode.type === "agent") return true;
-  return false;
+  return isValidNodeTypeConnection(sourceNode.type, targetNode.type);
 }
 
 export function CanvasView() {
@@ -102,10 +103,7 @@ export function CanvasView() {
     (params: Connection) => {
       const sourceNode = nodes.find((n) => n.id === params.source);
       const targetNode = nodes.find((n) => n.id === params.target);
-      const edgeType =
-        sourceNode?.type === "agent" && targetNode?.type === "agent"
-          ? "handoff"
-          : "tool_access";
+      const edgeType = deriveEdgeType(sourceNode?.type, targetNode?.type);
 
       const newEdge: Edge = {
         ...params,

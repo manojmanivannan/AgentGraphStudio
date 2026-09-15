@@ -2,7 +2,13 @@ import uuid
 from datetime import datetime
 from typing import Any, Self
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
+
+# Curated common file_type categories (#76). The taxonomy is enum-plus-freeform:
+# any of these are accepted, and so is any other non-empty custom string.
+ATTACHMENT_FILE_TYPES = frozenset(
+    {"csv", "json", "text", "python", "yaml", "image", "pdf", "binary"}
+)
 
 
 class AgentNodeBase(BaseModel):
@@ -90,6 +96,33 @@ class ToolNodeResponse(ToolNodeInput):
     canvas_id: uuid.UUID
 
 
+class AttachmentNodeBase(BaseModel):
+    id: uuid.UUID
+    name: str = "Attachment"
+    file_type: str = "text"
+    description: str = ""
+    position_x: float = 0
+    position_y: float = 0
+
+    @field_validator("file_type")
+    @classmethod
+    def validate_file_type(cls, v: str) -> str:
+        # Enum-plus-freeform (#76): any curated category or custom string is
+        # accepted, but it must not be blank once trimmed.
+        trimmed = v.strip()
+        if not trimmed:
+            raise ValueError("file_type must not be empty")
+        return trimmed
+
+
+class AttachmentNodeInput(AttachmentNodeBase):
+    pass
+
+
+class AttachmentNodeResponse(AttachmentNodeBase):
+    canvas_id: uuid.UUID
+
+
 class EdgeInput(BaseModel):
     id: uuid.UUID
     source_node_id: uuid.UUID
@@ -104,17 +137,58 @@ class EdgeResponse(EdgeInput):
 class CanvasNodesInput(BaseModel):
     agents: list[AgentNodeInput] = Field(default_factory=list)
     tools: list[ToolNodeInput] = Field(default_factory=list)
+    attachments: list[AttachmentNodeInput] = Field(default_factory=list)
 
 
 class CanvasNodesResponse(BaseModel):
     agents: list[AgentNodeResponse] = Field(default_factory=list)
     tools: list[ToolNodeResponse] = Field(default_factory=list)
+    attachments: list[AttachmentNodeResponse] = Field(default_factory=list)
 
 
 class CanvasSaveRequest(BaseModel):
     name: str = "Untitled Canvas"
     nodes: CanvasNodesInput = Field(default_factory=CanvasNodesInput)
     edges: list[EdgeInput] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_attachment_edge_wiring(self) -> Self:
+        # Canvas-save-time wiring validation (#76/#80): attachment nodes may
+        # only connect to agent nodes (produces/consumes); attachment<->tool
+        # and attachment<->attachment edges are always rejected.
+        agent_ids = {a.id for a in self.nodes.agents}
+        tool_ids = {t.id for t in self.nodes.tools}
+        attachment_ids = {a.id for a in self.nodes.attachments}
+
+        for e in self.edges:
+            source_is_attachment = e.source_node_id in attachment_ids
+            target_is_attachment = e.target_node_id in attachment_ids
+            if not source_is_attachment and not target_is_attachment:
+                continue
+            if source_is_attachment and target_is_attachment:
+                raise ValueError(
+                    f"Edge {e.id}: attachment-to-attachment connections are not allowed"
+                )
+            if e.source_node_id in tool_ids or e.target_node_id in tool_ids:
+                raise ValueError(
+                    f"Edge {e.id}: attachment-to-tool connections are not allowed"
+                )
+            other_id = e.target_node_id if source_is_attachment else e.source_node_id
+            if other_id not in agent_ids:
+                raise ValueError(
+                    f"Edge {e.id}: attachment nodes may only connect to agent nodes"
+                )
+            # Attachment<->agent edges must be tagged with the produces/consumes
+            # edge_type that expresses their direction (#76/#80) — an agent
+            # producing into an attachment is "produces"; an attachment feeding
+            # an agent is "consumes". Other edge_type values are rejected here.
+            expected_edge_type = "consumes" if source_is_attachment else "produces"
+            if e.edge_type != expected_edge_type:
+                raise ValueError(
+                    f"Edge {e.id}: attachment<->agent edges must use "
+                    f"edge_type={expected_edge_type!r}, got {e.edge_type!r}"
+                )
+        return self
 
 
 class CanvasImportRequest(CanvasSaveRequest):
