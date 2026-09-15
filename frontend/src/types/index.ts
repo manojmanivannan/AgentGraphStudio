@@ -93,6 +93,15 @@ export interface AttachmentNodeData {
   description?: string;
 }
 
+export interface ChatAttachmentUploadResult {
+  filename: string;
+  success: boolean;
+  attachment_id?: string | null;
+  node_id?: string | null;
+  file_type?: string | null;
+  error?: string | null;
+}
+
 type ExecutionEventBase = {
   run_id?: string;
   sequence?: number;

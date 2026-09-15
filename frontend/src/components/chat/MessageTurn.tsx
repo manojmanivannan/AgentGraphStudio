@@ -7,6 +7,7 @@
 import { ChevronDown, ChevronRight } from "lucide-react";
 import type { Message } from "@/types";
 import { ExecutionStepsViewer } from "./ExecutionStepsViewer";
+import { HitlAttachmentUpload } from "./HitlAttachmentUpload";
 
 /**
  * Formats a message's ISO timestamp as "YYYY-MM-DD HH:MM:SS" in local time.
@@ -108,6 +109,7 @@ export function MessageTurn({
 
       {/* Steps Container */}
       <ExecutionStepsViewer
+        conversationId={turn.userMessage.conversation_id}
         steps={turn.steps}
         isStreaming={isStreaming}
         isExpanded={isExpanded}
@@ -144,32 +146,39 @@ export function MessageTurn({
                 <div className="text-[var(--color-text-primary)] font-medium">
                   {turn.humanInterrupt.content}
                 </div>
-                <form
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    const form = e.currentTarget;
-                    const data = new FormData(form);
-                    const val = (data.get("response") as string || "").trim();
-                    if (!val) return;
-                    handleSendHumanResponse(val);
-                  }}
-                  className="flex gap-2 w-full mt-1.5"
-                >
-                  <input
-                    ref={inlineInputRef}
-                    name="response"
-                    type="text"
-                    required
-                    placeholder="Type your response..."
-                    className="input-base flex-1 py-1.5 px-3 rounded-lg text-[12px] bg-[var(--color-base)] text-[var(--color-text-primary)] border border-[var(--color-border-default)] focus:border-[var(--color-accent)]"
-                  />
-                  <button
-                    type="submit"
-                    className="px-3.5 py-1.5 bg-[var(--color-accent)] hover:bg-[var(--color-accent-bright)] text-white text-[11px] font-semibold rounded-lg shadow transition-colors"
+                <div className="space-y-2.5">
+                  <form
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      const form = e.currentTarget;
+                      const data = new FormData(form);
+                      const val = (data.get("response") as string || "").trim();
+                      if (!val) return;
+                      handleSendHumanResponse(val);
+                    }}
+                    className="flex gap-2 w-full mt-1.5"
                   >
-                    Submit
-                  </button>
-                </form>
+                    <input
+                      ref={inlineInputRef}
+                      name="response"
+                      type="text"
+                      required
+                      placeholder="Type your response..."
+                      className="input-base flex-1 py-1.5 px-3 rounded-lg text-[12px] bg-[var(--color-base)] text-[var(--color-text-primary)] border border-[var(--color-border-default)] focus:border-[var(--color-accent)]"
+                    />
+                    <button
+                      type="submit"
+                      className="px-3.5 py-1.5 bg-[var(--color-accent)] hover:bg-[var(--color-accent-bright)] text-white text-[11px] font-semibold rounded-lg shadow transition-colors"
+                    >
+                      Submit
+                    </button>
+                  </form>
+
+                  <HitlAttachmentUpload
+                    conversationId={turn.userMessage.conversation_id}
+                    agentNodeId={turn.humanInterrupt.node_id}
+                  />
+                </div>
               </div>
             ) : turn.humanInterrupt.event_type === "tool_approval_request" && turn.humanInterrupt.id === activeInterrupt?.message_id ? (
               <div className="space-y-2.5 w-full">

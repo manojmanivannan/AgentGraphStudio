@@ -259,6 +259,19 @@ class ConversationListResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class ChatAttachmentUploadResult(BaseModel):
+    filename: str
+    success: bool
+    attachment_id: uuid.UUID | None = None
+    node_id: uuid.UUID | None = None
+    file_type: str | None = None
+    error: str | None = None
+
+
+class ChatAttachmentUploadResponse(BaseModel):
+    results: list[ChatAttachmentUploadResult]
+
+
 class SendMessageRequest(BaseModel):
     prompt: str
     target_agent_id: uuid.UUID | None = None

@@ -4,6 +4,7 @@ import type {
   CanvasListItem,
   CanvasResponse,
   CanvasSavePayload,
+  ChatAttachmentUploadResult,
   Conversation,
   ConversationSummary,
   ExecutionEvent,
@@ -519,6 +520,29 @@ export async function importConversationZip(
     throw new Error(error.detail || "Failed to import conversation");
   }
   return res.json();
+}
+
+export async function uploadChatAttachments(
+  conversationId: string,
+  files: File[],
+  agentId?: string
+): Promise<ChatAttachmentUploadResult[]> {
+  const formData = new FormData();
+  files.forEach((file) => formData.append("files", file, file.name));
+  if (agentId) {
+    formData.append("agent_id", agentId);
+  }
+
+  const res = await apiFetch(
+    `${API_BASE}/canvases/conversations/${conversationId}/attachments`,
+    {
+      method: "POST",
+      body: formData,
+    }
+  );
+  if (!res.ok) throw new Error("Failed to upload attachments");
+  const data = (await res.json()) as { results: ChatAttachmentUploadResult[] };
+  return data.results;
 }
 
 export async function getActiveRun(

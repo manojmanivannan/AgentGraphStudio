@@ -6,14 +6,19 @@ import zipfile
 from collections.abc import Sequence
 from typing import Any
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from canvas_server.attachment_matching import DeclaredInputNode, match_uploads_to_nodes
 from canvas_server.auth import get_current_user
 from canvas_server.config import settings
 from canvas_server.database import get_session
-from canvas_server.exceptions import CanvasNotFoundError, ConversationNotFoundError
+from canvas_server.exceptions import (
+    AttachmentTooLargeError,
+    CanvasNotFoundError,
+    ConversationNotFoundError,
+)
 from canvas_server.models.api import (
     AgentDocumentInput,
     AgentDocumentResponse,
@@ -21,6 +26,8 @@ from canvas_server.models.api import (
     CanvasListResponse,
     CanvasResponse,
     CanvasSaveRequest,
+    ChatAttachmentUploadResponse,
+    ChatAttachmentUploadResult,
     ConversationListResponse,
     ConversationResponse,
     CreateCanvasRequest,
@@ -303,6 +310,11 @@ def _canvas_to_import_payload(canvas: Canvas) -> dict[str, Any]:
     }
 
 
+def _upload_format(filename: str) -> str:
+    parts = filename.rsplit(".", 1)
+    return parts[1].lower() if len(parts) == 2 and parts[1] else "bin"
+
+
 @canvas_router.get("/{canvas_id}/export")
 async def export_canvas(
     canvas_id: uuid.UUID,
@@ -514,6 +526,117 @@ async def get_conversation_by_id(
     if conv.canvas is None or conv.canvas.owner_id != current_user.id:
         raise HTTPException(status_code=404, detail="Conversation not found") from None
     return conv
+
+
+@canvas_router.post(
+    "/conversations/{conversation_id}/attachments",
+    response_model=ChatAttachmentUploadResponse,
+)
+async def upload_chat_attachments(
+    conversation_id: uuid.UUID,
+    files: list[UploadFile] = File(...),
+    agent_id: uuid.UUID | None = Form(None),
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> ChatAttachmentUploadResponse:
+    conv_repo = ConversationRepo(session)
+    try:
+        conv = await conv_repo.get_or_404(conversation_id)
+    except ConversationNotFoundError:
+        raise HTTPException(status_code=404, detail="Conversation not found") from None
+    if conv.canvas is None or conv.canvas.owner_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Conversation not found") from None
+
+    canvas = await CanvasRepo(session).get(conv.canvas_id)
+    if canvas is None:
+        raise HTTPException(status_code=404, detail="Conversation not found") from None
+
+    if agent_id is not None:
+        target_agent = next(
+            (agent for agent in canvas.agent_nodes if agent.id == agent_id),
+            None,
+        )
+        if target_agent is None:
+            raise HTTPException(status_code=404, detail="Agent not found")
+    else:
+        target_agent = next(
+            (agent for agent in canvas.agent_nodes if agent.is_entry_point),
+            None,
+        )
+        if target_agent is None:
+            raise HTTPException(
+                status_code=400,
+                detail="Canvas has no entry agent configured",
+            )
+
+    attachment_nodes_by_id = {
+        attachment_node.id: attachment_node for attachment_node in canvas.attachment_nodes
+    }
+    declared_nodes = [
+        DeclaredInputNode(
+            id=attachment_nodes_by_id[edge.source_node_id].id,
+            file_type=attachment_nodes_by_id[edge.source_node_id].file_type,
+        )
+        for edge in canvas.edges
+        if edge.edge_type == "consumes"
+        and edge.target_node_id == target_agent.id
+        and edge.source_node_id in attachment_nodes_by_id
+    ]
+
+    outcomes = match_uploads_to_nodes(
+        [upload.filename or "unnamed" for upload in files],
+        declared_nodes,
+    )
+
+    results: list[ChatAttachmentUploadResult] = []
+    for upload, outcome in zip(files, outcomes, strict=True):
+        if outcome.error is not None:
+            results.append(
+                ChatAttachmentUploadResult(
+                    filename=outcome.filename,
+                    success=False,
+                    attachment_id=None,
+                    node_id=None,
+                    file_type=outcome.file_type,
+                    error=outcome.error,
+                )
+            )
+            continue
+
+        try:
+            attachment = await conv_repo.save_attachment(
+                conversation_id=conversation_id,
+                content=await upload.read(),
+                format=_upload_format(outcome.filename),
+                file_type=outcome.file_type,
+                source="chat_upload",
+                attachment_node_id=outcome.node_id,
+            )
+        except AttachmentTooLargeError as exc:
+            results.append(
+                ChatAttachmentUploadResult(
+                    filename=outcome.filename,
+                    success=False,
+                    attachment_id=None,
+                    node_id=outcome.node_id,
+                    file_type=outcome.file_type,
+                    error=str(exc),
+                )
+            )
+            continue
+
+        results.append(
+            ChatAttachmentUploadResult(
+                filename=outcome.filename,
+                success=True,
+                attachment_id=attachment.id,
+                node_id=outcome.node_id,
+                file_type=outcome.file_type,
+                error=None,
+            )
+        )
+
+    return ChatAttachmentUploadResponse(results=results)
 
 
 @canvas_router.delete("/conversations/{conversation_id}", status_code=204)
@@ -903,4 +1026,3 @@ async def import_conversation_zip(
     )
     result = await session.execute(stmt)
     return result.scalar_one()
-

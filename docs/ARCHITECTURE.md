@@ -469,6 +469,7 @@ documents/{agent_id}/{document_id}.txt
 | `DELETE` | `/api/canvases/{id}/conversations/{cid}` | Delete conversation |
 | `GET` | `/api/canvases/{id}/conversations/{cid}/export` | Export conversation (messages, metadata, binary attachment files) as a ZIP archive |
 | `POST` | `/api/canvases/{id}/conversations/import` | Import conversation from a ZIP archive, remapping attachment IDs to prevent collisions |
+| `POST` | `/api/canvases/conversations/{conversation_id}/attachments` | Upload chat attachments, validate each file against the entry agent's declared input attachment nodes (or a specified `agent_id` for HITL uploads), return per-file success/failure, and emit no WebSocket event |
 
 ### Execution
 

@@ -12,6 +12,9 @@ import {
   MessageSquare,
   Square,
   AlertCircle,
+  Check,
+  Paperclip,
+  X,
 } from "lucide-react";
 import { useCanvasStore } from "@/store/canvasStore";
 import { useThemeStore } from "@/store/themeStore";
@@ -26,7 +29,9 @@ import {
   exportConversationZip,
   importConversationZip,
   listCanvases,
+  uploadChatAttachments,
 } from "@/lib/api";
+import { guessAttachmentFileType } from "@/lib/attachmentFileType";
 import type { ConversationSummary, Message, CanvasResponse, CanvasListItem } from "@/types";
 import { MessageTurn } from "./MessageTurn";
 import { ChatSidebar } from "./ChatSidebar";
@@ -39,6 +44,15 @@ interface TurnGroup {
   humanInterrupt?: Message;
   finalAnswer?: Message;
   isStreaming: boolean;
+}
+
+interface StagedAttachment {
+  id: string;
+  file: File;
+  fileType: string;
+  status: "pending" | "uploaded" | "error";
+  error?: string;
+  attachmentId?: string;
 }
 
 function renderMessageContent(content: string, isToolResult: boolean = false) {
@@ -218,6 +232,7 @@ export default function ChatPage() {
   const [canvas, setCanvas] = useState<CanvasResponse | null>(null);
   const [conversationName, setConversationName] = useState<string>("Chat");
   const [allCanvases, setAllCanvases] = useState<CanvasListItem[]>([]);
+  const [stagedAttachments, setStagedAttachments] = useState<StagedAttachment[]>([]);
 
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [input, setInput] = useState("");
@@ -229,6 +244,8 @@ export default function ChatPage() {
   const inlineInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const attachmentInputRef = useRef<HTMLInputElement>(null);
+  const currentConversationIdRef = useRef<string | undefined>(conversation_id);
 
   const nestingLevels = useMemo(() => {
     if (!canvas) return {};
@@ -301,6 +318,14 @@ export default function ChatPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  useEffect(() => {
+    currentConversationIdRef.current = conversation_id;
+    setStagedAttachments([]);
+    if (attachmentInputRef.current) {
+      attachmentInputRef.current.value = "";
+    }
+  }, [conversation_id]);
+
   // Fetch all canvases on mount
   useEffect(() => {
     listCanvases()
@@ -370,6 +395,118 @@ export default function ChatPage() {
   useEffect(() => {
     loadSidebar();
   }, [canvasId, loadSidebar]);
+
+  const stageAndUploadAttachments = useCallback(async (files: File[]) => {
+    // The main composer only uploads against the entry agent (no `agent_id`
+    // sent). Mid-run, the correct target is whichever agent issued the active
+    // HITL prompt, so mid-run uploads must go through `HitlAttachmentUpload`
+    // instead — block this path entirely while a run is active.
+    if (!conversation_id || conversation_id === "empty" || files.length === 0 || running) return;
+
+    const nextAttachments: StagedAttachment[] = files.map((file) => ({
+      id: crypto.randomUUID(),
+      file,
+      fileType: guessAttachmentFileType(file.name),
+      status: "pending",
+    }));
+    const nextAttachmentIds = nextAttachments.map((attachment) => attachment.id);
+    const nextAttachmentIdSet = new Set(nextAttachmentIds);
+    const uploadConversationId = conversation_id;
+
+    setStagedAttachments((prev) => [...prev, ...nextAttachments]);
+
+    try {
+      const results = await uploadChatAttachments(uploadConversationId, files);
+      if (currentConversationIdRef.current !== uploadConversationId) return;
+
+      setStagedAttachments((prev) => {
+        const resultsById = new Map(
+          nextAttachmentIds.map((id, index) => [id, results[index]])
+        );
+
+        return prev.map((attachment) => {
+          if (!nextAttachmentIdSet.has(attachment.id)) {
+            return attachment;
+          }
+
+          const result = resultsById.get(attachment.id);
+          if (!result) {
+            return {
+              ...attachment,
+              status: "error",
+              error: "Upload returned no result for this file",
+            };
+          }
+
+          if (result.success) {
+            return {
+              ...attachment,
+              status: "uploaded",
+              error: undefined,
+              attachmentId: result.attachment_id ?? undefined,
+              fileType: result.file_type ?? attachment.fileType,
+            };
+          }
+
+          return {
+            ...attachment,
+            status: "error",
+            error: result.error ?? "Failed to upload attachment",
+            attachmentId: undefined,
+            fileType: result.file_type ?? attachment.fileType,
+          };
+        });
+      });
+    } catch (error) {
+      console.error("Failed to upload chat attachments:", error);
+      if (currentConversationIdRef.current !== uploadConversationId) return;
+
+      setStagedAttachments((prev) =>
+        prev.map((attachment) =>
+          nextAttachmentIdSet.has(attachment.id)
+            ? {
+                ...attachment,
+                status: "error",
+                error: "Failed to upload attachments",
+              }
+            : attachment
+        )
+      );
+    }
+  }, [conversation_id, running]);
+
+  const handleAttachmentPickerClick = () => {
+    if (running) return;
+    attachmentInputRef.current?.click();
+  };
+
+  const handleAttachmentInputChange = async (
+    event: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const files = event.target.files ? Array.from(event.target.files) : [];
+    if (files.length > 0) {
+      await stageAndUploadAttachments(files);
+    }
+    event.target.value = "";
+  };
+
+  const handleAttachmentDrop = (event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    const files = Array.from(event.dataTransfer.files ?? []);
+    if (files.length > 0) {
+      void stageAndUploadAttachments(files);
+    }
+  };
+
+  const handleAttachmentDragOver = (event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+  };
+
+  const handleRemoveAttachment = (attachmentId: string) => {
+    setStagedAttachments((prev) =>
+      prev.filter((attachment) => attachment.id !== attachmentId)
+    );
+  };
 
   const handleNewConversation = async () => {
     if (!canvasId) return;
@@ -630,38 +767,128 @@ export default function ChatPage() {
         {/* Input Bar */}
         {!isEmpty && (
           <div className="border-t border-[var(--color-border-subtle)] p-4 bg-[var(--color-surface)] flex justify-center">
-            <div className="max-w-3xl w-full flex gap-3">
-              <input
-                ref={chatInputRef}
-                type="text"
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey) {
-                    e.preventDefault();
-                    handleSend();
-                  }
-                }}
-                placeholder={activeInterrupt ? "Waiting for your response/approval above..." : running ? "Orchestrating workflow..." : "Message agents..."}
-                disabled={(running && !activeInterrupt) || loadingConv}
-                data-testid="chat-input"
-                className="input-base flex-1 py-2.5 px-4 rounded-xl"
-              />
-              <button
-                onClick={running ? stopRun : handleSend}
-                disabled={!running && (!input.trim() || loadingConv)}
-                data-testid={running ? "stop-button" : "send-button"}
-                className={`px-4 py-2.5 rounded-xl text-white text-sm font-semibold transition-all duration-200 disabled:opacity-40 flex items-center justify-center shadow ${running
-                  ? "bg-[var(--color-danger)] hover:bg-[var(--color-danger)]/90"
-                  : "bg-[var(--color-accent)] hover:bg-[var(--color-accent-bright)] shadow-[var(--color-accent-subtle)]"
-                  }`}
+            <div className="max-w-3xl w-full flex flex-col gap-2">
+              {stagedAttachments.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {stagedAttachments.map((attachment) => {
+                    const isError = attachment.status === "error";
+                    const badgeClassName = isError
+                      ? "bg-[var(--color-danger-subtle)] text-[var(--color-danger)]"
+                      : "bg-[var(--color-success-subtle)] text-[var(--color-success)]";
+
+                    return (
+                      <div key={attachment.id} className="max-w-full">
+                        <div
+                          className={`inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-[12px] shadow-sm ${
+                            isError
+                              ? "border-[var(--color-danger)]/20 bg-[var(--color-danger-subtle)]/40 text-[var(--color-danger)]"
+                              : "border-[var(--color-success)]/20 bg-[var(--color-elevated)] text-[var(--color-text-primary)]"
+                          }`}
+                        >
+                          <span
+                            className="max-w-[220px] truncate font-medium"
+                            title={attachment.file.name}
+                          >
+                            {attachment.file.name}
+                          </span>
+                          <span
+                            className={`text-[9px] px-1.5 py-0.5 rounded-md font-semibold tracking-wide uppercase ${badgeClassName}`}
+                          >
+                            {attachment.fileType.toUpperCase()}
+                          </span>
+                          {attachment.status === "uploaded" && (
+                            <Check
+                              className="w-3.5 h-3.5 text-[var(--color-success)]"
+                              aria-label={`Attachment ${attachment.file.name} uploaded`}
+                            />
+                          )}
+                          {attachment.status !== "uploaded" && (
+                            // Once a file is "uploaded" it's already a persisted
+                            // AttachmentInstance (no delete endpoint exists) —
+                            // only offer removal for the local pending/error
+                            // states so the chip's × can't imply it un-attaches
+                            // stored data.
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveAttachment(attachment.id)}
+                              aria-label={`Remove attachment ${attachment.file.name}`}
+                              className="inline-flex items-center justify-center rounded-md text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)] transition-colors"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
+                        {isError && attachment.error && (
+                          <p className="mt-1 px-1 text-[11px] text-[var(--color-danger)]">
+                            {attachment.error}
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              <div
+                className="w-full flex gap-3"
+                data-testid="chat-attachment-dropzone"
+                onDragOver={handleAttachmentDragOver}
+                onDrop={handleAttachmentDrop}
               >
-                {running ? (
-                  <Square className="w-3.5 h-3.5" />
-                ) : (
-                  <Send className="w-4 h-4" />
-                )}
-              </button>
+                <input
+                  ref={attachmentInputRef}
+                  type="file"
+                  multiple
+                  onChange={handleAttachmentInputChange}
+                  data-testid="chat-attachment-input"
+                  className="hidden"
+                />
+                <button
+                  type="button"
+                  onClick={handleAttachmentPickerClick}
+                  disabled={loadingConv || running}
+                  aria-label="Add attachments"
+                  title={
+                    running
+                      ? "Use the inline upload field on a HITL prompt while a run is active"
+                      : "Add attachments"
+                  }
+                  className="inline-flex items-center justify-center px-3 rounded-xl border border-[var(--color-border-default)] bg-[var(--color-base)] text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:border-[var(--color-accent)] transition-colors disabled:opacity-40"
+                >
+                  <Paperclip className="w-4 h-4" />
+                </button>
+                <input
+                  ref={chatInputRef}
+                  type="text"
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      handleSend();
+                    }
+                  }}
+                  placeholder={activeInterrupt ? "Waiting for your response/approval above..." : running ? "Orchestrating workflow..." : "Message agents..."}
+                  disabled={(running && !activeInterrupt) || loadingConv}
+                  data-testid="chat-input"
+                  className="input-base flex-1 py-2.5 px-4 rounded-xl"
+                />
+                <button
+                  onClick={running ? stopRun : handleSend}
+                  disabled={!running && (!input.trim() || loadingConv)}
+                  data-testid={running ? "stop-button" : "send-button"}
+                  className={`px-4 py-2.5 rounded-xl text-white text-sm font-semibold transition-all duration-200 disabled:opacity-40 flex items-center justify-center shadow ${running
+                    ? "bg-[var(--color-danger)] hover:bg-[var(--color-danger)]/90"
+                    : "bg-[var(--color-accent)] hover:bg-[var(--color-accent-bright)] shadow-[var(--color-accent-subtle)]"
+                    }`}
+                >
+                  {running ? (
+                    <Square className="w-3.5 h-3.5" />
+                  ) : (
+                    <Send className="w-4 h-4" />
+                  )}
+                </button>
+              </div>
             </div>
           </div>
         )}

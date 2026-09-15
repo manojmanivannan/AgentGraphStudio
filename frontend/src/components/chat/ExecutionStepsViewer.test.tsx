@@ -5,6 +5,7 @@ import type { Message } from "@/types";
 
 describe("ExecutionStepsViewer", () => {
   const defaultProps = {
+    conversationId: "conv-1",
     steps: [],
     isStreaming: false,
     isExpanded: true,
@@ -133,5 +134,28 @@ describe("ExecutionStepsViewer", () => {
     expect(screen.getByText(/SimpleAgent · tool_result/i)).toBeInTheDocument();
     expect(screen.getByText("Simple tool output")).toBeInTheDocument();
     expect(screen.queryByText("Python Code")).not.toBeInTheDocument();
+  });
+
+  it("renders the HITL attachment uploader for an active human input request", () => {
+    const humanInputStep: Message = {
+      id: "hitl-step",
+      conversation_id: "conv-1",
+      role: "assistant",
+      content: "Upload the source file",
+      agent_name: "Planner",
+      node_id: "agent-node-1",
+      event_type: "human_input_request",
+      created_at: "2026-01-01T00:00:00.000Z",
+    };
+
+    render(
+      <ExecutionStepsViewer
+        {...defaultProps}
+        steps={[humanInputStep]}
+        activeInterrupt={{ message_id: "hitl-step" }}
+      />
+    );
+
+    expect(screen.getByRole("button", { name: /upload attachment/i })).toBeInTheDocument();
   });
 });

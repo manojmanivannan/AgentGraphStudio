@@ -142,4 +142,8 @@ export const handlers = [
   http.delete(`${API}/canvases/:canvasId/conversations/:convId`, () =>
     new HttpResponse(null, { status: 204 })
   ),
+
+  http.get(`${API}/conversations/:conversationId/runs/active`, () =>
+    HttpResponse.json(null)
+  ),
 ];

@@ -120,4 +120,32 @@ describe("MessageTurn timestamps", () => {
 
     expect(document.querySelectorAll("time")).toHaveLength(0);
   });
+
+  it("renders the HITL attachment uploader for a collapsed active human input request", () => {
+    const humanInterrupt: Message = {
+      id: "hitl-1",
+      conversation_id: "conv-1",
+      role: "assistant",
+      content: "Please upload the CSV file.",
+      agent_name: "Planner",
+      node_id: "agent-node-1",
+      event_type: "human_input_request",
+      created_at: "2026-01-01T00:00:10.000Z",
+    };
+
+    render(
+      <MessageTurn
+        {...defaultProps}
+        turn={{
+          ...baseTurn,
+          userMessage,
+          steps: [humanInterrupt],
+          humanInterrupt,
+        }}
+        activeInterrupt={{ message_id: "hitl-1" }}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: /upload attachment/i })).toBeInTheDocument();
+  });
 });
