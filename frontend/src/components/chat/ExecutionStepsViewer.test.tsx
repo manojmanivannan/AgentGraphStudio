@@ -158,4 +158,33 @@ describe("ExecutionStepsViewer", () => {
 
     expect(screen.getByRole("button", { name: /upload attachment/i })).toBeInTheDocument();
   });
+
+  it("renders produced attachment steps with a download link instead of raw content", () => {
+    const attachmentStep: Message = {
+      id: "attachment-step",
+      conversation_id: "conv-1",
+      role: "assistant",
+      content: "",
+      agent_name: "ReportAgent",
+      event_type: "attachment_produced",
+      args: {
+        attachment_id: "attachment-42",
+        name: "report.csv",
+        file_type: "csv",
+        source: "agent_output",
+      },
+      created_at: "2026-01-01T00:00:00.000Z",
+    };
+
+    render(<ExecutionStepsViewer {...defaultProps} steps={[attachmentStep]} />);
+
+    expect(screen.getByText(/ReportAgent · attachment_produced/i)).toBeInTheDocument();
+    expect(screen.getByText("report.csv")).toBeInTheDocument();
+
+    const downloadLink = screen.getByRole("link", { name: /download/i });
+    expect(downloadLink).toHaveAttribute(
+      "href",
+      "http://localhost:8000/api/attachments/attachment-42"
+    );
+  });
 });

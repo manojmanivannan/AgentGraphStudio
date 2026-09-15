@@ -9,13 +9,14 @@ from typing import TYPE_CHECKING
 import dspy
 
 from canvas_server.events import EventCallback
+from canvas_server.output_extraction import declared_output_nodes
 from canvas_server.runner.code_provider import CodeProvider
 from canvas_server.runner.plot_provider import PlotProvider
 from canvas_server.sandbox import NETWORK_POOL_DEFAULT, NETWORK_POOL_NETWORKED
 from canvas_server.streaming_react import StreamingReAct
 
 if TYPE_CHECKING:
-    from canvas_server.models.canvas import AgentNode, Edge
+    from canvas_server.models.canvas import AgentNode, AttachmentNode, Edge
     from canvas_server.repos.conversation_repo import ConversationRepo
     from canvas_server.runner.conversation import ConversationService
     from canvas_server.runner.handoff import HandoffToolBuilder
@@ -48,6 +49,7 @@ class AgentFactory:
         agent_names: dict[uuid.UUID, str] | None = None,
         conversation_id: uuid.UUID | None = None,
         conversation_repo: ConversationRepo | None = None,
+        attachment_nodes: list[AttachmentNode] | None = None,
     ) -> None:
         self._lm: dspy.LM = lm
         self._tool_registry: ToolRegistry = tool_registry
@@ -56,6 +58,7 @@ class AgentFactory:
         self._agent_names: dict[uuid.UUID, str] = agent_names or {}
         self._conversation_id: uuid.UUID | None = conversation_id
         self._conversation_repo: ConversationRepo | None = conversation_repo
+        self._attachment_nodes: list[AttachmentNode] = attachment_nodes or []
         self._run_state: CanvasRunState | None = None
 
     # ------------------------------------------------------------------
@@ -211,6 +214,36 @@ class AgentFactory:
                 )
 
             signature_cls = _AgentSig
+
+        declared_nodes = declared_output_nodes(
+            self._edges, self._attachment_nodes, agent_node.id
+        )
+        if declared_nodes:
+            slot_descriptions = "; ".join(
+                f'name="{node.name}" file_type="{node.file_type}"' for node in declared_nodes
+            )
+            full_instructions += (
+                "\n\n[CRITICAL SYSTEM RULE] You have configured output attachment slot(s): "
+                f"{slot_descriptions}. If your work produces a deliverable matching one of "
+                "these slots, include it in the output_attachments field as an object with "
+                "exactly the keys 'name', 'file_type', and 'content' — name and file_type must "
+                "match the slot exactly. Do not duplicate that content inside process_result; "
+                "process_result should remain your normal final answer to the user. Only emit "
+                "an entry when you actually have a matching deliverable — leave "
+                "output_attachments as an empty list otherwise."
+            )
+            signature_cls = signature_cls.append(
+                "output_attachments",
+                dspy.OutputField(
+                    desc=(
+                        "Optional list of attachment objects to store, each with 'name', "
+                        "'file_type', and 'content' keys matching a configured output "
+                        "Attachment node slot. Leave empty ([]) when there is nothing to extract."
+                    ),
+                    default_factory=list,
+                ),
+                type_=list[dict],
+            )
 
         return signature_cls.with_instructions(full_instructions)
 

@@ -7,6 +7,7 @@ import { useState } from "react";
 import { ChevronDown, ChevronRight, Code, Terminal, Copy, Check } from "lucide-react";
 import type { Message } from "@/types";
 import { HitlAttachmentUpload } from "./HitlAttachmentUpload";
+import { ProducedAttachmentCard } from "./ProducedAttachmentCard";
 
 interface ActiveInterrupt {
   message_id: string;
@@ -94,6 +95,7 @@ export function ExecutionStepsViewer({
         const isSubAnswer = stepMsg.event_type === "final_answer";
         const isWarning = stepMsg.event_type === "warning";
         const isResponse = stepMsg.event_type === "response";
+        const isProducedAttachment = stepMsg.event_type === "attachment_produced";
 
         const level = getMessageNestingLevel(stepMsg);
         const isStepCollapsed = collapsedSteps.has(stepMsg.id);
@@ -147,6 +149,8 @@ export function ExecutionStepsViewer({
                     ? "bg-[var(--color-agent-subtle)] text-[var(--color-agent)] border border-[var(--color-agent)]/20 rounded-bl-sm"
                     : isToolResult
                     ? "bg-[var(--color-success-subtle)] text-[var(--color-text-primary)] border border-[var(--color-success)]/20 rounded-bl-sm font-mono"
+                    : isProducedAttachment
+                    ? "bg-[var(--color-success-subtle)] text-[var(--color-text-primary)] border border-[var(--color-success)]/20 rounded-bl-sm"
                     : isResponse
                     ? "bg-[var(--color-agent-subtle)] text-[var(--color-agent)] border border-[var(--color-agent)]/20 rounded-bl-sm"
                     : isSubAnswer
@@ -225,6 +229,12 @@ export function ExecutionStepsViewer({
                       </button>
                     </div>
                   </div>
+                ) : isProducedAttachment ? (
+                  <ProducedAttachmentCard
+                    name={String(stepMsg.args?.name ?? "")}
+                    fileType={String(stepMsg.args?.file_type ?? "")}
+                    attachmentId={String(stepMsg.args?.attachment_id ?? "")}
+                  />
                 ) : isToolResult && hasStructuredToolInput ? (
                   <div className="space-y-2.5 w-full">
                     {pythonCode && (

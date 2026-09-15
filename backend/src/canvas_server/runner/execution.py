@@ -19,8 +19,14 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 from canvas_server.exceptions import (
+    AttachmentTooLargeError,
     LLMConfigurationError,
     RAGEmbeddingError,
+)
+from canvas_server.output_extraction import (
+    declared_output_nodes,
+    extract_output_attachments,
+    file_type_to_format,
 )
 from canvas_server.runner.config import RunContext
 from canvas_server.runner.tracing import agent_span
@@ -243,12 +249,116 @@ class ExecutionStrategy(ABC):
         node = self._services.node_map.get(agent_id)
         return node.name if node else "Unknown"
 
+    async def _store_output_attachments(
+        self,
+        result: dspy.Prediction,
+        agent_node: AgentNode,
+        agent_id: uuid.UUID,
+        send_event,
+        run_id: uuid.UUID | None,
+    ) -> None:
+        """Validates and stores any ``output_attachments`` the agent emitted (#86).
+
+        Runs once, post-loop, right after the ReAct loop's ``extract()`` step
+        resolves ``result`` — never per-iteration. A mismatch against the
+        agent's declared output Attachment node(s) is surfaced as a
+        tool-output-style ``warning`` event (and a durable system message, so
+        it lands in conversation history for the agent to react to on a
+        subsequent turn) and skipped — this must never fail an otherwise-
+        successful run. Nothing happens when the agent has no declared output
+        nodes, even if the LM filled in ``output_attachments`` (the signature
+        only gains that field when at least one output node is wired, but
+        this stays defensive).
+        """
+        raw_items = getattr(result, "output_attachments", None)
+        if not raw_items:
+            return
+
+        canvas = getattr(self._services.run_state, "canvas", None)
+        edges = getattr(canvas, "edges", None) or []
+        attachment_nodes = getattr(canvas, "attachment_nodes", None) or []
+        declared_nodes = declared_output_nodes(edges, attachment_nodes, agent_id)
+        if not declared_nodes:
+            return
+
+        conversation_service = self._services.conversation_service
+
+        outcome = extract_output_attachments(raw_items, declared_nodes)
+        for error in outcome.errors:
+            logger.warning("Agent %s: %s", agent_node.name, error)
+            await send_event(self._event("warning", message=error, agent=agent_node.name, node_id=str(agent_id)))
+            if conversation_service:
+                await conversation_service.persist_message(
+                    role="system",
+                    content=error,
+                    agent_name=agent_node.name,
+                    node_id=agent_id,
+                    event_type="warning",
+                )
+
+        if not outcome.attachments:
+            return
+
+        conversation_repo = getattr(conversation_service, "conversation_repo", None)
+        conversation_id = getattr(conversation_service, "conversation_id", None)
+        if not conversation_repo or not conversation_id:
+            return
+
+        for attachment in outcome.attachments:
+            try:
+                stored = await conversation_repo.save_attachment(
+                    conversation_id=conversation_id,
+                    content=attachment.content.encode("utf-8"),
+                    format=file_type_to_format(attachment.file_type),
+                    file_type=attachment.file_type,
+                    source="agent_output",
+                    attachment_node_id=attachment.node_id,
+                    produced_by_run_id=run_id,
+                )
+            except AttachmentTooLargeError as exc:
+                logger.warning(
+                    "Agent %s: output attachment %r too large to store: %s",
+                    agent_node.name,
+                    attachment.name,
+                    exc,
+                )
+                continue
+
+            await send_event(
+                self._event(
+                    "attachment_produced",
+                    attachment_id=str(stored.id),
+                    name=attachment.name,
+                    file_type=attachment.file_type,
+                    source="agent_output",
+                    conversation_id=str(conversation_id),
+                    run_id=str(run_id) if run_id else None,
+                    agent=agent_node.name,
+                    node_id=str(agent_id),
+                )
+            )
+            await conversation_service.persist_message(
+                role="assistant",
+                content="",
+                agent_name=agent_node.name,
+                node_id=agent_id,
+                event_type="attachment_produced",
+                args={
+                    "attachment_id": str(stored.id),
+                    "name": attachment.name,
+                    "file_type": attachment.file_type,
+                    "source": "agent_output",
+                    "run_id": str(run_id) if run_id else None,
+                },
+            )
+
     async def _run_worker(
         self,
         agent_id: uuid.UUID,
         user_prompt: str,
         send_event,
         dspy_history,
+        run_id: uuid.UUID | None = None,
     ) -> str | None:
         """Executes a single worker agent and returns its answer.
 
@@ -264,6 +374,8 @@ class ExecutionStrategy(ABC):
             user_prompt (str): The raw prompt input from the user.
             send_event (Callable): Callback for dispatching websocket events.
             dspy_history: The DSPy history object, if conversation history is enabled.
+            run_id (uuid.UUID | None): The durable run producing this turn, if any —
+                threaded through to any stored ``AttachmentInstance`` (#86).
 
         Returns:
             str | None: The final text response, or None on failure.
@@ -310,6 +422,7 @@ class ExecutionStrategy(ABC):
             text = result.process_result
             text = ensure_plots_in_result(result, text)
             logger.info("Agent %s completed: result=%s", agent_node.name, text[:200])
+            await self._store_output_attachments(result, agent_node, agent_id, send_event, run_id)
             await self._services.conversation_service.persist_message(
                 role="assistant",
                 content=text,
@@ -361,7 +474,7 @@ class WorkerExecution(ExecutionStrategy):
             return None
 
         result = await self._run_worker(
-            agent_id, ctx.user_prompt, ctx.send_event, ctx.dspy_history
+            agent_id, ctx.user_prompt, ctx.send_event, ctx.dspy_history, ctx.run_id
         )
         if result is not None:
             await ctx.send_event(
@@ -422,6 +535,9 @@ class RouterExecution(ExecutionStrategy):
                     )
             final_text = result.process_result
 
+            await self._store_output_attachments(
+                result, agent_node, agent_id, ctx.send_event, ctx.run_id
+            )
             await self._services.conversation_service.persist_message(
                 role="assistant",
                 content=final_text,
@@ -490,6 +606,7 @@ class ChainExecution(ExecutionStrategy):
                 ctx.user_prompt,
                 ctx.send_event,
                 ctx.dspy_history,
+                ctx.run_id,
             )
             if result_text is None:
                 break

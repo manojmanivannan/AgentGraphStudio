@@ -37,7 +37,7 @@ export const apiOrigin = configuredApiHost
     ? browserOrigin
     : defaultApiOrigin;
 
-const API_BASE = useProxyMode ? "/api" : `${apiOrigin}/api`;
+export const API_BASE = useProxyMode ? "/api" : `${apiOrigin}/api`;
 
 /**
  * Listeners notified when a protected data endpoint returns 401 — i.e. the

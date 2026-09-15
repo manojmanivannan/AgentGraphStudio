@@ -262,6 +262,39 @@ describe("groupMessagesIntoTurns", () => {
         expect(turns[0].steps).toHaveLength(1);
         expect(turns[0].steps[0].id).toBe("t2");
     });
+
+    it("groups attachment_produced messages as regular execution steps", () => {
+        const userMsg: Message = {
+            id: "u1",
+            conversation_id: "c1",
+            role: "user",
+            content: "Generate the report",
+            created_at: "2026-01-01T00:00:00.000Z",
+        };
+        const attachmentStep: Message = {
+            id: "s1",
+            conversation_id: "c1",
+            role: "assistant",
+            content: "",
+            agent_name: "ReportAgent",
+            event_type: "attachment_produced",
+            args: {
+                attachment_id: "attachment-1",
+                name: "report.csv",
+                file_type: "csv",
+                source: "agent_output",
+            },
+            created_at: "2026-01-01T00:00:01.000Z",
+        };
+
+        const { turns } = groupMessagesIntoTurns([userMsg, attachmentStep]);
+
+        expect(turns).toHaveLength(1);
+        expect(turns[0].steps).toEqual([attachmentStep]);
+        expect(turns[0].humanInterrupt).toBeUndefined();
+        expect(turns[0].finalAnswer).toBeUndefined();
+        expect(turns[0].isStreaming).toBe(true);
+    });
 });
 
 describe("ChatPage component", () => {

@@ -38,6 +38,7 @@ class ConversationRunCoordinator:
         send_event: EventSender,
         target_agent_id: uuid.UUID | None = None,
         get_client_response: Callable[[str, str], Awaitable[dict[str, Any]]] | None = None,
+        run_id: uuid.UUID | None = None,
     ) -> None:
         conversation = await self.conversation_repo.get_or_404(conversation_id)
         canvas = await self.canvas_repo.get_or_404(conversation.canvas_id)
@@ -60,6 +61,7 @@ class ConversationRunCoordinator:
                 send_event,
                 target_agent_id=target_agent_id,
                 get_client_response=get_client_response,
+                run_id=run_id,
             )
         except RunAbortedError:
             raise
