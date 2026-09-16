@@ -180,7 +180,7 @@ class StrategyServices:
         return self.run_state.handoff_tool_builder
 
 
-class ExecutionStrategy(ABC):
+class ExecutionStrategyBase(ABC):
     """Base abstract class for all agent execution strategies.
 
     Strategies define how a specific type of agent (Worker, Router, or Chain)
@@ -234,99 +234,141 @@ class ExecutionStrategy(ABC):
         only gains that field when at least one output node is wired, but
         this stays defensive).
         """
-        raw_items = getattr(result, "output_attachments", None)
-        if not raw_items:
-            return
-
-        canvas = getattr(self._services.run_state, "canvas", None)
-        edges = getattr(canvas, "edges", None) or []
-        attachment_nodes = getattr(canvas, "attachment_nodes", None) or []
-        declared_nodes = declared_output_nodes(edges, attachment_nodes, agent_id)
-        if not declared_nodes:
-            return
-
-        conversation_service = self._services.conversation_service
-
-        outcome = extract_output_attachments(raw_items, declared_nodes)
-        for error in outcome.errors:
-            await self._emit_output_attachment_warning(
-                error=error,
-                agent_node=agent_node,
-                agent_id=agent_id,
-                send_event=send_event,
-                conversation_service=conversation_service,
-            )
-
-        if not outcome.attachments:
-            return
-
-        conversation_repo = getattr(conversation_service, "conversation_repo", None)
-        conversation_id = getattr(conversation_service, "conversation_id", None)
-        if not conversation_repo or not conversation_id:
-            return
-
-        network_pool = (
-            NETWORK_POOL_NETWORKED
-            if getattr(agent_node, "enable_network", False)
-            else NETWORK_POOL_DEFAULT
+        await store_output_attachments(
+            result=result,
+            agent_node=agent_node,
+            agent_id=agent_id,
+            send_event=send_event,
+            conversation_service=self._services.conversation_service,
+            canvas=getattr(self._services.run_state, "canvas", None),
+            run_id=run_id,
         )
 
-        for attachment in outcome.attachments:
-            content = attachment.content.encode("utf-8")
-            if attachment.sandbox_path is not None:
-                sandbox_bytes = await read_sandbox_file(
-                    conversation_id=conversation_id,
-                    network_pool=network_pool,
-                    path=attachment.sandbox_path,
-                )
-                if sandbox_bytes is None:
-                    warning = (
-                        "Execution error in output_attachments: "
-                        f"{attachment.name!r} referenced sandbox file "
-                        f"{attachment.sandbox_path!r}, but the framework could not read it "
-                        "from the agent sandbox."
-                    )
-                    await self._emit_output_attachment_warning(
-                        error=warning,
-                        agent_node=agent_node,
-                        agent_id=agent_id,
-                        send_event=send_event,
-                        conversation_service=conversation_service,
-                    )
-                    continue
-                content = sandbox_bytes
 
-            try:
-                stored = await conversation_repo.save_attachment(
-                    conversation_id=conversation_id,
-                    content=content,
-                    format=file_type_to_format(attachment.file_type),
-                    file_type=attachment.file_type,
-                    source="agent_output",
-                    attachment_node_id=attachment.node_id,
-                    produced_by_run_id=run_id,
-                )
-            except AttachmentTooLargeError as exc:
-                logger.warning(
-                    "Agent %s: output attachment %r too large to store: %s",
-                    agent_node.name,
-                    attachment.name,
-                    exc,
-                )
-                continue
+async def store_output_attachments(
+    *,
+    result: dspy.Prediction,
+    agent_node: AgentNode,
+    agent_id: uuid.UUID,
+    send_event,
+    conversation_service,
+    canvas,
+    run_id: uuid.UUID | None,
+) -> None:
+    """Validate, persist, and announce an agent result's output attachments."""
+    raw_items = getattr(result, "output_attachments", None)
+    if not raw_items:
+        return
 
-            await announce_attachment_produced(
-                send_event=send_event,
-                conversation_service=conversation_service,
+    edges = getattr(canvas, "edges", None) or []
+    attachment_nodes = getattr(canvas, "attachment_nodes", None) or []
+    declared_nodes = declared_output_nodes(edges, attachment_nodes, agent_id)
+    if not declared_nodes:
+        return
+
+    outcome = extract_output_attachments(raw_items, declared_nodes)
+    for error in outcome.errors:
+        logger.warning("Agent %s: %s", agent_node.name, error)
+        await send_event(
+            {
+                "type": "warning",
+                "message": error,
+                "agent": agent_node.name,
+                "node_id": str(agent_id),
+            }
+        )
+        if conversation_service:
+            await conversation_service.persist_message(
+                role="system",
+                content=error,
                 agent_name=agent_node.name,
-                agent_id=agent_id,
-                attachment_id=stored.id,
-                name=attachment.name,
+                node_id=agent_id,
+                event_type="warning",
+            )
+
+    if not outcome.attachments:
+        return
+
+    conversation_repo = getattr(conversation_service, "conversation_repo", None)
+    conversation_id = getattr(conversation_service, "conversation_id", None)
+    if not conversation_repo or not conversation_id:
+        return
+
+    network_pool = (
+        NETWORK_POOL_NETWORKED
+        if getattr(agent_node, "enable_network", False)
+        else NETWORK_POOL_DEFAULT
+    )
+
+    for attachment in outcome.attachments:
+        content = attachment.content.encode("utf-8")
+        if attachment.sandbox_path is not None:
+            sandbox_bytes = await read_sandbox_file(
+                conversation_id=conversation_id,
+                network_pool=network_pool,
+                path=attachment.sandbox_path,
+            )
+            if sandbox_bytes is None:
+                error = (
+                    "Execution error in output_attachments: "
+                    f"{attachment.name!r} referenced sandbox file "
+                    f"{attachment.sandbox_path!r}, but the framework could not read it "
+                    "from the agent sandbox."
+                )
+                logger.warning("Agent %s: %s", agent_node.name, error)
+                await send_event(
+                    {
+                        "type": "warning",
+                        "message": error,
+                        "agent": agent_node.name,
+                        "node_id": str(agent_id),
+                    }
+                )
+                if conversation_service:
+                    await conversation_service.persist_message(
+                        role="system",
+                        content=error,
+                        agent_name=agent_node.name,
+                        node_id=agent_id,
+                        event_type="warning",
+                    )
+                continue
+            content = sandbox_bytes
+
+        try:
+            stored = await conversation_repo.save_attachment(
+                conversation_id=conversation_id,
+                content=content,
+                format=file_type_to_format(attachment.file_type),
                 file_type=attachment.file_type,
                 source="agent_output",
-                conversation_id=conversation_id,
-                run_id=run_id,
+                attachment_node_id=attachment.node_id,
+                produced_by_run_id=run_id,
             )
+        except AttachmentTooLargeError as exc:
+            logger.warning(
+                "Agent %s: output attachment %r too large to store: %s",
+                agent_node.name,
+                attachment.name,
+                exc,
+            )
+            continue
+
+        await announce_attachment_produced(
+            send_event=send_event,
+            conversation_service=conversation_service,
+            agent_name=agent_node.name,
+            agent_id=agent_id,
+            attachment_id=stored.id,
+            name=attachment.name,
+            file_type=attachment.file_type,
+            source="agent_output",
+            conversation_id=conversation_id,
+            run_id=run_id,
+        )
+
+
+class ExecutionStrategy(ExecutionStrategyBase):
 
     async def _emit_output_attachment_warning(
         self,

@@ -14,6 +14,7 @@ from canvas_server.events import EventCallback
 from canvas_server.runner.input_attachment_delivery import (
     deliver_and_announce_input_attachments,
 )
+from canvas_server.runner.execution import store_output_attachments
 from canvas_server.runner.tracing import agent_span
 
 if TYPE_CHECKING:
@@ -167,6 +168,15 @@ class HandoffToolBuilder:
                             **attachment_kwargs,
                         )
                     answer = result.process_result
+                    await store_output_attachments(
+                        result=result,
+                        agent_node=target_node,
+                        agent_id=target_id,
+                        send_event=send_event,
+                        conversation_service=self.conversation_service,
+                        canvas=canvas,
+                        run_id=getattr(self.run_state, "run_id", None),
+                    )
             except Exception as e:
                 answer = f"Error: {e}"
                 logger.error("Sub-agent %s failed: %s", target_name, e, exc_info=True)
