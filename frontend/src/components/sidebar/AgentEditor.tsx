@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useCanvasStore } from "@/store/canvasStore";
-import { Wrench, Plus, Loader2, FileText, Trash2 } from "lucide-react";
+import { Wrench, Plus, Loader2, FileText, Trash2, Paperclip } from "lucide-react";
 import { listAgentDocuments, uploadAgentDocument, deleteAgentDocument } from "@/lib/api";
 import type { AgentDocument } from "@/types";
 import { InfoTooltip } from "./InfoTooltip";
@@ -110,6 +110,15 @@ export function AgentEditor() {
   const connectedTools = nodes.filter((n) => {
     if (n.type !== "tool") return false;
     return edges.some(edge => edge.source === selectedNodeId && edge.target === n.id);
+  });
+
+  const connectedAttachments = nodes.filter((n) => {
+    if (n.type !== "attachment") return false;
+    return edges.some(
+      (edge) =>
+        (edge.source === selectedNodeId && edge.target === n.id) ||
+        (edge.source === n.id && edge.target === selectedNodeId)
+    );
   });
 
   return (
@@ -490,6 +499,45 @@ export function AgentEditor() {
             </label>
           </div>
         )}
+
+        <div className="pt-3 border-t border-[var(--color-border-subtle)]">
+          <h4 className="text-[11px] font-semibold text-[var(--color-text-tertiary)] mb-2 uppercase tracking-[0.06em] flex items-center gap-1.5">
+            <Paperclip className="w-3 h-3" /> Linked Attachments
+          </h4>
+          <div className="space-y-1">
+            {connectedAttachments.length > 0 ? (
+              connectedAttachments.map((attachment) => {
+                // Direction, not the stored edgeType, decides the relation:
+                // agent → attachment = produces, attachment → agent = consumes.
+                const produces = edges.some(
+                  (edge) =>
+                    edge.source === selectedNodeId && edge.target === attachment.id
+                );
+                return (
+                  <div
+                    key={attachment.id}
+                    className="flex items-center justify-between px-2.5 py-1.5 bg-[var(--color-warning-surface)]/40 text-[var(--color-text-secondary)] border border-[var(--color-warning)]/15 rounded-lg text-[11px] font-medium transition-colors hover:border-[var(--color-warning)]/30"
+                  >
+                    <span className="truncate flex items-center gap-1.5">
+                      <Paperclip className="w-3 h-3 text-[var(--color-warning)] flex-shrink-0" />
+                      <span className="truncate" title={(attachment.data as any)?.name}>
+                        {(attachment.data as any)?.name}
+                      </span>
+                    </span>
+                    <span
+                      data-testid={`agent-attachment-relation-${attachment.id}`}
+                      className="text-[9px] px-1.5 py-0.5 rounded-md font-semibold tracking-wide uppercase flex-shrink-0 bg-[var(--color-warning-subtle)] text-[var(--color-warning)]"
+                    >
+                      {produces ? "Produces" : "Consumes"}
+                    </span>
+                  </div>
+                );
+              })
+            ) : (
+              <p className="text-[11px] text-[var(--color-text-tertiary)] italic">No attachments linked</p>
+            )}
+          </div>
+        </div>
 
         <div className="pt-3 border-t border-[var(--color-border-subtle)]">
           <h4 className="text-[11px] font-semibold text-[var(--color-text-tertiary)] mb-2 uppercase tracking-[0.06em] flex items-center gap-1.5">

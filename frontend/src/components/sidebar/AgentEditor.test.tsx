@@ -393,6 +393,89 @@ describe("AgentEditor", () => {
     expect(screen.getByText("No tools connected")).toBeInTheDocument();
   });
 
+  it("lists linked attachments with Produces and Consumes badges", () => {
+    const produced: Node = {
+      id: "att-1",
+      type: "attachment",
+      position: { x: 0, y: 300 },
+      data: { id: "att-1", name: "results.csv", fileType: "csv" },
+    };
+    const consumed: Node = {
+      id: "att-2",
+      type: "attachment",
+      position: { x: 0, y: 450 },
+      data: { id: "att-2", name: "input.json", fileType: "json" },
+    };
+
+    useCanvasStore.getState().setNodes([agentNode, produced, consumed]);
+    useCanvasStore.getState().setEdges([
+      {
+        id: "edge-1",
+        source: "agent-1",
+        target: "att-1",
+        data: { edgeType: "produces" },
+      },
+      {
+        id: "edge-2",
+        source: "att-2",
+        target: "agent-1",
+        data: { edgeType: "consumes" },
+      },
+    ]);
+    useCanvasStore.getState().selectNode("agent-1");
+    render(<AgentEditor />);
+
+    expect(screen.getByText("results.csv")).toBeInTheDocument();
+    expect(screen.getByText("input.json")).toBeInTheDocument();
+    expect(screen.getByTestId("agent-attachment-relation-att-1")).toHaveTextContent(
+      "Produces"
+    );
+    expect(screen.getByTestId("agent-attachment-relation-att-2")).toHaveTextContent(
+      "Consumes"
+    );
+  });
+
+  it("derives Produces/Consumes from edge direction, not stored edgeType", () => {
+    const attachment: Node = {
+      id: "att-1",
+      type: "attachment",
+      position: { x: 0, y: 300 },
+      data: { id: "att-1", name: "report.txt", fileType: "text" },
+    };
+
+    useCanvasStore.getState().setNodes([agentNode, attachment]);
+    useCanvasStore.getState().setEdges([
+      {
+        id: "edge-1",
+        source: "att-1",
+        target: "agent-1",
+        data: { edgeType: "produces" }, // stale/wrong label; direction says consumes
+      },
+    ]);
+    useCanvasStore.getState().selectNode("agent-1");
+    render(<AgentEditor />);
+
+    expect(screen.getByTestId("agent-attachment-relation-att-1")).toHaveTextContent(
+      "Consumes"
+    );
+  });
+
+  it("does not list attachments that are not connected to this agent", () => {
+    const unrelated: Node = {
+      id: "att-1",
+      type: "attachment",
+      position: { x: 0, y: 300 },
+      data: { id: "att-1", name: "other.csv", fileType: "csv" },
+    };
+
+    useCanvasStore.getState().setNodes([agentNode, unrelated]);
+    useCanvasStore.getState().selectNode("agent-1");
+    render(<AgentEditor />);
+
+    expect(screen.queryByText("other.csv")).not.toBeInTheDocument();
+    expect(screen.getByText("No attachments linked")).toBeInTheDocument();
+  });
+
   it("renders Capabilities section header", () => {
     useCanvasStore.getState().setNodes([agentNode]);
     useCanvasStore.getState().selectNode("agent-1");
