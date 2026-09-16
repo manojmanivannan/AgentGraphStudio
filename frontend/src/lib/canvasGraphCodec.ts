@@ -16,6 +16,7 @@ const AGENT_NODE_WIDTH = 280;
 const TOOL_NODE_WIDTH = 220;
 const ATTACHMENT_NODE_WIDTH = 180;
 const DEFAULT_ATTACHMENT_FILE_TYPE = "text";
+const DEFAULT_ATTACHMENT_DELIVERY_METHOD = "inline";
 
 type CanvasGraph = {
   canvasName: string;
@@ -92,6 +93,7 @@ export function encodeCanvasGraph({ canvasName, nodes, edges }: CanvasGraph): Ca
             id: node.id,
             name: data.name ?? "Attachment",
             file_type: data.fileType ?? DEFAULT_ATTACHMENT_FILE_TYPE,
+            delivery_method: data.deliveryMethod ?? DEFAULT_ATTACHMENT_DELIVERY_METHOD,
             description: data.description ?? "",
             position_x: node.position.x,
             position_y: node.position.y,
@@ -157,6 +159,7 @@ export function decodeCanvasResponse(canvas: CanvasResponse): DecodedCanvasGraph
           id: attachment.id,
           name: attachment.name,
           fileType: attachment.file_type,
+          deliveryMethod: attachment.delivery_method ?? DEFAULT_ATTACHMENT_DELIVERY_METHOD,
           description: attachment.description ?? "",
         },
       })),

@@ -168,3 +168,43 @@ class ConversationRepo:
         )
         return result.scalar_one_or_none()
 
+    async def get_unconsumed_input_attachments(
+        self, conversation_id: uuid.UUID, node_ids: list[uuid.UUID]
+    ) -> list[AttachmentInstance]:
+        """Chat-uploaded input attachments not yet delivered to their agent (#88).
+
+        Scoped to ``source="chat_upload"`` (never an ``agent_output`` row) and
+        to the given declared input Attachment node ids, so a call site only
+        ever sees attachments actually wired as inputs to the agent it is
+        about to run. Ordered by ``created_at`` so a run delivers uploads in
+        upload order.
+        """
+        if not node_ids:
+            return []
+        result = await self.session.execute(
+            select(AttachmentInstance)
+            .where(
+                AttachmentInstance.conversation_id == conversation_id,
+                AttachmentInstance.source == "chat_upload",
+                AttachmentInstance.attachment_node_id.in_(node_ids),
+                AttachmentInstance.consumed_at.is_(None),
+            )
+            .order_by(AttachmentInstance.created_at)
+        )
+        return list(result.scalars().all())
+
+    async def mark_attachment_consumed(self, attachment_id: uuid.UUID) -> None:
+        """Marks an input ``AttachmentInstance`` as delivered (#88).
+
+        Idempotent and best-effort: a missing row is simply a no-op (the
+        caller never needs to branch on whether the mark "took").
+        """
+        result = await self.session.execute(
+            select(AttachmentInstance).where(AttachmentInstance.id == attachment_id)
+        )
+        attachment = result.scalar_one_or_none()
+        if attachment is None:
+            return
+        attachment.consumed_at = datetime.now(UTC)
+        await self.session.commit()
+

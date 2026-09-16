@@ -212,4 +212,78 @@ describe("ExecutionStepsViewer", () => {
       "http://localhost:8000/api/attachments/attachment-plot-1"
     );
   });
+
+  it("renders consumed attachment steps with a file path badge", () => {
+    const attachmentStep: Message = {
+      id: "attachment-consumed-step",
+      conversation_id: "conv-1",
+      role: "assistant",
+      content: "",
+      agent_name: "ReportAgent",
+      event_type: "attachment_consumed",
+      args: {
+        attachment_id: "attachment-52",
+        name: "report.csv",
+        file_type: "csv",
+        delivery_method: "file_path",
+      },
+      created_at: "2026-01-01T00:00:00.000Z",
+    };
+
+    render(<ExecutionStepsViewer {...defaultProps} steps={[attachmentStep]} />);
+
+    expect(screen.getByText(/ReportAgent · attachment_consumed/i)).toBeInTheDocument();
+    expect(screen.getByText("report.csv")).toBeInTheDocument();
+    expect(screen.getByTestId("attachment-path-badge")).toBeInTheDocument();
+  });
+
+  it("renders both a thumbnail and path badge for dual consumed image attachments", () => {
+    const attachmentStep: Message = {
+      id: "attachment-consumed-dual-step",
+      conversation_id: "conv-1",
+      role: "assistant",
+      content: "",
+      agent_name: "VisionAgent",
+      event_type: "attachment_consumed",
+      args: {
+        attachment_id: "attachment-53",
+        name: "plot.png",
+        file_type: "image",
+        delivery_method: "dual",
+      },
+      created_at: "2026-01-01T00:00:00.000Z",
+    };
+
+    render(<ExecutionStepsViewer {...defaultProps} steps={[attachmentStep]} />);
+
+    expect(screen.getByTestId("attachment-path-badge")).toBeInTheDocument();
+    expect(screen.getByTestId("attachment-thumbnail-image")).toHaveAttribute(
+      "src",
+      "http://localhost:8000/api/attachments/attachment-53"
+    );
+  });
+
+  it("renders the manifest note for manifest_only consumed attachments", () => {
+    const attachmentStep: Message = {
+      id: "attachment-consumed-manifest-step",
+      conversation_id: "conv-1",
+      role: "assistant",
+      content: "",
+      agent_name: "ReaderAgent",
+      event_type: "attachment_consumed",
+      args: {
+        attachment_id: "attachment-54",
+        name: "archive.bin",
+        file_type: "binary",
+        delivery_method: "manifest_only",
+      },
+      created_at: "2026-01-01T00:00:00.000Z",
+    };
+
+    render(<ExecutionStepsViewer {...defaultProps} steps={[attachmentStep]} />);
+
+    expect(screen.getByTestId("attachment-manifest-note")).toBeInTheDocument();
+    expect(screen.queryByTestId("attachment-path-badge")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("attachment-thumbnail-image")).not.toBeInTheDocument();
+  });
 });

@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+
+import type { CanvasResponse } from "@/types";
 import { decodeCanvasResponse, encodeCanvasGraph } from "./canvasGraphCodec";
 
 describe("canvasGraphCodec", () => {
@@ -375,6 +377,7 @@ describe("canvasGraphCodec", () => {
             id: "att-1",
             name: "Sales Data",
             fileType: "csv",
+            deliveryMethod: "file_path",
             description: "Q1 sales export",
           },
         },
@@ -387,6 +390,7 @@ describe("canvasGraphCodec", () => {
         id: "att-1",
         name: "Sales Data",
         file_type: "csv",
+        delivery_method: "file_path",
         description: "Q1 sales export",
         position_x: 5,
         position_y: 6,
@@ -413,6 +417,7 @@ describe("canvasGraphCodec", () => {
         id: "att-1",
         name: "Untyped",
         file_type: "text",
+        delivery_method: "inline",
         description: "",
         position_x: 0,
         position_y: 0,
@@ -435,6 +440,7 @@ describe("canvasGraphCodec", () => {
             canvas_id: "canvas-1",
             name: "Sales Data",
             file_type: "csv",
+            delivery_method: "file_path",
             description: "Q1 sales export",
             position_x: 12,
             position_y: 34,
@@ -442,7 +448,7 @@ describe("canvasGraphCodec", () => {
         ],
       },
       edges: [],
-    });
+    } as CanvasResponse);
 
     expect(result.nodes).toEqual([
       {
@@ -454,6 +460,50 @@ describe("canvasGraphCodec", () => {
           id: "att-1",
           name: "Sales Data",
           fileType: "csv",
+          deliveryMethod: "file_path",
+          description: "Q1 sales export",
+        },
+      },
+    ]);
+  });
+
+  it("defaults attachment deliveryMethod to inline when missing from a canvas response", () => {
+    const legacyCanvas = {
+      id: "canvas-1",
+      name: "Decoded Attachment Canvas",
+      created_at: "2026-06-17T00:00:00Z",
+      updated_at: "2026-06-17T00:00:00Z",
+      nodes: {
+        agents: [],
+        tools: [],
+        attachments: [
+          {
+            id: "att-1",
+            canvas_id: "canvas-1",
+            name: "Sales Data",
+            file_type: "csv",
+            description: "Q1 sales export",
+            position_x: 12,
+            position_y: 34,
+          },
+        ],
+      },
+      edges: [],
+    } as unknown as CanvasResponse;
+
+    const result = decodeCanvasResponse(legacyCanvas);
+
+    expect(result.nodes).toEqual([
+      {
+        id: "att-1",
+        type: "attachment",
+        position: { x: 12, y: 34 },
+        style: { width: 180 },
+        data: {
+          id: "att-1",
+          name: "Sales Data",
+          fileType: "csv",
+          deliveryMethod: "inline",
           description: "Q1 sales export",
         },
       },

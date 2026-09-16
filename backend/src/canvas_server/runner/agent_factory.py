@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 
 import dspy
 
+from canvas_server.attachment_delivery import declared_input_nodes
 from canvas_server.events import EventCallback
 from canvas_server.output_extraction import declared_output_nodes
 from canvas_server.runner.code_provider import CodeProvider
@@ -247,6 +248,30 @@ class AgentFactory:
                     default_factory=list,
                 ),
                 type_=list[dict],
+            )
+
+        # Optional multimodal input field (#88): only appended when this agent
+        # has at least one declared *input* Attachment node of type "image" —
+        # its resolved delivery (always "dual" or "inline" for images, see
+        # ``attachment_delivery.resolve_delivery_method``) is passed in via
+        # this field at call time. Structural, so passing (or omitting) the
+        # ``attachment_image`` kwarg in ``StreamingReAct.aforward`` never
+        # raises a signature mismatch.
+        has_image_input = any(
+            node.file_type == "image"
+            for node in declared_input_nodes(self._edges, self._attachment_nodes, agent_node.id)
+        )
+        if has_image_input:
+            full_instructions += (
+                "\n\n[SYSTEM NOTE] You may receive an input image attachment as the "
+                "`attachment_image` field alongside this prompt — reason over it directly "
+                "when relevant; it may also be available as a file path mentioned in the "
+                "prompt text."
+            )
+            signature_cls = signature_cls.append(
+                "attachment_image",
+                dspy.InputField(default=None),
+                type_=dspy.Image | None,
             )
 
         return signature_cls.with_instructions(full_instructions)

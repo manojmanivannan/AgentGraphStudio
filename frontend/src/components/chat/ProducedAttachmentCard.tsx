@@ -15,11 +15,11 @@ interface ProducedAttachmentCardProps {
   attachmentId: string;
 }
 
-function normalizeFileType(fileType: string) {
+export function normalizeFileType(fileType: string) {
   return fileType.trim().toLowerCase();
 }
 
-function getAttachmentIcon(fileType: string) {
+export function getAttachmentIcon(fileType: string) {
   const normalizedType = normalizeFileType(fileType);
 
   if (normalizedType === "image") {

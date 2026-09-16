@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useCanvasStore } from "@/store/canvasStore";
 import { AttachmentEditor } from "./AttachmentEditor";
@@ -36,7 +36,29 @@ describe("AttachmentEditor", () => {
 
     expect(screen.getByTestId("attachment-name-input")).toHaveValue("Sales Data");
     expect(screen.getByTestId("attachment-file-type-select")).toHaveValue("csv");
+    expect(screen.getByTestId("attachment-delivery-method-select")).toHaveValue("inline");
     expect(screen.getByTestId("attachment-description-input")).toHaveValue("Q1 export");
+  });
+
+  it("defaults delivery method to inline when the node has no deliveryMethod", () => {
+    useCanvasStore.getState().setNodes([attachmentNode]);
+    useCanvasStore.getState().selectNode("att-1");
+    render(<AttachmentEditor />);
+
+    expect(screen.getByTestId("attachment-delivery-method-select")).toHaveValue("inline");
+  });
+
+  it("reflects an existing deliveryMethod from the selected node", () => {
+    useCanvasStore.getState().setNodes([
+      {
+        ...attachmentNode,
+        data: { ...attachmentNode.data, deliveryMethod: "file_path" },
+      },
+    ]);
+    useCanvasStore.getState().selectNode("att-1");
+    render(<AttachmentEditor />);
+
+    expect(screen.getByTestId("attachment-delivery-method-select")).toHaveValue("file_path");
   });
 
   it("updates the name in the store when typed", async () => {
@@ -104,5 +126,18 @@ describe("AttachmentEditor", () => {
 
     const stored = useCanvasStore.getState().nodes.find((n) => n.id === "att-1");
     expect(stored?.data.description).toBe("New description");
+  });
+
+  it("updates deliveryMethod in the store when the selection changes", () => {
+    useCanvasStore.getState().setNodes([attachmentNode]);
+    useCanvasStore.getState().selectNode("att-1");
+    render(<AttachmentEditor />);
+
+    fireEvent.change(screen.getByTestId("attachment-delivery-method-select"), {
+      target: { value: "file_path" },
+    });
+
+    const stored = useCanvasStore.getState().nodes.find((n) => n.id === "att-1");
+    expect(stored?.data.deliveryMethod).toBe("file_path");
   });
 });

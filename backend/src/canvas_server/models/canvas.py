@@ -308,6 +308,14 @@ class AttachmentNode(Base):
     # Pydantic layer (both on save and on read).
     file_type: Mapped[str] = mapped_column(String(50), default="text")
     description: Mapped[str] = mapped_column(Text, default="")
+    # Runtime consumption preference (#88): "inline" injects readable content
+    # as text (or a multimodal block for images) directly into the consuming
+    # agent's prompt; "file_path" materializes the bytes as a file inside the
+    # agent's Docker sandbox session and hands the agent the path as a bare
+    # string. The framework falls back automatically per-consumer when the
+    # declared preference isn't feasible (see ``attachment_delivery.py``) —
+    # this field is only ever a *preference*, never a hard requirement.
+    delivery_method: Mapped[str] = mapped_column(String(20), default="inline")
     position_x: Mapped[float] = mapped_column(Double, default=0)
     position_y: Mapped[float] = mapped_column(Double, default=0)
 
@@ -457,6 +465,14 @@ class AttachmentInstance(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=_utcnow,
+    )
+    # Set once a chat-uploaded input attachment has been delivered to its
+    # declared consuming agent (#88), so a multi-turn conversation never
+    # re-injects the same file into the prompt / re-materializes it into the
+    # sandbox on a later turn. Always ``None`` for ``source="agent_output"``
+    # rows (nothing ever "consumes" an output attachment this way).
+    consumed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, default=None
     )
 
     conversation: Mapped[Conversation] = relationship(

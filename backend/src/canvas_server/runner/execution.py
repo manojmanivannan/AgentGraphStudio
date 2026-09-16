@@ -15,7 +15,9 @@ import logging
 import uuid
 from abc import ABC, abstractmethod
 from collections.abc import Callable
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
+
+import dspy
 
 from canvas_server.exceptions import (
     AttachmentTooLargeError,
@@ -29,11 +31,12 @@ from canvas_server.output_extraction import (
 )
 from canvas_server.runner.attachment_events import announce_attachment_produced
 from canvas_server.runner.config import RunContext
+from canvas_server.runner.input_attachment_delivery import (
+    deliver_and_announce_input_attachments,
+)
 from canvas_server.runner.tracing import agent_span
 
 if TYPE_CHECKING:
-    import dspy
-
     from canvas_server.models.canvas import AgentNode
     from canvas_server.runner.agent_factory import AgentFactory
     from canvas_server.runner.conversation import ConversationService
@@ -342,6 +345,15 @@ class ExecutionStrategy(ABC):
             getattr(self._services.run_state, "canvas", None), "name", None
         )
 
+        # Resolve/materialize any declared input attachments before the loop
+        # starts (#88). ``_run_worker`` is always an entry-point call site
+        # (WorkerExecution, ChainExecution) which never otherwise emits
+        # ``agent_start`` — so it's emitted here, but only when there's an
+        # actual attachment to report this turn.
+        prompt, attachment_kwargs = await self._deliver_input_attachments(
+            agent_node, agent_id, prompt, send_event, run_id, emit_agent_start=True
+        )
+
         try:
             # Name the MLflow span after the real agent so DSPy autolog's
             # generic ``Predict.forward`` / ``LM.__call__`` spans nest under
@@ -357,11 +369,13 @@ class ExecutionStrategy(ABC):
                         user_request=prompt,
                         history=dspy_history,
                         get_client_response=self._services.run_state.get_client_response,
+                        **attachment_kwargs,
                     )
                 else:
                     result = await agent.aforward(
                         user_request=prompt,
                         get_client_response=self._services.run_state.get_client_response,
+                        **attachment_kwargs,
                     )
             text = result.process_result
             logger.info("Agent %s completed: result=%s", agent_node.name, text[:200])
@@ -396,6 +410,60 @@ class ExecutionStrategy(ABC):
                 )
             )
             return None
+
+    async def _deliver_input_attachments(
+        self,
+        agent_node: AgentNode,
+        agent_id: uuid.UUID,
+        user_prompt: str,
+        send_event,
+        run_id: uuid.UUID | None,
+        *,
+        emit_agent_start: bool,
+    ) -> tuple[str, dict[str, Any]]:
+        """Resolves/materializes this agent's declared input attachments (#88).
+
+        Runs once, right before the ReAct loop starts. A no-op (returns
+        ``user_prompt`` unchanged, no extra kwargs) when the agent has no
+        declared input Attachment node(s), or nothing unconsumed is waiting —
+        this is what keeps entry-point paths (which normally never emit
+        ``agent_start``) from emitting it on every ordinary turn.
+
+        When ``emit_agent_start`` is True and there IS something to deliver,
+        emits ``agent_start`` immediately before the ``attachment_consumed``
+        announcement(s) — entry-point paths (``_run_worker``,
+        ``RouterExecution.execute``) currently never emit ``agent_start``
+        themselves, so this is the only place they do. Handoff-delegated
+        sub-agents (``handoff.py``) already emit ``agent_start``
+        unconditionally and call ``deliver_and_announce_input_attachments``
+        directly with ``emit_agent_start=False`` to avoid a duplicate — see
+        that shared function for the resolve → emit → announce → augment
+        shape both call sites use.
+
+        Returns:
+            tuple[str, dict[str, Any]]: The (possibly attachment-augmented)
+            prompt, and any extra ``aforward`` kwargs (``attachment_image``
+            when an image attachment was resolved).
+        """
+        canvas = getattr(self._services.run_state, "canvas", None)
+        conversation_service = self._services.conversation_service
+        conversation_repo = getattr(conversation_service, "conversation_repo", None)
+        conversation_id = getattr(conversation_service, "conversation_id", None)
+        if canvas is None or conversation_repo is None or conversation_id is None:
+            return user_prompt, {}
+
+        return await deliver_and_announce_input_attachments(
+            agent_node=agent_node,
+            agent_id=agent_id,
+            canvas=canvas,
+            conversation_repo=conversation_repo,
+            conversation_id=conversation_id,
+            conversation_service=conversation_service,
+            send_event=send_event,
+            run_id=run_id,
+            user_prompt=user_prompt,
+            emit_agent_start=emit_agent_start,
+        )
 
     def _event(self, type_: str, **kwargs) -> dict:
         kwargs["type"] = type_
@@ -458,6 +526,14 @@ class RouterExecution(ExecutionStrategy):
         canvas_name = getattr(
             getattr(self._services.run_state, "canvas", None), "name", None
         )
+
+        # Resolve/materialize any declared input attachments before the loop
+        # starts (#88). A directly-targeted router is also an entry point
+        # that never otherwise emits ``agent_start`` — emitted here only
+        # when there's an actual attachment to report this turn.
+        prompt, attachment_kwargs = await self._deliver_input_attachments(
+            agent_node, agent_id, prompt, ctx.send_event, ctx.run_id, emit_agent_start=True
+        )
         try:
             with agent_span(
                 agent_node.name,
@@ -470,11 +546,13 @@ class RouterExecution(ExecutionStrategy):
                         user_request=prompt,
                         history=ctx.dspy_history,
                         get_client_response=self._services.run_state.get_client_response,
+                        **attachment_kwargs,
                     )
                 else:
                     result = await agent.aforward(
                         user_request=prompt,
                         get_client_response=self._services.run_state.get_client_response,
+                        **attachment_kwargs,
                     )
             final_text = result.process_result
 

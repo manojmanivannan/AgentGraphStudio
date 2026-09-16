@@ -13,7 +13,10 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from canvas_server.runner.attachment_events import announce_attachment_produced
+from canvas_server.runner.attachment_events import (
+    announce_attachment_consumed,
+    announce_attachment_produced,
+)
 
 
 @pytest.mark.asyncio
@@ -107,6 +110,99 @@ async def test_announce_attachment_produced_is_a_noop_without_callbacks():
         name="plot",
         file_type="image",
         source="agent_output",
+        conversation_id=uuid.uuid4(),
+        run_id=None,
+    )
+
+
+@pytest.mark.asyncio
+async def test_announce_attachment_consumed_fires_event_and_persists_message():
+    send_event = AsyncMock()
+    conversation_service = AsyncMock()
+    agent_id = uuid.uuid4()
+    attachment_id = uuid.uuid4()
+    conversation_id = uuid.uuid4()
+    run_id = uuid.uuid4()
+
+    await announce_attachment_consumed(
+        send_event=send_event,
+        conversation_service=conversation_service,
+        agent_name="Analyst",
+        agent_id=agent_id,
+        attachment_id=attachment_id,
+        name="Report",
+        file_type="csv",
+        delivery_method="file_path",
+        conversation_id=conversation_id,
+        run_id=run_id,
+    )
+
+    send_event.assert_awaited_once()
+    payload = send_event.await_args.args[0]
+    assert payload == {
+        "type": "attachment_consumed",
+        "attachment_id": str(attachment_id),
+        "name": "Report",
+        "file_type": "csv",
+        "delivery_method": "file_path",
+        "conversation_id": str(conversation_id),
+        "run_id": str(run_id),
+        "agent": "Analyst",
+        "node_id": str(agent_id),
+    }
+
+    conversation_service.persist_message.assert_awaited_once_with(
+        role="assistant",
+        content="",
+        agent_name="Analyst",
+        node_id=agent_id,
+        event_type="attachment_consumed",
+        args={
+            "attachment_id": str(attachment_id),
+            "name": "Report",
+            "file_type": "csv",
+            "delivery_method": "file_path",
+            "run_id": str(run_id),
+        },
+    )
+
+
+@pytest.mark.asyncio
+async def test_announce_attachment_consumed_handles_missing_run_id():
+    send_event = AsyncMock()
+    conversation_service = AsyncMock()
+
+    await announce_attachment_consumed(
+        send_event=send_event,
+        conversation_service=conversation_service,
+        agent_name="Analyst",
+        agent_id=uuid.uuid4(),
+        attachment_id=uuid.uuid4(),
+        name="Report",
+        file_type="csv",
+        delivery_method="inline",
+        conversation_id=uuid.uuid4(),
+        run_id=None,
+    )
+
+    payload = send_event.await_args.args[0]
+    assert payload["run_id"] is None
+    persisted_args = conversation_service.persist_message.await_args.kwargs["args"]
+    assert persisted_args["run_id"] is None
+
+
+@pytest.mark.asyncio
+async def test_announce_attachment_consumed_is_a_noop_without_callbacks():
+    """Never raises when send_event/conversation_service aren't wired (defensive)."""
+    await announce_attachment_consumed(
+        send_event=None,
+        conversation_service=None,
+        agent_name="Analyst",
+        agent_id=uuid.uuid4(),
+        attachment_id=uuid.uuid4(),
+        name="Report",
+        file_type="csv",
+        delivery_method="manifest_only",
         conversation_id=uuid.uuid4(),
         run_id=None,
     )

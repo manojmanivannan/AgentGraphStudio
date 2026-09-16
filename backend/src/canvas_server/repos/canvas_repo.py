@@ -123,6 +123,7 @@ class CanvasRepo:
                 name=att.name,
                 file_type=att.file_type,
                 description=att.description,
+                delivery_method=att.delivery_method,
                 position_x=att.position_x,
                 position_y=att.position_y,
             )
@@ -332,6 +333,7 @@ class CanvasRepo:
                 name=att.name,
                 file_type=att.file_type,
                 description=att.description,
+                delivery_method=att.delivery_method,
                 position_x=att.position_x,
                 position_y=att.position_y,
             )

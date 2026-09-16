@@ -116,6 +116,7 @@ def _canvas_to_response(canvas: Canvas) -> CanvasResponse:
                     name=n.name,
                     file_type=n.file_type,
                     description=n.description,
+                    delivery_method=n.delivery_method,
                     position_x=n.position_x,
                     position_y=n.position_y,
                 )
@@ -291,6 +292,7 @@ def _canvas_to_import_payload(canvas: Canvas) -> dict[str, Any]:
                     "name": n.name,
                     "file_type": n.file_type,
                     "description": n.description,
+                    "delivery_method": n.delivery_method,
                     "position_x": n.position_x,
                     "position_y": n.position_y,
                 }

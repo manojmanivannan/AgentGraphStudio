@@ -101,6 +101,9 @@ class AttachmentNodeBase(BaseModel):
     name: str = "Attachment"
     file_type: str = "text"
     description: str = ""
+    # Runtime consumption preference (#88): "inline" or "file_path". See
+    # ``AttachmentNode.delivery_method`` for the full contract.
+    delivery_method: str = "inline"
     position_x: float = 0
     position_y: float = 0
 
@@ -112,6 +115,14 @@ class AttachmentNodeBase(BaseModel):
         trimmed = v.strip()
         if not trimmed:
             raise ValueError("file_type must not be empty")
+        return trimmed
+
+    @field_validator("delivery_method")
+    @classmethod
+    def validate_delivery_method(cls, v: str) -> str:
+        trimmed = v.strip().lower()
+        if trimmed not in ("inline", "file_path"):
+            raise ValueError("delivery_method must be 'inline' or 'file_path'")
         return trimmed
 
 

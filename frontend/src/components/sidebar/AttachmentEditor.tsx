@@ -25,12 +25,14 @@ export function AttachmentEditor() {
   const [localDescription, setLocalDescription] = useState("");
   const [selectValue, setSelectValue] = useState<string>("text");
   const [customFileType, setCustomFileType] = useState("");
+  const [localDeliveryMethod, setLocalDeliveryMethod] = useState<string>("inline");
 
   useEffect(() => {
     if (selectedNode) {
       const data = selectedNode.data as any;
       setLocalName(data?.name ?? "");
       setLocalDescription(data?.description ?? "");
+      setLocalDeliveryMethod(data?.deliveryMethod ?? "inline");
       const fileType = data?.fileType ?? "text";
       if ((CURATED_FILE_TYPES as readonly string[]).includes(fileType)) {
         setSelectValue(fileType);
@@ -122,6 +124,25 @@ export function AttachmentEditor() {
             placeholder="Custom file type"
           />
         )}
+      </div>
+
+      <div>
+        <label className="block text-[11px] font-semibold text-[var(--color-text-tertiary)] mb-1.5 uppercase tracking-[0.06em]">Delivery Method</label>
+        <select
+          value={localDeliveryMethod}
+          onChange={(e) => {
+            setLocalDeliveryMethod(e.target.value);
+            updateStore("deliveryMethod", e.target.value);
+          }}
+          data-testid="attachment-delivery-method-select"
+          className="input-base w-full"
+        >
+          <option value="inline">Inline (text / image)</option>
+          <option value="file_path">File path (sandbox)</option>
+        </select>
+        <p className="mt-1 text-[10px] text-[var(--color-text-tertiary)]">
+          Preference for how this attachment is delivered to the consuming agent. The framework falls back automatically when this isn't feasible (e.g. binary/pdf content, or no sandbox available).
+        </p>
       </div>
 
       <div>

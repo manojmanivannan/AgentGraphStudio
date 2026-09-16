@@ -231,6 +231,40 @@ describe("executionEventToMessage", () => {
       created_at: "2026-01-01T00:00:00.000Z",
     });
   });
+
+  it.each(["inline", "file_path", "dual", "manifest_only"])(
+    "maps attachment_consumed events with delivery_method=%s to assistant attachment transcript messages",
+    (deliveryMethod) => {
+      const event = {
+        type: "attachment_consumed",
+        attachment_id: "attachment-1",
+        name: "report.csv",
+        file_type: "csv",
+        delivery_method: deliveryMethod,
+        agent: "ReportAgent",
+        node_id: "node-3",
+      } as const;
+
+      const message = executionEventToMessage(event as ExecutionEvent, baseContext);
+
+      expect(message).toEqual({
+        id: "msg-1",
+        conversation_id: "conv-1",
+        role: "assistant",
+        content: "",
+        agent_name: "ReportAgent",
+        node_id: "node-3",
+        event_type: "attachment_consumed",
+        args: {
+          attachment_id: "attachment-1",
+          name: "report.csv",
+          file_type: "csv",
+          delivery_method: deliveryMethod,
+        },
+        created_at: "2026-01-01T00:00:00.000Z",
+      });
+    }
+  );
 });
 
 

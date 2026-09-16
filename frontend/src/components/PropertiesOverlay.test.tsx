@@ -75,7 +75,8 @@ describe("PropertiesOverlay", () => {
     await waitFor(() =>
       expect(document.querySelector('input[value="My File"]')).toBeInTheDocument()
     );
-    expect(screen.getByRole("combobox")).toBeInTheDocument();
+    expect(screen.getByTestId("attachment-file-type-select")).toBeInTheDocument();
+    expect(screen.getByTestId("attachment-delivery-method-select")).toBeInTheDocument();
   });
 
   it("closes the overlay when the close button is clicked", async () => {
