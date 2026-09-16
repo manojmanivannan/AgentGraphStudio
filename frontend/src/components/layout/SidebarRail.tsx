@@ -212,12 +212,12 @@ export function SidebarRail() {
     const isActive = isExact || isChat;
     
     return sidebarCollapsed
-      ? `flex items-center justify-center w-10 h-10 mx-auto rounded-lg transition-all ${
+      ? `flex items-center justify-center w-10 h-10 mx-auto rounded-lg cursor-pointer transition-all ${
           isActive
             ? "bg-[var(--color-elevated)] text-[var(--color-text-primary)] border border-[var(--color-border-default)]"
             : "text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-elevated)] border border-transparent"
         }`
-      : `w-full flex items-center gap-2.5 px-3 h-10 rounded-lg text-xs font-medium transition-all whitespace-nowrap ${
+      : `w-full flex items-center gap-2.5 px-3 h-10 rounded-lg cursor-pointer text-xs font-medium transition-all whitespace-nowrap ${
           isActive
             ? "bg-[var(--color-elevated)] text-[var(--color-text-primary)] border border-[var(--color-border-default)]"
             : "text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-elevated)] border border-transparent"

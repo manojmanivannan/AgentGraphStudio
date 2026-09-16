@@ -37,6 +37,15 @@ describe("SidebarRail", () => {
     expect(screen.getByText("Observability")).toBeInTheDocument();
   });
 
+  it("nav buttons show pointer cursor so they read as clickable", () => {
+    useCanvasStore.getState().setCanvas("canvas-1", "Test Canvas");
+    renderSidebar();
+
+    for (const testId of ["chat-toggle", "observability-toggle"]) {
+      expect(screen.getByTestId(testId).className).toContain("cursor-pointer");
+    }
+  });
+
   it("adds worker and router agents on button clicks", async () => {
     const user = userEvent.setup();
     useCanvasStore.getState().setCanvas("canvas-1", "Test Canvas");

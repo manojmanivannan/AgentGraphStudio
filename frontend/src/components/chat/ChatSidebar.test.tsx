@@ -51,4 +51,23 @@ describe("ChatSidebar", () => {
     );
     expect(screen.getByText("Chat 1")).toBeInTheDocument();
   });
+
+  it("nav items span the full sidebar width when expanded so hover highlights the whole row", () => {
+    render(
+      <MemoryRouter>
+        <ChatSidebar {...defaultProps} />
+      </MemoryRouter>
+    );
+    const items = [
+      screen.getByTitle("Home"),
+      screen.getByTitle("Canvas Editor"),
+      screen.getByTitle("Agent Chat"),
+      screen.getByTitle("Observability"),
+    ];
+    for (const item of items) {
+      expect(item.className).toContain("w-full");
+      expect(item.className).toContain("cursor-pointer");
+    }
+  });
+
 });
