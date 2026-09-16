@@ -1,4 +1,4 @@
-import type { Edge, Node } from "@xyflow/react";
+import { MarkerType, type Edge, type Node } from "@xyflow/react";
 import type {
   AgentNodeData,
   AttachmentNodeData,
@@ -164,11 +164,23 @@ export function decodeCanvasResponse(canvas: CanvasResponse): DecodedCanvasGraph
         },
       })),
     ],
-    edges: canvas.edges.map((edge) => ({
-      id: edge.id,
-      source: edge.source_node_id,
-      target: edge.target_node_id,
-      data: { edgeType: edge.edge_type },
-    })),
+    edges: canvas.edges.map((edge) => {
+      const edgeType = edge.edge_type;
+      return {
+        id: edge.id,
+        source: edge.source_node_id,
+        target: edge.target_node_id,
+        data: { edgeType },
+        markerEnd: {
+          type: MarkerType.ArrowClosed,
+          color:
+            edgeType === "handoff"
+              ? "var(--color-agent)"
+              : edgeType === "produces" || edgeType === "consumes"
+                ? "var(--color-warning)"
+                : "var(--color-text-tertiary)",
+        },
+      };
+    }),
   };
 }

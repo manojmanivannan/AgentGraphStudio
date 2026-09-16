@@ -442,7 +442,7 @@ export function AgentEditor() {
                       <p className="text-[11px] text-[var(--color-text-tertiary)] italic">Loading documents...</p>
                     ) : documents.length > 0 ? (
                       documents.map((doc) => (
-                        <div key={doc.id} className="flex items-center justify-between px-2 py-1.5 bg-[var(--color-secondary-surface)]/20 border border-[var(--color-border-subtle)] rounded-lg text-[11px] text-[var(--color-text-secondary)]">
+                        <div key={doc.id} className="flex items-center justify-between px-2 py-1.5 bg-[var(--color-warning-surface)]/20 border border-[var(--color-border-subtle)] rounded-lg text-[11px] text-[var(--color-text-secondary)]">
                           <span className="truncate flex items-center gap-1.5 max-w-[80%]">
                             <FileText className="w-3.5 h-3.5 text-[var(--color-text-tertiary)] flex-shrink-0" />
                             <span className="truncate" title={doc.name}>{doc.name}</span>
@@ -500,12 +500,12 @@ export function AgentEditor() {
               connectedTools.map((tool) => (
                 <div
                   key={tool.id}
-                  className="flex items-center justify-between px-2.5 py-1.5 bg-[var(--color-secondary-surface)] text-[var(--color-secondary)] border border-[var(--color-secondary)]/15 rounded-lg text-[11px] font-medium transition-colors hover:border-[var(--color-secondary)]/30"
+                  className="flex items-center justify-between px-2.5 py-1.5 bg-[var(--color-info-surface)] text-[var(--color-info)] border border-[var(--color-info)]/15 rounded-lg text-[11px] font-medium transition-colors hover:border-[var(--color-info)]/30"
                 >
                   <span className="truncate">{(tool.data as any)?.name}</span>
                   <button
                     onClick={() => selectNode(tool.id)}
-                    className="text-[var(--color-secondary)] hover:text-[var(--color-secondary-bright)] font-bold px-1 transition-colors"
+                    className="text-[var(--color-info)] hover:text-[var(--color-info-bright)] font-bold px-1 transition-colors"
                   >
                     →
                   </button>

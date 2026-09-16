@@ -46,10 +46,10 @@ export function PropertiesOverlay() {
             </>
           )}
           {selectedNode?.type === "tool" && (
-            <Wrench className="w-4 h-4 text-[var(--color-secondary)]" />
+            <Wrench className="w-4 h-4 text-[var(--color-info)]" />
           )}
           {selectedNode?.type === "attachment" && (
-            <Paperclip className="w-4 h-4 text-[var(--color-success)]" />
+            <Paperclip className="w-4 h-4 text-[var(--color-warning)]" />
           )}
           <span className="text-[13px] font-semibold text-[var(--color-text-primary)] truncate">
             {selectedNode

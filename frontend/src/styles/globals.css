@@ -51,8 +51,11 @@
   --color-danger-subtle: rgba(239, 68, 68, 0.12);
   --color-warning: #f59e0b;
   --color-warning-subtle: rgba(245, 158, 11, 0.12);
+  --color-warning-surface: rgba(245, 158, 11, 0.06);
   --color-info: #3b82f6;
   --color-info-subtle: rgba(59, 130, 246, 0.12);
+  --color-info-surface: rgba(59, 130, 246, 0.06);
+  --color-info-bright: #60a5fa;
 
   /* Agent purple */
   --color-agent: #8b5cf6;
@@ -112,8 +115,11 @@ html[data-theme="light"] {
   --color-danger-subtle: rgba(220, 38, 38, 0.08);
   --color-warning: #d97706;
   --color-warning-subtle: rgba(217, 119, 6, 0.10);
+  --color-warning-surface: rgba(217, 119, 6, 0.05);
   --color-info: #2563eb;
   --color-info-subtle: rgba(37, 99, 235, 0.08);
+  --color-info-surface: rgba(37, 99, 235, 0.05);
+  --color-info-bright: #3b82f6;
 
   /* Agent purple (adjusted for light bg) */
   --color-agent: #7c3aed;

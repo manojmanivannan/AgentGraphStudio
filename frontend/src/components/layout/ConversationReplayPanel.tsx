@@ -157,7 +157,7 @@ function getReplayBadgeColorClass(type: ReplaySemanticType): string {
     return "bg-[var(--color-accent-subtle)] text-[var(--color-accent)]";
   }
   if (type === "tool") {
-    return "bg-[var(--color-secondary-subtle)] text-[var(--color-secondary)]";
+    return "bg-[var(--color-info-subtle)] text-[var(--color-info)]";
   }
   if (type === "user") {
     return "bg-[var(--color-warning-subtle)] text-[var(--color-warning)]";
@@ -173,7 +173,7 @@ function getReplayTickColorClass(type: ReplaySemanticType): string {
     return "bg-[var(--color-accent)]";
   }
   if (type === "tool") {
-    return "bg-[var(--color-secondary)]";
+    return "bg-[var(--color-info)]";
   }
   if (type === "user") {
     return "bg-[var(--color-warning)]";

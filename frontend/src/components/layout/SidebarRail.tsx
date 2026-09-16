@@ -233,12 +233,12 @@ export function SidebarRail() {
     : "w-full flex items-center gap-2.5 px-3 h-10 rounded-lg text-xs font-medium text-[var(--color-text-secondary)] hover:text-[var(--color-agent)] hover:bg-[var(--color-agent-subtle)] transition-all text-left cursor-pointer whitespace-nowrap";
 
   const toolBtnClass = sidebarCollapsed
-    ? "flex items-center justify-center w-10 h-10 mx-auto rounded-lg text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-elevated)] transition-all cursor-pointer"
-    : "w-full flex items-center gap-2.5 px-3 h-10 rounded-lg text-xs font-medium text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-elevated)] transition-all text-left cursor-pointer whitespace-nowrap";
+    ? "flex items-center justify-center w-10 h-10 mx-auto rounded-lg text-[var(--color-text-secondary)] hover:text-[var(--color-info)] hover:bg-[var(--color-info-subtle)] transition-all cursor-pointer"
+    : "w-full flex items-center gap-2.5 px-3 h-10 rounded-lg text-xs font-medium text-[var(--color-text-secondary)] hover:text-[var(--color-info)] hover:bg-[var(--color-info-subtle)] transition-all text-left cursor-pointer whitespace-nowrap";
 
   const attachmentBtnClass = sidebarCollapsed
-    ? "flex items-center justify-center w-10 h-10 mx-auto rounded-lg text-[var(--color-text-secondary)] hover:text-[var(--color-success)] hover:bg-[var(--color-success-subtle)] transition-all cursor-pointer"
-    : "w-full flex items-center gap-2.5 px-3 h-10 rounded-lg text-xs font-medium text-[var(--color-text-secondary)] hover:text-[var(--color-success)] hover:bg-[var(--color-success-subtle)] transition-all text-left cursor-pointer whitespace-nowrap";
+    ? "flex items-center justify-center w-10 h-10 mx-auto rounded-lg text-[var(--color-text-secondary)] hover:text-[var(--color-warning)] hover:bg-[var(--color-warning-subtle)] transition-all cursor-pointer"
+    : "w-full flex items-center gap-2.5 px-3 h-10 rounded-lg text-xs font-medium text-[var(--color-text-secondary)] hover:text-[var(--color-warning)] hover:bg-[var(--color-warning-subtle)] transition-all text-left cursor-pointer whitespace-nowrap";
 
   const importExportBtnClass = sidebarCollapsed
     ? "flex items-center justify-center w-10 h-10 mx-auto rounded-lg text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-elevated)] transition-all cursor-pointer"
@@ -377,7 +377,7 @@ export function SidebarRail() {
               className={toolBtnClass}
               title="Add Custom Tool"
             >
-              <Wrench className="w-4 h-4 text-[var(--color-secondary)] shrink-0" />
+              <Wrench className="w-4 h-4 text-[var(--color-info)] shrink-0" />
               {!sidebarCollapsed && "Add Custom Tool"}
             </button>
             <button
@@ -386,7 +386,7 @@ export function SidebarRail() {
               className={attachmentBtnClass}
               title="Add Attachment"
             >
-              <Paperclip className="w-4 h-4 text-[var(--color-success)] shrink-0" />
+              <Paperclip className="w-4 h-4 text-[var(--color-warning)] shrink-0" />
               {!sidebarCollapsed && "Add Attachment"}
             </button>
           </div>

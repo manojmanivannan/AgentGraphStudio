@@ -19,7 +19,7 @@ function AttachmentNodeComponent({ id, data, selected }: NodeProps) {
         shadow-[0_4px_24px_-4px_rgba(0,0,0,0.5)]
         transition-all duration-200
         ${selected
-          ? "border-[var(--color-success)] shadow-[0_0_0_1px_var(--color-success),0_4px_24px_-4px_rgba(16,185,129,0.2)]"
+          ? "border-[var(--color-warning)] shadow-[0_0_0_1px_var(--color-warning),0_4px_24px_-4px_rgba(245,158,11,0.2)]"
           : "border-[var(--color-border-default)]"
         }
         ${isActive ? "border-[var(--color-danger)] glow-active-pulse" : ""}
@@ -30,14 +30,14 @@ function AttachmentNodeComponent({ id, data, selected }: NodeProps) {
         position={Position.Top}
         className="!bg-[var(--color-text-tertiary)] !w-2 !h-2 !border-2 !border-[var(--color-surface)]"
       />
-      <div className="flex items-center gap-2 px-2.5 py-2 bg-[var(--color-success-surface)] rounded-t-xl border-b border-[var(--color-success)]/10">
-        <div className="flex items-center justify-center w-4 h-4 rounded-md bg-[var(--color-success-subtle)]">
-          <Paperclip className="w-2.5 h-2.5 text-[var(--color-success)]" />
+      <div className="flex items-center gap-2 px-2.5 py-2 bg-[var(--color-warning-surface)] rounded-t-xl border-b border-[var(--color-warning)]/10">
+        <div className="flex items-center justify-center w-4 h-4 rounded-md bg-[var(--color-warning-subtle)]">
+          <Paperclip className="w-2.5 h-2.5 text-[var(--color-warning)]" />
         </div>
         <span className="font-semibold text-[12px] text-[var(--color-text-primary)] truncate flex-1">
           {attachmentData.name}
         </span>
-        <span className="text-[9px] px-1.5 py-0.5 rounded-md font-semibold tracking-wide uppercase bg-[var(--color-success-subtle)] text-[var(--color-success)]">
+        <span className="text-[9px] px-1.5 py-0.5 rounded-md font-semibold tracking-wide uppercase bg-[var(--color-warning-subtle)] text-[var(--color-warning)]">
           {attachmentData.fileType?.toUpperCase()}
         </span>
         <button
@@ -66,7 +66,7 @@ function AttachmentNodeComponent({ id, data, selected }: NodeProps) {
       <Handle
         type="source"
         position={Position.Bottom}
-        className="!bg-[var(--color-success)] !w-2 !h-2 !border-2 !border-[var(--color-surface)]"
+        className="!bg-[var(--color-warning)] !w-2 !h-2 !border-2 !border-[var(--color-surface)]"
       />
     </div>
   );

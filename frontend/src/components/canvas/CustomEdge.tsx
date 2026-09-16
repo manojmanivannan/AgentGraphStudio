@@ -39,12 +39,15 @@ export function CustomEdge({
 
   let stroke = "var(--color-text-tertiary)";
   let opacity = 0.4;
+  let strokeDasharray = undefined;
   if (isHandoff) {
     stroke = "var(--color-agent)";
     opacity = 0.7;
+    strokeDasharray = "6 4";
   } else if (isAttachmentEdge) {
-    stroke = "var(--color-success)";
-    opacity = 0.6;
+    stroke = "var(--color-warning)";
+    opacity = 0.8;
+    strokeDasharray = "2 4";
   }
 
   return (
@@ -54,7 +57,7 @@ export function CustomEdge({
         path={edgePath}
         style={{
           strokeWidth: 2,
-          strokeDasharray: isHandoff ? "6 4" : undefined,
+          strokeDasharray,
           stroke,
           opacity,
         }}

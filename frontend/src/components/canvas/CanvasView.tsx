@@ -40,7 +40,7 @@ const edgeTypes = {
 const defaultEdgeOptions = {
   animated: false,
   style: { strokeWidth: 2 },
-  markerEnd: { type: MarkerType.ArrowClosed },
+  markerEnd: { type: MarkerType.ArrowClosed, color: "var(--color-text-tertiary)" },
 };
 
 function isValidConnection(connection: Connection): boolean {
@@ -113,7 +113,15 @@ export function CanvasView() {
           edgeType === "handoff"
             ? { strokeDasharray: "6 4", strokeWidth: 2 }
             : { strokeWidth: 2 },
-        markerEnd: { type: MarkerType.ArrowClosed },
+        markerEnd: {
+          type: MarkerType.ArrowClosed,
+          color:
+            edgeType === "handoff"
+              ? "var(--color-agent)"
+              : edgeType === "produces" || edgeType === "consumes"
+                ? "var(--color-warning)"
+                : "var(--color-text-tertiary)",
+        },
       };
 
       setEdges(addEdge(newEdge, edges));

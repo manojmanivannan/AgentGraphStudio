@@ -194,6 +194,10 @@ describe("canvasGraphCodec", () => {
         source: "agent-1",
         target: "tool-1",
         data: { edgeType: "tool_access" },
+        markerEnd: {
+          type: "arrowclosed",
+          color: "var(--color-text-tertiary)",
+        },
       },
     ]);
   });
@@ -534,6 +538,10 @@ describe("canvasGraphCodec", () => {
         source: "agent-1",
         target: "att-1",
         data: { edgeType: "produces" },
+        markerEnd: {
+          type: "arrowclosed",
+          color: "var(--color-warning)",
+        },
       },
     ]);
   });

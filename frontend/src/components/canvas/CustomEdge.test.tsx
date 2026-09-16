@@ -48,18 +48,18 @@ describe("CustomEdge", () => {
     expect(lastBaseEdgeStyle?.opacity).toBe(0.4);
   });
 
-  it("renders a solid green stroke for produces edges", () => {
+  it("renders a dotted yellow stroke for produces edges", () => {
     render(<CustomEdge {...makeProps("produces")} />);
-    expect(lastBaseEdgeStyle?.strokeDasharray).toBeUndefined();
-    expect(lastBaseEdgeStyle?.stroke).toBe("var(--color-success)");
-    expect(lastBaseEdgeStyle?.opacity).toBe(0.6);
+    expect(lastBaseEdgeStyle?.strokeDasharray).toBe("2 4");
+    expect(lastBaseEdgeStyle?.stroke).toBe("var(--color-warning)");
+    expect(lastBaseEdgeStyle?.opacity).toBe(0.8);
   });
 
-  it("renders a solid green stroke for consumes edges", () => {
+  it("renders a dotted yellow stroke for consumes edges", () => {
     render(<CustomEdge {...makeProps("consumes")} />);
-    expect(lastBaseEdgeStyle?.strokeDasharray).toBeUndefined();
-    expect(lastBaseEdgeStyle?.stroke).toBe("var(--color-success)");
-    expect(lastBaseEdgeStyle?.opacity).toBe(0.6);
+    expect(lastBaseEdgeStyle?.strokeDasharray).toBe("2 4");
+    expect(lastBaseEdgeStyle?.stroke).toBe("var(--color-warning)");
+    expect(lastBaseEdgeStyle?.opacity).toBe(0.8);
   });
 
   it("still renders the hover delete button for produces/consumes edges", () => {

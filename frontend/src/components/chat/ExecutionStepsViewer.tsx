@@ -288,7 +288,7 @@ export function ExecutionStepsViewer({
                     {pipPackages && (
                       <div className="rounded-lg overflow-hidden border border-[var(--color-border-subtle)] bg-[var(--color-base)] text-[var(--color-text-primary)]">
                         <div className="flex items-center gap-1.5 px-3 py-1.5 bg-[var(--color-surface)] border-b border-[var(--color-border-subtle)] text-[11px] font-mono font-semibold text-[var(--color-text-primary)]">
-                          <Terminal className="w-3.5 h-3.5 text-[var(--color-secondary)]" />
+                          <Terminal className="w-3.5 h-3.5 text-[var(--color-info)]" />
                           <span>pip install</span>
                         </div>
                         <pre className="p-2.5 text-[11px] font-mono leading-relaxed overflow-x-auto whitespace-pre">
@@ -300,7 +300,7 @@ export function ExecutionStepsViewer({
                     {otherArgs && (
                       <div className="rounded-lg overflow-hidden border border-[var(--color-border-subtle)] bg-[var(--color-base)] text-[var(--color-text-primary)]">
                         <div className="flex items-center gap-1.5 px-3 py-1.5 bg-[var(--color-surface)] border-b border-[var(--color-border-subtle)] text-[11px] font-mono font-semibold text-[var(--color-text-primary)]">
-                          <Terminal className="w-3.5 h-3.5 text-[var(--color-secondary)]" />
+                          <Terminal className="w-3.5 h-3.5 text-[var(--color-info)]" />
                           <span>Arguments</span>
                         </div>
                         <pre className="p-2.5 text-[10px] font-mono leading-relaxed overflow-x-auto whitespace-pre-wrap">
