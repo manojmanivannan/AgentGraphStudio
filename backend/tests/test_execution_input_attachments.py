@@ -165,8 +165,9 @@ class TestWorkerExecutionInputAttachmentDelivery:
         assert consumed_event["delivery_method"] == "inline"
         assert consumed_event["agent"] == "Analyst"
 
-        # The prompt passed to the agent carries the inlined content.
-        assert "a,b" in harness.fake_agent.last_kwargs["user_request"]
+        # Attachment content is a trace-visible DSPy input, not prompt text.
+        assert harness.fake_agent.last_kwargs["user_request"] == "analyze this"
+        assert harness.fake_agent.last_kwargs["report"] == "a,b\n1,2"
         harness.conversation_repo.mark_attachment_consumed.assert_awaited_once_with(instance_id)
 
     async def test_image_attachment_passes_attachment_image_kwarg(self):

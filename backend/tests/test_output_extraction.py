@@ -6,6 +6,7 @@ from canvas_server.output_extraction import (
     ExtractedAttachment,
     ExtractionOutcome,
     declared_output_nodes,
+    extract_named_output_attachments,
     extract_output_attachments,
     file_type_to_format,
 )
@@ -90,6 +91,27 @@ class TestDeclaredOutputNodes:
 
 
 class TestExtractOutputAttachments:
+    def test_extracts_named_output_field_for_declared_attachment(self):
+        node_id = uuid.uuid4()
+        result = type("Result", (), {"current_temperature": "23 C"})()
+
+        outcome = extract_named_output_attachments(
+            result,
+            [DeclaredOutputNode(id=node_id, name="CurrentTemperature", file_type="text")],
+        )
+
+        assert outcome == ExtractionOutcome(
+            attachments=[
+                ExtractedAttachment(
+                    node_id=node_id,
+                    name="CurrentTemperature",
+                    file_type="text",
+                    content="23 C",
+                )
+            ],
+            errors=[],
+        )
+
     def test_extracts_matching_attachment(self):
         node_id = uuid.uuid4()
         slots = [DeclaredOutputNode(id=node_id, name="report", file_type="text")]

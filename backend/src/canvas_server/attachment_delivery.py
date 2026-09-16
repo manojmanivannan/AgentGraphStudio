@@ -33,6 +33,7 @@ for the full reaction-session writeup this is derived from):
 
 from __future__ import annotations
 
+import re
 import uuid
 from dataclasses import dataclass
 from typing import Any
@@ -88,6 +89,38 @@ def declared_input_nodes(
             )
         )
     return declared
+
+
+def input_attachment_field_names(
+    nodes: list[DeclaredInputNode],
+) -> dict[uuid.UUID, str]:
+    """Return stable, DSPy-safe input-field names for declared attachments."""
+    reserved_names = {
+        "user_request",
+        "history",
+        "attachment_image",
+        "process_result",
+        "output_attachments",
+    }
+    used_names = set(reserved_names)
+    names: dict[uuid.UUID, str] = {}
+
+    for node in nodes:
+        snake_case = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", node.name)
+        base_name = re.sub(r"[^a-zA-Z0-9]+", "_", snake_case).strip("_").lower()
+        if not base_name or base_name[0].isdigit():
+            base_name = f"attachment_{base_name}".rstrip("_")
+
+        candidate = base_name
+        suffix = 2
+        while candidate in used_names:
+            candidate = f"{base_name}_{suffix}"
+            suffix += 1
+
+        used_names.add(candidate)
+        names[node.id] = candidate
+
+    return names
 
 
 def agent_has_sandbox_access(agent: Any, edges: list[Any], tool_nodes: list[Any]) -> bool:

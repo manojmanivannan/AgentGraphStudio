@@ -122,8 +122,7 @@ class TestDeliverInputAttachmentsInlineText:
         delivered = result.delivered[0]
         assert delivered.delivery_method == "inline"
         assert delivered.attachment_id == instance_id
-        assert "a,b" in result.prompt_addendum
-        assert "Report" in result.prompt_addendum
+        assert result.input_values == {"report": "a,b\n1,2"}
         conversation_repo.mark_attachment_consumed.assert_awaited_once_with(instance_id)
 
 
@@ -162,7 +161,7 @@ class TestDeliverInputAttachmentsFilePath:
         delivered = result.delivered[0]
         assert delivered.delivery_method == "file_path"
         assert delivered.sandbox_path == f"{SANDBOX_ATTACHMENT_DIR}/Report"
-        assert delivered.sandbox_path in result.prompt_addendum
+        assert result.input_values == {"report": delivered.sandbox_path}
         mock_session.copy_to_runtime.assert_called_once()
         conversation_repo.mark_attachment_consumed.assert_awaited_once_with(instance_id)
 
@@ -193,7 +192,7 @@ class TestDeliverInputAttachmentsFilePath:
         delivered = result.delivered[0]
         assert delivered.delivery_method == "inline"
         assert delivered.sandbox_path is None
-        assert "a,b" in result.prompt_addendum
+        assert result.input_values == {"report": "a,b\n1,2"}
 
     async def test_binary_type_manifest_only_without_sandbox(self):
         agent_id = uuid.uuid4()
@@ -221,7 +220,7 @@ class TestDeliverInputAttachmentsFilePath:
 
         delivered = result.delivered[0]
         assert delivered.delivery_method == "manifest_only"
-        assert "Blob" in result.prompt_addendum
+        assert "Blob" in result.input_values["blob"]
 
     async def test_sandbox_busy_falls_back_gracefully_instead_of_raising(self):
         agent_id = uuid.uuid4()
@@ -438,8 +437,7 @@ class TestDeliverInputAttachmentsMultiple:
         )
 
         assert len(result.delivered) == 2
-        assert "content-a" in result.prompt_addendum
-        assert "content-b" in result.prompt_addendum
+        assert result.input_values == {"a": "content-a", "b": "content-b"}
         assert conversation_repo.mark_attachment_consumed.await_count == 2
 
 

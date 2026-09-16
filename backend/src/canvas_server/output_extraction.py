@@ -20,6 +20,8 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any
 
+from canvas_server.attachment_delivery import input_attachment_field_names
+
 SANDBOX_REF_PREFIX = "sandbox://"
 
 _FILE_TYPE_TO_FORMAT = {
@@ -196,6 +198,24 @@ def extract_output_attachments(
         )
 
     return ExtractionOutcome(attachments=attachments, errors=errors)
+
+
+def extract_named_output_attachments(
+    result: Any,
+    declared_nodes: list[DeclaredOutputNode],
+) -> ExtractionOutcome:
+    """Extract declared attachment values from their named DSPy output fields."""
+    field_names = input_attachment_field_names(declared_nodes)
+    raw_items = [
+        {
+            "name": node.name,
+            "file_type": node.file_type,
+            "content": value,
+        }
+        for node in declared_nodes
+        if (value := getattr(result, field_names[node.id], None)) is not None
+    ]
+    return extract_output_attachments(raw_items, declared_nodes)
 
 
 def file_type_to_format(file_type: str) -> str:

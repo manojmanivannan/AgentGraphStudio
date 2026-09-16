@@ -31,6 +31,7 @@ import dspy
 from canvas_server.attachment_delivery import (
     agent_has_sandbox_access,
     declared_input_nodes,
+    input_attachment_field_names,
     resolve_delivery_method,
 )
 from canvas_server.runner.attachment_events import announce_attachment_consumed
@@ -84,7 +85,7 @@ class DeliveredAttachment:
 @dataclass
 class InputAttachmentDeliveryResult:
     delivered: list[DeliveredAttachment] = field(default_factory=list)
-    prompt_addendum: str = ""
+    input_values: dict[str, str] = field(default_factory=dict)
     # At most one image is threaded through as the ``attachment_image``
     # signature field — a reasonable single-image simplification; additional
     # declared image inputs still get their prompt text (name + path, when
@@ -225,7 +226,7 @@ async def deliver_input_attachments(
     )
 
     result = InputAttachmentDeliveryResult()
-    prompt_blocks: list[str] = []
+    input_field_names = input_attachment_field_names(declared)
 
     for instance in instances:
         node = declared_by_id.get(instance.attachment_node_id)
@@ -252,8 +253,8 @@ async def deliver_input_attachments(
                 )
 
         if method == "manifest_only":
-            prompt_blocks.append(
-                _manifest_block(node.name, node.file_type, len(instance.content))
+            result.input_values[input_field_names[node.id]] = _manifest_block(
+                node.name, node.file_type, len(instance.content)
             )
         elif method == "inline":
             if node.file_type == "image":
@@ -261,23 +262,13 @@ async def deliver_input_attachments(
                     result.image_data_uri = _image_data_uri(
                         instance.content, getattr(instance, "format", "png")
                     )
-                prompt_blocks.append(
-                    f"Attachment '{node.name}' (image) is provided as an image below."
-                )
             else:
-                prompt_blocks.append(
-                    _inline_text_block(node.name, node.file_type, instance.content)
-                )
+                result.input_values[input_field_names[node.id]] = _decode_text(instance.content)
         elif method == "file_path":
-            prompt_blocks.append(_file_path_block(node.name, node.file_type, sandbox_path))
-        elif method == "dual":
-            if result.image_data_uri is None:
-                result.image_data_uri = _image_data_uri(
-                    instance.content, getattr(instance, "format", "png")
-                )
-            prompt_blocks.append(
-                f"Attachment '{node.name}' (image) is provided as an image below, "
-                f"and also available as a file at: {sandbox_path}"
+            result.input_values[input_field_names[node.id]] = sandbox_path or ""
+        elif method == "dual" and result.image_data_uri is None:
+            result.image_data_uri = _image_data_uri(
+                instance.content, getattr(instance, "format", "png")
             )
 
         result.delivered.append(
@@ -291,7 +282,6 @@ async def deliver_input_attachments(
         )
         await conversation_repo.mark_attachment_consumed(instance.id)
 
-    result.prompt_addendum = "\n\n".join(prompt_blocks)
     return result
 
 
@@ -327,8 +317,8 @@ async def deliver_and_announce_input_attachments(
 
     Returns:
         tuple[str, dict[str, Any]]: The (possibly attachment-augmented)
-        prompt, and any extra ``aforward`` kwargs (``attachment_image`` when
-        an image attachment was resolved).
+        unchanged prompt, and extra ``aforward`` kwargs for declared
+        attachment input fields (plus ``attachment_image`` when resolved).
     """
     result = await deliver_input_attachments(
         agent_node=agent_node,
@@ -364,11 +354,8 @@ async def deliver_and_announce_input_attachments(
             run_id=run_id,
         )
 
-    augmented_prompt = (
-        f"{user_prompt}\n\n{result.prompt_addendum}" if result.prompt_addendum else user_prompt
-    )
-    extra_kwargs: dict[str, Any] = {}
+    extra_kwargs: dict[str, Any] = dict(result.input_values)
     if result.image_data_uri is not None:
         extra_kwargs["attachment_image"] = dspy.Image(result.image_data_uri)
 
-    return augmented_prompt, extra_kwargs
+    return user_prompt, extra_kwargs

@@ -26,7 +26,7 @@ from canvas_server.exceptions import (
 )
 from canvas_server.output_extraction import (
     declared_output_nodes,
-    extract_output_attachments,
+    extract_named_output_attachments,
     file_type_to_format,
 )
 from canvas_server.runner.attachment_events import announce_attachment_produced
@@ -256,17 +256,13 @@ async def store_output_attachments(
     run_id: uuid.UUID | None,
 ) -> None:
     """Validate, persist, and announce an agent result's output attachments."""
-    raw_items = getattr(result, "output_attachments", None)
-    if not raw_items:
-        return
-
     edges = getattr(canvas, "edges", None) or []
     attachment_nodes = getattr(canvas, "attachment_nodes", None) or []
     declared_nodes = declared_output_nodes(edges, attachment_nodes, agent_id)
     if not declared_nodes:
         return
 
-    outcome = extract_output_attachments(raw_items, declared_nodes)
+    outcome = extract_named_output_attachments(result, declared_nodes)
     for error in outcome.errors:
         logger.warning("Agent %s: %s", agent_node.name, error)
         await send_event(

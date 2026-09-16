@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 
 import dspy
 
-from canvas_server.attachment_delivery import declared_input_nodes
+from canvas_server.attachment_delivery import declared_input_nodes, input_attachment_field_names
 from canvas_server.events import EventCallback
 from canvas_server.output_extraction import declared_output_nodes
 from canvas_server.runner.code_provider import CodeProvider
@@ -229,13 +229,10 @@ class AgentFactory:
             )
             full_instructions += (
                 "\n\n[CRITICAL SYSTEM RULE] You have configured output attachment slot(s): "
-                f"{slot_descriptions}. If your work produces a deliverable matching one of "
-                "these slots, include it in the output_attachments field as an object with "
-                "exactly the keys 'name', 'file_type', and 'content' — name and file_type must "
-                "match the slot exactly. Do not duplicate that content inside process_result; "
-                "process_result should remain your normal final answer to the user. Only emit "
-                "an entry when you actually have a matching deliverable — leave "
-                "output_attachments as an empty list otherwise."
+                f"{slot_descriptions}. Populate the corresponding named output field with "
+                "the attachment content. Do not duplicate that content inside process_result; "
+                "process_result should remain your normal final answer to the user. Leave a "
+                "named attachment field empty when there is no deliverable for that slot."
             )
             if getattr(agent_node, "enable_coding", False):
                 full_instructions += (
@@ -244,30 +241,43 @@ class AgentFactory:
                     "the path may be relative to /sandbox or the exact absolute path you "
                     "wrote, and the framework will read and store that file automatically."
                 )
-            signature_cls = signature_cls.append(
-                "output_attachments",
-                dspy.OutputField(
-                    desc=(
-                        "Optional list of attachment objects to store, each with 'name', "
-                        "'file_type', and 'content' keys matching a configured output "
-                        "Attachment node slot. Leave empty ([]) when there is nothing to extract."
+            output_field_names = input_attachment_field_names(declared_nodes)
+            for output_node in declared_nodes:
+                signature_cls = signature_cls.append(
+                    output_field_names[output_node.id],
+                    dspy.OutputField(
+                        desc=(
+                            f"Content for the declared {output_node.file_type} attachment "
+                            f"'{output_node.name}'."
+                        ),
+                        default=None,
                     ),
-                    default_factory=list,
+                    type_=str | None,
+                )
+
+        declared_input_nodes_for_agent = declared_input_nodes(
+            self._edges, self._attachment_nodes, agent_node.id
+        )
+        input_field_names = input_attachment_field_names(declared_input_nodes_for_agent)
+        for input_node in declared_input_nodes_for_agent:
+            if input_node.file_type == "image":
+                continue
+            field_name = input_field_names[input_node.id]
+            signature_cls = signature_cls.append(
+                field_name,
+                dspy.InputField(
+                    desc=(
+                        f"Declared {input_node.file_type} attachment '{input_node.name}'. "
+                        "Contains its text, sandbox file path, or delivery note."
+                    ),
+                    default=None,
                 ),
-                type_=list[dict],
+                type_=str | None,
             )
 
-        # Optional multimodal input field (#88): only appended when this agent
-        # has at least one declared *input* Attachment node of type "image" —
-        # its resolved delivery (always "dual" or "inline" for images, see
-        # ``attachment_delivery.resolve_delivery_method``) is passed in via
-        # this field at call time. Structural, so passing (or omitting) the
-        # ``attachment_image`` kwarg in ``StreamingReAct.aforward`` never
-        # raises a signature mismatch.
-        has_image_input = any(
-            node.file_type == "image"
-            for node in declared_input_nodes(self._edges, self._attachment_nodes, agent_node.id)
-        )
+        # Image inputs use DSPy's multimodal image field. Non-image inputs are
+        # represented above by one named field per declared Attachment node.
+        has_image_input = any(node.file_type == "image" for node in declared_input_nodes_for_agent)
         if has_image_input:
             full_instructions += (
                 "\n\n[SYSTEM NOTE] You may receive an input image attachment as the "

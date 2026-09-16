@@ -217,7 +217,7 @@ class TestBuildSignatureOutputAttachments:
 
         assert "output_attachments" not in signature.model_fields
 
-    def test_signature_gains_output_attachments_field_with_declared_output_node(self):
+    def test_signature_uses_named_output_field_without_generic_attachment_list(self):
         from types import SimpleNamespace
 
         agent_node = FakeAgentNode(name="Reporter")
@@ -236,10 +236,62 @@ class TestBuildSignatureOutputAttachments:
 
         signature = factory.build_signature(agent_node)
 
-        assert "output_attachments" in signature.model_fields
-        field = signature.model_fields["output_attachments"]
-        assert field.default_factory is not None
-        assert field.default_factory() == []
+        assert "output_attachments" not in signature.model_fields
+
+    def test_signature_gains_named_output_field_for_declared_attachment(self):
+        from types import SimpleNamespace
+
+        agent_node = FakeAgentNode(name="WeatherAgent")
+        attachment_id = uuid.uuid4()
+        factory = _make_factory(
+            edges=[
+                SimpleNamespace(
+                    source_node_id=agent_node.id,
+                    target_node_id=attachment_id,
+                    edge_type="produces",
+                )
+            ],
+            attachment_nodes=[
+                SimpleNamespace(
+                    id=attachment_id,
+                    name="CurrentTemperature",
+                    file_type="text",
+                )
+            ],
+        )
+
+        signature = factory.build_signature(agent_node)
+
+        assert "current_temperature" in signature.model_fields
+        assert signature.model_fields["current_temperature"].default is None
+
+    def test_signature_gains_named_input_field_for_declared_text_attachment(self):
+        from types import SimpleNamespace
+
+        agent_node = FakeAgentNode(name="WeatherAgent")
+        attachment_id = uuid.uuid4()
+        factory = _make_factory(
+            edges=[
+                SimpleNamespace(
+                    source_node_id=attachment_id,
+                    target_node_id=agent_node.id,
+                    edge_type="consumes",
+                )
+            ],
+            attachment_nodes=[
+                SimpleNamespace(
+                    id=attachment_id,
+                    name="CityName",
+                    file_type="text",
+                    delivery_method="inline",
+                )
+            ],
+        )
+
+        signature = factory.build_signature(agent_node)
+
+        assert "city_name" in signature.model_fields
+        assert signature.model_fields["city_name"].default is None
 
     def test_signature_instructions_mention_declared_slot_name_and_type(self):
         from types import SimpleNamespace
@@ -306,7 +358,7 @@ class TestBuildSignatureOutputAttachments:
 
         signature = factory.build_signature(agent_node)
 
-        assert "output_attachments" in signature.model_fields
+        assert "output_attachments" not in signature.model_fields
         assert "history" in signature.model_fields
 
     def test_coding_agent_signature_instructions_mention_sandbox_output_reference(self):
