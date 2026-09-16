@@ -4,6 +4,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { http, HttpResponse } from "msw";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { server } from "@/test/mocks/server";
+import {
+  interceptAttachmentUpload,
+  jsonAttachmentUploadResponse,
+} from "@/test/mocks/attachmentUpload";
 import { FakeWebSocket } from "@/test/mocks/websocket";
 import { mockConversation, mockConversationSummary } from "@/test/mocks/handlers";
 import { useCanvasStore } from "@/store/canvasStore";
@@ -179,33 +183,32 @@ describe("ChatPage attachment uploads", () => {
 
   it("applies independent per-file results for multiple files dropped together", async () => {
     primeConversationHandlers();
-    server.use(
-      http.post(`${API}/canvases/conversations/:conversationId/attachments`, async ({ request }) => {
-        const formData = await request.formData();
-        const files = formData.getAll("files");
-        expect(files).toHaveLength(2);
-        return HttpResponse.json({
-          results: [
-            {
-              filename: "sales.csv",
-              success: true,
-              attachment_id: "attachment-1",
-              node_id: "node-1",
-              file_type: "csv",
-              error: null,
-            },
-            {
-              filename: "payload.bin",
-              success: false,
-              attachment_id: null,
-              node_id: null,
-              file_type: "binary",
-              error: "No input attachment node on this agent accepts file type 'binary'",
-            },
-          ],
-        });
-      })
-    );
+    interceptAttachmentUpload(async (url, formData) => {
+      expect(url).toBe(`${API}/canvases/conversations/conv-1/attachments`);
+      const files = formData.getAll("files");
+      expect(files).toHaveLength(2);
+      expect(
+        files.map((file) => (file as File).name)
+      ).toEqual(["sales.csv", "payload.bin"]);
+      return jsonAttachmentUploadResponse([
+        {
+          filename: "sales.csv",
+          success: true,
+          attachment_id: "attachment-1",
+          node_id: "node-1",
+          file_type: "csv",
+          error: null,
+        },
+        {
+          filename: "payload.bin",
+          success: false,
+          attachment_id: null,
+          node_id: null,
+          file_type: "binary",
+          error: "No input attachment node on this agent accepts file type 'binary'",
+        },
+      ]);
+    });
 
     renderChatPage("conv-1");
 

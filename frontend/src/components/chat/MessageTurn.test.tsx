@@ -194,9 +194,13 @@ describe("MessageTurn timestamps", () => {
 
     expect(screen.getByText("expenses.csv")).toBeInTheDocument();
     expect(screen.getByText("Expense Summary")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /download/i })).toHaveAttribute(
-      "href",
-      "http://localhost:8000/api/attachments/attachment-output",
-    );
+    const downloadLinks = screen.getAllByRole("link", { name: /download/i });
+    expect(downloadLinks).toHaveLength(2);
+    expect(
+      downloadLinks.find((link) => link.getAttribute("download") === "expenses.csv"),
+    ).toHaveAttribute("href", "http://localhost:8000/api/attachments/attachment-input");
+    expect(
+      downloadLinks.find((link) => link.getAttribute("download") === "Expense Summary"),
+    ).toHaveAttribute("href", "http://localhost:8000/api/attachments/attachment-output");
   });
 });

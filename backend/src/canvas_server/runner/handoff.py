@@ -11,10 +11,10 @@ from typing import TYPE_CHECKING, Any
 import dspy
 
 from canvas_server.events import EventCallback
+from canvas_server.runner.execution import store_output_attachments
 from canvas_server.runner.input_attachment_delivery import (
     deliver_and_announce_input_attachments,
 )
-from canvas_server.runner.execution import store_output_attachments
 from canvas_server.runner.tracing import agent_span
 
 if TYPE_CHECKING:
