@@ -30,7 +30,11 @@ def _attachment_node(node_id, name, file_type, delivery_method="inline"):
 
 def _instance(instance_id, node_id, content, file_type):
     return SimpleNamespace(
-        id=instance_id, attachment_node_id=node_id, content=content, file_type=file_type
+        id=instance_id,
+        attachment_node_id=node_id,
+        content=content,
+        file_type=file_type,
+        source="chat_upload",
     )
 
 

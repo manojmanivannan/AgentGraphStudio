@@ -32,7 +32,13 @@ def _attachment_node(node_id, name="Data", file_type="csv", delivery_method="inl
 
 
 def _instance(instance_id, node_id, content, file_type="csv"):
-    return SimpleNamespace(id=instance_id, attachment_node_id=node_id, content=content, file_type=file_type)
+    return SimpleNamespace(
+        id=instance_id,
+        attachment_node_id=node_id,
+        content=content,
+        file_type=file_type,
+        source="chat_upload",
+    )
 
 
 def _agent_node(agent_id, enable_coding=False, enable_network=False):

@@ -127,7 +127,11 @@ export function groupMessagesIntoTurns(messages: Message[]): {
       turns.push(currentTurn);
     } else if (currentTurn) {
       if (msg.event_type === "attachment_consumed") {
-        (currentTurn.inputAttachments ??= []).push(msg);
+        if (msg.args?.source === "agent_output") {
+          currentTurn.steps.push(msg);
+        } else {
+          (currentTurn.inputAttachments ??= []).push(msg);
+        }
       } else if (msg.event_type === "attachment_produced") {
         (currentTurn.outputAttachments ??= []).push(msg);
       } else if (msg.event_type === "final_answer") {

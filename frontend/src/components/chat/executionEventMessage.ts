@@ -128,6 +128,7 @@ export function executionEventToMessage(
         attachment_id: event.attachment_id,
         name: event.name,
         file_type: event.file_type,
+        source: event.source,
         delivery_method: event.delivery_method,
       },
     };

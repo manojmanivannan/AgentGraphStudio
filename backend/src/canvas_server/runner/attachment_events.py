@@ -32,6 +32,7 @@ async def announce_attachment_consumed(
     attachment_id: uuid.UUID,
     name: str,
     file_type: str,
+    source: str,
     delivery_method: str,
     conversation_id: uuid.UUID | str,
     run_id: uuid.UUID | None,
@@ -52,6 +53,7 @@ async def announce_attachment_consumed(
         attachment_id: The id of the consumed ``AttachmentInstance``.
         name: The declared input Attachment node's name.
         file_type: The attachment's declared file type (e.g. ``"csv"``).
+        source: Whether the attachment originated as a chat upload or agent output.
         delivery_method: The resolved delivery method for this attachment.
         conversation_id: The conversation the attachment belongs to.
         run_id: The durable run consuming this attachment, if any.
@@ -65,6 +67,7 @@ async def announce_attachment_consumed(
                 "attachment_id": str(attachment_id),
                 "name": name,
                 "file_type": file_type,
+                "source": source,
                 "delivery_method": delivery_method,
                 "conversation_id": str(conversation_id),
                 "run_id": run_id_str,
@@ -84,6 +87,7 @@ async def announce_attachment_consumed(
                 "attachment_id": str(attachment_id),
                 "name": name,
                 "file_type": file_type,
+                "source": source,
                 "delivery_method": delivery_method,
                 "run_id": run_id_str,
             },

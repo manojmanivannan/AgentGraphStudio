@@ -78,6 +78,7 @@ class DeliveredAttachment:
     attachment_id: uuid.UUID
     name: str
     file_type: str
+    source: str
     delivery_method: str  # resolved: inline | file_path | dual | manifest_only
     sandbox_path: str | None = None
 
@@ -229,7 +230,10 @@ async def deliver_input_attachments(
     input_field_names = input_attachment_field_names(declared)
 
     for instance in instances:
-        node = declared_by_id.get(instance.attachment_node_id)
+        attachment_node_id = instance.attachment_node_id
+        if attachment_node_id is None:
+            continue
+        node = declared_by_id.get(attachment_node_id)
         if node is None:
             continue
 
@@ -276,6 +280,7 @@ async def deliver_input_attachments(
                 attachment_id=instance.id,
                 name=node.name,
                 file_type=node.file_type,
+                source=instance.source,
                 delivery_method=method,
                 sandbox_path=sandbox_path,
             )
@@ -349,6 +354,7 @@ async def deliver_and_announce_input_attachments(
             attachment_id=delivered.attachment_id,
             name=delivered.name,
             file_type=delivered.file_type,
+            source=delivered.source,
             delivery_method=delivered.delivery_method,
             conversation_id=conversation_id,
             run_id=run_id,

@@ -52,18 +52,16 @@ def _attachment_node(node_id, name, file_type, delivery_method="inline"):
 
 
 class _ProducingAgent:
-    """A minimal stand-in for agent A's ``StreamingReAct`` instance: its
-    ReAct loop already finished and it emitted a csv ``output_attachments``
-    entry matching its declared output node."""
+    """A minimal stand-in for agent A's named CSV attachment output field."""
 
-    def __init__(self, output_attachments):
-        self._output_attachments = output_attachments
+    def __init__(self, orders):
+        self._orders = orders
 
     async def aforward(self, **kwargs):
         return SimpleNamespace(
             process_result="Report generated.",
             trajectory=None,
-            output_attachments=self._output_attachments,
+            orders=self._orders,
         )
 
 
@@ -91,9 +89,7 @@ class TestChainedAgentOutputConsumedByHandoffTarget:
         run_state_a = SimpleNamespace(
             get_or_build_agent=AsyncMock(
                 return_value=_ProducingAgent(
-                    output_attachments=[
-                        {"name": "orders", "file_type": "csv", "content": csv_content}
-                    ]
+                    orders=csv_content
                 )
             ),
             get_client_response=None,

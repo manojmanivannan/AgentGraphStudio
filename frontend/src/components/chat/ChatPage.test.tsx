@@ -324,6 +324,7 @@ describe("groupMessagesIntoTurns", () => {
                 attachment_id: "attachment-2",
                 name: "notes.txt",
                 file_type: "text",
+                source: "chat_upload",
                 delivery_method: "inline",
             },
             created_at: "2026-01-01T00:00:01.000Z",
@@ -337,6 +338,27 @@ describe("groupMessagesIntoTurns", () => {
         expect(turns[0].humanInterrupt).toBeUndefined();
         expect(turns[0].finalAnswer).toBeUndefined();
         expect(turns[0].isStreaming).toBe(true);
+    });
+
+    it("keeps agent-produced attachment consumption in execution steps", () => {
+        const userMsg: Message = {
+            id: "u1", conversation_id: "c1", role: "user", content: "Calculate it",
+            created_at: "2026-01-01T00:00:00.000Z",
+        };
+        const consumedOutput: Message = {
+            id: "s1", conversation_id: "c1", role: "assistant", content: "",
+            event_type: "attachment_consumed",
+            args: {
+                attachment_id: "attachment-2", name: "CurrentTemperature", file_type: "text",
+                source: "agent_output", delivery_method: "inline",
+            },
+            created_at: "2026-01-01T00:00:01.000Z",
+        };
+
+        const { turns } = groupMessagesIntoTurns([userMsg, consumedOutput]);
+
+        expect(turns[0].inputAttachments).toEqual([]);
+        expect(turns[0].steps).toEqual([consumedOutput]);
     });
 });
 
