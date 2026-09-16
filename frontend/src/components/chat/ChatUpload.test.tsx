@@ -330,6 +330,39 @@ describe("ChatPage attachment uploads", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("clears uploaded attachment chips after sending the prompt", async () => {
+    const user = userEvent.setup();
+    primeConversationHandlers();
+    server.use(
+      http.post(`${API}/canvases/conversations/:conversationId/attachments`, () =>
+        HttpResponse.json({
+          results: [{
+            filename: "notes.txt",
+            success: true,
+            attachment_id: "attachment-2",
+            node_id: "node-2",
+            file_type: "text",
+            error: null,
+          }],
+        })
+      )
+    );
+
+    renderChatPage("conv-1");
+
+    await waitFor(() => expect(screen.getByTestId("chat-input")).toBeInTheDocument());
+    await user.upload(
+      screen.getByTestId("chat-attachment-input"),
+      new File(["notes"], "notes.txt", { type: "text/plain" })
+    );
+    await waitFor(() => expect(screen.getByText("notes.txt")).toBeInTheDocument());
+
+    await user.type(screen.getByTestId("chat-input"), "Review the attached notes");
+    await user.click(screen.getByTestId("send-button"));
+
+    expect(screen.queryByText("notes.txt")).not.toBeInTheDocument();
+  });
+
   it("disables the main composer's attachment picker while a run is active", async () => {
     const user = userEvent.setup();
     primeConversationHandlers();

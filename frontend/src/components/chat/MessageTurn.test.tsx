@@ -148,4 +148,55 @@ describe("MessageTurn timestamps", () => {
 
     expect(screen.getByRole("button", { name: /upload attachment/i })).toBeInTheDocument();
   });
+
+  it("renders input attachments below the user message and output attachments below the final answer", () => {
+    const inputAttachment: Message = {
+      id: "input-attachment",
+      conversation_id: "conv-1",
+      role: "assistant",
+      content: "",
+      event_type: "attachment_consumed",
+      args: {
+        attachment_id: "attachment-input",
+        name: "expenses.csv",
+        file_type: "csv",
+        delivery_method: "file_path",
+      },
+      created_at: "2026-01-01T00:00:10.000Z",
+    };
+    const outputAttachment: Message = {
+      id: "output-attachment",
+      conversation_id: "conv-1",
+      role: "assistant",
+      content: "",
+      event_type: "attachment_produced",
+      args: {
+        attachment_id: "attachment-output",
+        name: "Expense Summary",
+        file_type: "json",
+        source: "agent_output",
+      },
+      created_at: "2026-01-01T00:00:11.000Z",
+    };
+
+    render(
+      <MessageTurn
+        {...defaultProps}
+        turn={{
+          ...baseTurn,
+          userMessage,
+          finalAnswer,
+          inputAttachments: [inputAttachment],
+          outputAttachments: [outputAttachment],
+        }}
+      />,
+    );
+
+    expect(screen.getByText("expenses.csv")).toBeInTheDocument();
+    expect(screen.getByText("Expense Summary")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /download/i })).toHaveAttribute(
+      "href",
+      "http://localhost:8000/api/attachments/attachment-output",
+    );
+  });
 });

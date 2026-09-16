@@ -263,7 +263,7 @@ describe("groupMessagesIntoTurns", () => {
         expect(turns[0].steps[0].id).toBe("t2");
     });
 
-    it("groups attachment_produced messages as regular execution steps", () => {
+    it("groups produced attachments with the final response", () => {
         const userMsg: Message = {
             id: "u1",
             conversation_id: "c1",
@@ -287,16 +287,25 @@ describe("groupMessagesIntoTurns", () => {
             created_at: "2026-01-01T00:00:01.000Z",
         };
 
-        const { turns } = groupMessagesIntoTurns([userMsg, attachmentStep]);
+        const finalAnswer: Message = {
+            id: "f1",
+            conversation_id: "c1",
+            role: "assistant",
+            content: "The report is ready.",
+            event_type: "final_answer",
+            created_at: "2026-01-01T00:00:02.000Z",
+        };
+        const { turns } = groupMessagesIntoTurns([userMsg, attachmentStep, finalAnswer]);
 
         expect(turns).toHaveLength(1);
-        expect(turns[0].steps).toEqual([attachmentStep]);
+        expect(turns[0].outputAttachments).toEqual([attachmentStep]);
+        expect(turns[0].steps).toEqual([]);
         expect(turns[0].humanInterrupt).toBeUndefined();
-        expect(turns[0].finalAnswer).toBeUndefined();
-        expect(turns[0].isStreaming).toBe(true);
+        expect(turns[0].finalAnswer).toEqual(finalAnswer);
+        expect(turns[0].isStreaming).toBe(false);
     });
 
-    it("groups attachment_consumed messages as regular execution steps", () => {
+    it("groups consumed attachments below the user message", () => {
         const userMsg: Message = {
             id: "u1",
             conversation_id: "c1",
@@ -323,7 +332,8 @@ describe("groupMessagesIntoTurns", () => {
         const { turns } = groupMessagesIntoTurns([userMsg, attachmentStep]);
 
         expect(turns).toHaveLength(1);
-        expect(turns[0].steps).toEqual([attachmentStep]);
+        expect(turns[0].inputAttachments).toEqual([attachmentStep]);
+        expect(turns[0].steps).toEqual([]);
         expect(turns[0].humanInterrupt).toBeUndefined();
         expect(turns[0].finalAnswer).toBeUndefined();
         expect(turns[0].isStreaming).toBe(true);

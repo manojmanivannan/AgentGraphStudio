@@ -8,6 +8,8 @@ import { ChevronDown, ChevronRight } from "lucide-react";
 import type { Message } from "@/types";
 import { ExecutionStepsViewer } from "./ExecutionStepsViewer";
 import { HitlAttachmentUpload } from "./HitlAttachmentUpload";
+import { ConsumedAttachmentCard } from "./ConsumedAttachmentCard";
+import { ProducedAttachmentCard } from "./ProducedAttachmentCard";
 
 /**
  * Formats a message's ISO timestamp as "YYYY-MM-DD HH:MM:SS" in local time.
@@ -28,6 +30,8 @@ export function formatMessageTimestamp(iso?: string): string {
 export interface TurnGroup {
   id: string;
   userMessage: Message;
+  inputAttachments?: Message[];
+  outputAttachments?: Message[];
   steps: Message[];
   humanInterrupt?: Message;
   finalAnswer?: Message;
@@ -84,6 +88,19 @@ export function MessageTurn({
           </time>
         )}
       </div>
+
+      {(turn.inputAttachments ?? []).map((attachment) => (
+        <div key={attachment.id} className="flex justify-end">
+          <div className="w-full max-w-[85%]">
+            <ConsumedAttachmentCard
+              name={String(attachment.args?.name ?? "")}
+              fileType={String(attachment.args?.file_type ?? "")}
+              deliveryMethod={String(attachment.args?.delivery_method ?? "")}
+              attachmentId={String(attachment.args?.attachment_id ?? "")}
+            />
+          </div>
+        </div>
+      ))}
 
       {/* Steps toggle */}
       {!isStreaming && hasSteps && (
@@ -233,6 +250,15 @@ export function MessageTurn({
           <div className="max-w-[85%] rounded-2xl px-4 py-3 text-[14px] leading-relaxed bg-[var(--color-elevated)] text-[var(--color-text-primary)] border border-[var(--color-border-subtle)] shadow-sm rounded-bl-sm">
             {renderMessageContent(turn.finalAnswer.content, false)}
           </div>
+          {(turn.outputAttachments ?? []).map((attachment) => (
+            <div key={attachment.id} className="mt-2 w-full max-w-[85%]">
+              <ProducedAttachmentCard
+                name={String(attachment.args?.name ?? "")}
+                fileType={String(attachment.args?.file_type ?? "")}
+                attachmentId={String(attachment.args?.attachment_id ?? "")}
+              />
+            </div>
+          ))}
           {formatMessageTimestamp(turn.finalAnswer.created_at) && (
             <time
               dateTime={turn.finalAnswer.created_at}

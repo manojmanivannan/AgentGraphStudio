@@ -1,3 +1,5 @@
+import { Download } from "lucide-react";
+
 import { API_BASE } from "@/lib/api";
 
 import { getAttachmentIcon, normalizeFileType } from "./ProducedAttachmentCard";
@@ -37,14 +39,24 @@ export function ConsumedAttachmentCard({
             </div>
           </div>
         </div>
-        {showPathBadge && (
-          <span
-            data-testid="attachment-path-badge"
-            className="inline-flex shrink-0 items-center gap-1 rounded-md border border-[var(--color-border-default)] bg-[var(--color-elevated)] px-2 py-1 text-[10px] font-semibold text-[var(--color-text-secondary)]"
+        <div className="flex shrink-0 items-center gap-2">
+          {showPathBadge && (
+            <span
+              data-testid="attachment-path-badge"
+              className="inline-flex items-center gap-1 rounded-md border border-[var(--color-border-default)] bg-[var(--color-elevated)] px-2 py-1 text-[10px] font-semibold text-[var(--color-text-secondary)]"
+            >
+              📁 file path
+            </span>
+          )}
+          <a
+            href={previewUrl}
+            download={name}
+            className="inline-flex items-center gap-1.5 rounded-md border border-[var(--color-border-default)] bg-[var(--color-elevated)] px-2.5 py-1.5 text-[11px] font-semibold text-[var(--color-accent)] transition-colors hover:border-[var(--color-accent)] hover:text-[var(--color-accent-bright)]"
           >
-            📁 file path
-          </span>
-        )}
+            <Download className="w-3.5 h-3.5" />
+            <span>Download</span>
+          </a>
+        </div>
       </div>
       {showThumbnail && (
         <img

@@ -1,5 +1,7 @@
 import uuid
+import json
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
@@ -17,6 +19,20 @@ from canvas_server.models.api import (
     EdgeInput,
     ToolNodeInput,
 )
+
+
+def test_attachment_example_canvas_is_importable():
+    example_path = (
+        Path(__file__).resolve().parents[2]
+        / "examples"
+        / "expense_report_attachment_pipeline.json"
+    )
+
+    example = json.loads(example_path.read_text())
+    canvas = CanvasSaveRequest.model_validate(example)
+
+    assert len(canvas.nodes.attachments) == 2
+    assert {edge.edge_type for edge in canvas.edges} == {"consumes", "produces"}
 
 
 class TestAgentNodeInput:

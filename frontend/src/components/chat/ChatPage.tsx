@@ -33,18 +33,9 @@ import {
 } from "@/lib/api";
 import { guessAttachmentFileType } from "@/lib/attachmentFileType";
 import type { ConversationSummary, Message, CanvasResponse, CanvasListItem } from "@/types";
-import { MessageTurn } from "./MessageTurn";
+import { MessageTurn, type TurnGroup } from "./MessageTurn";
 import { ChatSidebar } from "./ChatSidebar";
 import { useChatWebSocket } from "./useChatWebSocket";
-
-interface TurnGroup {
-  id: string;
-  userMessage: Message;
-  steps: Message[];
-  humanInterrupt?: Message;
-  finalAnswer?: Message;
-  isStreaming: boolean;
-}
 
 interface StagedAttachment {
   id: string;
@@ -127,13 +118,19 @@ export function groupMessagesIntoTurns(messages: Message[]): {
       currentTurn = {
         id: msg.id,
         userMessage: msg,
+        inputAttachments: [],
+        outputAttachments: [],
         steps: [],
         finalAnswer: undefined,
         isStreaming: true,
       };
       turns.push(currentTurn);
     } else if (currentTurn) {
-      if (msg.event_type === "final_answer") {
+      if (msg.event_type === "attachment_consumed") {
+        (currentTurn.inputAttachments ??= []).push(msg);
+      } else if (msg.event_type === "attachment_produced") {
+        (currentTurn.outputAttachments ??= []).push(msg);
+      } else if (msg.event_type === "final_answer") {
         currentTurn.finalAnswer = msg;
         currentTurn.isStreaming = false;
       } else if (msg.event_type === "human_input_request" || msg.event_type === "tool_approval_request") {
@@ -582,6 +579,9 @@ export default function ChatPage() {
 
     const prompt = input.trim();
     setInput("");
+    setStagedAttachments((attachments) =>
+      attachments.filter((attachment) => attachment.status !== "uploaded")
+    );
     connectAndRun(conversation_id, { prompt });
   };
 

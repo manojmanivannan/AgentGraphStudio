@@ -19,6 +19,24 @@ describe("ConsumedAttachmentCard", () => {
     expect(screen.getByTestId("attachment-icon-csv")).toBeInTheDocument();
   });
 
+  it("provides a download link for the uploaded attachment", () => {
+    render(
+      <ConsumedAttachmentCard
+        name="report.csv"
+        fileType="csv"
+        deliveryMethod="inline"
+        attachmentId="attachment-download"
+      />
+    );
+
+    const downloadLink = screen.getByRole("link", { name: /download/i });
+    expect(downloadLink).toHaveAttribute(
+      "href",
+      "http://localhost:8000/api/attachments/attachment-download"
+    );
+    expect(downloadLink).toHaveAttribute("download", "report.csv");
+  });
+
   it("shows a path badge for file_path delivery", () => {
     render(
       <ConsumedAttachmentCard
