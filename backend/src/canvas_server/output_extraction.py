@@ -20,6 +20,8 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any
 
+SANDBOX_REF_PREFIX = "sandbox://"
+
 _FILE_TYPE_TO_FORMAT = {
     "text": "txt",
     "csv": "csv",
@@ -49,6 +51,7 @@ class ExtractedAttachment:
     name: str
     file_type: str
     content: str
+    sandbox_path: str | None = None
 
 
 @dataclass
@@ -165,15 +168,31 @@ def extract_output_attachments(
             )
             continue
 
-        sanity_error = _content_sanity_check(file_type, content)
-        if sanity_error is not None:
-            errors.append(
-                f"Execution error in output_attachments: {name!r} {sanity_error}."
-            )
-            continue
+        sandbox_path: str | None = None
+        if content.startswith(SANDBOX_REF_PREFIX):
+            sandbox_path = content.removeprefix(SANDBOX_REF_PREFIX)
+            if not sandbox_path:
+                errors.append(
+                    "Execution error in output_attachments: "
+                    f"{name!r} sandbox:// reference is empty."
+                )
+                continue
+        else:
+            sanity_error = _content_sanity_check(file_type, content)
+            if sanity_error is not None:
+                errors.append(
+                    f"Execution error in output_attachments: {name!r} {sanity_error}."
+                )
+                continue
 
         attachments.append(
-            ExtractedAttachment(node_id=node.id, name=name, file_type=file_type, content=content)
+            ExtractedAttachment(
+                node_id=node.id,
+                name=name,
+                file_type=file_type,
+                content=content,
+                sandbox_path=sandbox_path,
+            )
         )
 
     return ExtractionOutcome(attachments=attachments, errors=errors)

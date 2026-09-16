@@ -34,7 +34,9 @@ from canvas_server.runner.config import RunContext
 from canvas_server.runner.input_attachment_delivery import (
     deliver_and_announce_input_attachments,
 )
+from canvas_server.runner.sandbox_output_capture import read_sandbox_file
 from canvas_server.runner.tracing import agent_span
+from canvas_server.sandbox import NETWORK_POOL_DEFAULT, NETWORK_POOL_NETWORKED
 
 if TYPE_CHECKING:
     from canvas_server.models.canvas import AgentNode
@@ -247,16 +249,13 @@ class ExecutionStrategy(ABC):
 
         outcome = extract_output_attachments(raw_items, declared_nodes)
         for error in outcome.errors:
-            logger.warning("Agent %s: %s", agent_node.name, error)
-            await send_event(self._event("warning", message=error, agent=agent_node.name, node_id=str(agent_id)))
-            if conversation_service:
-                await conversation_service.persist_message(
-                    role="system",
-                    content=error,
-                    agent_name=agent_node.name,
-                    node_id=agent_id,
-                    event_type="warning",
-                )
+            await self._emit_output_attachment_warning(
+                error=error,
+                agent_node=agent_node,
+                agent_id=agent_id,
+                send_event=send_event,
+                conversation_service=conversation_service,
+            )
 
         if not outcome.attachments:
             return
@@ -266,11 +265,41 @@ class ExecutionStrategy(ABC):
         if not conversation_repo or not conversation_id:
             return
 
+        network_pool = (
+            NETWORK_POOL_NETWORKED
+            if getattr(agent_node, "enable_network", False)
+            else NETWORK_POOL_DEFAULT
+        )
+
         for attachment in outcome.attachments:
+            content = attachment.content.encode("utf-8")
+            if attachment.sandbox_path is not None:
+                sandbox_bytes = await read_sandbox_file(
+                    conversation_id=conversation_id,
+                    network_pool=network_pool,
+                    path=attachment.sandbox_path,
+                )
+                if sandbox_bytes is None:
+                    warning = (
+                        "Execution error in output_attachments: "
+                        f"{attachment.name!r} referenced sandbox file "
+                        f"{attachment.sandbox_path!r}, but the framework could not read it "
+                        "from the agent sandbox."
+                    )
+                    await self._emit_output_attachment_warning(
+                        error=warning,
+                        agent_node=agent_node,
+                        agent_id=agent_id,
+                        send_event=send_event,
+                        conversation_service=conversation_service,
+                    )
+                    continue
+                content = sandbox_bytes
+
             try:
                 stored = await conversation_repo.save_attachment(
                     conversation_id=conversation_id,
-                    content=attachment.content.encode("utf-8"),
+                    content=content,
                     format=file_type_to_format(attachment.file_type),
                     file_type=attachment.file_type,
                     source="agent_output",
@@ -297,6 +326,34 @@ class ExecutionStrategy(ABC):
                 source="agent_output",
                 conversation_id=conversation_id,
                 run_id=run_id,
+            )
+
+    async def _emit_output_attachment_warning(
+        self,
+        *,
+        error: str,
+        agent_node: AgentNode,
+        agent_id: uuid.UUID,
+        send_event,
+        conversation_service,
+    ) -> None:
+        """Emit/persist a non-fatal output-attachment warning (#86/#89)."""
+        logger.warning("Agent %s: %s", agent_node.name, error)
+        await send_event(
+            self._event(
+                "warning",
+                message=error,
+                agent=agent_node.name,
+                node_id=str(agent_id),
+            )
+        )
+        if conversation_service:
+            await conversation_service.persist_message(
+                role="system",
+                content=error,
+                agent_name=agent_node.name,
+                node_id=agent_id,
+                event_type="warning",
             )
 
     async def _run_worker(

@@ -14,7 +14,8 @@ import pytest
 
 from canvas_server.exceptions import AttachmentTooLargeError
 from canvas_server.runner.config import RunContext
-from canvas_server.runner.execution import RouterExecution, WorkerExecution, StrategyServices
+from canvas_server.runner.execution import RouterExecution, StrategyServices, WorkerExecution
+from canvas_server.sandbox import NETWORK_POOL_DEFAULT, NETWORK_POOL_NETWORKED
 
 
 def _edge(source_node_id, target_node_id, edge_type="produces"):
@@ -42,6 +43,7 @@ class FakeAgent:
 def make_harness(
     *,
     agent_type="worker",
+    enable_network=False,
     output_attachments=None,
     attachment_nodes=None,
     edges=None,
@@ -50,7 +52,12 @@ def make_harness(
 ):
     agent_id = uuid.uuid4()
     fake_agent = FakeAgent(output_attachments=output_attachments)
-    node = SimpleNamespace(id=agent_id, name="Reporter", agent_type=agent_type)
+    node = SimpleNamespace(
+        id=agent_id,
+        name="Reporter",
+        agent_type=agent_type,
+        enable_network=enable_network,
+    )
     conversation_repo = SimpleNamespace(
         save_attachment=save_attachment
         or AsyncMock(
@@ -113,7 +120,6 @@ class TestWorkerExecutionStoresOutputAttachments:
 
     async def test_matching_attachment_is_stored_and_event_emitted(self):
         attachment_id = uuid.uuid4()
-        edges = [_edge(uuid.UUID(int=0), attachment_id)]
         harness = make_harness(
             output_attachments=[{"name": "report", "file_type": "text", "content": "hello"}],
             attachment_nodes=[_attachment_node(attachment_id, "report", "text")],
@@ -203,6 +209,103 @@ class TestWorkerExecutionStoresOutputAttachments:
 
         assert result == "hello"
         harness.conversation_repo.save_attachment.assert_not_awaited()
+
+    async def test_sandbox_reference_is_read_and_stored_as_bytes(self):
+        attachment_id = uuid.uuid4()
+        harness = make_harness(
+            output_attachments=[
+                {
+                    "name": "report",
+                    "file_type": "pdf",
+                    "content": "sandbox://reports/final.pdf",
+                }
+            ],
+            attachment_nodes=[_attachment_node(attachment_id, "report", "pdf")],
+        )
+        harness.services.run_state.canvas.edges = [_edge(harness.agent_id, attachment_id)]
+        send_event = AsyncMock()
+        ctx = RunContext(user_prompt="go", send_event=send_event, target_agent_id=harness.agent_id)
+
+        with patch_execution_read_sandbox_file(return_value=b"%PDF-1.7") as mock_read:
+            result = await WorkerExecution(harness.services).execute(harness.agent_id, ctx)
+
+        assert result == "hello"
+        mock_read.assert_awaited_once_with(
+            conversation_id=harness.conversation_service.conversation_id,
+            network_pool=NETWORK_POOL_DEFAULT,
+            path="reports/final.pdf",
+        )
+        call_kwargs = harness.conversation_repo.save_attachment.await_args.kwargs
+        assert call_kwargs["content"] == b"%PDF-1.7"
+        assert call_kwargs["file_type"] == "pdf"
+        assert call_kwargs["format"] == "pdf"
+
+    async def test_unreadable_sandbox_reference_is_skipped_with_warning_and_final_answer(self):
+        attachment_id = uuid.uuid4()
+        harness = make_harness(
+            output_attachments=[
+                {
+                    "name": "report",
+                    "file_type": "text",
+                    "content": "sandbox://reports/final.txt",
+                }
+            ],
+            attachment_nodes=[_attachment_node(attachment_id, "report", "text")],
+        )
+        harness.services.run_state.canvas.edges = [_edge(harness.agent_id, attachment_id)]
+        send_event = AsyncMock()
+        ctx = RunContext(user_prompt="go", send_event=send_event, target_agent_id=harness.agent_id)
+
+        with patch_execution_read_sandbox_file(return_value=None):
+            result = await WorkerExecution(harness.services).execute(harness.agent_id, ctx)
+
+        assert result == "hello"
+        harness.conversation_repo.save_attachment.assert_not_awaited()
+        warning_events = [
+            c.args[0] for c in send_event.await_args_list if c.args[0].get("type") == "warning"
+        ]
+        assert len(warning_events) == 1
+        assert "sandbox" in warning_events[0]["message"].lower()
+        assert warning_events[0]["agent"] == "Reporter"
+        assert "final_answer" in [c.args[0].get("type") for c in send_event.await_args_list]
+        warning_messages = [
+            c
+            for c in harness.conversation_service.persist_message.await_args_list
+            if c.kwargs.get("event_type") == "warning"
+        ]
+        assert len(warning_messages) == 1
+
+    @pytest.mark.parametrize(
+        ("enable_network", "expected_pool"),
+        [
+            (False, NETWORK_POOL_DEFAULT),
+            (True, NETWORK_POOL_NETWORKED),
+        ],
+    )
+    async def test_sandbox_reference_uses_agent_network_pool(self, enable_network, expected_pool):
+        attachment_id = uuid.uuid4()
+        harness = make_harness(
+            enable_network=enable_network,
+            output_attachments=[
+                {
+                    "name": "report",
+                    "file_type": "text",
+                    "content": "sandbox://reports/final.txt",
+                }
+            ],
+            attachment_nodes=[_attachment_node(attachment_id, "report", "text")],
+        )
+        harness.services.run_state.canvas.edges = [_edge(harness.agent_id, attachment_id)]
+        ctx = RunContext(
+            user_prompt="go",
+            send_event=AsyncMock(),
+            target_agent_id=harness.agent_id,
+        )
+
+        with patch_execution_read_sandbox_file(return_value=b"hello") as mock_read:
+            await WorkerExecution(harness.services).execute(harness.agent_id, ctx)
+
+        assert mock_read.await_args.kwargs["network_pool"] == expected_pool
 
     async def test_too_large_attachment_is_skipped_without_failing_the_run(self):
         attachment_id = uuid.uuid4()
@@ -296,3 +399,12 @@ class TestRouterExecutionStoresOutputAttachments:
         harness.conversation_repo.save_attachment.assert_awaited_once()
         event_types = [c.args[0].get("type") for c in send_event.await_args_list]
         assert "attachment_produced" in event_types
+
+
+def patch_execution_read_sandbox_file(*, return_value):
+    from unittest.mock import patch
+
+    return patch(
+        "canvas_server.runner.execution.read_sandbox_file",
+        new=AsyncMock(return_value=return_value),
+    )

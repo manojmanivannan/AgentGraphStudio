@@ -1,6 +1,7 @@
 import uuid
 
 from canvas_server.output_extraction import (
+    SANDBOX_REF_PREFIX,
     DeclaredOutputNode,
     ExtractedAttachment,
     ExtractionOutcome,
@@ -171,6 +172,96 @@ class TestExtractOutputAttachments:
         assert outcome.attachments == []
         assert len(outcome.errors) == 1
         assert "empty" in outcome.errors[0]
+
+    def test_accepts_sandbox_reference_and_sets_relative_sandbox_path(self):
+        node_id = uuid.uuid4()
+        slots = [DeclaredOutputNode(id=node_id, name="report", file_type="pdf")]
+
+        outcome = extract_output_attachments(
+            [
+                {
+                    "name": "report",
+                    "file_type": "pdf",
+                    "content": f"{SANDBOX_REF_PREFIX}exports/final-report.pdf",
+                }
+            ],
+            slots,
+        )
+
+        assert outcome == ExtractionOutcome(
+            attachments=[
+                ExtractedAttachment(
+                    node_id=node_id,
+                    name="report",
+                    file_type="pdf",
+                    content="sandbox://exports/final-report.pdf",
+                    sandbox_path="exports/final-report.pdf",
+                )
+            ],
+            errors=[],
+        )
+
+    def test_accepts_sandbox_reference_and_keeps_absolute_sandbox_path(self):
+        node_id = uuid.uuid4()
+        slots = [DeclaredOutputNode(id=node_id, name="report", file_type="pdf")]
+
+        outcome = extract_output_attachments(
+            [
+                {
+                    "name": "report",
+                    "file_type": "pdf",
+                    "content": f"{SANDBOX_REF_PREFIX}/sandbox/final-report.pdf",
+                }
+            ],
+            slots,
+        )
+
+        assert outcome.attachments[0].sandbox_path == "/sandbox/final-report.pdf"
+        assert outcome.errors == []
+
+    def test_rejects_empty_sandbox_reference(self):
+        node_id = uuid.uuid4()
+        slots = [DeclaredOutputNode(id=node_id, name="report", file_type="pdf")]
+
+        outcome = extract_output_attachments(
+            [{"name": "report", "file_type": "pdf", "content": SANDBOX_REF_PREFIX}],
+            slots,
+        )
+
+        assert outcome.attachments == []
+        assert len(outcome.errors) == 1
+        assert "sandbox://" in outcome.errors[0]
+        assert "empty" in outcome.errors[0]
+
+    def test_sandbox_reference_still_enforces_declared_slot_matching(self):
+        slots = [DeclaredOutputNode(id=uuid.uuid4(), name="report", file_type="pdf")]
+
+        outcome = extract_output_attachments(
+            [
+                {
+                    "name": "report",
+                    "file_type": "text",
+                    "content": f"{SANDBOX_REF_PREFIX}exports/final-report.txt",
+                }
+            ],
+            slots,
+        )
+
+        assert outcome.attachments == []
+        assert len(outcome.errors) == 1
+        assert "'pdf'" in outcome.errors[0]
+        assert "'text'" in outcome.errors[0]
+
+    def test_literal_content_entries_remain_unchanged_and_have_no_sandbox_path(self):
+        node_id = uuid.uuid4()
+        slots = [DeclaredOutputNode(id=node_id, name="report", file_type="text")]
+
+        outcome = extract_output_attachments(
+            [{"name": "report", "file_type": "text", "content": "hello world"}], slots
+        )
+
+        assert outcome.attachments[0].content == "hello world"
+        assert outcome.attachments[0].sandbox_path is None
 
     def test_rejects_malformed_entry_missing_required_keys(self):
         slots = [DeclaredOutputNode(id=uuid.uuid4(), name="report", file_type="text")]

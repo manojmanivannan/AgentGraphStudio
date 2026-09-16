@@ -466,11 +466,14 @@ class AttachmentInstance(Base):
         DateTime(timezone=True),
         default=_utcnow,
     )
-    # Set once a chat-uploaded input attachment has been delivered to its
-    # declared consuming agent (#88), so a multi-turn conversation never
-    # re-injects the same file into the prompt / re-materializes it into the
-    # sandbox on a later turn. Always ``None`` for ``source="agent_output"``
-    # rows (nothing ever "consumes" an output attachment this way).
+    # Set once this instance has been delivered to its declared consuming
+    # agent — whether it was a chat-uploaded input (#88) or an agent-produced
+    # output later declared as a different agent's input via a downstream/
+    # upstream handoff (#89) — so a multi-turn conversation never re-injects
+    # the same file into the prompt / re-materializes it into the sandbox on
+    # a later turn. Stays ``None`` forever for an ``agent_output`` row that no
+    # agent has declared as an input (the common case: it's only ever shown
+    # to the user).
     consumed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True, default=None
     )

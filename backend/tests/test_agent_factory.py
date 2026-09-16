@@ -309,6 +309,48 @@ class TestBuildSignatureOutputAttachments:
         assert "output_attachments" in signature.model_fields
         assert "history" in signature.model_fields
 
+    def test_coding_agent_signature_instructions_mention_sandbox_output_reference(self):
+        from types import SimpleNamespace
+
+        agent_node = FakeAgentNode(name="Reporter", enable_coding=True)
+        attachment_id = uuid.uuid4()
+        edges = [
+            SimpleNamespace(
+                source_node_id=agent_node.id,
+                target_node_id=attachment_id,
+                edge_type="produces",
+            )
+        ]
+        attachment_nodes = [
+            SimpleNamespace(id=attachment_id, name="chart_data", file_type="csv")
+        ]
+        factory = _make_factory(edges=edges, attachment_nodes=attachment_nodes)
+
+        signature = factory.build_signature(agent_node)
+
+        assert "sandbox://" in signature.instructions
+
+    def test_non_coding_agent_signature_instructions_do_not_mention_sandbox_reference(self):
+        from types import SimpleNamespace
+
+        agent_node = FakeAgentNode(name="Reporter", enable_coding=False)
+        attachment_id = uuid.uuid4()
+        edges = [
+            SimpleNamespace(
+                source_node_id=agent_node.id,
+                target_node_id=attachment_id,
+                edge_type="produces",
+            )
+        ]
+        attachment_nodes = [
+            SimpleNamespace(id=attachment_id, name="chart_data", file_type="csv")
+        ]
+        factory = _make_factory(edges=edges, attachment_nodes=attachment_nodes)
+
+        signature = factory.build_signature(agent_node)
+
+        assert "sandbox://" not in signature.instructions
+
 
 class TestBuildSignatureAttachmentImage:
     """The `attachment_image` InputField (#88) is only added to the signature

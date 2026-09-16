@@ -14,14 +14,22 @@ async def conversation(test_session, blank_canvas):
 
 
 class TestGetUnconsumedInputAttachments:
-    async def test_returns_only_chat_uploads_for_declared_nodes_not_yet_consumed(
+    async def test_returns_chat_uploads_and_agent_outputs_for_declared_nodes_not_yet_consumed(
         self, test_session, conversation
     ):
+        """Both chat-uploaded instances *and* agent-produced instances count
+        as unconsumed input for a declared node (#89): the same Attachment
+        node can be wired as an output slot for a producing agent (a
+        ``produces`` edge) and, simultaneously, an input slot for a
+        different, downstream/upstream agent reached via handoff (a
+        ``consumes`` edge) — so an agent-output instance must be delivered
+        to that consumer exactly like a chat upload is.
+        """
         repo = ConversationRepo(test_session)
         node_id = uuid.uuid4()
         other_node_id = uuid.uuid4()
 
-        wanted = await repo.save_attachment(
+        chat_upload = await repo.save_attachment(
             conversation_id=conversation.id,
             content=b"a,b\n1,2",
             format="csv",
@@ -38,9 +46,10 @@ class TestGetUnconsumedInputAttachments:
             source="chat_upload",
             attachment_node_id=other_node_id,
         )
-        # Agent-produced output, not a chat upload: excluded even if it
-        # happens to share a node id.
-        await repo.save_attachment(
+        # Agent-produced output for the SAME declared node: included (#89) —
+        # this is what makes a chained agent-A-produces → agent-B-consumes
+        # handoff flow work.
+        agent_output = await repo.save_attachment(
             conversation_id=conversation.id,
             content=b"png-bytes",
             format="png",
@@ -52,7 +61,9 @@ class TestGetUnconsumedInputAttachments:
 
         result = await repo.get_unconsumed_input_attachments(conversation.id, [node_id])
 
-        assert [a.id for a in result] == [wanted.id]
+        assert {a.id for a in result} == {chat_upload.id, agent_output.id}
+        # Ordered by created_at (chat_upload was saved first).
+        assert [a.id for a in result] == [chat_upload.id, agent_output.id]
 
     async def test_excludes_already_consumed_attachments(self, test_session, conversation):
         repo = ConversationRepo(test_session)

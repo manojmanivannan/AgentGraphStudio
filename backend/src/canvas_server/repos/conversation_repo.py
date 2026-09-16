@@ -171,13 +171,22 @@ class ConversationRepo:
     async def get_unconsumed_input_attachments(
         self, conversation_id: uuid.UUID, node_ids: list[uuid.UUID]
     ) -> list[AttachmentInstance]:
-        """Chat-uploaded input attachments not yet delivered to their agent (#88).
+        """Input attachments not yet delivered to their declared consumer.
 
-        Scoped to ``source="chat_upload"`` (never an ``agent_output`` row) and
-        to the given declared input Attachment node ids, so a call site only
-        ever sees attachments actually wired as inputs to the agent it is
-        about to run. Ordered by ``created_at`` so a run delivers uploads in
-        upload order.
+        Covers both ``source="chat_upload"`` instances (#88) and
+        ``source="agent_output"`` instances (#89): an Attachment node has no
+        direction of its own (see ``AttachmentNode``) — the *same* node can be
+        wired as an output slot for one agent (a ``produces`` edge) and an
+        input slot for a different, downstream/upstream agent reached via
+        handoff (a ``consumes`` edge). Once that producing agent's output is
+        stored as an ``AttachmentInstance`` against the shared node id, it
+        must be delivered to the declared consumer exactly like a chat
+        upload — same delivery-method resolution, same fallback ladder, same
+        ``attachment_consumed`` event. Scoped to the given declared input
+        Attachment node ids, so a call site only ever sees attachments
+        actually wired as inputs to the agent it is about to run. Ordered by
+        ``created_at`` so a run delivers instances in the order they arrived,
+        regardless of source.
         """
         if not node_ids:
             return []
@@ -185,7 +194,7 @@ class ConversationRepo:
             select(AttachmentInstance)
             .where(
                 AttachmentInstance.conversation_id == conversation_id,
-                AttachmentInstance.source == "chat_upload",
+                AttachmentInstance.source.in_(("chat_upload", "agent_output")),
                 AttachmentInstance.attachment_node_id.in_(node_ids),
                 AttachmentInstance.consumed_at.is_(None),
             )

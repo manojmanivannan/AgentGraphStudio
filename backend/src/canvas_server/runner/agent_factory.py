@@ -237,6 +237,13 @@ class AgentFactory:
                 "an entry when you actually have a matching deliverable — leave "
                 "output_attachments as an empty list otherwise."
             )
+            if getattr(agent_node, "enable_coding", False):
+                full_instructions += (
+                    ' If you already wrote the deliverable to a file via run_code, set '
+                    'content to "sandbox://<path>" instead of pasting the file contents; '
+                    "the path may be relative to /sandbox or the exact absolute path you "
+                    "wrote, and the framework will read and store that file automatically."
+                )
             signature_cls = signature_cls.append(
                 "output_attachments",
                 dspy.OutputField(
