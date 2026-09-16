@@ -56,7 +56,7 @@ export function ChatSidebar({
           : "text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-overlay)]/40 border border-transparent"
       }`;
     }
-    return `w-full flex items-center gap-2.5 px-3 h-10 rounded-lg cursor-pointer text-[13px] font-medium transition-all duration-150 ${
+    return `w-full flex items-center gap-2.5 px-3 h-10 rounded-lg cursor-pointer text-xs font-medium transition-all duration-150 ${
       isActive
         ? "bg-[var(--color-elevated)] border border-[var(--color-border-default)] text-[var(--color-text-primary)] shadow-sm"
         : "text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-overlay)]/40 border border-transparent"

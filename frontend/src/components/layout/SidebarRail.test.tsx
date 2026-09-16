@@ -46,6 +46,15 @@ describe("SidebarRail", () => {
     }
   });
 
+  it("expanded nav buttons use the shared sidebar font size (text-xs)", () => {
+    useCanvasStore.getState().setCanvas("canvas-1", "Test Canvas");
+    renderSidebar();
+
+    for (const testId of ["chat-toggle", "observability-toggle"]) {
+      expect(screen.getByTestId(testId).className).toContain("text-xs");
+    }
+  });
+
   it("adds worker and router agents on button clicks", async () => {
     const user = userEvent.setup();
     useCanvasStore.getState().setCanvas("canvas-1", "Test Canvas");

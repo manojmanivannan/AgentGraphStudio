@@ -70,4 +70,22 @@ describe("ChatSidebar", () => {
     }
   });
 
+  it("nav item font size matches the sidebar used on other pages (text-xs)", () => {
+    render(
+      <MemoryRouter>
+        <ChatSidebar {...defaultProps} />
+      </MemoryRouter>
+    );
+    const items = [
+      screen.getByTitle("Home"),
+      screen.getByTitle("Canvas Editor"),
+      screen.getByTitle("Agent Chat"),
+      screen.getByTitle("Observability"),
+    ];
+    for (const item of items) {
+      expect(item.className).toContain("text-xs");
+      expect(item.className).not.toContain("text-[13px]");
+    }
+  });
+
 });
