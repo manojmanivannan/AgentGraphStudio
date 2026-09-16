@@ -35,8 +35,9 @@ from __future__ import annotations
 
 import re
 import uuid
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Protocol
 
 READABLE_TYPES = {"csv", "json", "text", "yaml", "python"}
 UNREADABLE_TYPES = {"binary", "pdf"}
@@ -50,6 +51,21 @@ class DeclaredInputNode:
     name: str
     file_type: str
     delivery_method: str
+
+
+class DeclaredAttachmentSlot(Protocol):
+    """Structural shape shared by declared input and output Attachment slots.
+
+    Both ``attachment_delivery.DeclaredInputNode`` and
+    ``output_extraction.DeclaredOutputNode`` satisfy it, so helpers keyed by
+    slot id (like ``input_attachment_field_names``) accept either kind.
+    """
+
+    @property
+    def id(self) -> uuid.UUID: ...
+
+    @property
+    def name(self) -> str: ...
 
 
 def declared_input_nodes(
@@ -92,9 +108,9 @@ def declared_input_nodes(
 
 
 def input_attachment_field_names(
-    nodes: list[DeclaredInputNode],
+    nodes: Sequence[DeclaredAttachmentSlot],
 ) -> dict[uuid.UUID, str]:
-    """Return stable, DSPy-safe input-field names for declared attachments."""
+    """Return stable, DSPy-safe attachment-field names for declared slots."""
     reserved_names = {
         "user_request",
         "history",

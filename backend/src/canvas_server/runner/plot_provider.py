@@ -12,6 +12,7 @@ from canvas_server.runner.attachment_events import announce_attachment_produced
 from canvas_server.sandbox import bounded_session_work, get_sandbox
 
 if TYPE_CHECKING:
+    from canvas_server.models.canvas import AttachmentInstance
     from canvas_server.repos.conversation_repo import ConversationRepo
     from canvas_server.runner.run_state import CanvasRunState
 
@@ -103,7 +104,7 @@ class PlotProvider:
         os.makedirs(plots_dir, exist_ok=True)
 
         markdown_links = []
-        stored_attachments: list[tuple[object, str]] = []
+        stored_attachments: list[tuple[AttachmentInstance, str]] = []
         plots = result.plots if hasattr(result, "plots") and result.plots else []
         run_id = self.run_state.run_id if self.run_state else None
         for index, plot in enumerate(plots, start=1):
