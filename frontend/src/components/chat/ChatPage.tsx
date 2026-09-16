@@ -25,7 +25,6 @@ import {
   getConversationById,
   deleteConversationById,
   getCanvas,
-  apiOrigin,
   exportConversationZip,
   importConversationZip,
   listCanvases,
@@ -34,6 +33,7 @@ import {
 import { guessAttachmentFileType } from "@/lib/attachmentFileType";
 import type { ConversationSummary, Message, CanvasResponse, CanvasListItem } from "@/types";
 import { MessageTurn, type TurnGroup } from "./MessageTurn";
+import { MarkdownMessage } from "./MarkdownMessage";
 import { ChatSidebar } from "./ChatSidebar";
 import { useChatWebSocket } from "./useChatWebSocket";
 
@@ -48,61 +48,11 @@ interface StagedAttachment {
 
 function renderMessageContent(content: string, isToolResult: boolean = false) {
   if (!content) return null;
-
-  // Render markdown images like ![alt](url)
-  const regex = /!\[(.*?)\]\((.*?)\)/g;
-  const parts = [];
-  let lastIndex = 0;
-  let match;
-
-  while ((match = regex.exec(content)) !== null) {
-    const textBefore = content.substring(lastIndex, match.index);
-    if (textBefore) {
-      parts.push({ type: 'text', value: textBefore });
-    }
-    const alt = match[1];
-    let url = match[2];
-    
-    // Resolve relative backend URLs using apiOrigin
-    if (url.startsWith('/')) {
-      url = `${apiOrigin}${url}`;
-    }
-    
-    parts.push({ type: 'image', value: url, alt });
-    lastIndex = regex.lastIndex;
-  }
-
-  const textAfter = content.substring(lastIndex);
-  if (textAfter) {
-    parts.push({ type: 'text', value: textAfter });
-  }
-
-  if (parts.length === 0) {
-    return <div className="whitespace-pre-wrap">{content}</div>;
-  }
-
-  return (
-    <div className="flex flex-col gap-2">
-      {parts.map((part, idx) => {
-        if (part.type === 'image') {
-          return (
-            <img
-              key={idx}
-              src={part.value}
-              alt={part.alt || "Image"}
-              className="max-w-full rounded border border-[var(--color-border-subtle)] shadow-sm my-1"
-            />
-          );
-        } else {
-          return (
-            <div key={idx} className="whitespace-pre-wrap">
-              {part.value}
-            </div>
-          );
-        }
-      })}
-    </div>
-  );
+  // Agent content is markdown (bold/lists/code/tables/links) — rendered by
+  // MarkdownMessage, which also keeps the old behavior of resolving
+  // backend-relative image URLs (e.g. legacy ![Plot](/api/static/plots/...))
+  // against apiOrigin.
+  return <MarkdownMessage content={content} small={isToolResult} />;
 }
 
 export function groupMessagesIntoTurns(messages: Message[]): {
