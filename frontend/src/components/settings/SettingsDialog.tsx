@@ -59,7 +59,9 @@ export function SettingsDialog() {
       title="Settings"
       size="xl"
     >
-      <div className="flex flex-col sm:flex-row gap-4 min-h-[320px]">
+      {/* Fixed height so switching sections never resizes the dialog;
+          capped below the modal's 85vh so small screens scroll inside. */}
+      <div className="flex flex-col sm:flex-row gap-4 h-[540px] max-h-[calc(85vh-7rem)]">
         <nav
           role="tablist"
           aria-label="Settings"
