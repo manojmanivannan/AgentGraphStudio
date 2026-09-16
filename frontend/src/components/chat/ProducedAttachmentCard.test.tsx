@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { ProducedAttachmentCard } from "./ProducedAttachmentCard";
 
 describe("ProducedAttachmentCard", () => {
-  it("renders the attachment name, image icon, and download link", () => {
+  it("renders an image thumbnail preview for image attachments", () => {
     render(
       <ProducedAttachmentCard
         name="plot.png"
@@ -15,6 +15,14 @@ describe("ProducedAttachmentCard", () => {
 
     expect(screen.getByText("plot.png")).toBeInTheDocument();
     expect(screen.getByTestId("attachment-icon-image")).toBeInTheDocument();
+    expect(screen.getByTestId("attachment-thumbnail-image")).toHaveAttribute(
+      "src",
+      "http://localhost:8000/api/attachments/attachment-123"
+    );
+    expect(screen.getByTestId("attachment-thumbnail-image")).toHaveAttribute(
+      "alt",
+      "plot.png"
+    );
 
     const downloadLink = screen.getByRole("link", { name: /download/i });
     expect(downloadLink).toHaveAttribute(
@@ -24,15 +32,21 @@ describe("ProducedAttachmentCard", () => {
     expect(downloadLink).toHaveAttribute("download");
   });
 
-  it("uses a JSON icon for json attachments", () => {
+  it("does not render an image thumbnail for non-image attachments", () => {
     render(
       <ProducedAttachmentCard
-        name="report.json"
-        fileType="json"
-        attachmentId="attachment-json"
+        name="report.csv"
+        fileType="csv"
+        attachmentId="attachment-csv"
       />
     );
 
-    expect(screen.getByTestId("attachment-icon-json")).toBeInTheDocument();
+    expect(screen.getByText("report.csv")).toBeInTheDocument();
+    expect(screen.getByTestId("attachment-icon-csv")).toBeInTheDocument();
+    expect(screen.queryByTestId("attachment-thumbnail-image")).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /download/i })).toHaveAttribute(
+      "href",
+      "http://localhost:8000/api/attachments/attachment-csv"
+    );
   });
 });

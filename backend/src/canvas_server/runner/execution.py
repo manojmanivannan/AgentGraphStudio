@@ -12,7 +12,6 @@ Three strategies, each extracted from the three-way branch in the original
 from __future__ import annotations
 
 import logging
-import re
 import uuid
 from abc import ABC, abstractmethod
 from collections.abc import Callable
@@ -28,6 +27,7 @@ from canvas_server.output_extraction import (
     extract_output_attachments,
     file_type_to_format,
 )
+from canvas_server.runner.attachment_events import announce_attachment_produced
 from canvas_server.runner.config import RunContext
 from canvas_server.runner.tracing import agent_span
 
@@ -43,47 +43,6 @@ if TYPE_CHECKING:
     from canvas_server.runner.run_state import CanvasRunState
     from canvas_server.runner.tool_registry import ToolRegistry
     from canvas_server.streaming_react import StreamingReAct
-
-
-def ensure_plots_in_result(result: dspy.Prediction, text: str) -> str:
-    """Scans the trajectory for markdown plot links and appends them if missing.
-
-    When an agent uses the `generate_plot` tool, the tool returns a markdown
-    image link pointing to the dynamically generated plot in the database.
-    Sometimes, the LLM forgets to include this exact link in its final answer.
-    This function searches the ReAct trajectory observations for any plot links
-    and forcefully appends them to the final text response if they are absent.
-
-    Args:
-        result: The dspy.Prediction result object containing the trajectory.
-        text (str): The final extracted text answer from the agent.
-
-    Returns:
-        str: The final text answer, with missing plot links appended.
-    """
-    if not hasattr(result, "trajectory") or not result.trajectory:
-        return text
-
-    image_regex = r"!\[.*?\]\(.*?\)"
-    links_found = []
-
-    # Check all observations in the ReAct loop trajectory
-    for key, val in result.trajectory.items():
-        if key.startswith("observation_") and isinstance(val, str):
-            matches = re.findall(image_regex, val)
-            for m in matches:
-                if m not in links_found:
-                    links_found.append(m)
-
-    if not links_found:
-        return text
-
-    # Append any links that the LLM forgot to copy
-    missing_links = [link for link in links_found if link not in text]
-    if missing_links:
-        text = text.rstrip() + "\n\n" + "\n".join(missing_links)
-
-    return text
 
 
 def _friendly_error_message(exc: Exception) -> str:
@@ -324,32 +283,17 @@ class ExecutionStrategy(ABC):
                 )
                 continue
 
-            await send_event(
-                self._event(
-                    "attachment_produced",
-                    attachment_id=str(stored.id),
-                    name=attachment.name,
-                    file_type=attachment.file_type,
-                    source="agent_output",
-                    conversation_id=str(conversation_id),
-                    run_id=str(run_id) if run_id else None,
-                    agent=agent_node.name,
-                    node_id=str(agent_id),
-                )
-            )
-            await conversation_service.persist_message(
-                role="assistant",
-                content="",
+            await announce_attachment_produced(
+                send_event=send_event,
+                conversation_service=conversation_service,
                 agent_name=agent_node.name,
-                node_id=agent_id,
-                event_type="attachment_produced",
-                args={
-                    "attachment_id": str(stored.id),
-                    "name": attachment.name,
-                    "file_type": attachment.file_type,
-                    "source": "agent_output",
-                    "run_id": str(run_id) if run_id else None,
-                },
+                agent_id=agent_id,
+                attachment_id=stored.id,
+                name=attachment.name,
+                file_type=attachment.file_type,
+                source="agent_output",
+                conversation_id=conversation_id,
+                run_id=run_id,
             )
 
     async def _run_worker(
@@ -420,7 +364,6 @@ class ExecutionStrategy(ABC):
                         get_client_response=self._services.run_state.get_client_response,
                     )
             text = result.process_result
-            text = ensure_plots_in_result(result, text)
             logger.info("Agent %s completed: result=%s", agent_node.name, text[:200])
             await self._store_output_attachments(result, agent_node, agent_id, send_event, run_id)
             await self._services.conversation_service.persist_message(

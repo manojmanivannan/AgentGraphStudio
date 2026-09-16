@@ -144,9 +144,159 @@ async def test_plot_provider_success_db():
             format="png",
             file_type="image",
             source="agent_output",
+            produced_by_run_id=None,
         )
+        # #87: the tool no longer embeds a markdown link for the LLM to copy
+        # — the plot is announced via the unified `attachment_produced` event
+        # instead, so the return value stays a plain confirmation string.
         assert "Plot generated" in result_str
-        assert "![Plot](/api/attachments/mocked-plot-uuid)" in result_str
+        assert "![Plot]" not in result_str
+        assert "attached" in result_str.lower()
+
+
+@pytest.mark.asyncio
+async def test_plot_provider_fires_attachment_produced_event_and_persists_message():
+    """#87: the plot becomes an `image`-typed AttachmentInstance (source
+    `agent_output`) going through the same storage call used by #86's
+    output-extraction mechanism, and its production fires the same
+    `attachment_produced` event/persisted message — not a separate/duplicate
+    code path."""
+    from types import SimpleNamespace
+
+    mock_sandbox_manager = MagicMock()
+    mock_session = MagicMock()
+    mock_sandbox_manager.get_session.return_value = mock_session
+
+    mock_plot = PlotOutput(format=FileType.PNG, content_base64="bW9ja19iYXNlNjRfZGF0YQ==")
+    mock_session.run.return_value = ExecutionResult(
+        exit_code=0, stdout="Plot generated", stderr="", plots=[mock_plot]
+    )
+
+    mock_repo = AsyncMock()
+    stored_attachment_id = uuid.uuid4()
+    mock_repo.save_attachment.return_value = MagicMock(id=stored_attachment_id)
+
+    agent_id = uuid.uuid4()
+    run_id = uuid.uuid4()
+    send_event = AsyncMock()
+    conversation_service = AsyncMock()
+    run_state = SimpleNamespace(
+        send_event=send_event,
+        conversation_service=conversation_service,
+        run_id=run_id,
+    )
+
+    conversation_id = uuid.uuid4()
+
+    with patch("canvas_server.runner.plot_provider.get_sandbox", new_callable=AsyncMock) as mock_get_sandbox:
+        mock_get_sandbox.return_value = mock_sandbox_manager
+
+        provider = PlotProvider(
+            conversation_id=conversation_id,
+            conversation_repo=mock_repo,
+            agent_id=agent_id,
+            agent_name="Plotter",
+            run_state=run_state,
+        )
+        await provider.generate_plot("import matplotlib.pyplot as plt; plt.show()")
+
+    mock_repo.save_attachment.assert_called_once_with(
+        conversation_id=conversation_id,
+        content=b"mock_base64_data",
+        format="png",
+        file_type="image",
+        source="agent_output",
+        produced_by_run_id=run_id,
+    )
+
+    send_event.assert_awaited_once()
+    payload = send_event.await_args.args[0]
+    assert payload["type"] == "attachment_produced"
+    assert payload["attachment_id"] == str(stored_attachment_id)
+    assert payload["file_type"] == "image"
+    assert payload["source"] == "agent_output"
+    assert payload["agent"] == "Plotter"
+    assert payload["node_id"] == str(agent_id)
+    assert payload["run_id"] == str(run_id)
+    assert payload["conversation_id"] == str(conversation_id)
+
+    conversation_service.persist_message.assert_awaited_once()
+    persist_kwargs = conversation_service.persist_message.await_args.kwargs
+    assert persist_kwargs["event_type"] == "attachment_produced"
+    assert persist_kwargs["args"]["attachment_id"] == str(stored_attachment_id)
+
+
+@pytest.mark.asyncio
+async def test_plot_provider_multiple_plots_get_distinct_names():
+    """Multiple plots produced by a single `generate_plot` call each get a
+    distinct, stable name in their `attachment_produced` announcement."""
+    from types import SimpleNamespace
+
+    mock_sandbox_manager = MagicMock()
+    mock_session = MagicMock()
+    mock_sandbox_manager.get_session.return_value = mock_session
+
+    plot_a = PlotOutput(format=FileType.PNG, content_base64="bW9ja19iYXNlNjRfZGF0YQ==")
+    plot_b = PlotOutput(format=FileType.PNG, content_base64="bW9ja19iYXNlNjRfZGF0YQ==")
+    mock_session.run.return_value = ExecutionResult(
+        exit_code=0, stdout="", stderr="", plots=[plot_a, plot_b]
+    )
+
+    mock_repo = AsyncMock()
+    mock_repo.save_attachment.side_effect = [
+        MagicMock(id=uuid.uuid4()),
+        MagicMock(id=uuid.uuid4()),
+    ]
+
+    send_event = AsyncMock()
+    run_state = SimpleNamespace(
+        send_event=send_event,
+        conversation_service=AsyncMock(),
+        run_id=None,
+    )
+
+    with patch("canvas_server.runner.plot_provider.get_sandbox", new_callable=AsyncMock) as mock_get_sandbox:
+        mock_get_sandbox.return_value = mock_sandbox_manager
+
+        provider = PlotProvider(
+            conversation_id=uuid.uuid4(),
+            conversation_repo=mock_repo,
+            agent_id=uuid.uuid4(),
+            agent_name="Plotter",
+            run_state=run_state,
+        )
+        await provider.generate_plot("plt.show(); plt.show()")
+
+    assert send_event.await_count == 2
+    names = [c.args[0]["name"] for c in send_event.await_args_list]
+    assert len(set(names)) == 2
+
+
+@pytest.mark.asyncio
+async def test_plot_provider_without_run_state_skips_event_but_still_stores():
+    """Missing agent context (e.g. unit-tests constructing PlotProvider
+    directly) must never raise — storage still happens, announcement is
+    simply skipped."""
+    mock_sandbox_manager = MagicMock()
+    mock_session = MagicMock()
+    mock_sandbox_manager.get_session.return_value = mock_session
+
+    mock_plot = PlotOutput(format=FileType.PNG, content_base64="bW9ja19iYXNlNjRfZGF0YQ==")
+    mock_session.run.return_value = ExecutionResult(
+        exit_code=0, stdout="", stderr="", plots=[mock_plot]
+    )
+
+    mock_repo = AsyncMock()
+    mock_repo.save_attachment.return_value = MagicMock(id=uuid.uuid4())
+
+    with patch("canvas_server.runner.plot_provider.get_sandbox", new_callable=AsyncMock) as mock_get_sandbox:
+        mock_get_sandbox.return_value = mock_sandbox_manager
+
+        provider = PlotProvider(conversation_id=uuid.uuid4(), conversation_repo=mock_repo)
+        result_str = await provider.generate_plot("plt.show()")
+
+    mock_repo.save_attachment.assert_called_once()
+    assert "attached" in result_str.lower()
 
 
 @pytest.mark.asyncio
@@ -271,29 +421,4 @@ def test_sandbox_manager_session_reuse_switches_enable_plotting():
     assert session2 is session1
     assert session2.enable_plotting is True
     assert session2._pooled_impl.enable_plotting is True
-
-
-def test_ensure_plots_in_result():
-    """Test ensure_plots_in_result extracts plot markdown and appends it if missing."""
-    from canvas_server.runner.execution import ensure_plots_in_result
-
-    # Case 1: Trajectory with no plots / no trajectory
-    assert ensure_plots_in_result(None, "no change") == "no change"
-
-    # Case 2: Plot present in trajectory, already in response
-    mock_prediction = MagicMock()
-    mock_prediction.trajectory = {
-        "observation_0": "matplotlib output\n\n![Plot](/api/plots/uuid123)"
-    }
-    assert ensure_plots_in_result(mock_prediction, "Check out the plot: ![Plot](/api/plots/uuid123)") == "Check out the plot: ![Plot](/api/plots/uuid123)"
-
-    # Case 3: Plot present in trajectory, missing in response -> should be appended
-    assert ensure_plots_in_result(mock_prediction, "Here is the summary of the plot.") == "Here is the summary of the plot.\n\n![Plot](/api/plots/uuid123)"
-
-    # Case 4: Multiple plots present in trajectory, missing in response -> all should be appended
-    mock_prediction.trajectory = {
-        "observation_0": "First plot: ![Plot](/api/plots/1)",
-        "observation_1": "Second plot: ![Plot](/api/plots/2)"
-    }
-    assert ensure_plots_in_result(mock_prediction, "Done.") == "Done.\n\n![Plot](/api/plots/1)\n![Plot](/api/plots/2)"
 

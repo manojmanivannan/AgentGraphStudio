@@ -807,16 +807,17 @@ custom egress network + proxy can be swapped in with no code change. Routers
 never get network sessions or `pip_install` (worker-only, enforced by the
 `AgentNodeBase` validator).
 
-**Plotting Support:**
+**Plotting Support (unified with output attachments, #87):**
 If the `enable_plotting` capability flag is checked on an Agent Node (Worker or Router):
-1. The `AgentFactory` instantiates a `PlotProvider` initialized with the current `conversation_id`.
+1. The `AgentFactory` instantiates a `PlotProvider` initialized with the current `conversation_id`, `agent_id`/`agent_name`, and a live reference to the run's `CanvasRunState` (mirroring the `ask_human` pattern — the tool closure is built once at eager setup-time but reads `run_state.send_event`/`run_state.run_id` fresh on every turn).
 2. The `PlotProvider` exposes the `generate_plot(python_code: str) -> str` tool function to the agent's available tools.
-3. When the agent runs Python plotting code (using standard matplotlib or plotly APIs), it invokes `generate_plot` which runs the script inside the Docker sandbox session (`ArtifactSandboxSession`).
+3. When the agent runs Python plotting code (using standard matplotlib or plotly APIs), it invokes `generate_plot` which runs the script inside the Docker sandbox session (`ArtifactSandboxSession`), mid-loop (not at the end of the turn).
 4. Any figures produced by calling `plt.show()` or `fig.show()` are captured by the sandbox session as base64 images.
-5. The `PlotProvider` decodes these images and persists them via `ConversationRepo.save_attachment(...)` as `AttachmentInstance` records (`file_type="image"`, `source="agent_output"`), returning a Markdown image link referencing the record (e.g., `![Plot](/api/attachments/{attachment_id})`) to the agent. This is the same unified table and `GET /api/attachments/{id}` endpoint any future attachment type uses (#79/#83) — plots are just today's only producer.
-6. The agent is strictly instructed via dynamic prompts to preserve this exact markdown image link in its final response.
-7. **Automatic Link Recovery (`ensure_plots_in_result`)**: If the agent's final text response (or sub-agent handoff result) omits the markdown plot link generated during the run, the execution engine intercepts the result, extracts any markdown image links from the tool observations, and appends them to the final response text automatically.
-8. The frontend chat overlay renders the markdown image tag natively in the conversation turn thread.
+5. The `PlotProvider` decodes these images and persists each one via `ConversationRepo.save_attachment(..., produced_by_run_id=run_id)` as an `AttachmentInstance` record (`file_type="image"`, `source="agent_output"`) — the same unified table and `GET /api/attachments/{id}` endpoint any output-attachment type uses (#79/#83/#86).
+6. For each stored plot, `PlotProvider` calls the shared `announce_attachment_produced()` helper (`runner/attachment_events.py`) — the *same* function `_store_output_attachments` (#86's post-loop output-extraction path) uses — to fire one `attachment_produced` WS event and persist one durable `attachment_produced` message. The tool's return value to the agent is now a plain confirmation string (no markdown image link embedded).
+7. The frontend renders the `attachment_produced` message via `ExecutionStepsViewer` → `ProducedAttachmentCard`, which shows an inline image thumbnail for `file_type === "image"` — the same shared card component any output attachment renders with, not a plot-specific renderer.
+
+There is no bespoke "recover the markdown link if the agent forgot to restate it" step (the old `ensure_plots_in_result`) — the attachment is announced and rendered independently of whatever text the agent's final answer contains. A legacy local-disk fallback (when no `conversation_repo` is wired) still writes to `storage/plots/` and returns a `/api/static/plots/{filename}` markdown link, since there is no `AttachmentInstance` row to announce in that path.
 
 ### streaming_react.py — StreamingReAct
 

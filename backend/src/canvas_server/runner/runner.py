@@ -541,6 +541,7 @@ class CanvasRunner:
             send_event=send_event,
             history_text=history_text,
             dspy_history=dspy_history,
+            run_id=run_id,
         )
         self.run_state.get_client_response = get_client_response
 

@@ -131,8 +131,7 @@ class HandoffToolBuilder:
                             user_request=prompt,
                             get_client_response=self.run_state.get_client_response,
                         )
-                    from canvas_server.runner.execution import ensure_plots_in_result
-                    answer = ensure_plots_in_result(result, result.process_result)
+                    answer = result.process_result
             except Exception as e:
                 answer = f"Error: {e}"
                 logger.error("Sub-agent %s failed: %s", target_name, e, exc_info=True)

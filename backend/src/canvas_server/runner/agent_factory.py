@@ -120,18 +120,22 @@ class AgentFactory:
                 )
 
             full_instructions += (
-                "\n\n[CRITICAL SYSTEM RULE] If any downstream agent or tool generates a plot "
-                "or returns a markdown image link (e.g. `![Plot](/api/static/plots/...)`), "
-                "you MUST preserve this image markdown link exactly and include it "
-                "in your final answer/response to the user. Do not omit, summarize, or modify the image link."
+                "\n\n[SYSTEM NOTE] If any downstream agent or tool produces a plot/image, "
+                "it is automatically stored and shown to the user as an attachment — you do NOT "
+                "need to repeat or embed an image link in your final answer for it to be visible. "
+                "The only exception is if a tool's result literally contains a markdown image link "
+                "(e.g. `![Plot](/api/static/plots/...)`, a legacy fallback format); in that case "
+                "preserve it exactly and include it in your response instead of omitting it."
             )
 
         if getattr(agent_node, "enable_plotting", False):
             full_instructions += (
-                "\n\n[CRITICAL SYSTEM RULE] If you call the plotting tool `generate_plot` and it returns "
-                "a markdown image link (e.g. `![Plot](/api/attachments/...)`), you MUST preserve this image "
-                "markdown link exactly and include it in your final answer/response (process_result). "
-                "Do not omit, summarize, or modify the image link."
+                "\n\n[SYSTEM NOTE] Calling the plotting tool `generate_plot` automatically stores "
+                "the resulting image and shows it to the user as an attachment — you do NOT need to "
+                "embed a markdown image link in your final answer/response (process_result) for it "
+                "to be visible. The only exception is if the tool's result literally contains a "
+                "markdown image link (e.g. `![Plot](/api/static/plots/...)`, a legacy fallback "
+                "format); in that case preserve it exactly instead of omitting it."
             )
 
         if getattr(agent_node, "enable_coding", False):
@@ -316,7 +320,13 @@ class AgentFactory:
             )
 
         if getattr(agent_node, "enable_plotting", False) and self._conversation_id:
-            plot_provider = PlotProvider(self._conversation_id, self._conversation_repo)
+            plot_provider = PlotProvider(
+                self._conversation_id,
+                self._conversation_repo,
+                agent_id=agent_node.id,
+                agent_name=agent_node.name,
+                run_state=self._run_state,
+            )
             tools.append(plot_provider.generate_plot)
 
         # Coding + network share one CodeProvider so run_code and pip_install

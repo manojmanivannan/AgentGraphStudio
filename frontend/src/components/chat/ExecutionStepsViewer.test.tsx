@@ -187,4 +187,29 @@ describe("ExecutionStepsViewer", () => {
       "http://localhost:8000/api/attachments/attachment-42"
     );
   });
+
+  it("renders an image thumbnail for a produced plot attachment (#87)", () => {
+    const plotStep: Message = {
+      id: "plot-step",
+      conversation_id: "conv-1",
+      role: "assistant",
+      content: "",
+      agent_name: "Plotter",
+      event_type: "attachment_produced",
+      args: {
+        attachment_id: "attachment-plot-1",
+        name: "plot",
+        file_type: "image",
+        source: "agent_output",
+      },
+      created_at: "2026-01-01T00:00:00.000Z",
+    };
+
+    render(<ExecutionStepsViewer {...defaultProps} steps={[plotStep]} />);
+
+    expect(screen.getByTestId("attachment-thumbnail-image")).toHaveAttribute(
+      "src",
+      "http://localhost:8000/api/attachments/attachment-plot-1"
+    );
+  });
 });
