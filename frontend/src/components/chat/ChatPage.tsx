@@ -588,8 +588,8 @@ export default function ChatPage() {
                       navigate(`/chat/empty?canvas=${selectedId}`);
                     }
                   }}
-                  disabled={!isEmpty}
-                  title={!isEmpty ? "Cannot change canvas mid-conversation" : "Select canvas for chat"}
+                  disabled={messages.length > 0}
+                  title={messages.length > 0 ? "Cannot change canvas mid-conversation" : "Select canvas for chat"}
                   className="bg-[var(--color-surface)] border border-[var(--color-border-default)] rounded-lg px-2.5 py-1 text-xs font-semibold text-[var(--color-text-primary)] outline-none focus:border-[var(--color-accent)] disabled:opacity-60 disabled:cursor-not-allowed transition-all duration-200 cursor-pointer"
                 >
                   {allCanvases.map((c) => (

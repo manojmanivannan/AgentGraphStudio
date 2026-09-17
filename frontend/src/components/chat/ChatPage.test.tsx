@@ -1069,7 +1069,7 @@ describe("ChatPage component", () => {
         });
     });
 
-    it("renders canvas selector dropdown and disables it when conversation is active", async () => {
+    it("renders canvas selector dropdown and disables it once the conversation has messages", async () => {
         server.use(
             http.get(`${API}/canvases`, () =>
                 HttpResponse.json([
@@ -1083,7 +1083,12 @@ describe("ChatPage component", () => {
                         id: "conv-1",
                         canvas_id: "canvas-1",
                         name: "Test Chat",
-                        messages: [],
+                        messages: [
+                            {
+                                id: "m1", conversation_id: "conv-1", role: "user",
+                                content: "Hello agent", created_at: "2026-01-01T00:00:00.000Z",
+                            },
+                        ],
                     })
                 )
             ),
@@ -1128,6 +1133,42 @@ describe("ChatPage component", () => {
             const dropdown = screen.getByTitle("Select canvas for chat") as HTMLSelectElement;
             expect(dropdown).toBeInTheDocument();
             expect(dropdown).not.toBeDisabled();
+        });
+    });
+
+    it("allows changing the canvas selector for a freshly created conversation with no messages yet", async () => {
+        server.use(
+            http.get(`${API}/canvases`, () =>
+                HttpResponse.json([
+                    { id: "canvas-1", name: "My Canvas" },
+                    { id: "canvas-2", name: "Second Canvas" },
+                ])
+            ),
+            http.get(`${API}/canvases/conversations/conv-1`, () =>
+                HttpResponse.json(
+                    mockConversation({
+                        id: "conv-1",
+                        canvas_id: "canvas-1",
+                        name: "New Conversation",
+                        messages: [],
+                    })
+                )
+            ),
+            http.get(`${API}/canvases/canvas-1`, () =>
+                HttpResponse.json({ id: "canvas-1", name: "My Canvas" })
+            ),
+            http.get(`${API}/canvases/canvas-1/conversations`, () =>
+                HttpResponse.json([])
+            )
+        );
+
+        renderChatPage("conv-1");
+
+        await waitFor(() => {
+            const dropdown = screen.getByTitle("Select canvas for chat") as HTMLSelectElement;
+            expect(dropdown).toBeInTheDocument();
+            expect(dropdown).not.toBeDisabled();
+            expect(dropdown.value).toBe("canvas-1");
         });
     });
 
