@@ -261,6 +261,7 @@ class BackgroundRunWorker:
                     send_event=send_event,
                     target_agent_id=target_agent_id,
                     get_client_response=get_client_response,
+                    run_id=run_id,
                 )
                 latest_run = await run_repo.get_or_404(run_id)
                 if latest_run.status == "aborting":

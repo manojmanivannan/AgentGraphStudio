@@ -33,6 +33,7 @@ async def test_worker_processes_queued_run_and_marks_completed(
             send_event,
             target_agent_id=None,
             get_client_response=None,
+            run_id=None,
         ):
             await send_event({"type": "run_start"})
             await send_event({"type": "run_complete", "result": "ok"})
@@ -89,6 +90,7 @@ async def test_worker_reclaims_expired_running_lease(
             send_event,
             target_agent_id=None,
             get_client_response=None,
+            run_id=None,
         ):
             await send_event({"type": "run_complete"})
 
@@ -135,6 +137,7 @@ async def test_worker_marks_run_aborted_when_abort_requested_mid_execution(
             send_event,
             target_agent_id=None,
             get_client_response=None,
+            run_id=None,
         ):
             await send_event({"type": "run_start"})
             first_event_sent.set()
@@ -233,6 +236,7 @@ async def test_worker_passes_get_client_response_that_uses_interrupt_store(
             send_event,
             target_agent_id=None,
             get_client_response=None,
+            run_id=None,
         ):
             assert get_client_response is not None, "get_client_response must not be None"
 
@@ -310,6 +314,7 @@ async def test_worker_resumes_interrupt_from_durable_event_when_api_process_is_s
             send_event,
             target_agent_id=None,
             get_client_response=None,
+            run_id=None,
         ):
             request_id = "durable-req-001"
             await send_event(

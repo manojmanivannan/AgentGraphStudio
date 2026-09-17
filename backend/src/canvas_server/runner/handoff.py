@@ -8,12 +8,16 @@ import uuid
 from collections.abc import Callable, Coroutine
 from typing import TYPE_CHECKING, Any
 
+import dspy
+
 from canvas_server.events import EventCallback
+from canvas_server.runner.execution import store_output_attachments
+from canvas_server.runner.input_attachment_delivery import (
+    deliver_and_announce_input_attachments,
+)
 from canvas_server.runner.tracing import agent_span
 
 if TYPE_CHECKING:
-    import dspy
-
     from canvas_server.models.canvas import AgentNode
     from canvas_server.runner.agent_factory import AgentFactory
     from canvas_server.runner.conversation import ConversationService
@@ -113,6 +117,36 @@ class HandoffToolBuilder:
             )
 
             prompt = self.agent_factory.build_worker_prompt(task, history)
+
+            # Resolve/materialize any declared input attachments for the
+            # handoff target (#88). ``agent_start`` was already emitted
+            # unconditionally above, so this passes ``emit_agent_start=False``
+            # — only the ``attachment_consumed`` announcement(s) are added
+            # when there's something to report. See
+            # ``deliver_and_announce_input_attachments`` for the shared
+            # resolve → emit → announce → augment-prompt shape also used by
+            # ``ExecutionStrategy._deliver_input_attachments`` in
+            # ``execution.py`` (entry-point call sites, which pass
+            # ``emit_agent_start=True`` instead since they never otherwise
+            # emit ``agent_start`` themselves).
+            attachment_kwargs: dict[str, Any] = {}
+            canvas = getattr(self.run_state, "canvas", None)
+            conversation_repo = getattr(self.conversation_service, "conversation_repo", None)
+            conversation_id = getattr(self.conversation_service, "conversation_id", None)
+            if canvas is not None and conversation_repo is not None and conversation_id is not None:
+                prompt, attachment_kwargs = await deliver_and_announce_input_attachments(
+                    agent_node=target_node,
+                    agent_id=target_id,
+                    canvas=canvas,
+                    conversation_repo=conversation_repo,
+                    conversation_id=conversation_id,
+                    conversation_service=self.conversation_service,
+                    send_event=send_event,
+                    run_id=self.run_state.run_id,
+                    user_prompt=prompt,
+                    emit_agent_start=False,
+                )
+
             try:
                 with agent_span(
                     target_name,
@@ -125,14 +159,24 @@ class HandoffToolBuilder:
                             user_request=prompt,
                             history=dspy_history,
                             get_client_response=self.run_state.get_client_response,
+                            **attachment_kwargs,
                         )
                     else:
                         result = await target_agent.aforward(
                             user_request=prompt,
                             get_client_response=self.run_state.get_client_response,
+                            **attachment_kwargs,
                         )
-                    from canvas_server.runner.execution import ensure_plots_in_result
-                    answer = ensure_plots_in_result(result, result.process_result)
+                    answer = result.process_result
+                    await store_output_attachments(
+                        result=result,
+                        agent_node=target_node,
+                        agent_id=target_id,
+                        send_event=send_event,
+                        conversation_service=self.conversation_service,
+                        canvas=canvas,
+                        run_id=getattr(self.run_state, "run_id", None),
+                    )
             except Exception as e:
                 answer = f"Error: {e}"
                 logger.error("Sub-agent %s failed: %s", target_name, e, exc_info=True)

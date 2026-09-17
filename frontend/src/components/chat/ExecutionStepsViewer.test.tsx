@@ -5,6 +5,7 @@ import type { Message } from "@/types";
 
 describe("ExecutionStepsViewer", () => {
   const defaultProps = {
+    conversationId: "conv-1",
     steps: [],
     isStreaming: false,
     isExpanded: true,
@@ -133,5 +134,156 @@ describe("ExecutionStepsViewer", () => {
     expect(screen.getByText(/SimpleAgent · tool_result/i)).toBeInTheDocument();
     expect(screen.getByText("Simple tool output")).toBeInTheDocument();
     expect(screen.queryByText("Python Code")).not.toBeInTheDocument();
+  });
+
+  it("renders the HITL attachment uploader for an active human input request", () => {
+    const humanInputStep: Message = {
+      id: "hitl-step",
+      conversation_id: "conv-1",
+      role: "assistant",
+      content: "Upload the source file",
+      agent_name: "Planner",
+      node_id: "agent-node-1",
+      event_type: "human_input_request",
+      created_at: "2026-01-01T00:00:00.000Z",
+    };
+
+    render(
+      <ExecutionStepsViewer
+        {...defaultProps}
+        steps={[humanInputStep]}
+        activeInterrupt={{ message_id: "hitl-step" }}
+      />
+    );
+
+    expect(screen.getByRole("button", { name: /upload attachment/i })).toBeInTheDocument();
+  });
+
+  it("renders produced attachment steps with a download link instead of raw content", () => {
+    const attachmentStep: Message = {
+      id: "attachment-step",
+      conversation_id: "conv-1",
+      role: "assistant",
+      content: "",
+      agent_name: "ReportAgent",
+      event_type: "attachment_produced",
+      args: {
+        attachment_id: "attachment-42",
+        name: "report.csv",
+        file_type: "csv",
+        source: "agent_output",
+      },
+      created_at: "2026-01-01T00:00:00.000Z",
+    };
+
+    render(<ExecutionStepsViewer {...defaultProps} steps={[attachmentStep]} />);
+
+    expect(screen.getByText(/ReportAgent · attachment_produced/i)).toBeInTheDocument();
+    expect(screen.getByText("report.csv")).toBeInTheDocument();
+
+    const downloadLink = screen.getByRole("link", { name: /download/i });
+    expect(downloadLink).toHaveAttribute(
+      "href",
+      "http://localhost:8000/api/attachments/attachment-42"
+    );
+  });
+
+  it("renders an image thumbnail for a produced plot attachment (#87)", () => {
+    const plotStep: Message = {
+      id: "plot-step",
+      conversation_id: "conv-1",
+      role: "assistant",
+      content: "",
+      agent_name: "Plotter",
+      event_type: "attachment_produced",
+      args: {
+        attachment_id: "attachment-plot-1",
+        name: "plot",
+        file_type: "image",
+        source: "agent_output",
+      },
+      created_at: "2026-01-01T00:00:00.000Z",
+    };
+
+    render(<ExecutionStepsViewer {...defaultProps} steps={[plotStep]} />);
+
+    expect(screen.getByTestId("attachment-thumbnail-image")).toHaveAttribute(
+      "src",
+      "http://localhost:8000/api/attachments/attachment-plot-1"
+    );
+  });
+
+  it("renders consumed attachment steps with a file path badge", () => {
+    const attachmentStep: Message = {
+      id: "attachment-consumed-step",
+      conversation_id: "conv-1",
+      role: "assistant",
+      content: "",
+      agent_name: "ReportAgent",
+      event_type: "attachment_consumed",
+      args: {
+        attachment_id: "attachment-52",
+        name: "report.csv",
+        file_type: "csv",
+        delivery_method: "file_path",
+      },
+      created_at: "2026-01-01T00:00:00.000Z",
+    };
+
+    render(<ExecutionStepsViewer {...defaultProps} steps={[attachmentStep]} />);
+
+    expect(screen.getByText(/ReportAgent · attachment_consumed/i)).toBeInTheDocument();
+    expect(screen.getByText("report.csv")).toBeInTheDocument();
+    expect(screen.getByTestId("attachment-path-badge")).toBeInTheDocument();
+  });
+
+  it("renders both a thumbnail and path badge for dual consumed image attachments", () => {
+    const attachmentStep: Message = {
+      id: "attachment-consumed-dual-step",
+      conversation_id: "conv-1",
+      role: "assistant",
+      content: "",
+      agent_name: "VisionAgent",
+      event_type: "attachment_consumed",
+      args: {
+        attachment_id: "attachment-53",
+        name: "plot.png",
+        file_type: "image",
+        delivery_method: "dual",
+      },
+      created_at: "2026-01-01T00:00:00.000Z",
+    };
+
+    render(<ExecutionStepsViewer {...defaultProps} steps={[attachmentStep]} />);
+
+    expect(screen.getByTestId("attachment-path-badge")).toBeInTheDocument();
+    expect(screen.getByTestId("attachment-thumbnail-image")).toHaveAttribute(
+      "src",
+      "http://localhost:8000/api/attachments/attachment-53"
+    );
+  });
+
+  it("renders the manifest note for manifest_only consumed attachments", () => {
+    const attachmentStep: Message = {
+      id: "attachment-consumed-manifest-step",
+      conversation_id: "conv-1",
+      role: "assistant",
+      content: "",
+      agent_name: "ReaderAgent",
+      event_type: "attachment_consumed",
+      args: {
+        attachment_id: "attachment-54",
+        name: "archive.bin",
+        file_type: "binary",
+        delivery_method: "manifest_only",
+      },
+      created_at: "2026-01-01T00:00:00.000Z",
+    };
+
+    render(<ExecutionStepsViewer {...defaultProps} steps={[attachmentStep]} />);
+
+    expect(screen.getByTestId("attachment-manifest-note")).toBeInTheDocument();
+    expect(screen.queryByTestId("attachment-path-badge")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("attachment-thumbnail-image")).not.toBeInTheDocument();
   });
 });

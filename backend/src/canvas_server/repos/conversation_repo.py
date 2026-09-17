@@ -5,9 +5,10 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from canvas_server.config import settings
 from canvas_server.events import EventPayload
-from canvas_server.exceptions import ConversationNotFoundError
-from canvas_server.models.canvas import Conversation, ConversationPlot, Message
+from canvas_server.exceptions import AttachmentTooLargeError, ConversationNotFoundError
+from canvas_server.models.canvas import AttachmentInstance, Conversation, Message
 
 
 class ConversationRepo:
@@ -115,18 +116,34 @@ class ConversationRepo:
         await self.session.flush()
         return conv
 
-    async def save_plot(
+    async def save_attachment(
         self,
         conversation_id: uuid.UUID,
         content: bytes,
         format: str = "png",
-    ) -> ConversationPlot:
-        plot = ConversationPlot(
+        file_type: str = "image",
+        source: str = "agent_output",
+        attachment_node_id: uuid.UUID | None = None,
+        produced_by_run_id: uuid.UUID | None = None,
+    ) -> AttachmentInstance:
+        size_bytes = len(content)
+        if size_bytes > settings.max_attachment_size_bytes:
+            raise AttachmentTooLargeError(
+                f"Attachment content is {size_bytes} bytes, which exceeds the "
+                f"{settings.max_attachment_size_bytes} byte limit."
+            )
+
+        attachment = AttachmentInstance(
             conversation_id=conversation_id,
             content=content,
+            size_bytes=size_bytes,
             format=format,
+            file_type=file_type,
+            source=source,
+            attachment_node_id=attachment_node_id,
+            produced_by_run_id=produced_by_run_id,
         )
-        self.session.add(plot)
+        self.session.add(attachment)
         await self.session.flush()
 
         conv_result = await self.session.execute(
@@ -137,17 +154,66 @@ class ConversationRepo:
             conv.updated_at = datetime.now(UTC)
 
         await self.session.commit()
-        return plot
+        return attachment
 
-    async def get_plot(self, plot_id: uuid.UUID) -> ConversationPlot | None:
+    async def get_attachment(self, attachment_id: uuid.UUID) -> AttachmentInstance | None:
         result = await self.session.execute(
-            select(ConversationPlot)
+            select(AttachmentInstance)
             .options(
-                selectinload(ConversationPlot.conversation).selectinload(
+                selectinload(AttachmentInstance.conversation).selectinload(
                     Conversation.canvas
                 )
             )
-            .where(ConversationPlot.id == plot_id)
+            .where(AttachmentInstance.id == attachment_id)
         )
         return result.scalar_one_or_none()
+
+    async def get_unconsumed_input_attachments(
+        self, conversation_id: uuid.UUID, node_ids: list[uuid.UUID]
+    ) -> list[AttachmentInstance]:
+        """Input attachments not yet delivered to their declared consumer.
+
+        Covers both ``source="chat_upload"`` instances (#88) and
+        ``source="agent_output"`` instances (#89): an Attachment node has no
+        direction of its own (see ``AttachmentNode``) — the *same* node can be
+        wired as an output slot for one agent (a ``produces`` edge) and an
+        input slot for a different, downstream/upstream agent reached via
+        handoff (a ``consumes`` edge). Once that producing agent's output is
+        stored as an ``AttachmentInstance`` against the shared node id, it
+        must be delivered to the declared consumer exactly like a chat
+        upload — same delivery-method resolution, same fallback ladder, same
+        ``attachment_consumed`` event. Scoped to the given declared input
+        Attachment node ids, so a call site only ever sees attachments
+        actually wired as inputs to the agent it is about to run. Ordered by
+        ``created_at`` so a run delivers instances in the order they arrived,
+        regardless of source.
+        """
+        if not node_ids:
+            return []
+        result = await self.session.execute(
+            select(AttachmentInstance)
+            .where(
+                AttachmentInstance.conversation_id == conversation_id,
+                AttachmentInstance.source.in_(("chat_upload", "agent_output")),
+                AttachmentInstance.attachment_node_id.in_(node_ids),
+                AttachmentInstance.consumed_at.is_(None),
+            )
+            .order_by(AttachmentInstance.created_at)
+        )
+        return list(result.scalars().all())
+
+    async def mark_attachment_consumed(self, attachment_id: uuid.UUID) -> None:
+        """Marks an input ``AttachmentInstance`` as delivered (#88).
+
+        Idempotent and best-effort: a missing row is simply a no-op (the
+        caller never needs to branch on whether the mark "took").
+        """
+        result = await self.session.execute(
+            select(AttachmentInstance).where(AttachmentInstance.id == attachment_id)
+        )
+        attachment = result.scalar_one_or_none()
+        if attachment is None:
+            return
+        attachment.consumed_at = datetime.now(UTC)
+        await self.session.commit()
 

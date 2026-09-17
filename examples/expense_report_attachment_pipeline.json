@@ -1,0 +1,63 @@
+{
+  "name": "expense_report_attachment_pipeline",
+  "nodes": {
+    "agents": [
+      {
+        "id": "fca08931-2de1-4c22-86d1-0de885249ce4",
+        "name": "ExpenseReportAnalyst",
+        "role": "Expense report analyst",
+        "instructions": "Analyze the uploaded Expense CSV attachment. It is delivered as a sandbox file path, so read the file with Python before answering. Summarize spending by category, identify the largest expense, and return a concise explanation. You must also produce the Expense Summary attachment as valid JSON with keys category_totals, largest_expense, and recommendations. The output attachment name and file_type must exactly match its declared attachment node: Expense Summary and json.",
+        "model_name": "ollama:llama3.1",
+        "agent_type": "worker",
+        "enable_plotting": false,
+        "enable_coding": true,
+        "enable_network": false,
+        "enable_memory": false,
+        "enable_conversation_history": true,
+        "enable_rag": false,
+        "rag_chunk_size": 1000,
+        "rag_top_k": 5,
+        "is_entry_point": true,
+        "enable_hitl": false,
+        "position_x": 360,
+        "position_y": 280
+      }
+    ],
+    "tools": [],
+    "attachments": [
+      {
+        "id": "f2188a34-f8b0-42cb-a249-8089790437eb",
+        "name": "Expense CSV",
+        "file_type": "csv",
+        "delivery_method": "file_path",
+        "description": "Upload a CSV expense export with date, merchant, category, and amount columns.",
+        "position_x": 60,
+        "position_y": 280
+      },
+      {
+        "id": "90cd079e-26a8-4e45-8c88-bd6bc1e9bff8",
+        "name": "Expense Summary",
+        "file_type": "json",
+        "delivery_method": "inline",
+        "description": "A JSON expense analysis produced after processing the uploaded CSV.",
+        "position_x": 760,
+        "position_y": 280
+      }
+    ]
+  },
+  "edges": [
+    {
+      "id": "e1d06354-53e5-42d9-bca5-c52c27f280d0",
+      "source_node_id": "f2188a34-f8b0-42cb-a249-8089790437eb",
+      "target_node_id": "fca08931-2de1-4c22-86d1-0de885249ce4",
+      "edge_type": "consumes"
+    },
+    {
+      "id": "e4f6161e-7dea-4695-8bf7-4ecee0500d83",
+      "source_node_id": "fca08931-2de1-4c22-86d1-0de885249ce4",
+      "target_node_id": "90cd079e-26a8-4e45-8c88-bd6bc1e9bff8",
+      "edge_type": "produces"
+    }
+  ],
+  "documents": []
+}

@@ -75,6 +75,49 @@ export interface ToolNodeData {
   requiresApproval?: boolean;
 }
 
+export type AttachmentFileType =
+  | "csv"
+  | "json"
+  | "text"
+  | "python"
+  | "yaml"
+  | "image"
+  | "pdf"
+  | "binary"
+  | string;
+
+export interface AttachmentProducedArgs {
+  attachment_id: string;
+  name: string;
+  file_type: string;
+  source: string;
+}
+
+export interface AttachmentConsumedArgs {
+  attachment_id: string;
+  name: string;
+  file_type: string;
+  source?: string;
+  delivery_method: string;
+}
+
+export interface AttachmentNodeData {
+  id: string;
+  name: string;
+  fileType: AttachmentFileType;
+  deliveryMethod?: "inline" | "file_path";
+  description?: string;
+}
+
+export interface ChatAttachmentUploadResult {
+  filename: string;
+  success: boolean;
+  attachment_id?: string | null;
+  node_id?: string | null;
+  file_type?: string | null;
+  error?: string | null;
+}
+
 type ExecutionEventBase = {
   run_id?: string;
   sequence?: number;
@@ -94,6 +137,8 @@ export type ExecutionEvent = ExecutionEventBase & (
   | { type: "warning"; message: string; agent?: string; node_id?: string }
   | { type: "human_input_request"; request_id: string; question: string; agent: string; node_id?: string }
   | { type: "tool_approval_request"; request_id: string; tool: string; args?: Record<string, unknown>; agent: string; node_id?: string }
+  | { type: "attachment_produced"; attachment_id: string; name: string; file_type: string; source: string; conversation_id?: string; agent?: string; node_id?: string }
+  | { type: "attachment_consumed"; attachment_id: string; name: string; file_type: string; source?: string; delivery_method: string; conversation_id?: string; agent?: string; node_id?: string }
   | { type: "human_input_response"; request_id: string; content: string }
   | { type: "tool_approval_response"; request_id: string; approved: boolean }
   | { type: "interrupt_response"; request_id: string; response?: any; content?: string }
@@ -148,6 +193,15 @@ export interface CanvasSavePayload {
       position_x: number;
       position_y: number;
     }[];
+    attachments?: {
+      id: string;
+      name: string;
+      file_type: string;
+      delivery_method: string;
+      description: string;
+      position_x: number;
+      position_y: number;
+    }[];
   };
   edges: {
     id: string;
@@ -192,6 +246,16 @@ export interface CanvasResponse {
       packages?: string;
       args: ToolArgument[];
       requires_approval: boolean;
+      position_x: number;
+      position_y: number;
+    }>;
+    attachments?: Array<{
+      id: string;
+      canvas_id: string;
+      name: string;
+      file_type: string;
+      delivery_method: string;
+      description: string;
       position_x: number;
       position_y: number;
     }>;

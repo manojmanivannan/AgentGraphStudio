@@ -120,4 +120,87 @@ describe("MessageTurn timestamps", () => {
 
     expect(document.querySelectorAll("time")).toHaveLength(0);
   });
+
+  it("renders the HITL attachment uploader for a collapsed active human input request", () => {
+    const humanInterrupt: Message = {
+      id: "hitl-1",
+      conversation_id: "conv-1",
+      role: "assistant",
+      content: "Please upload the CSV file.",
+      agent_name: "Planner",
+      node_id: "agent-node-1",
+      event_type: "human_input_request",
+      created_at: "2026-01-01T00:00:10.000Z",
+    };
+
+    render(
+      <MessageTurn
+        {...defaultProps}
+        turn={{
+          ...baseTurn,
+          userMessage,
+          steps: [humanInterrupt],
+          humanInterrupt,
+        }}
+        activeInterrupt={{ message_id: "hitl-1" }}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: /upload attachment/i })).toBeInTheDocument();
+  });
+
+  it("renders input attachments below the user message and output attachments below the final answer", () => {
+    const inputAttachment: Message = {
+      id: "input-attachment",
+      conversation_id: "conv-1",
+      role: "assistant",
+      content: "",
+      event_type: "attachment_consumed",
+      args: {
+        attachment_id: "attachment-input",
+        name: "expenses.csv",
+        file_type: "csv",
+        delivery_method: "file_path",
+      },
+      created_at: "2026-01-01T00:00:10.000Z",
+    };
+    const outputAttachment: Message = {
+      id: "output-attachment",
+      conversation_id: "conv-1",
+      role: "assistant",
+      content: "",
+      event_type: "attachment_produced",
+      args: {
+        attachment_id: "attachment-output",
+        name: "Expense Summary",
+        file_type: "json",
+        source: "agent_output",
+      },
+      created_at: "2026-01-01T00:00:11.000Z",
+    };
+
+    render(
+      <MessageTurn
+        {...defaultProps}
+        turn={{
+          ...baseTurn,
+          userMessage,
+          finalAnswer,
+          inputAttachments: [inputAttachment],
+          outputAttachments: [outputAttachment],
+        }}
+      />,
+    );
+
+    expect(screen.getByText("expenses.csv")).toBeInTheDocument();
+    expect(screen.getByText("Expense Summary")).toBeInTheDocument();
+    const downloadLinks = screen.getAllByRole("link", { name: /download/i });
+    expect(downloadLinks).toHaveLength(2);
+    expect(
+      downloadLinks.find((link) => link.getAttribute("download") === "expenses.csv"),
+    ).toHaveAttribute("href", "http://localhost:8000/api/attachments/attachment-input");
+    expect(
+      downloadLinks.find((link) => link.getAttribute("download") === "Expense Summary"),
+    ).toHaveAttribute("href", "http://localhost:8000/api/attachments/attachment-output");
+  });
 });

@@ -2,6 +2,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { http, HttpResponse } from "msw";
 import { server } from "@/test/mocks/server";
 import {
+  interceptAttachmentUpload,
+  jsonAttachmentUploadResponse,
+} from "@/test/mocks/attachmentUpload";
+import {
   createCanvas,
   listCanvases,
   getCanvas,
@@ -19,6 +23,7 @@ import {
   testTool,
   listAgentDocuments,
   uploadAgentDocument,
+  uploadChatAttachments,
   deleteAgentDocument,
   register,
   login,
@@ -436,6 +441,64 @@ describe("api", () => {
       const file = new File(["test data"], "test.txt", { type: "text/plain" });
       const res = await uploadAgentDocument("canvas-1", "agent-1", file);
       expect(res.name).toBe("test.txt");
+    });
+
+    describe("uploadChatAttachments", () => {
+      it("uploads files in order and includes the optional agent_id", async () => {
+        const expectedResults = [
+          {
+            filename: "sales.csv",
+            success: true,
+            attachment_id: "attachment-1",
+            node_id: "node-1",
+            file_type: "csv",
+            error: null,
+          },
+          {
+            filename: "notes.txt",
+            success: false,
+            attachment_id: null,
+            node_id: null,
+            file_type: "text",
+            error: "Rejected by agent",
+          },
+        ];
+        interceptAttachmentUpload((url, formData) => {
+          expect(url).toBe(`${API}/canvases/conversations/conv-1/attachments`);
+          const files = formData.getAll("files");
+          expect(files).toHaveLength(2);
+          expect(
+            files.map((file) => (file as File).name)
+          ).toEqual(["sales.csv", "notes.txt"]);
+          expect(formData.get("agent_id")).toBe("agent-1");
+          return jsonAttachmentUploadResponse(expectedResults);
+        });
+
+        const results = await uploadChatAttachments(
+          "conv-1",
+          [
+            new File(["sales"], "sales.csv", { type: "text/csv" }),
+            new File(["notes"], "notes.txt", { type: "text/plain" }),
+          ],
+          "agent-1"
+        );
+
+        expect(results).toEqual(expectedResults);
+      });
+
+      it("throws when the upload request fails", async () => {
+        server.use(
+          http.post(`${API}/canvases/conversations/:conversationId/attachments`, () => {
+            return new HttpResponse(null, { status: 500 });
+          })
+        );
+
+        await expect(
+          uploadChatAttachments("conv-1", [
+            new File(["bad"], "bad.bin", { type: "application/octet-stream" }),
+          ])
+        ).rejects.toThrow("Failed to upload attachments");
+      });
     });
 
     it("should throw error when upload fails", async () => {

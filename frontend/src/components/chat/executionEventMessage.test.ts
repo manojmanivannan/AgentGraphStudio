@@ -7,6 +7,7 @@ import {
   classifyToolResult,
   executionEventToMessage,
 } from "./executionEventMessage";
+import type { ExecutionEvent } from "@/types";
 
 
 interface ToolResultContractCase {
@@ -199,6 +200,73 @@ describe("executionEventToMessage", () => {
 
     expect(message).toBeNull();
   });
+
+  it("maps attachment_produced events to assistant attachment transcript messages", () => {
+    const event: ExecutionEvent = {
+      type: "attachment_produced",
+      attachment_id: "attachment-1",
+      name: "report.csv",
+      file_type: "csv",
+      source: "agent_output",
+      agent: "ReportAgent",
+      node_id: "node-3",
+    };
+
+    const message = executionEventToMessage(event, baseContext);
+
+    expect(message).toEqual({
+      id: "msg-1",
+      conversation_id: "conv-1",
+      role: "assistant",
+      content: "",
+      agent_name: "ReportAgent",
+      node_id: "node-3",
+      event_type: "attachment_produced",
+      args: {
+        attachment_id: "attachment-1",
+        name: "report.csv",
+        file_type: "csv",
+        source: "agent_output",
+      },
+      created_at: "2026-01-01T00:00:00.000Z",
+    });
+  });
+
+  it.each(["inline", "file_path", "dual", "manifest_only"])(
+    "maps attachment_consumed events with delivery_method=%s to assistant attachment transcript messages",
+    (deliveryMethod) => {
+      const event = {
+        type: "attachment_consumed",
+        attachment_id: "attachment-1",
+        name: "report.csv",
+        file_type: "csv",
+        source: "chat_upload",
+        delivery_method: deliveryMethod,
+        agent: "ReportAgent",
+        node_id: "node-3",
+      } as const;
+
+      const message = executionEventToMessage(event as ExecutionEvent, baseContext);
+
+      expect(message).toEqual({
+        id: "msg-1",
+        conversation_id: "conv-1",
+        role: "assistant",
+        content: "",
+        agent_name: "ReportAgent",
+        node_id: "node-3",
+        event_type: "attachment_consumed",
+        args: {
+          attachment_id: "attachment-1",
+          name: "report.csv",
+          file_type: "csv",
+          source: "chat_upload",
+          delivery_method: deliveryMethod,
+        },
+        created_at: "2026-01-01T00:00:00.000Z",
+      });
+    }
+  );
 });
 
 

@@ -71,7 +71,7 @@ A ZIP archive export/import format for a Canvas. It contains a `manifest.json` p
 _Avoid_: bundle, tarball, archive format
 
 **Conversation ZIP package**:
-A ZIP archive export/import format for a Conversation. It contains a `manifest.json` with the conversation's messages, metadata, and plot references, as well as binary plot image files under `plots/`. During import, plot image IDs are remapped to prevent UUID collisions, and references in message content are updated automatically.
+A ZIP archive export/import format for a Conversation. It contains a `manifest.json` with the conversation's messages, metadata, and attachment references, as well as binary attachment files under `attachments/`. During import, attachment IDs are remapped to prevent UUID collisions, and references in message content are updated automatically.
 _Avoid_: thread export, conversation archive, text dump
 
 **RAG Chunk Size**:
@@ -95,8 +95,12 @@ Running a tool function in the sandbox with user-provided argument values and re
 _Avoid_: Playground, REPL, runner
 
 **Plotting / PlotProvider**:
-A capability that enables agents to generate visual charts and plots by executing python code containing matplotlib or plotly commands inside the sandboxed Docker session. The generated plots are captured, saved to the database as `ConversationPlot` records, and returned to the conversation as markdown image links referencing the database record (e.g., `![Plot](/api/plots/{plot_id})`). The execution engine also implements automatic plot link recovery (`ensure_plots_in_result`) to ensure that any generated plot is appended to the agent's final text response even if the LLM forgot to include it.
+A capability that enables agents to generate visual charts and plots by executing python code containing matplotlib or plotly commands inside the sandboxed Docker session. The generated plots are captured and saved to the database as `AttachmentInstance` records (`file_type="image"`, `source="agent_output"`) — the same unified attachment table any other attachment type flows through — and returned to the conversation as markdown image links referencing the record (e.g., `![Plot](/api/attachments/{attachment_id})`). The execution engine also implements automatic plot link recovery (`ensure_plots_in_result`) to ensure that any generated plot is appended to the agent's final text response even if the LLM forgot to include it.
 _Avoid_: Client-side charting, host-side plotting, inline plot generation
+
+**Attachment Instance**:
+The unified storage/retrieval record for any binary attachment flowing through a conversation (`attachment_instances` table), generalizing the earlier plot-only `ConversationPlot` table. Fields: `conversation_id`, `attachment_node_id` (placeholder linkage to a future Attachment canvas node, currently unenforced), `file_type`, `source` (`agent_output` | `chat_upload`), `produced_by_run_id`, `content`, `size_bytes`, `format`, `created_at`. Content is hard-capped at `settings.max_attachment_size_bytes` (25MB), rejected at write time via `AttachmentTooLargeError`. Retrieved via `GET /api/attachments/{id}`.
+_Avoid_: Plot record, file blob, media object
 
 **Entry Point**:
 A configuration flag (`is_entry_point`) on an Agent Node. When set to `True`, it designates that agent as the default starting node for workflow execution when no specific target agent ID is specified.

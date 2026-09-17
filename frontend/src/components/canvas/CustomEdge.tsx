@@ -35,6 +35,20 @@ export function CustomEdge({
   );
 
   const isHandoff = data?.edgeType === "handoff";
+  const isAttachmentEdge = data?.edgeType === "produces" || data?.edgeType === "consumes";
+
+  let stroke = "var(--color-text-tertiary)";
+  let opacity = 0.4;
+  let strokeDasharray = undefined;
+  if (isHandoff) {
+    stroke = "var(--color-agent)";
+    opacity = 0.7;
+    strokeDasharray = "6 4";
+  } else if (isAttachmentEdge) {
+    stroke = "var(--color-warning)";
+    opacity = 0.8;
+    strokeDasharray = "2 4";
+  }
 
   return (
     <>
@@ -43,9 +57,9 @@ export function CustomEdge({
         path={edgePath}
         style={{
           strokeWidth: 2,
-          strokeDasharray: isHandoff ? "6 4" : undefined,
-          stroke: isHandoff ? "var(--color-agent)" : "var(--color-text-tertiary)",
-          opacity: isHandoff ? 0.7 : 0.4,
+          strokeDasharray,
+          stroke,
+          opacity,
         }}
         markerEnd={markerEnd}
       />

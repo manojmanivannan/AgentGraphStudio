@@ -262,6 +262,104 @@ describe("groupMessagesIntoTurns", () => {
         expect(turns[0].steps).toHaveLength(1);
         expect(turns[0].steps[0].id).toBe("t2");
     });
+
+    it("groups produced attachments with the final response", () => {
+        const userMsg: Message = {
+            id: "u1",
+            conversation_id: "c1",
+            role: "user",
+            content: "Generate the report",
+            created_at: "2026-01-01T00:00:00.000Z",
+        };
+        const attachmentStep: Message = {
+            id: "s1",
+            conversation_id: "c1",
+            role: "assistant",
+            content: "",
+            agent_name: "ReportAgent",
+            event_type: "attachment_produced",
+            args: {
+                attachment_id: "attachment-1",
+                name: "report.csv",
+                file_type: "csv",
+                source: "agent_output",
+            },
+            created_at: "2026-01-01T00:00:01.000Z",
+        };
+
+        const finalAnswer: Message = {
+            id: "f1",
+            conversation_id: "c1",
+            role: "assistant",
+            content: "The report is ready.",
+            event_type: "final_answer",
+            created_at: "2026-01-01T00:00:02.000Z",
+        };
+        const { turns } = groupMessagesIntoTurns([userMsg, attachmentStep, finalAnswer]);
+
+        expect(turns).toHaveLength(1);
+        expect(turns[0].outputAttachments).toEqual([attachmentStep]);
+        expect(turns[0].steps).toEqual([]);
+        expect(turns[0].humanInterrupt).toBeUndefined();
+        expect(turns[0].finalAnswer).toEqual(finalAnswer);
+        expect(turns[0].isStreaming).toBe(false);
+    });
+
+    it("groups consumed attachments below the user message", () => {
+        const userMsg: Message = {
+            id: "u1",
+            conversation_id: "c1",
+            role: "user",
+            content: "Review the uploaded file",
+            created_at: "2026-01-01T00:00:00.000Z",
+        };
+        const attachmentStep: Message = {
+            id: "s1",
+            conversation_id: "c1",
+            role: "assistant",
+            content: "",
+            agent_name: "ReaderAgent",
+            event_type: "attachment_consumed",
+            args: {
+                attachment_id: "attachment-2",
+                name: "notes.txt",
+                file_type: "text",
+                source: "chat_upload",
+                delivery_method: "inline",
+            },
+            created_at: "2026-01-01T00:00:01.000Z",
+        };
+
+        const { turns } = groupMessagesIntoTurns([userMsg, attachmentStep]);
+
+        expect(turns).toHaveLength(1);
+        expect(turns[0].inputAttachments).toEqual([attachmentStep]);
+        expect(turns[0].steps).toEqual([]);
+        expect(turns[0].humanInterrupt).toBeUndefined();
+        expect(turns[0].finalAnswer).toBeUndefined();
+        expect(turns[0].isStreaming).toBe(true);
+    });
+
+    it("keeps agent-produced attachment consumption in execution steps", () => {
+        const userMsg: Message = {
+            id: "u1", conversation_id: "c1", role: "user", content: "Calculate it",
+            created_at: "2026-01-01T00:00:00.000Z",
+        };
+        const consumedOutput: Message = {
+            id: "s1", conversation_id: "c1", role: "assistant", content: "",
+            event_type: "attachment_consumed",
+            args: {
+                attachment_id: "attachment-2", name: "CurrentTemperature", file_type: "text",
+                source: "agent_output", delivery_method: "inline",
+            },
+            created_at: "2026-01-01T00:00:01.000Z",
+        };
+
+        const { turns } = groupMessagesIntoTurns([userMsg, consumedOutput]);
+
+        expect(turns[0].inputAttachments).toEqual([]);
+        expect(turns[0].steps).toEqual([consumedOutput]);
+    });
 });
 
 describe("ChatPage component", () => {
@@ -971,7 +1069,7 @@ describe("ChatPage component", () => {
         });
     });
 
-    it("renders canvas selector dropdown and disables it when conversation is active", async () => {
+    it("renders canvas selector dropdown and disables it once the conversation has messages", async () => {
         server.use(
             http.get(`${API}/canvases`, () =>
                 HttpResponse.json([
@@ -985,7 +1083,12 @@ describe("ChatPage component", () => {
                         id: "conv-1",
                         canvas_id: "canvas-1",
                         name: "Test Chat",
-                        messages: [],
+                        messages: [
+                            {
+                                id: "m1", conversation_id: "conv-1", role: "user",
+                                content: "Hello agent", created_at: "2026-01-01T00:00:00.000Z",
+                            },
+                        ],
                     })
                 )
             ),
@@ -1030,6 +1133,42 @@ describe("ChatPage component", () => {
             const dropdown = screen.getByTitle("Select canvas for chat") as HTMLSelectElement;
             expect(dropdown).toBeInTheDocument();
             expect(dropdown).not.toBeDisabled();
+        });
+    });
+
+    it("allows changing the canvas selector for a freshly created conversation with no messages yet", async () => {
+        server.use(
+            http.get(`${API}/canvases`, () =>
+                HttpResponse.json([
+                    { id: "canvas-1", name: "My Canvas" },
+                    { id: "canvas-2", name: "Second Canvas" },
+                ])
+            ),
+            http.get(`${API}/canvases/conversations/conv-1`, () =>
+                HttpResponse.json(
+                    mockConversation({
+                        id: "conv-1",
+                        canvas_id: "canvas-1",
+                        name: "New Conversation",
+                        messages: [],
+                    })
+                )
+            ),
+            http.get(`${API}/canvases/canvas-1`, () =>
+                HttpResponse.json({ id: "canvas-1", name: "My Canvas" })
+            ),
+            http.get(`${API}/canvases/canvas-1/conversations`, () =>
+                HttpResponse.json([])
+            )
+        );
+
+        renderChatPage("conv-1");
+
+        await waitFor(() => {
+            const dropdown = screen.getByTitle("Select canvas for chat") as HTMLSelectElement;
+            expect(dropdown).toBeInTheDocument();
+            expect(dropdown).not.toBeDisabled();
+            expect(dropdown.value).toBe("canvas-1");
         });
     });
 

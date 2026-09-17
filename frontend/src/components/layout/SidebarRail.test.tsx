@@ -37,6 +37,24 @@ describe("SidebarRail", () => {
     expect(screen.getByText("Observability")).toBeInTheDocument();
   });
 
+  it("nav buttons show pointer cursor so they read as clickable", () => {
+    useCanvasStore.getState().setCanvas("canvas-1", "Test Canvas");
+    renderSidebar();
+
+    for (const testId of ["chat-toggle", "observability-toggle"]) {
+      expect(screen.getByTestId(testId).className).toContain("cursor-pointer");
+    }
+  });
+
+  it("expanded nav buttons use the shared sidebar font size (text-xs)", () => {
+    useCanvasStore.getState().setCanvas("canvas-1", "Test Canvas");
+    renderSidebar();
+
+    for (const testId of ["chat-toggle", "observability-toggle"]) {
+      expect(screen.getByTestId(testId).className).toContain("text-xs");
+    }
+  });
+
   it("adds worker and router agents on button clicks", async () => {
     const user = userEvent.setup();
     useCanvasStore.getState().setCanvas("canvas-1", "Test Canvas");
@@ -65,6 +83,20 @@ describe("SidebarRail", () => {
     const nodes = useCanvasStore.getState().nodes;
     expect(nodes).toHaveLength(1);
     expect(nodes[0].type).toBe("tool");
+  });
+
+  it("adds an attachment on button click", async () => {
+    const user = userEvent.setup();
+    useCanvasStore.getState().setCanvas("canvas-1", "Test Canvas");
+    renderSidebar();
+
+    const addAttachmentBtn = screen.getByTestId("add-attachment-button");
+    await user.click(addAttachmentBtn);
+
+    const nodes = useCanvasStore.getState().nodes;
+    expect(nodes).toHaveLength(1);
+    expect(nodes[0].type).toBe("attachment");
+    expect(nodes[0].data.fileType).toBe("text");
   });
 
   it("opens clear popover and clears the canvas", async () => {

@@ -98,6 +98,7 @@ class CanvasRunner:
             agent_names={node.id: node.name for node in self.canvas.agent_nodes} if self.canvas else {},
             conversation_id=self._conversation.conversation_id,
             conversation_repo=self.conversation_repo,
+            attachment_nodes=getattr(self.canvas, "attachment_nodes", []) if self.canvas else [],
         )
 
         # ---- runtime context and state management ----
@@ -309,6 +310,7 @@ class CanvasRunner:
             agent_names={node.id: node.name for node in self.canvas.agent_nodes},
             conversation_id=self._conversation.conversation_id,
             conversation_repo=self.conversation_repo,
+            attachment_nodes=getattr(self.canvas, "attachment_nodes", []),
         )
         self._agent_factory._run_state = self.run_state
         self.run_state.agent_factory = self._agent_factory
@@ -465,6 +467,7 @@ class CanvasRunner:
         send_event: EventCallback,
         target_agent_id: uuid.UUID | None = None,
         get_client_response: ClientResponseCallback | None = None,
+        run_id: uuid.UUID | None = None,
     ) -> str | None:
         logger.info(
             "Starting canvas execution: canvas_id=%s prompt=%s target=%s",
@@ -529,6 +532,7 @@ class CanvasRunner:
             dspy_history=dspy_history,
             history_enabled_node_ids=history_enabled_node_ids,
             primary_agent_id=first_agent_id,
+            run_id=run_id,
         )
 
         # Set ephemeral fields on the runtime state
@@ -537,6 +541,7 @@ class CanvasRunner:
             send_event=send_event,
             history_text=history_text,
             dspy_history=dspy_history,
+            run_id=run_id,
         )
         self.run_state.get_client_response = get_client_response
 

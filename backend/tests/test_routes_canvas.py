@@ -116,6 +116,158 @@ class TestSaveCanvas:
         assert resp.status_code == 404
 
 
+class TestSaveCanvasAttachments:
+    async def test_save_with_attachment_node(self, authed_client):
+        created = await authed_client.post("/api/canvases", json={"name": "AttCanvas"})
+        cid = created.json()["id"]
+        att_id = str(uuid.uuid4())
+
+        payload = {
+            "name": "AttCanvas",
+            "nodes": {
+                "agents": [],
+                "tools": [],
+                "attachments": [
+                    {"id": att_id, "name": "SalesData", "file_type": "csv", "description": "Q1 sales"}
+                ],
+            },
+            "edges": [],
+        }
+
+        resp = await authed_client.put(f"/api/canvases/{cid}", json=payload)
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data["nodes"]["attachments"]) == 1
+        assert data["nodes"]["attachments"][0]["name"] == "SalesData"
+        assert data["nodes"]["attachments"][0]["file_type"] == "csv"
+        assert data["nodes"]["attachments"][0]["description"] == "Q1 sales"
+
+    async def test_save_attachment_defaults_file_type_text(self, authed_client):
+        created = await authed_client.post("/api/canvases", json={"name": "DefaultType"})
+        cid = created.json()["id"]
+        att_id = str(uuid.uuid4())
+
+        payload = {
+            "name": "DefaultType",
+            "nodes": {
+                "agents": [],
+                "tools": [],
+                "attachments": [{"id": att_id, "name": "Untyped"}],
+            },
+            "edges": [],
+        }
+        resp = await authed_client.put(f"/api/canvases/{cid}", json=payload)
+        assert resp.status_code == 200
+        assert resp.json()["nodes"]["attachments"][0]["file_type"] == "text"
+
+    async def test_save_attachment_with_empty_file_type_rejected(self, authed_client):
+        created = await authed_client.post("/api/canvases", json={"name": "BadType"})
+        cid = created.json()["id"]
+        att_id = str(uuid.uuid4())
+
+        payload = {
+            "name": "BadType",
+            "nodes": {
+                "agents": [],
+                "tools": [],
+                "attachments": [{"id": att_id, "name": "Bad", "file_type": "   "}],
+            },
+            "edges": [],
+        }
+        resp = await authed_client.put(f"/api/canvases/{cid}", json=payload)
+        assert resp.status_code == 422
+
+    async def test_save_with_produces_and_consumes_edges(self, authed_client):
+        created = await authed_client.post("/api/canvases", json={"name": "Wired"})
+        cid = created.json()["id"]
+        agent_id = str(uuid.uuid4())
+        other_agent_id = str(uuid.uuid4())
+        att_id = str(uuid.uuid4())
+
+        payload = {
+            "name": "Wired",
+            "nodes": {
+                "agents": [
+                    {"id": agent_id, "name": "Producer", "agent_type": "worker"},
+                    {"id": other_agent_id, "name": "Consumer", "agent_type": "worker"},
+                ],
+                "tools": [],
+                "attachments": [{"id": att_id, "name": "Shared"}],
+            },
+            "edges": [
+                {
+                    "id": str(uuid.uuid4()),
+                    "source_node_id": agent_id,
+                    "target_node_id": att_id,
+                    "edge_type": "produces",
+                },
+                {
+                    "id": str(uuid.uuid4()),
+                    "source_node_id": att_id,
+                    "target_node_id": other_agent_id,
+                    "edge_type": "consumes",
+                },
+            ],
+        }
+        resp = await authed_client.put(f"/api/canvases/{cid}", json=payload)
+        assert resp.status_code == 200
+        edge_types = {e["edge_type"] for e in resp.json()["edges"]}
+        assert edge_types == {"produces", "consumes"}
+
+    async def test_save_rejects_attachment_to_attachment_edge(self, authed_client):
+        created = await authed_client.post("/api/canvases", json={"name": "BadWiring"})
+        cid = created.json()["id"]
+        att1 = str(uuid.uuid4())
+        att2 = str(uuid.uuid4())
+
+        payload = {
+            "name": "BadWiring",
+            "nodes": {
+                "agents": [],
+                "tools": [],
+                "attachments": [
+                    {"id": att1, "name": "A1"},
+                    {"id": att2, "name": "A2"},
+                ],
+            },
+            "edges": [
+                {
+                    "id": str(uuid.uuid4()),
+                    "source_node_id": att1,
+                    "target_node_id": att2,
+                    "edge_type": "produces",
+                },
+            ],
+        }
+        resp = await authed_client.put(f"/api/canvases/{cid}", json=payload)
+        assert resp.status_code == 422
+
+    async def test_save_rejects_attachment_to_tool_edge(self, authed_client):
+        created = await authed_client.post("/api/canvases", json={"name": "BadWiring2"})
+        cid = created.json()["id"]
+        tool_id = str(uuid.uuid4())
+        att_id = str(uuid.uuid4())
+
+        payload = {
+            "name": "BadWiring2",
+            "nodes": {
+                "agents": [],
+                "tools": [{"id": tool_id, "name": "T1"}],
+                "attachments": [{"id": att_id, "name": "A1"}],
+            },
+            "edges": [
+                {
+                    "id": str(uuid.uuid4()),
+                    "source_node_id": tool_id,
+                    "target_node_id": att_id,
+                    "edge_type": "produces",
+                },
+            ],
+        }
+        resp = await authed_client.put(f"/api/canvases/{cid}", json=payload)
+        assert resp.status_code == 422
+
+
 class TestDeleteCanvas:
     async def test_delete_existing(self, authed_client):
         created = await authed_client.post("/api/canvases", json={"name": "D1"})
@@ -398,6 +550,46 @@ class TestExportImportRoundTrip:
         exported = export_resp.json()
         assert exported["nodes"]["agents"][0]["enable_network"] is True
 
+    async def test_export_then_import_with_attachment_and_wiring(self, authed_client):
+        """Attachment nodes and produces/consumes edges round-trip through
+        import (create_full) and export."""
+        agent_id = str(uuid.uuid4())
+        att_id = str(uuid.uuid4())
+        payload = {
+            "name": "Attachment RoundTrip Canvas",
+            "nodes": {
+                "agents": [{"id": agent_id, "name": "Producer", "agent_type": "worker"}],
+                "tools": [],
+                "attachments": [
+                    {"id": att_id, "name": "Report", "file_type": "pdf", "description": "Q1"}
+                ],
+            },
+            "edges": [
+                {
+                    "id": str(uuid.uuid4()),
+                    "source_node_id": agent_id,
+                    "target_node_id": att_id,
+                    "edge_type": "produces",
+                }
+            ],
+        }
+
+        import_resp = await authed_client.post("/api/canvases/import", json=payload)
+        assert import_resp.status_code == 200
+        original_id = import_resp.json()["id"]
+        original_data = import_resp.json()
+        assert len(original_data["nodes"]["attachments"]) == 1
+        assert original_data["nodes"]["attachments"][0]["file_type"] == "pdf"
+        assert original_data["edges"][0]["edge_type"] == "produces"
+
+        export_resp = await authed_client.get(f"/api/canvases/{original_id}/export")
+        assert export_resp.status_code == 200
+        exported = export_resp.json()
+        assert len(exported["nodes"]["attachments"]) == 1
+        assert exported["nodes"]["attachments"][0]["name"] == "Report"
+        assert exported["nodes"]["attachments"][0]["description"] == "Q1"
+        assert exported["edges"][0]["edge_type"] == "produces"
+
 
 class TestZipExportImport:
     async def test_export_zip_and_import_zip_with_documents(
@@ -463,6 +655,51 @@ class TestZipExportImport:
         docs = docs_resp.json()
         assert len(docs) == 1
         assert docs[0]["name"] == "note.txt"
+
+    async def test_export_zip_and_import_zip_with_attachments(self, authed_client):
+        agent_id = str(uuid.uuid4())
+        att_id = str(uuid.uuid4())
+        payload = {
+            "name": "ZipAttachmentCanvas",
+            "nodes": {
+                "agents": [{"id": agent_id, "name": "Producer", "agent_type": "worker"}],
+                "tools": [],
+                "attachments": [
+                    {"id": att_id, "name": "Dataset", "file_type": "csv", "description": "raw"}
+                ],
+            },
+            "edges": [
+                {
+                    "id": str(uuid.uuid4()),
+                    "source_node_id": agent_id,
+                    "target_node_id": att_id,
+                    "edge_type": "produces",
+                }
+            ],
+        }
+
+        create_resp = await authed_client.post("/api/canvases/import", json=payload)
+        assert create_resp.status_code == 200
+        canvas_id = create_resp.json()["id"]
+
+        export_resp = await authed_client.get(f"/api/canvases/{canvas_id}/export-zip")
+        assert export_resp.status_code == 200
+
+        archive = zipfile.ZipFile(io.BytesIO(export_resp.content))
+        manifest = json.loads(archive.read("manifest.json").decode("utf-8"))
+        assert len(manifest["nodes"]["attachments"]) == 1
+        assert manifest["nodes"]["attachments"][0]["file_type"] == "csv"
+
+        import_resp = await authed_client.post(
+            "/api/canvases/import-zip",
+            files={"file": ("canvas.zip", export_resp.content, "application/zip")},
+        )
+        assert import_resp.status_code == 200
+        imported = import_resp.json()
+        assert len(imported["nodes"]["attachments"]) == 1
+        assert imported["nodes"]["attachments"][0]["name"] == "Dataset"
+        assert imported["nodes"]["attachments"][0]["description"] == "raw"
+        assert imported["edges"][0]["edge_type"] == "produces"
 
 
 class TestPerUserIsolation:

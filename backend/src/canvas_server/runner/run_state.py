@@ -65,6 +65,12 @@ class CanvasRunState:
         self.history_text: str = ""
         self.dspy_history: dspy.History | None = None
         self.get_client_response: ClientResponseCallback | None = None
+        # The durable run producing the current turn, if any (#86/#87) — kept
+        # in sync with ``RunContext.run_id`` so mid-loop tools (e.g.
+        # ``PlotProvider.generate_plot``) can attribute stored
+        # ``AttachmentInstance`` rows to the producing run without threading
+        # it through every tool constructor.
+        self.run_id: uuid.UUID | None = None
 
     def set_run_context(
         self,
@@ -72,6 +78,7 @@ class CanvasRunState:
         send_event: EventCallback,
         history_text: str,
         dspy_history: dspy.History | None,
+        run_id: uuid.UUID | None = None,
     ) -> None:
         """Configures ephemeral fields for the duration of a single execution run.
 
@@ -81,11 +88,14 @@ class CanvasRunState:
             history_text (str): Serialized conversation history for prompt injection.
             dspy_history (dspy.History | None): Native DSPy history object, or None
                 when conversation history is disabled.
+            run_id (uuid.UUID | None, optional): The durable run producing this
+                turn, if any (background-worker runs only).
         """
         self.user_prompt = user_prompt
         self.send_event = send_event
         self.history_text = history_text
         self.dspy_history = dspy_history
+        self.run_id = run_id
 
     async def get_or_build_agent(self, agent_id: uuid.UUID, task: str | None = None) -> StreamingReAct:
         """Retrieves or dynamically builds an agent instance for execution.
