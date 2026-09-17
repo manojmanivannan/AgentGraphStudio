@@ -23,10 +23,10 @@
 
 <table>
   <tr>
-    <td width="72%">
+    <td width="74%">
       <img src="docs/canvas_example.png" alt="ReactFlow Workflow Builder" />
     </td>
-    <td width="28%">
+    <td width="26%">
       <img src="docs/chat_example1.png" alt="Real-time Streaming Chat" /><br/><br/>
       <img src="docs/chat_example2.png" alt="Real-time Streaming Chat" />
     </td>
