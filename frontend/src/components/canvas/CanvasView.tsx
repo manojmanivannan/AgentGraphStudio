@@ -25,7 +25,7 @@ import { CustomEdge } from "./CustomEdge";
 import { useCanvasStore } from "@/store/canvasStore";
 import { useCanvasPersistence } from "@/hooks/useCanvasPersistence";
 import { useThemeStore } from "@/store/themeStore";
-import { deriveEdgeType, isValidNodeTypeConnection } from "@/lib/canvasConnectionRules";
+import { deriveEdgeType, getEdgeHandles, isValidNodeTypeConnection } from "@/lib/canvasConnectionRules";
 
 const nodeTypes = {
   agent: AgentNode,
@@ -104,9 +104,15 @@ export function CanvasView() {
       const sourceNode = nodes.find((n) => n.id === params.source);
       const targetNode = nodes.find((n) => n.id === params.target);
       const edgeType = deriveEdgeType(sourceNode?.type, targetNode?.type);
+      // Force the handle pair from edge_type (not whichever handle the user
+      // happened to drag from) so every connection lands on its dedicated
+      // anchor: handoff center, tool left, attachment right (#-offset-handles).
+      const { sourceHandle, targetHandle } = getEdgeHandles(edgeType);
 
       const newEdge: Edge = {
         ...params,
+        sourceHandle,
+        targetHandle,
         id: uuidv4(),
         data: { edgeType },
         style:

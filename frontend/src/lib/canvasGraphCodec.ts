@@ -7,6 +7,7 @@ import type {
   ToolArgument,
   ToolNodeData,
 } from "@/types";
+import { getEdgeHandles } from "@/lib/canvasConnectionRules";
 
 const DEFAULT_AGENT_MODEL = "ollama:llama3.1";
 const DEFAULT_AGENT_TYPE = "worker";
@@ -166,10 +167,13 @@ export function decodeCanvasResponse(canvas: CanvasResponse): DecodedCanvasGraph
     ],
     edges: canvas.edges.map((edge) => {
       const edgeType = edge.edge_type;
+      const { sourceHandle, targetHandle } = getEdgeHandles(edgeType);
       return {
         id: edge.id,
         source: edge.source_node_id,
         target: edge.target_node_id,
+        sourceHandle,
+        targetHandle,
         data: { edgeType },
         markerEnd: {
           type: MarkerType.ArrowClosed,

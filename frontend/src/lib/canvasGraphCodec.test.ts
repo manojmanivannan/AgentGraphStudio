@@ -193,6 +193,8 @@ describe("canvasGraphCodec", () => {
         id: "edge-1",
         source: "agent-1",
         target: "tool-1",
+        sourceHandle: "tool-out",
+        targetHandle: "tool-in",
         data: { edgeType: "tool_access" },
         markerEnd: {
           type: "arrowclosed",
@@ -537,6 +539,8 @@ describe("canvasGraphCodec", () => {
         id: "edge-1",
         source: "agent-1",
         target: "att-1",
+        sourceHandle: "attachment-out",
+        targetHandle: "attachment-target",
         data: { edgeType: "produces" },
         markerEnd: {
           type: "arrowclosed",

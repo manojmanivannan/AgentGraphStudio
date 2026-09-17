@@ -3,6 +3,7 @@ import { Handle, Position, type NodeProps } from "@xyflow/react";
 import { Paperclip, Settings } from "lucide-react";
 import type { AttachmentNodeData } from "@/types";
 import { useCanvasStore } from "@/store/canvasStore";
+import { HANDLE_IDS } from "@/lib/canvasConnectionRules";
 
 function AttachmentNodeComponent({ id, data, selected }: NodeProps) {
   const attachmentData = data as unknown as AttachmentNodeData;
@@ -26,6 +27,7 @@ function AttachmentNodeComponent({ id, data, selected }: NodeProps) {
       `}
     >
       <Handle
+        id={HANDLE_IDS.attachmentProducesTarget}
         type="target"
         position={Position.Top}
         className="!bg-[var(--color-text-tertiary)] !w-2 !h-2 !border-2 !border-[var(--color-surface)]"
@@ -64,6 +66,7 @@ function AttachmentNodeComponent({ id, data, selected }: NodeProps) {
         )}
       </div>
       <Handle
+        id={HANDLE_IDS.attachmentConsumesSource}
         type="source"
         position={Position.Bottom}
         className="!bg-[var(--color-warning)] !w-2 !h-2 !border-2 !border-[var(--color-surface)]"

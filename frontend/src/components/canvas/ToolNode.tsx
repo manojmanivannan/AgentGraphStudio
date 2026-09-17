@@ -3,6 +3,7 @@ import { Handle, Position, type NodeProps } from "@xyflow/react";
 import { Wrench, Settings } from "lucide-react";
 import type { ToolNodeData } from "@/types";
 import { useCanvasStore } from "@/store/canvasStore";
+import { HANDLE_IDS } from "@/lib/canvasConnectionRules";
 
 function ToolNodeComponent({ id, data, selected }: NodeProps) {
   const toolData = data as unknown as ToolNodeData;
@@ -32,6 +33,7 @@ function ToolNodeComponent({ id, data, selected }: NodeProps) {
       `}
     >
       <Handle
+        id={HANDLE_IDS.toolTarget}
         type="target"
         position={Position.Top}
         className="!bg-[var(--color-text-tertiary)] !w-2 !h-2 !border-2 !border-[var(--color-surface)]"
