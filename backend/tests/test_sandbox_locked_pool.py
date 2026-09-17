@@ -15,6 +15,7 @@ baked-floor image and initialises the locked pool when Docker is available, and
 skip gracefully otherwise (``@requires_docker``).
 """
 
+import asyncio
 import shutil
 import uuid
 
@@ -61,14 +62,26 @@ async def test_matplotlib_tool_runs_under_locked_pool():
 async def test_generate_plot_works_under_locked_pool():
     """Plotting (generate_plot) still works under the locked pool — matplotlib
     is baked into the floor image, so the plot-detection path needs no network."""
-    provider = PlotProvider(conversation_id=str(uuid.uuid4()))
+    from canvas_server.sandbox import get_sandbox
+
+    conversation_id = str(uuid.uuid4())
+    provider = PlotProvider(conversation_id=conversation_id)
     code = (
         "import matplotlib.pyplot as plt\n"
         "plt.plot([1, 2, 3, 4], [1, 4, 9, 16])\n"
         "plt.show()\n"
     )
-    result = await provider.generate_plot(code)
-    assert "![Plot]" in result
+    try:
+        result = ""
+        for _ in range(8):
+            result = await provider.generate_plot(code)
+            if "busy" not in result.lower():
+                break
+            await asyncio.sleep(2)
+        assert "![Plot]" in result
+    finally:
+        sandbox = await get_sandbox()
+        sandbox.release_session(conversation_id)
 
 
 @requires_docker

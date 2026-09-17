@@ -29,7 +29,7 @@ def _owned_canvas() -> SimpleNamespace:
 
 
 def _owned_conv_chain() -> SimpleNamespace:
-    # A stand-in for run.conversation / plot.conversation carrying the canvas.
+    # A stand-in for run.conversation / attachment.conversation carrying the canvas.
     return SimpleNamespace(canvas=_owned_canvas())
 
 
@@ -252,21 +252,22 @@ def test_websocket_disconnect_does_not_cancel_background_run(monkeypatch):
     assert run_id not in fake_worker.subscribers
 
 
-def test_get_plot_route_success(monkeypatch):
-    plot_id = uuid.uuid4()
+def test_get_attachment_route_success(monkeypatch):
+    attachment_id = uuid.uuid4()
 
-    class FakePlot:
-        id = plot_id
+    class FakeAttachment:
+        id = attachment_id
         content = b"fake-binary-content"
         format = "png"
+        file_type = "image"
         conversation = _owned_conv_chain()
 
     class FakeConversationRepo:
         def __init__(self, session):
             pass
-        async def get_plot(self, pid):
-            assert pid == plot_id
-            return FakePlot()
+        async def get_attachment(self, aid):
+            assert aid == attachment_id
+            return FakeAttachment()
 
     monkeypatch.setattr(
         "canvas_server.routes.execute.get_session_factory",
@@ -279,19 +280,19 @@ def test_get_plot_route_success(monkeypatch):
 
     _require_auth(monkeypatch)
     client = TestClient(app)
-    response = client.get(f"/api/plots/{plot_id}")
+    response = client.get(f"/api/attachments/{attachment_id}")
     assert response.status_code == 200
     assert response.content == b"fake-binary-content"
     assert response.headers["content-type"] == "image/png"
 
 
-def test_get_plot_route_not_found(monkeypatch):
-    plot_id = uuid.uuid4()
+def test_get_attachment_route_not_found(monkeypatch):
+    attachment_id = uuid.uuid4()
 
     class FakeConversationRepo:
         def __init__(self, session):
             pass
-        async def get_plot(self, pid):
+        async def get_attachment(self, aid):
             return None
 
     monkeypatch.setattr(
@@ -305,7 +306,7 @@ def test_get_plot_route_not_found(monkeypatch):
 
     _require_auth(monkeypatch)
     client = TestClient(app)
-    response = client.get(f"/api/plots/{plot_id}")
+    response = client.get(f"/api/attachments/{attachment_id}")
     assert response.status_code == 404
 
 

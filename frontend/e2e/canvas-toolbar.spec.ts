@@ -44,6 +44,22 @@ test.describe("Sidebar Rail", () => {
     );
   });
 
+  test("clicking Add Attachment adds a new attachment node to the canvas", async ({
+    page,
+    canvasWithWorkflow,
+  }) => {
+    const initialCount = await page
+      .locator('[data-testid="attachment-node"]')
+      .count();
+
+    await page.getByTestId("add-attachment-button").click();
+
+    await expect(page.locator('[data-testid="attachment-node"]')).toHaveCount(
+      initialCount + 1,
+      { timeout: 5000 }
+    );
+  });
+
   test("clicking Clear opens confirmation, then clears the canvas", async ({
     page,
     canvasWithWorkflow: _,

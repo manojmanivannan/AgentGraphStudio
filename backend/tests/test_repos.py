@@ -3,7 +3,12 @@ import uuid
 import pytest
 
 from canvas_server.exceptions import CanvasNotFoundError
-from canvas_server.models.api import AgentNodeInput, EdgeInput, ToolNodeInput
+from canvas_server.models.api import (
+    AgentNodeInput,
+    AttachmentNodeInput,
+    EdgeInput,
+    ToolNodeInput,
+)
 from canvas_server.models.auth import User
 from canvas_server.repos.canvas_repo import CanvasRepo
 
@@ -280,3 +285,128 @@ class TestCanvasRepoCreateFull:
         ]
         canvas = await repo.create_full("Networked Canvas", agents, [], [], owner_id=test_user.id)
         assert canvas.agent_nodes[0].enable_network is True
+
+
+class TestCanvasRepoAttachments:
+    async def test_save_creates_attachment_node(self, blank_canvas, test_session):
+        repo = CanvasRepo(test_session)
+        att_id = uuid.uuid4()
+
+        canvas = await repo.save_nodes_and_edges(
+            blank_canvas.id,
+            "Attachments",
+            [],
+            [],
+            [],
+            attachments=[
+                AttachmentNodeInput(id=att_id, name="Data", file_type="csv", description="Sales")
+            ],
+        )
+        assert len(canvas.attachment_nodes) == 1
+        assert canvas.attachment_nodes[0].id == att_id
+        assert canvas.attachment_nodes[0].file_type == "csv"
+        assert canvas.attachment_nodes[0].description == "Sales"
+
+    async def test_save_with_no_attachments_arg_defaults_empty(self, blank_canvas, test_session):
+        repo = CanvasRepo(test_session)
+        # attachments is optional/keyword — existing 5-positional-arg call sites
+        # must keep working unchanged.
+        canvas = await repo.save_nodes_and_edges(blank_canvas.id, "NoAttachments", [], [], [])
+        assert canvas.attachment_nodes == []
+
+    async def test_save_replaces_attachments(self, blank_canvas, test_session):
+        repo = CanvasRepo(test_session)
+        first_id = uuid.uuid4()
+        await repo.save_nodes_and_edges(
+            blank_canvas.id, "V1", [], [], [],
+            attachments=[AttachmentNodeInput(id=first_id, name="First")],
+        )
+        canvas = await repo.get_or_404(blank_canvas.id)
+        assert len(canvas.attachment_nodes) == 1
+
+        second_id = uuid.uuid4()
+        await repo.save_nodes_and_edges(
+            blank_canvas.id, "V2", [], [], [],
+            attachments=[AttachmentNodeInput(id=second_id, name="Second")],
+        )
+        canvas = await repo.get_or_404(blank_canvas.id)
+        assert len(canvas.attachment_nodes) == 1
+        assert canvas.attachment_nodes[0].id == second_id
+        assert canvas.attachment_nodes[0].name == "Second"
+
+    async def test_save_with_produces_and_consumes_edges(self, blank_canvas, test_session):
+        repo = CanvasRepo(test_session)
+        agent_id = uuid.uuid4()
+        other_agent_id = uuid.uuid4()
+        att_id = uuid.uuid4()
+
+        canvas = await repo.save_nodes_and_edges(
+            blank_canvas.id,
+            "Wired",
+            [AgentNodeInput(id=agent_id), AgentNodeInput(id=other_agent_id)],
+            [],
+            [
+                EdgeInput(
+                    id=uuid.uuid4(),
+                    source_node_id=agent_id,
+                    target_node_id=att_id,
+                    edge_type="produces",
+                ),
+                EdgeInput(
+                    id=uuid.uuid4(),
+                    source_node_id=att_id,
+                    target_node_id=other_agent_id,
+                    edge_type="consumes",
+                ),
+            ],
+            attachments=[AttachmentNodeInput(id=att_id, name="Shared")],
+        )
+        assert len(canvas.edges) == 2
+        edge_types = {e.edge_type for e in canvas.edges}
+        assert edge_types == {"produces", "consumes"}
+
+    async def test_create_full_with_attachments(self, test_session, test_user):
+        repo = CanvasRepo(test_session)
+        att_id = uuid.uuid4()
+        canvas = await repo.create_full(
+            "Full With Attachments",
+            [],
+            [],
+            [],
+            attachments=[
+                AttachmentNodeInput(id=att_id, name="Data", file_type="json")
+            ],
+            owner_id=test_user.id,
+        )
+        assert len(canvas.attachment_nodes) == 1
+        assert canvas.attachment_nodes[0].name == "Data"
+        assert canvas.attachment_nodes[0].file_type == "json"
+        # imported attachment gets a fresh server-generated id, like agents/tools
+        assert canvas.attachment_nodes[0].id != att_id
+
+    async def test_create_full_remaps_attachment_edge_ids(self, test_session, test_user):
+        repo = CanvasRepo(test_session)
+        agent_id = uuid.uuid4()
+        att_id = uuid.uuid4()
+        edge_id = uuid.uuid4()
+
+        canvas = await repo.create_full(
+            "Remap Canvas",
+            [AgentNodeInput(id=agent_id, name="Agent1")],
+            [],
+            [
+                EdgeInput(
+                    id=edge_id,
+                    source_node_id=agent_id,
+                    target_node_id=att_id,
+                    edge_type="produces",
+                )
+            ],
+            attachments=[AttachmentNodeInput(id=att_id, name="Data")],
+            owner_id=test_user.id,
+        )
+        assert len(canvas.edges) == 1
+        new_agent_id = canvas.agent_nodes[0].id
+        new_attachment_id = canvas.attachment_nodes[0].id
+        assert canvas.edges[0].source_node_id == new_agent_id
+        assert canvas.edges[0].target_node_id == new_attachment_id

@@ -38,6 +38,17 @@ from canvas_server.sandbox import get_sandbox
 
 logger = logging.getLogger("canvas_server.tool_factory")
 
+# Session id used only for the one-off syntax-validation run during
+# compilation (released immediately afterwards, see `compile_tool_from_code`).
+_SYNTAX_CHECK_SESSION_ID = "syntax_check_global"
+
+# Session id used as the sandbox key for *standalone* tool execution (no
+# `runtime_session_id`, i.e. not part of a conversation-scoped runner turn --
+# e.g. the interactive "Test Tool" panel). Kept distinct from
+# `_SYNTAX_CHECK_SESSION_ID` so a concurrent syntax check and a standalone
+# execution never share (and contend over) the same sandbox session.
+_STANDALONE_EXECUTION_SESSION_ID = "tool_factory_standalone"
+
 
 # -- Type coercion ---------------------------------------------------------------
 
@@ -267,7 +278,7 @@ async def compile_tool_from_code(
     # we can use a dedicated "syntax_check" session that is reused.
     # However, to keep it simple and avoid state contamination,
     # we just ensure we use the manager.
-    syntax_session_id = "syntax_check_global"
+    syntax_session_id = _SYNTAX_CHECK_SESSION_ID
     session = manager.get_session(syntax_session_id, enable_plotting=False)
     try:
         # Run simple compilation check (blocking sandbox calls in a worker
@@ -301,7 +312,7 @@ async def compile_tool_from_code(
         """Executes the user's function in the Docker sandbox."""
         manager = await get_sandbox()
 
-        session_id = runtime_session_id or "syntax_check_global"
+        session_id = runtime_session_id or _STANDALONE_EXECUTION_SESSION_ID
         session = manager.get_session(session_id, enable_plotting=False)
         args_repr = ", ".join(f"{k}={repr(v)}" for k, v in kwargs.items())
 
@@ -338,29 +349,38 @@ if __name__ == '__main__':
                     session.execute_command(build_pip_install_command(dependencies))
                 return session.run(wrapped_code)
 
-        result_obj = await asyncio.to_thread(_blocking)
-
-        if result_obj.exit_code != 0:
-            stderr = result_obj.stderr or ""
-            if "SyntaxError" in stderr:
-                raise PythonSyntaxError(
-                    f"Syntax error in tool '{fn_name}': {stderr.strip()}"
-                )
-            elif "ImportError" in stderr or "ModuleNotFoundError" in stderr:
-                raise PythonImportError(
-                    f"Python import failed in tool '{fn_name}': {stderr.strip()}"
-                )
-            else:
-                raise ToolExecutionError(
-                    stderr or f"Tool execution failed with exit code {result_obj.exit_code}"
-                )
-
-        stdout = result_obj.stdout.strip()
-
         try:
-            return json.loads(stdout)
-        except json.JSONDecodeError:
-            return stdout
+            result_obj = await asyncio.to_thread(_blocking)
+
+            if result_obj.exit_code != 0:
+                stderr = result_obj.stderr or ""
+                if "SyntaxError" in stderr:
+                    raise PythonSyntaxError(
+                        f"Syntax error in tool '{fn_name}': {stderr.strip()}"
+                    )
+                elif "ImportError" in stderr or "ModuleNotFoundError" in stderr:
+                    raise PythonImportError(
+                        f"Python import failed in tool '{fn_name}': {stderr.strip()}"
+                    )
+                else:
+                    raise ToolExecutionError(
+                        stderr
+                        or f"Tool execution failed with exit code {result_obj.exit_code}"
+                    )
+
+            stdout = result_obj.stdout.strip()
+
+            try:
+                return json.loads(stdout)
+            except json.JSONDecodeError:
+                return stdout
+        finally:
+            if runtime_session_id is None:
+                # Standalone author-tool execution is not part of a runner turn,
+                # so no per-turn release hook will fire. Release the held global
+                # session now so repeated direct calls do not exhaust the locked
+                # pool under the per-turn pinning model.
+                manager.release_session(session_id)
 
     # Copy DSPy-needed metadata from the original function
     sandbox_tool_fn.__name__ = user_func.__name__

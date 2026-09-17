@@ -21,6 +21,11 @@ class RunContext:
     send_event: Callable[..., Awaitable[None]]
     target_agent_id: uuid.UUID | None = None
 
+    # The durable run producing this turn, if any (background-worker runs
+    # only). Threaded through to attribute stored ``AttachmentInstance`` rows
+    # (#86) to the run/turn that produced them.
+    run_id: uuid.UUID | None = None
+
     # Conversation history — both the plain-text summary and the structured
     # DSPy history object.  Either or both may be None when history is off.
     history_text: str = ""

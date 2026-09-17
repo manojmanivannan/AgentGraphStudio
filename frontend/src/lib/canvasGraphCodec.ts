@@ -1,11 +1,13 @@
-import type { Edge, Node } from "@xyflow/react";
+import { MarkerType, type Edge, type Node } from "@xyflow/react";
 import type {
   AgentNodeData,
+  AttachmentNodeData,
   CanvasResponse,
   CanvasSavePayload,
   ToolArgument,
   ToolNodeData,
 } from "@/types";
+import { getEdgeHandles } from "@/lib/canvasConnectionRules";
 
 const DEFAULT_AGENT_MODEL = "ollama:llama3.1";
 const DEFAULT_AGENT_TYPE = "worker";
@@ -13,6 +15,9 @@ const DEFAULT_RAG_CHUNK_SIZE = 1000;
 const DEFAULT_RAG_TOP_K = 5;
 const AGENT_NODE_WIDTH = 280;
 const TOOL_NODE_WIDTH = 220;
+const ATTACHMENT_NODE_WIDTH = 180;
+const DEFAULT_ATTACHMENT_FILE_TYPE = "text";
+const DEFAULT_ATTACHMENT_DELIVERY_METHOD = "inline";
 
 type CanvasGraph = {
   canvasName: string;
@@ -31,6 +36,10 @@ function asAgentNodeData(node: Node): Partial<AgentNodeData> {
 
 function asToolNodeData(node: Node): Partial<ToolNodeData & { args?: ToolArgument[] }> {
   return (node.data ?? {}) as Partial<ToolNodeData & { args?: ToolArgument[] }>;
+}
+
+function asAttachmentNodeData(node: Node): Partial<AttachmentNodeData> {
+  return (node.data ?? {}) as Partial<AttachmentNodeData>;
 }
 
 export function encodeCanvasGraph({ canvasName, nodes, edges }: CanvasGraph): CanvasSavePayload {
@@ -73,6 +82,20 @@ export function encodeCanvasGraph({ canvasName, nodes, edges }: CanvasGraph): Ca
             packages: data.packages ?? "",
             args: data.args ?? [],
             requires_approval: data.requiresApproval ?? false,
+            position_x: node.position.x,
+            position_y: node.position.y,
+          };
+        }),
+      attachments: nodes
+        .filter((node) => node.type === "attachment")
+        .map((node) => {
+          const data = asAttachmentNodeData(node);
+          return {
+            id: node.id,
+            name: data.name ?? "Attachment",
+            file_type: data.fileType ?? DEFAULT_ATTACHMENT_FILE_TYPE,
+            delivery_method: data.deliveryMethod ?? DEFAULT_ATTACHMENT_DELIVERY_METHOD,
+            description: data.description ?? "",
             position_x: node.position.x,
             position_y: node.position.y,
           };
@@ -128,12 +151,40 @@ export function decodeCanvasResponse(canvas: CanvasResponse): DecodedCanvasGraph
           requiresApproval: tool.requires_approval,
         },
       })),
+      ...(canvas.nodes.attachments ?? []).map((attachment) => ({
+        id: attachment.id,
+        type: "attachment",
+        position: { x: attachment.position_x, y: attachment.position_y },
+        style: { width: ATTACHMENT_NODE_WIDTH },
+        data: {
+          id: attachment.id,
+          name: attachment.name,
+          fileType: attachment.file_type,
+          deliveryMethod: attachment.delivery_method ?? DEFAULT_ATTACHMENT_DELIVERY_METHOD,
+          description: attachment.description ?? "",
+        },
+      })),
     ],
-    edges: canvas.edges.map((edge) => ({
-      id: edge.id,
-      source: edge.source_node_id,
-      target: edge.target_node_id,
-      data: { edgeType: edge.edge_type },
-    })),
+    edges: canvas.edges.map((edge) => {
+      const edgeType = edge.edge_type;
+      const { sourceHandle, targetHandle } = getEdgeHandles(edgeType);
+      return {
+        id: edge.id,
+        source: edge.source_node_id,
+        target: edge.target_node_id,
+        sourceHandle,
+        targetHandle,
+        data: { edgeType },
+        markerEnd: {
+          type: MarkerType.ArrowClosed,
+          color:
+            edgeType === "handoff"
+              ? "var(--color-agent)"
+              : edgeType === "produces" || edgeType === "consumes"
+                ? "var(--color-warning)"
+                : "var(--color-text-tertiary)",
+        },
+      };
+    }),
   };
 }

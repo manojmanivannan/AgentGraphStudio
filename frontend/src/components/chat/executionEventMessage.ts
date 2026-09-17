@@ -99,6 +99,41 @@ export function executionEventToMessage(
     };
   }
 
+  if (event.type === "attachment_produced") {
+    return {
+      ...baseMessage,
+      role: "assistant",
+      content: "",
+      agent_name: event.agent ?? null,
+      node_id: event.node_id ?? null,
+      event_type: "attachment_produced",
+      args: {
+        attachment_id: event.attachment_id,
+        name: event.name,
+        file_type: event.file_type,
+        source: event.source,
+      },
+    };
+  }
+
+  if (event.type === "attachment_consumed") {
+    return {
+      ...baseMessage,
+      role: "assistant",
+      content: "",
+      agent_name: event.agent ?? null,
+      node_id: event.node_id ?? null,
+      event_type: "attachment_consumed",
+      args: {
+        attachment_id: event.attachment_id,
+        name: event.name,
+        file_type: event.file_type,
+        source: event.source,
+        delivery_method: event.delivery_method,
+      },
+    };
+  }
+
   if (event.type === "final_answer") {
     return {
       ...baseMessage,

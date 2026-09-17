@@ -12,22 +12,33 @@ Three strategies, each extracted from the three-way branch in the original
 from __future__ import annotations
 
 import logging
-import re
 import uuid
 from abc import ABC, abstractmethod
 from collections.abc import Callable
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
+
+import dspy
 
 from canvas_server.exceptions import (
+    AttachmentTooLargeError,
     LLMConfigurationError,
     RAGEmbeddingError,
 )
+from canvas_server.output_extraction import (
+    declared_output_nodes,
+    extract_named_output_attachments,
+    file_type_to_format,
+)
+from canvas_server.runner.attachment_events import announce_attachment_produced
 from canvas_server.runner.config import RunContext
+from canvas_server.runner.input_attachment_delivery import (
+    deliver_and_announce_input_attachments,
+)
+from canvas_server.runner.sandbox_output_capture import read_sandbox_file
 from canvas_server.runner.tracing import agent_span
+from canvas_server.sandbox import NETWORK_POOL_DEFAULT, NETWORK_POOL_NETWORKED
 
 if TYPE_CHECKING:
-    import dspy
-
     from canvas_server.models.canvas import AgentNode
     from canvas_server.runner.agent_factory import AgentFactory
     from canvas_server.runner.conversation import ConversationService
@@ -37,47 +48,6 @@ if TYPE_CHECKING:
     from canvas_server.runner.run_state import CanvasRunState
     from canvas_server.runner.tool_registry import ToolRegistry
     from canvas_server.streaming_react import StreamingReAct
-
-
-def ensure_plots_in_result(result: dspy.Prediction, text: str) -> str:
-    """Scans the trajectory for markdown plot links and appends them if missing.
-
-    When an agent uses the `generate_plot` tool, the tool returns a markdown
-    image link pointing to the dynamically generated plot in the database.
-    Sometimes, the LLM forgets to include this exact link in its final answer.
-    This function searches the ReAct trajectory observations for any plot links
-    and forcefully appends them to the final text response if they are absent.
-
-    Args:
-        result: The dspy.Prediction result object containing the trajectory.
-        text (str): The final extracted text answer from the agent.
-
-    Returns:
-        str: The final text answer, with missing plot links appended.
-    """
-    if not hasattr(result, "trajectory") or not result.trajectory:
-        return text
-
-    image_regex = r"!\[.*?\]\(.*?\)"
-    links_found = []
-
-    # Check all observations in the ReAct loop trajectory
-    for key, val in result.trajectory.items():
-        if key.startswith("observation_") and isinstance(val, str):
-            matches = re.findall(image_regex, val)
-            for m in matches:
-                if m not in links_found:
-                    links_found.append(m)
-
-    if not links_found:
-        return text
-
-    # Append any links that the LLM forgot to copy
-    missing_links = [link for link in links_found if link not in text]
-    if missing_links:
-        text = text.rstrip() + "\n\n" + "\n".join(missing_links)
-
-    return text
 
 
 def _friendly_error_message(exc: Exception) -> str:
@@ -210,7 +180,7 @@ class StrategyServices:
         return self.run_state.handoff_tool_builder
 
 
-class ExecutionStrategy(ABC):
+class ExecutionStrategyBase(ABC):
     """Base abstract class for all agent execution strategies.
 
     Strategies define how a specific type of agent (Worker, Router, or Chain)
@@ -243,12 +213,194 @@ class ExecutionStrategy(ABC):
         node = self._services.node_map.get(agent_id)
         return node.name if node else "Unknown"
 
+    async def _store_output_attachments(
+        self,
+        result: dspy.Prediction,
+        agent_node: AgentNode,
+        agent_id: uuid.UUID,
+        send_event,
+        run_id: uuid.UUID | None,
+    ) -> None:
+        """Validates and stores any ``output_attachments`` the agent emitted (#86).
+
+        Runs once, post-loop, right after the ReAct loop's ``extract()`` step
+        resolves ``result`` — never per-iteration. A mismatch against the
+        agent's declared output Attachment node(s) is surfaced as a
+        tool-output-style ``warning`` event (and a durable system message, so
+        it lands in conversation history for the agent to react to on a
+        subsequent turn) and skipped — this must never fail an otherwise-
+        successful run. Nothing happens when the agent has no declared output
+        nodes, even if the LM filled in ``output_attachments`` (the signature
+        only gains that field when at least one output node is wired, but
+        this stays defensive).
+        """
+        await store_output_attachments(
+            result=result,
+            agent_node=agent_node,
+            agent_id=agent_id,
+            send_event=send_event,
+            conversation_service=self._services.conversation_service,
+            canvas=getattr(self._services.run_state, "canvas", None),
+            run_id=run_id,
+        )
+
+
+async def store_output_attachments(
+    *,
+    result: dspy.Prediction,
+    agent_node: AgentNode,
+    agent_id: uuid.UUID,
+    send_event,
+    conversation_service,
+    canvas,
+    run_id: uuid.UUID | None,
+) -> None:
+    """Validate, persist, and announce an agent result's output attachments."""
+    edges = getattr(canvas, "edges", None) or []
+    attachment_nodes = getattr(canvas, "attachment_nodes", None) or []
+    declared_nodes = declared_output_nodes(edges, attachment_nodes, agent_id)
+    if not declared_nodes:
+        return
+
+    outcome = extract_named_output_attachments(result, declared_nodes)
+    for error in outcome.errors:
+        logger.warning("Agent %s: %s", agent_node.name, error)
+        await send_event(
+            {
+                "type": "warning",
+                "message": error,
+                "agent": agent_node.name,
+                "node_id": str(agent_id),
+            }
+        )
+        if conversation_service:
+            await conversation_service.persist_message(
+                role="system",
+                content=error,
+                agent_name=agent_node.name,
+                node_id=agent_id,
+                event_type="warning",
+            )
+
+    if not outcome.attachments:
+        return
+
+    conversation_repo = getattr(conversation_service, "conversation_repo", None)
+    conversation_id = getattr(conversation_service, "conversation_id", None)
+    if not conversation_repo or not conversation_id:
+        return
+
+    network_pool = (
+        NETWORK_POOL_NETWORKED
+        if getattr(agent_node, "enable_network", False)
+        else NETWORK_POOL_DEFAULT
+    )
+
+    for attachment in outcome.attachments:
+        content = attachment.content.encode("utf-8")
+        if attachment.sandbox_path is not None:
+            sandbox_bytes = await read_sandbox_file(
+                conversation_id=conversation_id,
+                network_pool=network_pool,
+                path=attachment.sandbox_path,
+            )
+            if sandbox_bytes is None:
+                error = (
+                    "Execution error in output_attachments: "
+                    f"{attachment.name!r} referenced sandbox file "
+                    f"{attachment.sandbox_path!r}, but the framework could not read it "
+                    "from the agent sandbox."
+                )
+                logger.warning("Agent %s: %s", agent_node.name, error)
+                await send_event(
+                    {
+                        "type": "warning",
+                        "message": error,
+                        "agent": agent_node.name,
+                        "node_id": str(agent_id),
+                    }
+                )
+                if conversation_service:
+                    await conversation_service.persist_message(
+                        role="system",
+                        content=error,
+                        agent_name=agent_node.name,
+                        node_id=agent_id,
+                        event_type="warning",
+                    )
+                continue
+            content = sandbox_bytes
+
+        try:
+            stored = await conversation_repo.save_attachment(
+                conversation_id=conversation_id,
+                content=content,
+                format=file_type_to_format(attachment.file_type),
+                file_type=attachment.file_type,
+                source="agent_output",
+                attachment_node_id=attachment.node_id,
+                produced_by_run_id=run_id,
+            )
+        except AttachmentTooLargeError as exc:
+            logger.warning(
+                "Agent %s: output attachment %r too large to store: %s",
+                agent_node.name,
+                attachment.name,
+                exc,
+            )
+            continue
+
+        await announce_attachment_produced(
+            send_event=send_event,
+            conversation_service=conversation_service,
+            agent_name=agent_node.name,
+            agent_id=agent_id,
+            attachment_id=stored.id,
+            name=attachment.name,
+            file_type=attachment.file_type,
+            source="agent_output",
+            conversation_id=conversation_id,
+            run_id=run_id,
+        )
+
+
+class ExecutionStrategy(ExecutionStrategyBase):
+
+    async def _emit_output_attachment_warning(
+        self,
+        *,
+        error: str,
+        agent_node: AgentNode,
+        agent_id: uuid.UUID,
+        send_event,
+        conversation_service,
+    ) -> None:
+        """Emit/persist a non-fatal output-attachment warning (#86/#89)."""
+        logger.warning("Agent %s: %s", agent_node.name, error)
+        await send_event(
+            self._event(
+                "warning",
+                message=error,
+                agent=agent_node.name,
+                node_id=str(agent_id),
+            )
+        )
+        if conversation_service:
+            await conversation_service.persist_message(
+                role="system",
+                content=error,
+                agent_name=agent_node.name,
+                node_id=agent_id,
+                event_type="warning",
+            )
+
     async def _run_worker(
         self,
         agent_id: uuid.UUID,
         user_prompt: str,
         send_event,
         dspy_history,
+        run_id: uuid.UUID | None = None,
     ) -> str | None:
         """Executes a single worker agent and returns its answer.
 
@@ -264,6 +416,8 @@ class ExecutionStrategy(ABC):
             user_prompt (str): The raw prompt input from the user.
             send_event (Callable): Callback for dispatching websocket events.
             dspy_history: The DSPy history object, if conversation history is enabled.
+            run_id (uuid.UUID | None): The durable run producing this turn, if any —
+                threaded through to any stored ``AttachmentInstance`` (#86).
 
         Returns:
             str | None: The final text response, or None on failure.
@@ -286,6 +440,15 @@ class ExecutionStrategy(ABC):
             getattr(self._services.run_state, "canvas", None), "name", None
         )
 
+        # Resolve/materialize any declared input attachments before the loop
+        # starts (#88). ``_run_worker`` is always an entry-point call site
+        # (WorkerExecution, ChainExecution) which never otherwise emits
+        # ``agent_start`` — so it's emitted here, but only when there's an
+        # actual attachment to report this turn.
+        prompt, attachment_kwargs = await self._deliver_input_attachments(
+            agent_node, agent_id, prompt, send_event, run_id, emit_agent_start=True
+        )
+
         try:
             # Name the MLflow span after the real agent so DSPy autolog's
             # generic ``Predict.forward`` / ``LM.__call__`` spans nest under
@@ -301,15 +464,17 @@ class ExecutionStrategy(ABC):
                         user_request=prompt,
                         history=dspy_history,
                         get_client_response=self._services.run_state.get_client_response,
+                        **attachment_kwargs,
                     )
                 else:
                     result = await agent.aforward(
                         user_request=prompt,
                         get_client_response=self._services.run_state.get_client_response,
+                        **attachment_kwargs,
                     )
             text = result.process_result
-            text = ensure_plots_in_result(result, text)
             logger.info("Agent %s completed: result=%s", agent_node.name, text[:200])
+            await self._store_output_attachments(result, agent_node, agent_id, send_event, run_id)
             await self._services.conversation_service.persist_message(
                 role="assistant",
                 content=text,
@@ -341,6 +506,60 @@ class ExecutionStrategy(ABC):
             )
             return None
 
+    async def _deliver_input_attachments(
+        self,
+        agent_node: AgentNode,
+        agent_id: uuid.UUID,
+        user_prompt: str,
+        send_event,
+        run_id: uuid.UUID | None,
+        *,
+        emit_agent_start: bool,
+    ) -> tuple[str, dict[str, Any]]:
+        """Resolves/materializes this agent's declared input attachments (#88).
+
+        Runs once, right before the ReAct loop starts. A no-op (returns
+        ``user_prompt`` unchanged, no extra kwargs) when the agent has no
+        declared input Attachment node(s), or nothing unconsumed is waiting —
+        this is what keeps entry-point paths (which normally never emit
+        ``agent_start``) from emitting it on every ordinary turn.
+
+        When ``emit_agent_start`` is True and there IS something to deliver,
+        emits ``agent_start`` immediately before the ``attachment_consumed``
+        announcement(s) — entry-point paths (``_run_worker``,
+        ``RouterExecution.execute``) currently never emit ``agent_start``
+        themselves, so this is the only place they do. Handoff-delegated
+        sub-agents (``handoff.py``) already emit ``agent_start``
+        unconditionally and call ``deliver_and_announce_input_attachments``
+        directly with ``emit_agent_start=False`` to avoid a duplicate — see
+        that shared function for the resolve → emit → announce → augment
+        shape both call sites use.
+
+        Returns:
+            tuple[str, dict[str, Any]]: The (possibly attachment-augmented)
+            prompt, and any extra ``aforward`` kwargs (``attachment_image``
+            when an image attachment was resolved).
+        """
+        canvas = getattr(self._services.run_state, "canvas", None)
+        conversation_service = self._services.conversation_service
+        conversation_repo = getattr(conversation_service, "conversation_repo", None)
+        conversation_id = getattr(conversation_service, "conversation_id", None)
+        if canvas is None or conversation_repo is None or conversation_id is None:
+            return user_prompt, {}
+
+        return await deliver_and_announce_input_attachments(
+            agent_node=agent_node,
+            agent_id=agent_id,
+            canvas=canvas,
+            conversation_repo=conversation_repo,
+            conversation_id=conversation_id,
+            conversation_service=conversation_service,
+            send_event=send_event,
+            run_id=run_id,
+            user_prompt=user_prompt,
+            emit_agent_start=emit_agent_start,
+        )
+
     def _event(self, type_: str, **kwargs) -> dict:
         kwargs["type"] = type_
         return kwargs
@@ -361,7 +580,7 @@ class WorkerExecution(ExecutionStrategy):
             return None
 
         result = await self._run_worker(
-            agent_id, ctx.user_prompt, ctx.send_event, ctx.dspy_history
+            agent_id, ctx.user_prompt, ctx.send_event, ctx.dspy_history, ctx.run_id
         )
         if result is not None:
             await ctx.send_event(
@@ -402,6 +621,14 @@ class RouterExecution(ExecutionStrategy):
         canvas_name = getattr(
             getattr(self._services.run_state, "canvas", None), "name", None
         )
+
+        # Resolve/materialize any declared input attachments before the loop
+        # starts (#88). A directly-targeted router is also an entry point
+        # that never otherwise emits ``agent_start`` — emitted here only
+        # when there's an actual attachment to report this turn.
+        prompt, attachment_kwargs = await self._deliver_input_attachments(
+            agent_node, agent_id, prompt, ctx.send_event, ctx.run_id, emit_agent_start=True
+        )
         try:
             with agent_span(
                 agent_node.name,
@@ -414,14 +641,19 @@ class RouterExecution(ExecutionStrategy):
                         user_request=prompt,
                         history=ctx.dspy_history,
                         get_client_response=self._services.run_state.get_client_response,
+                        **attachment_kwargs,
                     )
                 else:
                     result = await agent.aforward(
                         user_request=prompt,
                         get_client_response=self._services.run_state.get_client_response,
+                        **attachment_kwargs,
                     )
             final_text = result.process_result
 
+            await self._store_output_attachments(
+                result, agent_node, agent_id, ctx.send_event, ctx.run_id
+            )
             await self._services.conversation_service.persist_message(
                 role="assistant",
                 content=final_text,
@@ -490,6 +722,7 @@ class ChainExecution(ExecutionStrategy):
                 ctx.user_prompt,
                 ctx.send_event,
                 ctx.dspy_history,
+                ctx.run_id,
             )
             if result_text is None:
                 break

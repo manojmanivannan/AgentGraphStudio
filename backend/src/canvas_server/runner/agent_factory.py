@@ -8,14 +8,16 @@ from typing import TYPE_CHECKING
 
 import dspy
 
+from canvas_server.attachment_delivery import declared_input_nodes, input_attachment_field_names
 from canvas_server.events import EventCallback
+from canvas_server.output_extraction import declared_output_nodes
 from canvas_server.runner.code_provider import CodeProvider
 from canvas_server.runner.plot_provider import PlotProvider
 from canvas_server.sandbox import NETWORK_POOL_DEFAULT, NETWORK_POOL_NETWORKED
 from canvas_server.streaming_react import StreamingReAct
 
 if TYPE_CHECKING:
-    from canvas_server.models.canvas import AgentNode, Edge
+    from canvas_server.models.canvas import AgentNode, AttachmentNode, Edge
     from canvas_server.repos.conversation_repo import ConversationRepo
     from canvas_server.runner.conversation import ConversationService
     from canvas_server.runner.handoff import HandoffToolBuilder
@@ -48,6 +50,7 @@ class AgentFactory:
         agent_names: dict[uuid.UUID, str] | None = None,
         conversation_id: uuid.UUID | None = None,
         conversation_repo: ConversationRepo | None = None,
+        attachment_nodes: list[AttachmentNode] | None = None,
     ) -> None:
         self._lm: dspy.LM = lm
         self._tool_registry: ToolRegistry = tool_registry
@@ -56,6 +59,7 @@ class AgentFactory:
         self._agent_names: dict[uuid.UUID, str] = agent_names or {}
         self._conversation_id: uuid.UUID | None = conversation_id
         self._conversation_repo: ConversationRepo | None = conversation_repo
+        self._attachment_nodes: list[AttachmentNode] = attachment_nodes or []
         self._run_state: CanvasRunState | None = None
 
     # ------------------------------------------------------------------
@@ -117,18 +121,22 @@ class AgentFactory:
                 )
 
             full_instructions += (
-                "\n\n[CRITICAL SYSTEM RULE] If any downstream agent or tool generates a plot "
-                "or returns a markdown image link (e.g. `![Plot](/api/static/plots/...)`), "
-                "you MUST preserve this image markdown link exactly and include it "
-                "in your final answer/response to the user. Do not omit, summarize, or modify the image link."
+                "\n\n[SYSTEM NOTE] If any downstream agent or tool produces a plot/image, "
+                "it is automatically stored and shown to the user as an attachment — you do NOT "
+                "need to repeat or embed an image link in your final answer for it to be visible. "
+                "The only exception is if a tool's result literally contains a markdown image link "
+                "(e.g. `![Plot](/api/static/plots/...)`, a legacy fallback format); in that case "
+                "preserve it exactly and include it in your response instead of omitting it."
             )
 
         if getattr(agent_node, "enable_plotting", False):
             full_instructions += (
-                "\n\n[CRITICAL SYSTEM RULE] If you call the plotting tool `generate_plot` and it returns "
-                "a markdown image link (e.g. `![Plot](/api/plots/...)`), you MUST preserve this image "
-                "markdown link exactly and include it in your final answer/response (process_result). "
-                "Do not omit, summarize, or modify the image link."
+                "\n\n[SYSTEM NOTE] Calling the plotting tool `generate_plot` automatically stores "
+                "the resulting image and shows it to the user as an attachment — you do NOT need to "
+                "embed a markdown image link in your final answer/response (process_result) for it "
+                "to be visible. The only exception is if the tool's result literally contains a "
+                "markdown image link (e.g. `![Plot](/api/static/plots/...)`, a legacy fallback "
+                "format); in that case preserve it exactly instead of omitting it."
             )
 
         if getattr(agent_node, "enable_coding", False):
@@ -212,6 +220,77 @@ class AgentFactory:
 
             signature_cls = _AgentSig
 
+        declared_nodes = declared_output_nodes(
+            self._edges, self._attachment_nodes, agent_node.id
+        )
+        if declared_nodes:
+            slot_descriptions = "; ".join(
+                f'name="{node.name}" file_type="{node.file_type}"' for node in declared_nodes
+            )
+            full_instructions += (
+                "\n\n[CRITICAL SYSTEM RULE] You have configured output attachment slot(s): "
+                f"{slot_descriptions}. Populate the corresponding named output field with "
+                "the attachment content. Do not duplicate that content inside process_result; "
+                "process_result should remain your normal final answer to the user. Leave a "
+                "named attachment field empty when there is no deliverable for that slot."
+            )
+            if getattr(agent_node, "enable_coding", False):
+                full_instructions += (
+                    ' If you already wrote the deliverable to a file via run_code, set '
+                    'content to "sandbox://<path>" instead of pasting the file contents; '
+                    "the path may be relative to /sandbox or the exact absolute path you "
+                    "wrote, and the framework will read and store that file automatically."
+                )
+            output_field_names = input_attachment_field_names(declared_nodes)
+            for output_node in declared_nodes:
+                signature_cls = signature_cls.append(
+                    output_field_names[output_node.id],
+                    dspy.OutputField(
+                        desc=(
+                            f"Content for the declared {output_node.file_type} attachment "
+                            f"'{output_node.name}'."
+                        ),
+                        default=None,
+                    ),
+                    type_=str | None,
+                )
+
+        declared_input_nodes_for_agent = declared_input_nodes(
+            self._edges, self._attachment_nodes, agent_node.id
+        )
+        input_field_names = input_attachment_field_names(declared_input_nodes_for_agent)
+        for input_node in declared_input_nodes_for_agent:
+            if input_node.file_type == "image":
+                continue
+            field_name = input_field_names[input_node.id]
+            signature_cls = signature_cls.append(
+                field_name,
+                dspy.InputField(
+                    desc=(
+                        f"Declared {input_node.file_type} attachment '{input_node.name}'. "
+                        "Contains its text, sandbox file path, or delivery note."
+                    ),
+                    default=None,
+                ),
+                type_=str | None,
+            )
+
+        # Image inputs use DSPy's multimodal image field. Non-image inputs are
+        # represented above by one named field per declared Attachment node.
+        has_image_input = any(node.file_type == "image" for node in declared_input_nodes_for_agent)
+        if has_image_input:
+            full_instructions += (
+                "\n\n[SYSTEM NOTE] You may receive an input image attachment as the "
+                "`attachment_image` field alongside this prompt — reason over it directly "
+                "when relevant; it may also be available as a file path mentioned in the "
+                "prompt text."
+            )
+            signature_cls = signature_cls.append(
+                "attachment_image",
+                dspy.InputField(default=None),
+                type_=dspy.Image | None,
+            )
+
         return signature_cls.with_instructions(full_instructions)
 
     # ------------------------------------------------------------------
@@ -283,7 +362,13 @@ class AgentFactory:
             )
 
         if getattr(agent_node, "enable_plotting", False) and self._conversation_id:
-            plot_provider = PlotProvider(self._conversation_id, self._conversation_repo)
+            plot_provider = PlotProvider(
+                self._conversation_id,
+                self._conversation_repo,
+                agent_id=agent_node.id,
+                agent_name=agent_node.name,
+                run_state=self._run_state,
+            )
             tools.append(plot_provider.generate_plot)
 
         # Coding + network share one CodeProvider so run_code and pip_install

@@ -151,7 +151,34 @@ class TestCompileToolFromCode:
             result = await fn()
 
         assert result == 123
-        assert manager.get_session.call_args_list[1].args[0] == "syntax_check_global"
+        assert manager.get_session.call_args_list[1].args[0] == "tool_factory_standalone"
+
+    async def test_standalone_runtime_releases_global_session_after_execution(self):
+        """Standalone compiled tools (no conversation session id) release the
+        held global sandbox session after each call so real-Docker tests do not
+        exhaust the locked pool under per-turn session pinning."""
+        code = "def value() -> int:\n    return 123"
+
+        syntax_session = MagicMock()
+        syntax_session.__enter__.return_value = syntax_session
+        syntax_session.__exit__.return_value = None
+        syntax_session.run.return_value = MagicMock(exit_code=0, stdout="", stderr="")
+
+        runtime_session = MagicMock()
+        runtime_session.__enter__.return_value = runtime_session
+        runtime_session.__exit__.return_value = None
+        runtime_session.run.return_value = MagicMock(exit_code=0, stdout="123", stderr="")
+
+        manager = MagicMock()
+        manager.get_session.side_effect = [syntax_session, runtime_session]
+
+        with patch("canvas_server.tool_factory.get_sandbox", new=AsyncMock(return_value=manager)):
+            fn = await compile_tool_from_code("value_tool", code)
+            result = await fn()
+
+        assert result == 123
+        assert manager.release_session.call_args_list[0].args == ("syntax_check_global",)
+        assert manager.release_session.call_args_list[1].args == ("tool_factory_standalone",)
 
     async def test_runtime_pip_install_uses_hardened_command(self):
         """Author-tool dependency install uses the shared hardened command builder

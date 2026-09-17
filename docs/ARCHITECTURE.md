@@ -349,7 +349,7 @@ conversations
 ├── status: VARCHAR(20) DEFAULT 'active'  -- 'active' | 'completed'
 ├── created_at: TIMESTAMPTZ
 ├── updated_at: TIMESTAMPTZ
-└── relationships: messages, plots (CASCADE delete)
+└── relationships: messages, attachments (CASCADE delete)
 
 messages
 ├── id: UUID PK
@@ -362,19 +362,25 @@ messages
 ├── created_at: TIMESTAMPTZ
 └── INDEX: idx_messages_conversation (conversation_id)
 
-conversation_plots
-├── id: UUID PK
+attachment_instances
+├── id: UUID PK                       -- stable across the plot->attachment migration (#83)
 ├── conversation_id: UUID FK → conversations.id (CASCADE)
+├── attachment_node_id: UUID NULL      -- placeholder linkage to a future Attachment canvas node (#76/#80); no FK yet
+├── file_type: VARCHAR(20) DEFAULT 'image'
+├── source: VARCHAR(20) DEFAULT 'agent_output'  -- 'agent_output' | 'chat_upload'
+├── produced_by_run_id: UUID NULL FK → durable_runs.id (SET NULL)
 ├── format: VARCHAR(10) DEFAULT 'png'
-├── content: BYTEA/LargeBinary      -- binary plot image contents
+├── content: BYTEA/LargeBinary         -- binary attachment contents, capped at MAX_ATTACHMENT_SIZE_BYTES (25MB)
+├── size_bytes: INTEGER DEFAULT 0
 ├── created_at: TIMESTAMPTZ
-└── INDEX: idx_conversation_plots_conversation (conversation_id)
+└── INDEX: idx_attachment_instances_conversation (conversation_id)
 ```
 
 **Key schema decisions:**
 - No FK constraints on `source_node_id` / `target_node_id` in `edges` — they can reference either `agent_nodes` or `tool_nodes`
 - `messages.event_type` mirrors the WebSocket event type for traceability
 - Conversations stay `'active'` across multi-turn exchanges; never set to `'completed'` in `runner.py`
+- `attachment_instances` generalizes the former plot-only `conversation_plots` table (#79/#83); `ConversationPlot` no longer exists — rows were backfilled in place (same ids, `file_type='image'`, `source='agent_output'`) by migration `019`, which also rewrote any persisted message content pointing at the removed `/api/plots/{id}` endpoint to `/api/attachments/{id}`
 
 ---
 
@@ -461,13 +467,15 @@ documents/{agent_id}/{document_id}.txt
 | `GET` | `/api/canvases/{id}/conversations` | List conversations |
 | `GET` | `/api/canvases/{id}/conversations/{cid}` | Get conversation with messages |
 | `DELETE` | `/api/canvases/{id}/conversations/{cid}` | Delete conversation |
-| `GET` | `/api/canvases/{id}/conversations/{cid}/export` | Export conversation (messages, metadata, binary plot files) as a ZIP archive |
-| `POST` | `/api/canvases/{id}/conversations/import` | Import conversation from a ZIP archive, remapping plot IDs to prevent collisions |
+| `GET` | `/api/canvases/{id}/conversations/{cid}/export` | Export conversation (messages, metadata, binary attachment files) as a ZIP archive |
+| `POST` | `/api/canvases/{id}/conversations/import` | Import conversation from a ZIP archive, remapping attachment IDs to prevent collisions |
+| `POST` | `/api/canvases/conversations/{conversation_id}/attachments` | Upload chat attachments, validate each file against the entry agent's declared input attachment nodes (or a specified `agent_id` for HITL uploads), return per-file success/failure, and emit no WebSocket event |
 
 ### Execution
 
 | Method | Path | Description |
 |---|---|---|
+| `GET` | `/api/attachments/{id}` | Download an attachment instance's binary content (plots and any future attachment types) |
 | `WS` | `/ws/conversations/{conversation_id}/run` | WebSocket: send `{"prompt":"..."}`, receive events |
 
 ### Tool Testing (stateless — no DB session required)
@@ -799,16 +807,17 @@ custom egress network + proxy can be swapped in with no code change. Routers
 never get network sessions or `pip_install` (worker-only, enforced by the
 `AgentNodeBase` validator).
 
-**Plotting Support:**
+**Plotting Support (unified with output attachments, #87):**
 If the `enable_plotting` capability flag is checked on an Agent Node (Worker or Router):
-1. The `AgentFactory` instantiates a `PlotProvider` initialized with the current `conversation_id`.
+1. The `AgentFactory` instantiates a `PlotProvider` initialized with the current `conversation_id`, `agent_id`/`agent_name`, and a live reference to the run's `CanvasRunState` (mirroring the `ask_human` pattern — the tool closure is built once at eager setup-time but reads `run_state.send_event`/`run_state.run_id` fresh on every turn).
 2. The `PlotProvider` exposes the `generate_plot(python_code: str) -> str` tool function to the agent's available tools.
-3. When the agent runs Python plotting code (using standard matplotlib or plotly APIs), it invokes `generate_plot` which runs the script inside the Docker sandbox session (`ArtifactSandboxSession`).
+3. When the agent runs Python plotting code (using standard matplotlib or plotly APIs), it invokes `generate_plot` which runs the script inside the Docker sandbox session (`ArtifactSandboxSession`), mid-loop (not at the end of the turn).
 4. Any figures produced by calling `plt.show()` or `fig.show()` are captured by the sandbox session as base64 images.
-5. The `PlotProvider` decodes these images, saves them to the database as `ConversationPlot` records, and returns a Markdown image link referencing the database record (e.g., `![Plot](/api/plots/{plot_id})`) to the agent.
-6. The agent is strictly instructed via dynamic prompts to preserve this exact markdown image link in its final response.
-7. **Automatic Link Recovery (`ensure_plots_in_result`)**: If the agent's final text response (or sub-agent handoff result) omits the markdown plot link generated during the run, the execution engine intercepts the result, extracts any markdown image links from the tool observations, and appends them to the final response text automatically.
-8. The frontend chat overlay renders the markdown image tag natively in the conversation turn thread.
+5. The `PlotProvider` decodes these images and persists each one via `ConversationRepo.save_attachment(..., produced_by_run_id=run_id)` as an `AttachmentInstance` record (`file_type="image"`, `source="agent_output"`) — the same unified table and `GET /api/attachments/{id}` endpoint any output-attachment type uses (#79/#83/#86).
+6. For each stored plot, `PlotProvider` calls the shared `announce_attachment_produced()` helper (`runner/attachment_events.py`) — the *same* function `_store_output_attachments` (#86's post-loop output-extraction path) uses — to fire one `attachment_produced` WS event and persist one durable `attachment_produced` message. The tool's return value to the agent is now a plain confirmation string (no markdown image link embedded).
+7. The frontend renders the `attachment_produced` message via `ExecutionStepsViewer` → `ProducedAttachmentCard`, which shows an inline image thumbnail for `file_type === "image"` — the same shared card component any output attachment renders with, not a plot-specific renderer.
+
+There is no bespoke "recover the markdown link if the agent forgot to restate it" step (the old `ensure_plots_in_result`) — the attachment is announced and rendered independently of whatever text the agent's final answer contains. A legacy local-disk fallback (when no `conversation_repo` is wired) still writes to `storage/plots/` and returns a `/api/static/plots/{filename}` markdown link, since there is no `AttachmentInstance` row to announce in that path.
 
 ### streaming_react.py — StreamingReAct
 

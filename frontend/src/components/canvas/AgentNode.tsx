@@ -3,6 +3,7 @@ import { Handle, Position, NodeResizer, type NodeProps } from "@xyflow/react";
 import { Brain, GitBranch, Settings } from "lucide-react";
 import type { AgentNodeData } from "@/types";
 import { useCanvasStore } from "@/store/canvasStore";
+import { HANDLE_IDS } from "@/lib/canvasConnectionRules";
 
 function AgentNodeComponent({ id, data, selected }: NodeProps) {
   const agentData = data as unknown as AgentNodeData;
@@ -36,10 +37,24 @@ function AgentNodeComponent({ id, data, selected }: NodeProps) {
         handleClassName="!w-2 !h-2 !bg-[var(--color-surface)] !border-[var(--color-accent)] !rounded-sm"
         lineClassName="!border-[var(--color-accent)]/50"
       />
+      {/*
+        Two target handles on top: handoff stays centered (agent-to-agent),
+        attachment "consumes" anchors to the right so it never overlaps the
+        handoff connection point (#-offset-handles).
+      */}
       <Handle
+        id={HANDLE_IDS.agentHandoffTarget}
         type="target"
         position={Position.Top}
         className="!bg-[var(--color-text-tertiary)] !w-2 !h-2 !border-2 !border-[var(--color-surface)]"
+      />
+      <Handle
+        id={HANDLE_IDS.agentAttachmentTarget}
+        type="target"
+        position={Position.Top}
+        style={{ left: "75%" }}
+        className="!bg-[var(--color-warning)] !w-2 !h-2 !border-2 !border-[var(--color-surface)]"
+        title="Attachment input (consumes)"
       />
       <div
         className={`flex items-center gap-2 px-3 py-2.5 rounded-t-xl border-b ${
@@ -102,12 +117,35 @@ function AgentNodeComponent({ id, data, selected }: NodeProps) {
           </p>
         )}
       </div>
+      {/*
+        Three source handles on the bottom: handoff stays centered
+        (agent-to-agent), tool_access anchors left, attachment "produces"
+        anchors right — so tool and attachment wires never converge on the
+        same point as agent handoffs (#-offset-handles).
+      */}
       <Handle
+        id={HANDLE_IDS.agentHandoffSource}
         type="source"
         position={Position.Bottom}
         className={`!w-2 !h-2 !border-2 !border-[var(--color-surface)] ${
           isRouter ? "!bg-[var(--color-agent)]" : "!bg-[var(--color-accent)]"
         }`}
+      />
+      <Handle
+        id={HANDLE_IDS.agentToolSource}
+        type="source"
+        position={Position.Bottom}
+        style={{ left: "25%" }}
+        className="!bg-[var(--color-info)] !w-2 !h-2 !border-2 !border-[var(--color-surface)]"
+        title="Tool access"
+      />
+      <Handle
+        id={HANDLE_IDS.agentAttachmentSource}
+        type="source"
+        position={Position.Bottom}
+        style={{ left: "75%" }}
+        className="!bg-[var(--color-warning)] !w-2 !h-2 !border-2 !border-[var(--color-surface)]"
+        title="Attachment output (produces)"
       />
     </div>
   );

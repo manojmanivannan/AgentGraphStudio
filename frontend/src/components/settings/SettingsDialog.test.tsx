@@ -77,6 +77,23 @@ describe("SettingsDialog", () => {
     expect(providerFetches).toBe(1);
   });
 
+  it("uses a fixed height for the body so tab switches do not resize the dialog", () => {
+    useSettingsModalStore.getState().openSettings("account");
+    renderDialog();
+
+    const dialog = screen.getByRole("dialog", { name: "Settings" });
+    const body = screen.getByTestId("settings-section-body");
+    // The row wrapping the nav + section body pins the height instead of
+    // growing with the active section's content.
+    const row = body.parentElement as HTMLElement;
+    expect(row.className).toMatch(/h-\[/);
+    expect(row.className).not.toMatch(/min-h-\[/);
+    // The row must be height-capped below the modal's own 85vh cap so the
+    // dialog never scrolls the outer container.
+    expect(dialog.className).toMatch(/max-h-\[85vh\]/);
+    expect(row.className).toMatch(/max-h-\[/);
+  });
+
   it("switches to the Account tab on click", async () => {
     const user = userEvent.setup();
     useSettingsModalStore.getState().openSettings("providers");

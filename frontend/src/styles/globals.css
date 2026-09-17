@@ -46,12 +46,16 @@
   /* Semantic */
   --color-success: #10b981;
   --color-success-subtle: rgba(16, 185, 129, 0.12);
+  --color-success-surface: rgba(16, 185, 129, 0.06);
   --color-danger: #ef4444;
   --color-danger-subtle: rgba(239, 68, 68, 0.12);
   --color-warning: #f59e0b;
   --color-warning-subtle: rgba(245, 158, 11, 0.12);
+  --color-warning-surface: rgba(245, 158, 11, 0.06);
   --color-info: #3b82f6;
   --color-info-subtle: rgba(59, 130, 246, 0.12);
+  --color-info-surface: rgba(59, 130, 246, 0.06);
+  --color-info-bright: #60a5fa;
 
   /* Agent purple */
   --color-agent: #8b5cf6;
@@ -106,12 +110,16 @@ html[data-theme="light"] {
   /* Semantic (adjusted for light bg) */
   --color-success: #059669;
   --color-success-subtle: rgba(5, 150, 105, 0.10);
+  --color-success-surface: rgba(5, 150, 105, 0.05);
   --color-danger: #dc2626;
   --color-danger-subtle: rgba(220, 38, 38, 0.08);
   --color-warning: #d97706;
   --color-warning-subtle: rgba(217, 119, 6, 0.10);
+  --color-warning-surface: rgba(217, 119, 6, 0.05);
   --color-info: #2563eb;
   --color-info-subtle: rgba(37, 99, 235, 0.08);
+  --color-info-surface: rgba(37, 99, 235, 0.05);
+  --color-info-bright: #3b82f6;
 
   /* Agent purple (adjusted for light bg) */
   --color-agent: #7c3aed;
@@ -787,6 +795,175 @@ html[data-theme="light"] ::-webkit-scrollbar-thumb:hover {
 
 .delete-modal-title {
   color: #ffffff !important;
+}
+
+/* ─── Chat Markdown (MarkdownMessage) ────────────────────── */
+/* Renders agent message content (final answers, execution steps, HITL
+   prompts) as markdown. Text color/size inherits from the surrounding
+   bubble; everything else uses theme variables so dark/light both work. */
+
+.chat-markdown > :first-child {
+  margin-top: 0;
+}
+
+.chat-markdown > :last-child {
+  margin-bottom: 0;
+}
+
+.chat-markdown p {
+  margin: 0.6em 0;
+}
+
+.chat-markdown ul,
+.chat-markdown ol {
+  margin: 0.6em 0;
+  padding-left: 1.4em;
+}
+
+.chat-markdown ul {
+  list-style: disc;
+}
+
+.chat-markdown ol {
+  list-style: decimal;
+}
+
+.chat-markdown li {
+  margin: 0.25em 0;
+}
+
+.chat-markdown li > p {
+  margin: 0;
+}
+
+.chat-markdown li > ul,
+.chat-markdown li > ol {
+  margin: 0.25em 0;
+}
+
+.chat-markdown strong {
+  font-weight: 600;
+}
+
+.chat-markdown a {
+  color: var(--color-accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.chat-markdown a:hover {
+  color: var(--color-accent-bright);
+}
+
+.chat-markdown code {
+  font-family: var(--font-mono);
+  font-size: 0.875em;
+  background-color: var(--color-elevated);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: 4px;
+  padding: 0.1em 0.35em;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.chat-markdown pre {
+  background-color: var(--color-elevated);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: 6px;
+  padding: 0.65em 0.85em;
+  margin: 0.6em 0;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.chat-markdown pre code {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 0.9em;
+  white-space: pre-wrap;
+}
+
+.chat-markdown h1,
+.chat-markdown h2,
+.chat-markdown h3,
+.chat-markdown h4 {
+  font-weight: 600;
+  line-height: 1.3;
+  margin: 0.9em 0 0.4em;
+}
+
+.chat-markdown h1 {
+  font-size: 1.2em;
+}
+
+.chat-markdown h2 {
+  font-size: 1.12em;
+}
+
+.chat-markdown h3 {
+  font-size: 1.05em;
+}
+
+.chat-markdown h4 {
+  font-size: 1em;
+}
+
+.chat-markdown blockquote {
+  margin: 0.6em 0;
+  padding: 0.1em 0 0.1em 0.9em;
+  border-left: 3px solid var(--color-border-default);
+  color: var(--color-text-secondary);
+}
+
+.chat-markdown table {
+  border-collapse: collapse;
+  margin: 0.6em 0;
+  font-size: 0.92em;
+  display: block;
+  overflow-x: auto;
+}
+
+.chat-markdown th,
+.chat-markdown td {
+  border: 1px solid var(--color-border-subtle);
+  padding: 0.35em 0.7em;
+  text-align: left;
+}
+
+.chat-markdown th {
+  background-color: var(--color-elevated);
+  font-weight: 600;
+}
+
+.chat-markdown hr {
+  border: none;
+  border-top: 1px solid var(--color-border-subtle);
+  margin: 0.9em 0;
+}
+
+.chat-markdown img {
+  max-width: 100%;
+  border-radius: 6px;
+  border: 1px solid var(--color-border-subtle);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+  margin: 0.4em 0;
+}
+
+/* Compact variant for execution-step messages. */
+.chat-markdown--sm p,
+.chat-markdown--sm ul,
+.chat-markdown--sm ol,
+.chat-markdown--sm pre {
+  margin: 0.35em 0;
+}
+
+.chat-markdown--sm h1,
+.chat-markdown--sm h2,
+.chat-markdown--sm h3,
+.chat-markdown--sm h4 {
+  margin: 0.5em 0 0.25em;
 }
 
 html[data-theme="light"] .delete-modal-title {

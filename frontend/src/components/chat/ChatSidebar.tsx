@@ -50,13 +50,13 @@ export function ChatSidebar({
   const navItemClass = (toPath: string) => {
     const isActive = location.pathname === toPath;
     if (sidebarCollapsed) {
-      return `flex items-center justify-center w-10 h-10 mx-auto rounded-lg transition-all duration-150 ${
+      return `flex items-center justify-center w-10 h-10 mx-auto rounded-lg cursor-pointer transition-all duration-150 ${
         isActive
           ? "bg-[var(--color-elevated)] border border-[var(--color-border-default)] shadow-sm"
           : "text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-overlay)]/40 border border-transparent"
       }`;
     }
-    return `flex items-center gap-2.5 px-3 h-10 rounded-lg text-[13px] font-medium transition-all duration-150 ${
+    return `w-full flex items-center gap-2.5 px-3 h-10 rounded-lg cursor-pointer text-xs font-medium transition-all duration-150 ${
       isActive
         ? "bg-[var(--color-elevated)] border border-[var(--color-border-default)] text-[var(--color-text-primary)] shadow-sm"
         : "text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-overlay)]/40 border border-transparent"

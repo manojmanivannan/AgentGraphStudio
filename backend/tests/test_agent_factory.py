@@ -42,16 +42,17 @@ class FakeAgentNode:
         self.enable_rag = kwargs.get("enable_rag", False)
 
 
-def _make_factory(conversation_id="conv-1") -> AgentFactory:
+def _make_factory(conversation_id="conv-1", edges=None, attachment_nodes=None) -> AgentFactory:
     lm = MagicMock(spec=dspy.LM)
     return AgentFactory(
         lm=lm,
         tool_registry=FakeToolRegistry(),
         memory_manager=FakeMemoryManager(),
-        edges=[],
+        edges=edges or [],
         agent_names={},
         conversation_id=conversation_id,
         conversation_repo=MagicMock(),
+        attachment_nodes=attachment_nodes or [],
     )
 
 
@@ -201,6 +202,292 @@ class TestBuildRouterNoPipInstall:
 
         assert "pip_install" not in agent.tools
         assert "run_code" not in agent.tools
+
+
+class TestBuildSignatureOutputAttachments:
+    """The `output_attachments` OutputField (#78/#86) is only added to the
+    signature when the agent has at least one declared output Attachment
+    node — a node wired to it via a `produces` edge (#84)."""
+
+    def test_signature_has_no_output_attachments_field_without_produces_edges(self):
+        factory = _make_factory()
+        node = FakeAgentNode(name="Plain")
+
+        signature = factory.build_signature(node)
+
+        assert "output_attachments" not in signature.model_fields
+
+    def test_signature_uses_named_output_field_without_generic_attachment_list(self):
+        from types import SimpleNamespace
+
+        agent_node = FakeAgentNode(name="Reporter")
+        attachment_id = uuid.uuid4()
+        edges = [
+            SimpleNamespace(
+                source_node_id=agent_node.id,
+                target_node_id=attachment_id,
+                edge_type="produces",
+            )
+        ]
+        attachment_nodes = [
+            SimpleNamespace(id=attachment_id, name="chart_data", file_type="csv")
+        ]
+        factory = _make_factory(edges=edges, attachment_nodes=attachment_nodes)
+
+        signature = factory.build_signature(agent_node)
+
+        assert "output_attachments" not in signature.model_fields
+
+    def test_signature_gains_named_output_field_for_declared_attachment(self):
+        from types import SimpleNamespace
+
+        agent_node = FakeAgentNode(name="WeatherAgent")
+        attachment_id = uuid.uuid4()
+        factory = _make_factory(
+            edges=[
+                SimpleNamespace(
+                    source_node_id=agent_node.id,
+                    target_node_id=attachment_id,
+                    edge_type="produces",
+                )
+            ],
+            attachment_nodes=[
+                SimpleNamespace(
+                    id=attachment_id,
+                    name="CurrentTemperature",
+                    file_type="text",
+                )
+            ],
+        )
+
+        signature = factory.build_signature(agent_node)
+
+        assert "current_temperature" in signature.model_fields
+        assert signature.model_fields["current_temperature"].default is None
+
+    def test_signature_gains_named_input_field_for_declared_text_attachment(self):
+        from types import SimpleNamespace
+
+        agent_node = FakeAgentNode(name="WeatherAgent")
+        attachment_id = uuid.uuid4()
+        factory = _make_factory(
+            edges=[
+                SimpleNamespace(
+                    source_node_id=attachment_id,
+                    target_node_id=agent_node.id,
+                    edge_type="consumes",
+                )
+            ],
+            attachment_nodes=[
+                SimpleNamespace(
+                    id=attachment_id,
+                    name="CityName",
+                    file_type="text",
+                    delivery_method="inline",
+                )
+            ],
+        )
+
+        signature = factory.build_signature(agent_node)
+
+        assert "city_name" in signature.model_fields
+        assert signature.model_fields["city_name"].default is None
+
+    def test_signature_instructions_mention_declared_slot_name_and_type(self):
+        from types import SimpleNamespace
+
+        agent_node = FakeAgentNode(name="Reporter")
+        attachment_id = uuid.uuid4()
+        edges = [
+            SimpleNamespace(
+                source_node_id=agent_node.id,
+                target_node_id=attachment_id,
+                edge_type="produces",
+            )
+        ]
+        attachment_nodes = [
+            SimpleNamespace(id=attachment_id, name="chart_data", file_type="csv")
+        ]
+        factory = _make_factory(edges=edges, attachment_nodes=attachment_nodes)
+
+        signature = factory.build_signature(agent_node)
+
+        assert "chart_data" in signature.instructions
+        assert "csv" in signature.instructions
+
+    def test_signature_ignores_produces_edges_from_other_agents(self):
+        from types import SimpleNamespace
+
+        agent_node = FakeAgentNode(name="Reporter")
+        other_agent_id = uuid.uuid4()
+        attachment_id = uuid.uuid4()
+        edges = [
+            SimpleNamespace(
+                source_node_id=other_agent_id,
+                target_node_id=attachment_id,
+                edge_type="produces",
+            )
+        ]
+        attachment_nodes = [
+            SimpleNamespace(id=attachment_id, name="chart_data", file_type="csv")
+        ]
+        factory = _make_factory(edges=edges, attachment_nodes=attachment_nodes)
+
+        signature = factory.build_signature(agent_node)
+
+        assert "output_attachments" not in signature.model_fields
+
+    def test_signature_with_history_also_gains_output_attachments_field(self):
+        from types import SimpleNamespace
+
+        agent_node = FakeAgentNode(
+            name="Reporter", enable_conversation_history=True
+        )
+        attachment_id = uuid.uuid4()
+        edges = [
+            SimpleNamespace(
+                source_node_id=agent_node.id,
+                target_node_id=attachment_id,
+                edge_type="produces",
+            )
+        ]
+        attachment_nodes = [
+            SimpleNamespace(id=attachment_id, name="chart_data", file_type="csv")
+        ]
+        factory = _make_factory(edges=edges, attachment_nodes=attachment_nodes)
+
+        signature = factory.build_signature(agent_node)
+
+        assert "output_attachments" not in signature.model_fields
+        assert "history" in signature.model_fields
+
+    def test_coding_agent_signature_instructions_mention_sandbox_output_reference(self):
+        from types import SimpleNamespace
+
+        agent_node = FakeAgentNode(name="Reporter", enable_coding=True)
+        attachment_id = uuid.uuid4()
+        edges = [
+            SimpleNamespace(
+                source_node_id=agent_node.id,
+                target_node_id=attachment_id,
+                edge_type="produces",
+            )
+        ]
+        attachment_nodes = [
+            SimpleNamespace(id=attachment_id, name="chart_data", file_type="csv")
+        ]
+        factory = _make_factory(edges=edges, attachment_nodes=attachment_nodes)
+
+        signature = factory.build_signature(agent_node)
+
+        assert "sandbox://" in signature.instructions
+
+    def test_non_coding_agent_signature_instructions_do_not_mention_sandbox_reference(self):
+        from types import SimpleNamespace
+
+        agent_node = FakeAgentNode(name="Reporter", enable_coding=False)
+        attachment_id = uuid.uuid4()
+        edges = [
+            SimpleNamespace(
+                source_node_id=agent_node.id,
+                target_node_id=attachment_id,
+                edge_type="produces",
+            )
+        ]
+        attachment_nodes = [
+            SimpleNamespace(id=attachment_id, name="chart_data", file_type="csv")
+        ]
+        factory = _make_factory(edges=edges, attachment_nodes=attachment_nodes)
+
+        signature = factory.build_signature(agent_node)
+
+        assert "sandbox://" not in signature.instructions
+
+
+class TestBuildSignatureAttachmentImage:
+    """The `attachment_image` InputField (#88) is only added to the signature
+    when the agent has at least one declared *input* Attachment node of type
+    "image" — a node wired to it via a `consumes` edge (#84)."""
+
+    def test_signature_has_no_attachment_image_field_without_image_input(self):
+        factory = _make_factory()
+        node = FakeAgentNode(name="Plain")
+
+        signature = factory.build_signature(node)
+
+        assert "attachment_image" not in signature.model_fields
+
+    def test_signature_has_no_attachment_image_field_for_non_image_input(self):
+        from types import SimpleNamespace
+
+        agent_node = FakeAgentNode(name="Analyst")
+        attachment_id = uuid.uuid4()
+        edges = [
+            SimpleNamespace(
+                source_node_id=attachment_id,
+                target_node_id=agent_node.id,
+                edge_type="consumes",
+            )
+        ]
+        attachment_nodes = [
+            SimpleNamespace(
+                id=attachment_id, name="data", file_type="csv", delivery_method="inline"
+            )
+        ]
+        factory = _make_factory(edges=edges, attachment_nodes=attachment_nodes)
+
+        signature = factory.build_signature(agent_node)
+
+        assert "attachment_image" not in signature.model_fields
+
+    def test_signature_gains_attachment_image_field_with_declared_image_input(self):
+        from types import SimpleNamespace
+
+        agent_node = FakeAgentNode(name="Vision")
+        attachment_id = uuid.uuid4()
+        edges = [
+            SimpleNamespace(
+                source_node_id=attachment_id,
+                target_node_id=agent_node.id,
+                edge_type="consumes",
+            )
+        ]
+        attachment_nodes = [
+            SimpleNamespace(
+                id=attachment_id, name="chart", file_type="image", delivery_method="inline"
+            )
+        ]
+        factory = _make_factory(edges=edges, attachment_nodes=attachment_nodes)
+
+        signature = factory.build_signature(agent_node)
+
+        assert "attachment_image" in signature.model_fields
+        field = signature.model_fields["attachment_image"]
+        assert field.default is None
+
+    def test_signature_ignores_consumes_edges_from_other_agents(self):
+        from types import SimpleNamespace
+
+        agent_node = FakeAgentNode(name="Bystander")
+        other_agent_id = uuid.uuid4()
+        attachment_id = uuid.uuid4()
+        edges = [
+            SimpleNamespace(
+                source_node_id=attachment_id,
+                target_node_id=other_agent_id,
+                edge_type="consumes",
+            )
+        ]
+        attachment_nodes = [
+            SimpleNamespace(
+                id=attachment_id, name="chart", file_type="image", delivery_method="inline"
+            )
+        ]
+        factory = _make_factory(edges=edges, attachment_nodes=attachment_nodes)
+
+        signature = factory.build_signature(agent_node)
+
+        assert "attachment_image" not in signature.model_fields
 
 
 # ── helper ──

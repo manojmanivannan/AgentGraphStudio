@@ -46,6 +46,7 @@ class FakeRunState:
         self.conversation_service = SimpleNamespace(persist_message=AsyncMock())
         self.get_client_response = AsyncMock(return_value="ok")
         self.send_event = AsyncMock()
+        self.run_id = None
 
     async def get_or_build_agent(self, target_id, task=None):
         return self.agents[target_id]
@@ -179,3 +180,37 @@ async def test_handoff_agent_exception_still_returns_error_string(monkeypatch):
     assert len(recorded) == 1
     assert recorded[0].name == "agent: BrokenAgent"
     assert active == []
+
+
+@pytest.mark.asyncio
+async def test_handoff_stores_delegated_agent_output_attachments(monkeypatch):
+    target_id = uuid.uuid4()
+    target_node = SimpleNamespace(name="WeatherAgent", agent_type="worker", role=None)
+    agent = make_agent("Temperature recorded.")
+    run_state = FakeRunState(
+        node_map={target_id: target_node}, agents={target_id: agent}
+    )
+    run_state.run_id = uuid.uuid4()
+    store_output_attachments = AsyncMock()
+    monkeypatch.setattr(
+        "canvas_server.runner.handoff.store_output_attachments",
+        store_output_attachments,
+    )
+
+    builder = HandoffToolBuilder(run_state)
+    send_event = AsyncMock()
+    tool = builder.make_handoff_tool(target_id, "MasterAgent", send_event, history="")
+
+    await tool("Record the temperature as an attachment.")
+
+    store_output_attachments.assert_awaited_once()
+    call = store_output_attachments.await_args
+    assert call is not None
+    call_kwargs = call.kwargs
+    assert call_kwargs["result"].process_result == "Temperature recorded."
+    assert call_kwargs["agent_node"] is target_node
+    assert call_kwargs["agent_id"] == target_id
+    assert call_kwargs["send_event"] is send_event
+    assert call_kwargs["conversation_service"] is run_state.conversation_service
+    assert call_kwargs["canvas"] is None
+    assert call_kwargs["run_id"] == run_state.run_id

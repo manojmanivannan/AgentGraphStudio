@@ -67,6 +67,11 @@ class Canvas(Base):
         back_populates="canvas",
         cascade="all, delete-orphan",
     )
+    attachment_nodes: Mapped[list[AttachmentNode]] = relationship(
+        "AttachmentNode",
+        back_populates="canvas",
+        cascade="all, delete-orphan",
+    )
     edges: Mapped[list[Edge]] = relationship(
         "Edge",
         back_populates="canvas",
@@ -279,6 +284,44 @@ class ToolNode(Base):
     canvas: Mapped[Canvas] = relationship("Canvas", back_populates="tool_nodes")
 
 
+class AttachmentNode(Base):
+    """A typed data artifact node (#76/#80): no direction field of its own —
+    whether it acts as input or output is derived purely from the ``produces``/
+    ``consumes`` edges connecting it to agent nodes.
+    """
+
+    __tablename__ = "attachment_nodes"
+    __table_args__ = (Index("idx_attachment_nodes_canvas", "canvas_id"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        Uuid,
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+    canvas_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid,
+        ForeignKey("canvases.id", ondelete="CASCADE"),
+    )
+    name: Mapped[str] = mapped_column(String(255), default="Attachment")
+    # Enum-plus-freeform taxonomy (#76): a curated common list, plus any
+    # custom string as an escape hatch. Stored as-is; validated at the
+    # Pydantic layer (both on save and on read).
+    file_type: Mapped[str] = mapped_column(String(50), default="text")
+    description: Mapped[str] = mapped_column(Text, default="")
+    # Runtime consumption preference (#88): "inline" injects readable content
+    # as text (or a multimodal block for images) directly into the consuming
+    # agent's prompt; "file_path" materializes the bytes as a file inside the
+    # agent's Docker sandbox session and hands the agent the path as a bare
+    # string. The framework falls back automatically per-consumer when the
+    # declared preference isn't feasible (see ``attachment_delivery.py``) —
+    # this field is only ever a *preference*, never a hard requirement.
+    delivery_method: Mapped[str] = mapped_column(String(20), default="inline")
+    position_x: Mapped[float] = mapped_column(Double, default=0)
+    position_y: Mapped[float] = mapped_column(Double, default=0)
+
+    canvas: Mapped[Canvas] = relationship("Canvas", back_populates="attachment_nodes")
+
+
 class Edge(Base):
     __tablename__ = "edges"
     __table_args__ = (Index("idx_edges_canvas", "canvas_id"),)
@@ -331,8 +374,8 @@ class Conversation(Base):
         cascade="all, delete-orphan",
         order_by="Message.created_at",
     )
-    plots: Mapped[list[ConversationPlot]] = relationship(
-        "ConversationPlot",
+    attachments: Mapped[list[AttachmentInstance]] = relationship(
+        "AttachmentInstance",
         back_populates="conversation",
         cascade="all, delete-orphan",
     )
@@ -381,9 +424,20 @@ class Message(Base):
     )
 
 
-class ConversationPlot(Base):
-    __tablename__ = "conversation_plots"
-    __table_args__ = (Index("idx_conversation_plots_conversation", "conversation_id"),)
+class AttachmentInstance(Base):
+    """A stored attachment instance: unifies today's plot-only storage into a
+    generic table for any attachment content flowing through a conversation.
+
+    ``attachment_node_id`` is a placeholder linkage to a future Attachment
+    canvas node (#76/#80) — no FK constraint is enforced yet because that
+    table doesn't exist in this slice; it stays a bare nullable UUID, same
+    spirit as the cross-type ``edges.source_node_id``/``target_node_id``
+    columns. ``produced_by_run_id`` is similarly optional: chat-upload
+    instances have no producing run.
+    """
+
+    __tablename__ = "attachment_instances"
+    __table_args__ = (Index("idx_attachment_instances_conversation", "conversation_id"),)
 
     id: Mapped[uuid.UUID] = mapped_column(
         Uuid,
@@ -394,15 +448,38 @@ class ConversationPlot(Base):
         Uuid,
         ForeignKey("conversations.id", ondelete="CASCADE"),
     )
+    attachment_node_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, nullable=True, default=None
+    )
+    file_type: Mapped[str] = mapped_column(String(20), default="image")
+    source: Mapped[str] = mapped_column(String(20), default="agent_output")
+    produced_by_run_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid,
+        ForeignKey("durable_runs.id", ondelete="SET NULL"),
+        nullable=True,
+        default=None,
+    )
     format: Mapped[str] = mapped_column(String(10), default="png")
     content: Mapped[bytes] = mapped_column(sa.LargeBinary)
+    size_bytes: Mapped[int] = mapped_column(sa.Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=_utcnow,
     )
+    # Set once this instance has been delivered to its declared consuming
+    # agent — whether it was a chat-uploaded input (#88) or an agent-produced
+    # output later declared as a different agent's input via a downstream/
+    # upstream handoff (#89) — so a multi-turn conversation never re-injects
+    # the same file into the prompt / re-materializes it into the sandbox on
+    # a later turn. Stays ``None`` forever for an ``agent_output`` row that no
+    # agent has declared as an input (the common case: it's only ever shown
+    # to the user).
+    consumed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, default=None
+    )
 
     conversation: Mapped[Conversation] = relationship(
-        "Conversation", back_populates="plots"
+        "Conversation", back_populates="attachments"
     )
 
 

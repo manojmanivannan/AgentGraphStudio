@@ -2,7 +2,7 @@
 
 These exercise the real DB + real cookie auth (via ``make_authed_client``),
 complementing the faked orchestration tests in ``test_routes_execute.py``.
-Covers: unauthed execute routes -> 401; cross-user plot/run/active-run/events
+Covers: unauthed execute routes -> 401; cross-user attachment/run/active-run/events
 -> 404.
 """
 
@@ -25,10 +25,10 @@ async def _make_conversation(session, canvas_id, name="Conv"):
     return await ConversationRepo(session).create(canvas_id=canvas_id, name=name)
 
 
-async def _make_plot(session, conversation_id):
+async def _make_attachment(session, conversation_id):
     from canvas_server.repos.conversation_repo import ConversationRepo
 
-    return await ConversationRepo(session).save_plot(
+    return await ConversationRepo(session).save_attachment(
         conversation_id=conversation_id, content=b"png-bytes", format="png"
     )
 
@@ -47,7 +47,7 @@ class TestExecuteRoutesRequireAuth:
         pid = uuid.uuid4()
         cid = uuid.uuid4()
         rid = uuid.uuid4()
-        assert (await test_client.get(f"/api/plots/{pid}")).status_code == 401
+        assert (await test_client.get(f"/api/attachments/{pid}")).status_code == 401
         assert (
             await test_client.get(f"/api/conversations/{cid}/runs/active")
         ).status_code == 401
@@ -63,18 +63,18 @@ class TestExecuteRoutesRequireAuth:
 
 @pytest.mark.asyncio
 class TestExecuteRoutesPerUserIsolation:
-    async def test_cross_user_plot_returns_404(self, make_authed_client, test_session):
+    async def test_cross_user_attachment_returns_404(self, make_authed_client, test_session):
         alice = await make_authed_client()
         bob = await make_authed_client()
 
         canvas = await _make_canvas(test_session, alice.auth_user_id)
         conv = await _make_conversation(test_session, canvas.id)
-        plot = await _make_plot(test_session, conv.id)
+        attachment = await _make_attachment(test_session, conv.id)
         await test_session.commit()
 
-        # Bob cannot fetch Alice's plot; Alice can.
-        assert (await bob.get(f"/api/plots/{plot.id}")).status_code == 404
-        assert (await alice.get(f"/api/plots/{plot.id}")).status_code == 200
+        # Bob cannot fetch Alice's attachment; Alice can.
+        assert (await bob.get(f"/api/attachments/{attachment.id}")).status_code == 404
+        assert (await alice.get(f"/api/attachments/{attachment.id}")).status_code == 200
 
     async def test_cross_user_active_run_returns_404(
         self, make_authed_client, test_session
