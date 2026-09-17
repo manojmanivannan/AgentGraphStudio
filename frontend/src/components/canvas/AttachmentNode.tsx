@@ -1,5 +1,5 @@
 import { memo } from "react";
-import { Handle, Position, type NodeProps } from "@xyflow/react";
+import { Handle, Position, NodeResizer, type NodeProps } from "@xyflow/react";
 import { Paperclip, Settings } from "lucide-react";
 import type { AttachmentNodeData } from "@/types";
 import { useCanvasStore } from "@/store/canvasStore";
@@ -16,7 +16,7 @@ function AttachmentNodeComponent({ id, data, selected }: NodeProps) {
       data-testid="attachment-node"
       data-node-id={id}
       className={`
-        relative min-w-[160px] rounded-xl bg-[var(--color-surface)] border
+        relative h-full flex flex-col min-w-[160px] rounded-xl bg-[var(--color-surface)] border
         shadow-[0_4px_24px_-4px_rgba(0,0,0,0.5)]
         transition-all duration-200
         ${selected
@@ -26,6 +26,13 @@ function AttachmentNodeComponent({ id, data, selected }: NodeProps) {
         ${isActive ? "border-[var(--color-danger)] glow-active-pulse" : ""}
       `}
     >
+      <NodeResizer
+        isVisible={selected}
+        minWidth={160}
+        minHeight={80}
+        handleClassName="!w-2 !h-2 !bg-[var(--color-surface)] !border-[var(--color-warning)] !rounded-sm"
+        lineClassName="!border-[var(--color-warning)]/50"
+      />
       <Handle
         id={HANDLE_IDS.attachmentProducesTarget}
         type="target"
@@ -54,7 +61,7 @@ function AttachmentNodeComponent({ id, data, selected }: NodeProps) {
           <Settings className="w-3 h-3" />
         </button>
       </div>
-      <div className="px-2.5 py-2">
+      <div className="px-2.5 py-2 flex-1 overflow-hidden">
         {attachmentData.description ? (
           <p className="text-[11px] text-[var(--color-text-secondary)] line-clamp-2 leading-relaxed">
             {attachmentData.description}

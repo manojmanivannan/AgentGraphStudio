@@ -1,5 +1,5 @@
 import { memo } from "react";
-import { Handle, Position, type NodeProps } from "@xyflow/react";
+import { Handle, Position, NodeResizer, type NodeProps } from "@xyflow/react";
 import { Wrench, Settings } from "lucide-react";
 import type { ToolNodeData } from "@/types";
 import { useCanvasStore } from "@/store/canvasStore";
@@ -22,7 +22,7 @@ function ToolNodeComponent({ id, data, selected }: NodeProps) {
       data-testid="tool-node"
       data-node-id={id}
       className={`
-        relative min-w-[180px] rounded-xl bg-[var(--color-surface)] border
+        relative h-full flex flex-col min-w-[180px] rounded-xl bg-[var(--color-surface)] border
         shadow-[0_4px_24px_-4px_rgba(0,0,0,0.5)]
         transition-all duration-200
         ${selected
@@ -32,6 +32,13 @@ function ToolNodeComponent({ id, data, selected }: NodeProps) {
         ${isActive ? "border-[var(--color-danger)] glow-active-pulse" : ""}
       `}
     >
+      <NodeResizer
+        isVisible={selected}
+        minWidth={180}
+        minHeight={90}
+        handleClassName="!w-2 !h-2 !bg-[var(--color-surface)] !border-[var(--color-info)] !rounded-sm"
+        lineClassName="!border-[var(--color-info)]/50"
+      />
       <Handle
         id={HANDLE_IDS.toolTarget}
         type="target"
@@ -60,7 +67,7 @@ function ToolNodeComponent({ id, data, selected }: NodeProps) {
           <Settings className="w-3.5 h-3.5" />
         </button>
       </div>
-      <div className="px-3 py-2.5">
+      <div className="px-3 py-2.5 flex-1 overflow-hidden">
         {codePreview ? (
           <pre className="text-[10px] text-[var(--color-text-tertiary)] font-[var(--font-mono)] leading-relaxed overflow-hidden">
             {codePreview}

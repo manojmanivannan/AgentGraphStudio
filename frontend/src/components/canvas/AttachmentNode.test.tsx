@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
+import { ReactFlowProvider } from "@xyflow/react";
 import { useCanvasStore } from "@/store/canvasStore";
 import { AttachmentNode } from "./AttachmentNode";
 import type { AttachmentNodeData } from "@/types";
@@ -69,5 +70,14 @@ describe("AttachmentNode", () => {
     useCanvasStore.getState().setActiveNodeId("other-node");
     const { container } = render(<AttachmentNode {...makeProps({ id: "att-1" })} />);
     expect(container.firstChild).not.toHaveClass("glow-active-pulse");
+  });
+
+  it("renders resize handles so the node can be resized like agent/router nodes", () => {
+    const { container } = render(
+      <ReactFlowProvider>
+        <AttachmentNode {...makeProps({ id: "att-1" })} selected />
+      </ReactFlowProvider>
+    );
+    expect(container.querySelectorAll(".react-flow__resize-control").length).toBeGreaterThan(0);
   });
 });
