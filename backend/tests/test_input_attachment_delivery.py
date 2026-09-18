@@ -521,36 +521,42 @@ class TestDeliverInputAttachmentsRealDockerE2E:
             mark_attachment_consumed=AsyncMock(),
         )
 
-        result = await deliver_input_attachments(
-            agent_node=_agent_node(agent_id, enable_coding=True),
-            agent_id=agent_id,
-            canvas=canvas,
-            conversation_repo=conversation_repo,
-            conversation_id=conversation_id,
-        )
-
-        delivered = result.delivered[0]
-        assert delivered.delivery_method == "file_path"
-        sandbox_path = delivered.sandbox_path
-        assert sandbox_path == f"{SANDBOX_ATTACHMENT_DIR}/People.csv"
-        assert conversation_repo.mark_attachment_consumed.await_count == 1
-
-        # Same conversation_id -> same (locked-pool) sandbox session, so a
-        # tool call here reads back exactly what was materialized above.
-        provider = CodeProvider(conversation_id=conversation_id)
-        read_back = ""
-        for _ in range(8):
-            read_back = await provider.run_code(f"print(open('{sandbox_path}').read())")
-            if "busy" not in read_back.lower():
-                break
-            await asyncio.sleep(2)
-
-        assert read_back.strip() == csv_content.decode("utf-8").strip()
-
-        # Release the turn's pinned container so the test does not leak it
-        # (locked pool max is only 2 — mirrors test_code_provider.py's real
-        # execution tests).
+        # Everything below must run inside try/finally: the locked pool is
+        # only 2 containers wide, and a failed assertion must never skip the
+        # release below, or it permanently starves every other sandbox test
+        # in the same pytest session (locked pool containers are reused, not
+        # recreated, across tests).
         from canvas_server.sandbox import get_sandbox
 
-        sandbox = await get_sandbox()
-        sandbox.release_session(conversation_id)
+        try:
+            result = await deliver_input_attachments(
+                agent_node=_agent_node(agent_id, enable_coding=True),
+                agent_id=agent_id,
+                canvas=canvas,
+                conversation_repo=conversation_repo,
+                conversation_id=conversation_id,
+            )
+
+            delivered = result.delivered[0]
+            assert delivered.delivery_method == "file_path"
+            sandbox_path = delivered.sandbox_path
+            assert sandbox_path == f"{SANDBOX_ATTACHMENT_DIR}/People.csv"
+            assert conversation_repo.mark_attachment_consumed.await_count == 1
+
+            # Same conversation_id -> same (locked-pool) sandbox session, so a
+            # tool call here reads back exactly what was materialized above.
+            provider = CodeProvider(conversation_id=conversation_id)
+            read_back = ""
+            for _ in range(8):
+                read_back = await provider.run_code(f"print(open('{sandbox_path}').read())")
+                if "busy" not in read_back.lower():
+                    break
+                await asyncio.sleep(2)
+
+            assert read_back.strip() == csv_content.decode("utf-8").strip()
+        finally:
+            # Release the turn's pinned container so the test does not leak it
+            # (locked pool max is only 2 — mirrors test_code_provider.py's real
+            # execution tests).
+            sandbox = await get_sandbox()
+            sandbox.release_session(conversation_id)

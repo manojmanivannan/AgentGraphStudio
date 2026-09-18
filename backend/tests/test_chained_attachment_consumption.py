@@ -126,76 +126,82 @@ class TestChainedAgentOutputConsumedByHandoffTarget:
         shared_node_id = uuid.uuid4()
         csv_content = "name,age\nAda,30\nGrace,85"
 
-        # --- Agent A produces the csv output attachment (#86). ---
-        await self._run_agent_a(
-            conversation_repo=conversation_repo,
-            conversation_id=conversation.id,
-            shared_node_id=shared_node_id,
-            csv_content=csv_content,
-        )
+        # Everything below must run inside try/finally: the locked pool is
+        # only 2 containers wide, and a failed assertion must never skip the
+        # release below, or it permanently starves every other sandbox test
+        # in the same pytest session (locked pool containers are reused, not
+        # recreated, across tests).
+        try:
+            # --- Agent A produces the csv output attachment (#86). ---
+            await self._run_agent_a(
+                conversation_repo=conversation_repo,
+                conversation_id=conversation.id,
+                shared_node_id=shared_node_id,
+                csv_content=csv_content,
+            )
 
-        # --- Agent B, reached via handoff, declares the SAME Attachment
-        # node as a `file_path` input (#89): the widened repo query now
-        # surfaces agent A's `agent_output` instance as unconsumed input
-        # for B, exactly as it would a chat upload. We drive this through
-        # ``deliver_and_announce_input_attachments`` with
-        # ``emit_agent_start=True`` — the exact shared function and flag
-        # value ``HandoffToolBuilder.transfer`` uses in ``handoff.py`` — so
-        # this proves the ``attachment_consumed`` event fires right after
-        # ``agent_start`` for the chained/downstream case too (AC#2), not
-        # just that the bytes round-trip through the sandbox.
-        agent_b_id = uuid.uuid4()
-        canvas_b = SimpleNamespace(
-            edges=[_edge(shared_node_id, agent_b_id, "consumes")],
-            attachment_nodes=[
-                _attachment_node(shared_node_id, "orders", "csv", delivery_method="file_path")
-            ],
-            tool_nodes=[],
-        )
-        agent_node_b = SimpleNamespace(
-            id=agent_b_id, name="Consumer", agent_type="worker",
-            enable_coding=True, enable_network=False,
-        )
-        send_event_b = AsyncMock()
+            # --- Agent B, reached via handoff, declares the SAME Attachment
+            # node as a `file_path` input (#89): the widened repo query now
+            # surfaces agent A's `agent_output` instance as unconsumed input
+            # for B, exactly as it would a chat upload. We drive this through
+            # ``deliver_and_announce_input_attachments`` with
+            # ``emit_agent_start=True`` — the exact shared function and flag
+            # value ``HandoffToolBuilder.transfer`` uses in ``handoff.py`` — so
+            # this proves the ``attachment_consumed`` event fires right after
+            # ``agent_start`` for the chained/downstream case too (AC#2), not
+            # just that the bytes round-trip through the sandbox.
+            agent_b_id = uuid.uuid4()
+            canvas_b = SimpleNamespace(
+                edges=[_edge(shared_node_id, agent_b_id, "consumes")],
+                attachment_nodes=[
+                    _attachment_node(shared_node_id, "orders", "csv", delivery_method="file_path")
+                ],
+                tool_nodes=[],
+            )
+            agent_node_b = SimpleNamespace(
+                id=agent_b_id, name="Consumer", agent_type="worker",
+                enable_coding=True, enable_network=False,
+            )
+            send_event_b = AsyncMock()
 
-        await deliver_and_announce_input_attachments(
-            agent_node=agent_node_b,
-            agent_id=agent_b_id,
-            canvas=canvas_b,
-            conversation_repo=conversation_repo,
-            conversation_id=conversation.id,
-            conversation_service=None,
-            send_event=send_event_b,
-            run_id=None,
-            user_prompt="continue the analysis",
-            emit_agent_start=True,
-        )
+            await deliver_and_announce_input_attachments(
+                agent_node=agent_node_b,
+                agent_id=agent_b_id,
+                canvas=canvas_b,
+                conversation_repo=conversation_repo,
+                conversation_id=conversation.id,
+                conversation_service=None,
+                send_event=send_event_b,
+                run_id=None,
+                user_prompt="continue the analysis",
+                emit_agent_start=True,
+            )
 
-        emitted_types = [call.args[0]["type"] for call in send_event_b.await_args_list]
-        assert emitted_types.index("agent_start") < emitted_types.index("attachment_consumed")
+            emitted_types = [call.args[0]["type"] for call in send_event_b.await_args_list]
+            assert emitted_types.index("agent_start") < emitted_types.index("attachment_consumed")
 
-        sandbox_path = f"{SANDBOX_ATTACHMENT_DIR}/orders.csv"
+            sandbox_path = f"{SANDBOX_ATTACHMENT_DIR}/orders.csv"
 
-        # Consumed — a later turn must never redeliver the same instance.
-        remaining = await conversation_repo.get_unconsumed_input_attachments(
-            conversation.id, [shared_node_id]
-        )
-        assert remaining == []
+            # Consumed — a later turn must never redeliver the same instance.
+            remaining = await conversation_repo.get_unconsumed_input_attachments(
+                conversation.id, [shared_node_id]
+            )
+            assert remaining == []
 
-        # --- B's own sandbox tool call reads the exact file A produced,
-        # from the same conversation's real Docker sandbox session. ---
-        provider = CodeProvider(conversation_id=conversation.id)
-        read_back = ""
-        for _ in range(8):
-            read_back = await provider.run_code(f"print(open('{sandbox_path}').read())")
-            if "busy" not in read_back.lower():
-                break
-            await asyncio.sleep(2)
+            # --- B's own sandbox tool call reads the exact file A produced,
+            # from the same conversation's real Docker sandbox session. ---
+            provider = CodeProvider(conversation_id=conversation.id)
+            read_back = ""
+            for _ in range(8):
+                read_back = await provider.run_code(f"print(open('{sandbox_path}').read())")
+                if "busy" not in read_back.lower():
+                    break
+                await asyncio.sleep(2)
 
-        assert read_back.strip() == csv_content.strip()
-
-        # Release the turn's pinned container so the test does not leak it
-        # (locked pool max is only 2 — mirrors
-        # test_input_attachment_delivery.py's real-Docker e2e test).
-        sandbox = await get_sandbox()
-        sandbox.release_session(conversation.id)
+            assert read_back.strip() == csv_content.strip()
+        finally:
+            # Release the turn's pinned container so the test does not leak it
+            # (locked pool max is only 2 — mirrors
+            # test_input_attachment_delivery.py's real-Docker e2e test).
+            sandbox = await get_sandbox()
+            sandbox.release_session(conversation.id)
