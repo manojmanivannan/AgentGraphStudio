@@ -82,6 +82,11 @@ class DeliveredAttachment:
     source: str
     delivery_method: str  # resolved: inline | file_path | dual | manifest_only
     sandbox_path: str | None = None
+    # The filename the user actually uploaded it under (e.g. "city_name.json"),
+    # distinct from `name` (the declared Attachment node's own canvas label,
+    # e.g. "CityName") — #90. `None` for agent-produced attachments, which
+    # were never uploaded.
+    original_filename: str | None = None
 
 
 @dataclass
@@ -345,6 +350,7 @@ async def deliver_input_attachments(
                 source=instance.source,
                 delivery_method=method,
                 sandbox_path=sandbox_path,
+                original_filename=getattr(instance, "original_filename", None),
             )
         )
         await conversation_repo.mark_attachment_consumed(instance.id)
@@ -424,6 +430,7 @@ async def deliver_and_announce_input_attachments(
             delivery_method=delivered.delivery_method,
             conversation_id=conversation_id,
             run_id=run_id,
+            original_filename=delivered.original_filename,
         )
 
     extra_kwargs: dict[str, Any] = dict(result.input_values)

@@ -245,6 +245,7 @@ export function ExecutionStepsViewer({
                     fileType={String(stepMsg.args?.file_type ?? "")}
                     deliveryMethod={String(stepMsg.args?.delivery_method ?? "")}
                     attachmentId={String(stepMsg.args?.attachment_id ?? "")}
+                    originalFilename={stepMsg.args?.original_filename as string | null | undefined}
                   />
                 ) : isToolResult && hasStructuredToolInput ? (
                   <div className="space-y-2.5 w-full">

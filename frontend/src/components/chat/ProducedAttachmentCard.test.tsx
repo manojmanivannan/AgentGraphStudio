@@ -49,4 +49,20 @@ describe("ProducedAttachmentCard", () => {
       "http://localhost:8000/api/attachments/attachment-csv"
     );
   });
+
+  it("appends a file_type-derived extension when the name doesn't already carry one", () => {
+    render(
+      <ProducedAttachmentCard
+        name="CurrentTemperature"
+        fileType="text"
+        attachmentId="attachment-temp"
+      />
+    );
+
+    expect(screen.getByText("CurrentTemperature.txt")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /download/i })).toHaveAttribute(
+      "download",
+      "CurrentTemperature.txt"
+    );
+  });
 });
