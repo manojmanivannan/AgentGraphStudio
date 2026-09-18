@@ -6,6 +6,7 @@ import pytest
 
 from canvas_server.repos.conversation_repo import ConversationRepo
 from canvas_server.runner import CanvasRunner
+from canvas_server.runner.agent_factory import AgentFactory
 
 
 def _make_prediction(process_result="", trajectory=None):
@@ -1050,8 +1051,6 @@ class TestRunnerWithConversation:
     ):
         """dspy.History should only contain user/assistant pairs from
         history-enabled agents — not system messages or sub-agent responses."""
-        import dspy
-
         master_id = uuid.uuid4()
         math_team_id = uuid.uuid4()
 
@@ -1121,21 +1120,27 @@ class TestRunnerWithConversation:
             n.id for n in canvas.agent_nodes if n.enable_conversation_history
         }
 
-        # Build dspy.History the same way run() does
-        dspy_messages = []
-        for msg in history_messages:
-            if msg.role == "system":
-                continue
-            elif msg.role == "user":
-                dspy_messages.append({"user_request": msg.content})
-            elif msg.role == "assistant" and msg.node_id in history_enabled_ids:
-                dspy_messages.append({"process_result": msg.content})
-        dspy_history = dspy.History(messages=dspy_messages)
+        dspy_history = runner._conversation.build_dspy_history(
+            history_messages, history_enabled_node_ids=history_enabled_ids
+        )
 
         # dspy.History should have exactly 2 entries: user request + master answer
+        assert dspy_history is not None
         assert len(dspy_history.messages) == 2
-        assert dspy_history.messages[0]["user_request"] == "what is 2+2?"
+        assert dspy_history.messages[0]["user_request"] == "User: what is 2+2?"
         assert dspy_history.messages[1]["process_result"] == "The answer is 4."
+
+    async def test_worker_prompt_labels_current_user_turn_after_history(self):
+        history = "## Conversation History\nUser: what is the weather in city ?\n---"
+
+        prompt = AgentFactory.build_worker_prompt("Lisbon", history)
+
+        assert prompt == (
+            "## Conversation History\n"
+            "User: what is the weather in city ?\n"
+            "---\n\n"
+            "User: Lisbon"
+        )
 
     async def test_no_system_prompt_persisted_when_history_enabled(
         self, test_session, blank_canvas

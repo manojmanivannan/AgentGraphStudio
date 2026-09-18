@@ -44,6 +44,7 @@ if TYPE_CHECKING:
     from canvas_server.runner.conversation import ConversationService
     from canvas_server.runner.edge_graph import EdgeGraph
     from canvas_server.runner.handoff import HandoffToolBuilder
+    from canvas_server.runner.input_attachment_delivery import DeliveredAttachment
     from canvas_server.runner.memory import MemoryManager
     from canvas_server.runner.run_state import CanvasRunState
     from canvas_server.runner.tool_registry import ToolRegistry
@@ -445,9 +446,10 @@ class ExecutionStrategy(ExecutionStrategyBase):
         # (WorkerExecution, ChainExecution) which never otherwise emits
         # ``agent_start`` — so it's emitted here, but only when there's an
         # actual attachment to report this turn.
-        prompt, attachment_kwargs = await self._deliver_input_attachments(
+        prompt, attachment_kwargs, delivered = await self._deliver_input_attachments(
             agent_node, agent_id, prompt, send_event, run_id, emit_agent_start=True
         )
+        self._record_consumed_file_attachments(delivered)
 
         try:
             # Name the MLflow span after the real agent so DSPy autolog's
@@ -515,14 +517,15 @@ class ExecutionStrategy(ExecutionStrategyBase):
         run_id: uuid.UUID | None,
         *,
         emit_agent_start: bool,
-    ) -> tuple[str, dict[str, Any]]:
+    ) -> tuple[str, dict[str, Any], list[DeliveredAttachment]]:
         """Resolves/materializes this agent's declared input attachments (#88).
 
         Runs once, right before the ReAct loop starts. A no-op (returns
-        ``user_prompt`` unchanged, no extra kwargs) when the agent has no
-        declared input Attachment node(s), or nothing unconsumed is waiting —
-        this is what keeps entry-point paths (which normally never emit
-        ``agent_start``) from emitting it on every ordinary turn.
+        ``user_prompt`` unchanged, no extra kwargs, empty delivered list)
+        when the agent has no declared input Attachment node(s), or nothing
+        unconsumed is waiting — this is what keeps entry-point paths (which
+        normally never emit ``agent_start``) from emitting it on every
+        ordinary turn.
 
         When ``emit_agent_start`` is True and there IS something to deliver,
         emits ``agent_start`` immediately before the ``attachment_consumed``
@@ -536,16 +539,17 @@ class ExecutionStrategy(ExecutionStrategyBase):
         shape both call sites use.
 
         Returns:
-            tuple[str, dict[str, Any]]: The (possibly attachment-augmented)
-            prompt, and any extra ``aforward`` kwargs (``attachment_image``
-            when an image attachment was resolved).
+            tuple[str, dict[str, Any], list[DeliveredAttachment]]: The
+            (possibly attachment-augmented) prompt, any extra ``aforward``
+            kwargs (``attachment_image`` when an image attachment was
+            resolved), and the attachments delivered this call.
         """
         canvas = getattr(self._services.run_state, "canvas", None)
         conversation_service = self._services.conversation_service
         conversation_repo = getattr(conversation_service, "conversation_repo", None)
         conversation_id = getattr(conversation_service, "conversation_id", None)
         if canvas is None or conversation_repo is None or conversation_id is None:
-            return user_prompt, {}
+            return user_prompt, {}, []
 
         return await deliver_and_announce_input_attachments(
             agent_node=agent_node,
@@ -559,6 +563,19 @@ class ExecutionStrategy(ExecutionStrategyBase):
             user_prompt=user_prompt,
             emit_agent_start=emit_agent_start,
         )
+
+    def _record_consumed_file_attachments(self, delivered: list[DeliveredAttachment]) -> None:
+        """Folds this call's ``sandbox_path``-bearing deliveries into
+        ``CanvasRunState.consumed_file_attachments`` (#90), so a later
+        ``HandoffToolBuilder.transfer`` can forward them to a downstream
+        worker even when only this (entry-point) agent declared the
+        ``consumes`` edge. Defensive ``getattr`` — test doubles for
+        ``run_state`` need not define this attribute.
+        """
+        consumed = getattr(self._services.run_state, "consumed_file_attachments", None)
+        if consumed is None:
+            return
+        consumed.extend(d for d in delivered if d.sandbox_path is not None)
 
     def _event(self, type_: str, **kwargs) -> dict:
         kwargs["type"] = type_
@@ -626,9 +643,10 @@ class RouterExecution(ExecutionStrategy):
         # starts (#88). A directly-targeted router is also an entry point
         # that never otherwise emits ``agent_start`` — emitted here only
         # when there's an actual attachment to report this turn.
-        prompt, attachment_kwargs = await self._deliver_input_attachments(
+        prompt, attachment_kwargs, delivered = await self._deliver_input_attachments(
             agent_node, agent_id, prompt, ctx.send_event, ctx.run_id, emit_agent_start=True
         )
+        self._record_consumed_file_attachments(delivered)
         try:
             with agent_span(
                 agent_node.name,

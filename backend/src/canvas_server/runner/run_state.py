@@ -14,6 +14,7 @@ if TYPE_CHECKING:
     from canvas_server.runner.agent_factory import AgentFactory
     from canvas_server.runner.conversation import ConversationService
     from canvas_server.runner.handoff import HandoffToolBuilder
+    from canvas_server.runner.input_attachment_delivery import DeliveredAttachment
     from canvas_server.runner.tool_registry import ToolRegistry
     from canvas_server.streaming_react import StreamingReAct
 
@@ -58,6 +59,14 @@ class CanvasRunState:
 
         # Injected dependencies resolved at setup time
         self.handoff_tool_builder: HandoffToolBuilder | None = None
+
+        # Attachments materialized as sandbox file paths so far this run,
+        # accumulated across whichever agent (entry point or handoff target)
+        # first consumed them. A router commonly declares the `consumes`
+        # edge itself but has no sandbox tools of its own to open the file —
+        # `HandoffToolBuilder.transfer` forwards these into every handoff
+        # target's prompt so a downstream worker can still open it (#88/#90).
+        self.consumed_file_attachments: list[DeliveredAttachment] = []
 
         # Ephemeral fields configured at run start
         self.user_prompt: str = ""

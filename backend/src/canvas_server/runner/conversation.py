@@ -142,7 +142,7 @@ class ConversationService:
             if msg.role == "system":
                 continue
             elif msg.role == "user":
-                dspy_messages.append({"user_request": msg.content})
+                dspy_messages.append({"user_request": f"User: {msg.content}"})
             elif msg.role == "assistant" and msg.node_id in history_enabled_node_ids:
                 is_dict = isinstance(msg, dict)
                 event_type = (
