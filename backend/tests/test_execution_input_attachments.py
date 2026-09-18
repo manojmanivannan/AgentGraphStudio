@@ -8,7 +8,7 @@ something to deliver this turn.
 
 import uuid
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -189,7 +189,21 @@ class TestWorkerExecutionInputAttachmentDelivery:
             target_agent_id=harness.agent_id,
         )
 
-        await WorkerExecution(harness.services).execute(harness.agent_id, ctx)
+        # Image attachments always attempt "dual" delivery regardless of this
+        # agent's own `enable_coding` (#90 — a router may forward the
+        # materialized path downstream), so this reaches the real sandbox
+        # singleton unless mocked. `get_sandbox` must be patched here or this
+        # "unit" test silently pins a real Docker container from the locked
+        # pool (max 2) for the rest of the pytest session, starving every
+        # later sandbox-dependent test (mirrors the mocking already done in
+        # test_input_attachment_delivery.py).
+        mock_sandbox = MagicMock()
+        mock_session = MagicMock()
+        mock_sandbox.get_session.return_value = mock_session
+        gs = AsyncMock(return_value=mock_sandbox)
+
+        with patch("canvas_server.runner.input_attachment_delivery.get_sandbox", new=gs):
+            await WorkerExecution(harness.services).execute(harness.agent_id, ctx)
 
         image = harness.fake_agent.last_kwargs.get("attachment_image")
         assert image is not None
