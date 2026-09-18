@@ -97,6 +97,7 @@ export function MessageTurn({
               fileType={String(attachment.args?.file_type ?? "")}
               deliveryMethod={String(attachment.args?.delivery_method ?? "")}
               attachmentId={String(attachment.args?.attachment_id ?? "")}
+              originalFilename={attachment.args?.original_filename as string | null | undefined}
             />
           </div>
         </div>

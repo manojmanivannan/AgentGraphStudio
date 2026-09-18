@@ -111,4 +111,35 @@ describe("ConsumedAttachmentCard", () => {
 
     expect(screen.getByTestId("attachment-manifest-note")).toBeInTheDocument();
   });
+
+  it("shows the original uploaded filename with the attachment node's label in brackets", () => {
+    render(
+      <ConsumedAttachmentCard
+        name="CityName"
+        fileType="json"
+        deliveryMethod="file_path"
+        attachmentId="attachment-7"
+        originalFilename="city_name.json"
+      />
+    );
+
+    expect(screen.getByText("city_name.json")).toBeInTheDocument();
+    expect(screen.getByTestId("attachment-node-label")).toHaveTextContent("(CityName)");
+    const downloadLink = screen.getByRole("link", { name: /download/i });
+    expect(downloadLink).toHaveAttribute("download", "city_name.json");
+  });
+
+  it("falls back to the node name with a derived extension when there is no original filename", () => {
+    render(
+      <ConsumedAttachmentCard
+        name="CurrentTemperature"
+        fileType="text"
+        deliveryMethod="inline"
+        attachmentId="attachment-8"
+      />
+    );
+
+    expect(screen.getByText("CurrentTemperature.txt")).toBeInTheDocument();
+    expect(screen.queryByTestId("attachment-node-label")).not.toBeInTheDocument();
+  });
 });

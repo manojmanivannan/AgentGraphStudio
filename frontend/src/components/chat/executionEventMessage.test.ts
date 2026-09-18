@@ -244,6 +244,7 @@ describe("executionEventToMessage", () => {
         delivery_method: deliveryMethod,
         agent: "ReportAgent",
         node_id: "node-3",
+        original_filename: "uploaded-report.csv",
       } as const;
 
       const message = executionEventToMessage(event as ExecutionEvent, baseContext);
@@ -262,6 +263,7 @@ describe("executionEventToMessage", () => {
           file_type: "csv",
           source: "chat_upload",
           delivery_method: deliveryMethod,
+          original_filename: "uploaded-report.csv",
         },
         created_at: "2026-01-01T00:00:00.000Z",
       });

@@ -36,6 +36,7 @@ async def announce_attachment_consumed(
     delivery_method: str,
     conversation_id: uuid.UUID | str,
     run_id: uuid.UUID | None,
+    original_filename: str | None = None,
 ) -> None:
     """Fires the ``attachment_consumed`` WS event and persists a durable message (#88).
 
@@ -57,6 +58,9 @@ async def announce_attachment_consumed(
         delivery_method: The resolved delivery method for this attachment.
         conversation_id: The conversation the attachment belongs to.
         run_id: The durable run consuming this attachment, if any.
+        original_filename: The filename the user actually uploaded it under
+            (#90), distinct from ``name`` (the node's own canvas label).
+            ``None`` for agent-produced attachments, which were never uploaded.
     """
     run_id_str = str(run_id) if run_id else None
 
@@ -73,6 +77,7 @@ async def announce_attachment_consumed(
                 "run_id": run_id_str,
                 "agent": agent_name,
                 "node_id": str(agent_id),
+                "original_filename": original_filename,
             }
         )
 
@@ -90,6 +95,7 @@ async def announce_attachment_consumed(
                 "source": source,
                 "delivery_method": delivery_method,
                 "run_id": run_id_str,
+                "original_filename": original_filename,
             },
         )
 

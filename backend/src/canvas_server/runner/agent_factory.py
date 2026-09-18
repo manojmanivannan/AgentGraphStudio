@@ -597,7 +597,12 @@ class AgentFactory:
     def build_worker_prompt(user_prompt: str, history: str = "") -> str:
         """Combine *history* and *user_prompt* into a single prompt string."""
         if history:
-            return f"{history}\n\n{user_prompt}"
+            current_user_prompt = (
+                user_prompt
+                if user_prompt.lstrip().startswith("User:")
+                else f"User: {user_prompt}"
+            )
+            return f"{history}\n\n{current_user_prompt}"
         return user_prompt
 
     @staticmethod

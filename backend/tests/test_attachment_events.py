@@ -151,6 +151,7 @@ async def test_announce_attachment_consumed_fires_event_and_persists_message():
         "run_id": str(run_id),
         "agent": "Analyst",
         "node_id": str(agent_id),
+        "original_filename": None,
     }
 
     conversation_service.persist_message.assert_awaited_once_with(
@@ -166,6 +167,7 @@ async def test_announce_attachment_consumed_fires_event_and_persists_message():
             "source": "chat_upload",
             "delivery_method": "file_path",
             "run_id": str(run_id),
+            "original_filename": None,
         },
     )
 
@@ -193,6 +195,32 @@ async def test_announce_attachment_consumed_handles_missing_run_id():
     assert payload["run_id"] is None
     persisted_args = conversation_service.persist_message.await_args.kwargs["args"]
     assert persisted_args["run_id"] is None
+
+
+@pytest.mark.asyncio
+async def test_announce_attachment_consumed_includes_original_filename_when_provided():
+    send_event = AsyncMock()
+    conversation_service = AsyncMock()
+
+    await announce_attachment_consumed(
+        send_event=send_event,
+        conversation_service=conversation_service,
+        agent_name="Analyst",
+        agent_id=uuid.uuid4(),
+        attachment_id=uuid.uuid4(),
+        name="CityName",
+        file_type="json",
+        source="chat_upload",
+        delivery_method="file_path",
+        conversation_id=uuid.uuid4(),
+        run_id=None,
+        original_filename="city_name.json",
+    )
+
+    payload = send_event.await_args.args[0]
+    assert payload["original_filename"] == "city_name.json"
+    persisted_args = conversation_service.persist_message.await_args.kwargs["args"]
+    assert persisted_args["original_filename"] == "city_name.json"
 
 
 @pytest.mark.asyncio

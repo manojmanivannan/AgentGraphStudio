@@ -166,12 +166,12 @@ class TestDeliverInputAttachmentsFilePath:
         assert result.has_any is True
         delivered = result.delivered[0]
         assert delivered.delivery_method == "file_path"
-        assert delivered.sandbox_path == f"{SANDBOX_ATTACHMENT_DIR}/Report"
+        assert delivered.sandbox_path == f"{SANDBOX_ATTACHMENT_DIR}/Report.csv"
         assert result.input_values == {"report": delivered.sandbox_path}
         mock_session.copy_to_runtime.assert_called_once()
         conversation_repo.mark_attachment_consumed.assert_awaited_once_with(instance_id)
 
-    async def test_file_path_preference_falls_back_to_inline_without_sandbox(self):
+    async def test_file_path_preference_falls_back_to_inline_when_sandbox_unavailable(self):
         agent_id = uuid.uuid4()
         node_id = uuid.uuid4()
         instance_id = uuid.uuid4()
@@ -187,20 +187,33 @@ class TestDeliverInputAttachmentsFilePath:
             mark_attachment_consumed=AsyncMock(),
         )
 
-        result = await deliver_input_attachments(
-            agent_node=_agent_node(agent_id, enable_coding=False),
-            agent_id=agent_id,
-            canvas=canvas,
-            conversation_repo=conversation_repo,
-            conversation_id=uuid.uuid4(),
-        )
+        mock_sandbox = MagicMock()
+        mock_session = MagicMock()
+        mock_sandbox.get_session.return_value = mock_session
+
+        # `delivery_method="file_path"` is honored regardless of this agent's
+        # own `enable_coding`/`enable_network` (#90) — a router without
+        # sandbox tools of its own may still be the declared consumer and
+        # forwards the path to a downstream worker via a handoff. Only a
+        # genuinely unavailable/busy sandbox pool degrades to inline.
+        with _patch_sandbox(mock_sandbox), patch(
+            "canvas_server.runner.input_attachment_delivery.bounded_session_work",
+            new=AsyncMock(return_value=(False, "Code sandbox busy")),
+        ):
+            result = await deliver_input_attachments(
+                agent_node=_agent_node(agent_id, enable_coding=False),
+                agent_id=agent_id,
+                canvas=canvas,
+                conversation_repo=conversation_repo,
+                conversation_id="conv-1",
+            )
 
         delivered = result.delivered[0]
         assert delivered.delivery_method == "inline"
         assert delivered.sandbox_path is None
         assert result.input_values == {"report": "a,b\n1,2"}
 
-    async def test_binary_type_manifest_only_without_sandbox(self):
+    async def test_binary_type_manifest_only_when_sandbox_unavailable(self):
         agent_id = uuid.uuid4()
         node_id = uuid.uuid4()
         instance_id = uuid.uuid4()
@@ -216,13 +229,21 @@ class TestDeliverInputAttachmentsFilePath:
             mark_attachment_consumed=AsyncMock(),
         )
 
-        result = await deliver_input_attachments(
-            agent_node=_agent_node(agent_id, enable_coding=False),
-            agent_id=agent_id,
-            canvas=canvas,
-            conversation_repo=conversation_repo,
-            conversation_id=uuid.uuid4(),
-        )
+        mock_sandbox = MagicMock()
+        mock_session = MagicMock()
+        mock_sandbox.get_session.return_value = mock_session
+
+        with _patch_sandbox(mock_sandbox), patch(
+            "canvas_server.runner.input_attachment_delivery.bounded_session_work",
+            new=AsyncMock(return_value=(False, "Code sandbox busy")),
+        ):
+            result = await deliver_input_attachments(
+                agent_node=_agent_node(agent_id, enable_coding=False),
+                agent_id=agent_id,
+                canvas=canvas,
+                conversation_repo=conversation_repo,
+                conversation_id="conv-1",
+            )
 
         delivered = result.delivered[0]
         assert delivered.delivery_method == "manifest_only"
@@ -300,10 +321,10 @@ class TestDeliverInputAttachmentsImage:
 
         delivered = result.delivered[0]
         assert delivered.delivery_method == "dual"
-        assert delivered.sandbox_path == f"{SANDBOX_ATTACHMENT_DIR}/Chart"
+        assert delivered.sandbox_path == f"{SANDBOX_ATTACHMENT_DIR}/Chart.png"
         assert result.image_data_uri == "data:image/png;base64,iVBORw=="
 
-    async def test_image_without_sandbox_is_inline_image_block_only(self):
+    async def test_image_falls_back_to_inline_image_block_only_when_sandbox_unavailable(self):
         agent_id = uuid.uuid4()
         node_id = uuid.uuid4()
         instance_id = uuid.uuid4()
@@ -319,18 +340,29 @@ class TestDeliverInputAttachmentsImage:
             mark_attachment_consumed=AsyncMock(),
         )
 
-        result = await deliver_input_attachments(
-            agent_node=_agent_node(agent_id, enable_coding=False),
-            agent_id=agent_id,
-            canvas=canvas,
-            conversation_repo=conversation_repo,
-            conversation_id=uuid.uuid4(),
-        )
+        mock_sandbox = MagicMock()
+        mock_session = MagicMock()
+        mock_sandbox.get_session.return_value = mock_session
+
+        # Image attachments always attempt "dual" (#90); only a genuinely
+        # unavailable/busy sandbox pool degrades to inline (image block only).
+        with _patch_sandbox(mock_sandbox), patch(
+            "canvas_server.runner.input_attachment_delivery.bounded_session_work",
+            new=AsyncMock(return_value=(False, "Code sandbox busy")),
+        ):
+            result = await deliver_input_attachments(
+                agent_node=_agent_node(agent_id, enable_coding=False),
+                agent_id=agent_id,
+                canvas=canvas,
+                conversation_repo=conversation_repo,
+                conversation_id="conv-1",
+            )
 
         delivered = result.delivered[0]
         assert delivered.delivery_method == "inline"
         assert delivered.sandbox_path is None
         assert result.image_data_uri == "data:image/png;base64,iVBORw=="
+
 
 
 @pytest.mark.asyncio
@@ -489,36 +521,42 @@ class TestDeliverInputAttachmentsRealDockerE2E:
             mark_attachment_consumed=AsyncMock(),
         )
 
-        result = await deliver_input_attachments(
-            agent_node=_agent_node(agent_id, enable_coding=True),
-            agent_id=agent_id,
-            canvas=canvas,
-            conversation_repo=conversation_repo,
-            conversation_id=conversation_id,
-        )
-
-        delivered = result.delivered[0]
-        assert delivered.delivery_method == "file_path"
-        sandbox_path = delivered.sandbox_path
-        assert sandbox_path == f"{SANDBOX_ATTACHMENT_DIR}/People"
-        assert conversation_repo.mark_attachment_consumed.await_count == 1
-
-        # Same conversation_id -> same (locked-pool) sandbox session, so a
-        # tool call here reads back exactly what was materialized above.
-        provider = CodeProvider(conversation_id=conversation_id)
-        read_back = ""
-        for _ in range(8):
-            read_back = await provider.run_code(f"print(open('{sandbox_path}').read())")
-            if "busy" not in read_back.lower():
-                break
-            await asyncio.sleep(2)
-
-        assert read_back.strip() == csv_content.decode("utf-8").strip()
-
-        # Release the turn's pinned container so the test does not leak it
-        # (locked pool max is only 2 — mirrors test_code_provider.py's real
-        # execution tests).
+        # Everything below must run inside try/finally: the locked pool is
+        # only 2 containers wide, and a failed assertion must never skip the
+        # release below, or it permanently starves every other sandbox test
+        # in the same pytest session (locked pool containers are reused, not
+        # recreated, across tests).
         from canvas_server.sandbox import get_sandbox
 
-        sandbox = await get_sandbox()
-        sandbox.release_session(conversation_id)
+        try:
+            result = await deliver_input_attachments(
+                agent_node=_agent_node(agent_id, enable_coding=True),
+                agent_id=agent_id,
+                canvas=canvas,
+                conversation_repo=conversation_repo,
+                conversation_id=conversation_id,
+            )
+
+            delivered = result.delivered[0]
+            assert delivered.delivery_method == "file_path"
+            sandbox_path = delivered.sandbox_path
+            assert sandbox_path == f"{SANDBOX_ATTACHMENT_DIR}/People.csv"
+            assert conversation_repo.mark_attachment_consumed.await_count == 1
+
+            # Same conversation_id -> same (locked-pool) sandbox session, so a
+            # tool call here reads back exactly what was materialized above.
+            provider = CodeProvider(conversation_id=conversation_id)
+            read_back = ""
+            for _ in range(8):
+                read_back = await provider.run_code(f"print(open('{sandbox_path}').read())")
+                if "busy" not in read_back.lower():
+                    break
+                await asyncio.sleep(2)
+
+            assert read_back.strip() == csv_content.decode("utf-8").strip()
+        finally:
+            # Release the turn's pinned container so the test does not leak it
+            # (locked pool max is only 2 — mirrors test_code_provider.py's real
+            # execution tests).
+            sandbox = await get_sandbox()
+            sandbox.release_session(conversation_id)

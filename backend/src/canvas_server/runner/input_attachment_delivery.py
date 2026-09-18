@@ -29,11 +29,12 @@ from typing import TYPE_CHECKING, Any
 import dspy
 
 from canvas_server.attachment_delivery import (
-    agent_has_sandbox_access,
+    DeclaredInputNode,
     declared_input_nodes,
     input_attachment_field_names,
     resolve_delivery_method,
 )
+from canvas_server.output_extraction import file_type_to_format
 from canvas_server.runner.attachment_events import announce_attachment_consumed
 from canvas_server.sandbox import (
     NETWORK_POOL_DEFAULT,
@@ -81,6 +82,11 @@ class DeliveredAttachment:
     source: str
     delivery_method: str  # resolved: inline | file_path | dual | manifest_only
     sandbox_path: str | None = None
+    # The filename the user actually uploaded it under (e.g. "city_name.json"),
+    # distinct from `name` (the declared Attachment node's own canvas label,
+    # e.g. "CityName") — #90. `None` for agent-produced attachments, which
+    # were never uploaded.
+    original_filename: str | None = None
 
 
 @dataclass
@@ -129,12 +135,46 @@ def _file_path_block(name: str, file_type: str, path: str) -> str:
     return f"Attachment '{name}' ({file_type}) is available as a file at: {path}"
 
 
+def build_forwarded_attachment_text(consumed: list[DeliveredAttachment]) -> str:
+    """Builds prompt text re-announcing attachments already materialized as
+    sandbox file paths earlier in this run.
+
+    A router agent commonly declares the ``consumes`` edge for a chat
+    upload/output attachment itself (rather than the worker(s) it later
+    delegates to), and may have no sandbox tools of its own to ever open the
+    file. ``HandoffToolBuilder.transfer`` forwards this text to every
+    handoff target's prompt so a downstream worker that DOES have sandbox
+    access can still open the file, without requiring its own separate
+    ``consumes`` edge to the same Attachment node.
+
+    Args:
+        consumed: Attachments delivered so far this run (see
+            ``CanvasRunState.consumed_file_attachments``).
+
+    Returns:
+        str: Newline-joined file-path blocks, or ``""`` when nothing in
+        ``consumed`` carries a ``sandbox_path`` (``inline``/``manifest_only``
+        deliveries are skipped — there's nothing to forward).
+    """
+    blocks = [
+        _file_path_block(d.name, d.file_type, d.sandbox_path)
+        for d in consumed
+        if d.sandbox_path is not None
+    ]
+    return "\n".join(blocks)
+
+
 async def _materialize_in_sandbox(
     conversation_id: str | uuid.UUID, name: str, content: bytes, network_pool: str
 ) -> str | None:
     """Writes ``content`` into the conversation's sandbox session at
     ``SANDBOX_ATTACHMENT_DIR/<name>``, returning the container path, or
     ``None`` if the sandbox pool is saturated (never raises).
+
+    ``name`` should be the attachment's original uploaded filename when one
+    exists (see ``_attachment_filename``) so the materialized file reads
+    naturally to the agent/user, rather than always being the declared
+    Attachment node's own (unrelated) canvas label.
 
     ``network_pool`` must match the pool the consuming agent's own code
     session runs in (``NETWORK_POOL_NETWORKED`` when it has
@@ -173,6 +213,27 @@ async def _materialize_in_sandbox(
     return result
 
 
+def _attachment_filename(node: DeclaredInputNode, instance: AttachmentInstance) -> str:
+    """Resolves the filename to materialize an attachment under (#90).
+
+    Prefers the filename the user actually uploaded (``instance.original_filename``,
+    e.g. "city_name.json") over the declared Attachment node's own ``name`` —
+    a stable canvas label (e.g. "CityName") that is a distinct concept from
+    the file's content/identity and, unlike an upload, carries no extension.
+    Agent-produced (``agent_output``) instances have no upload filename, so
+    fall back to ``<node.name>.<file_type-derived extension>`` (e.g.
+    "CityName.json") rather than an extension-less name a tool can't infer
+    the format of.
+    """
+    original_filename = getattr(instance, "original_filename", None)
+    if original_filename:
+        return original_filename
+    ext = file_type_to_format(node.file_type)
+    if node.name.lower().endswith(f".{ext}"):
+        return node.name
+    return f"{node.name}.{ext}"
+
+
 async def deliver_input_attachments(
     *,
     agent_node: AgentNode,
@@ -202,7 +263,6 @@ async def deliver_input_attachments(
     """
     edges = getattr(canvas, "edges", None) or []
     attachment_nodes = getattr(canvas, "attachment_nodes", None) or []
-    tool_nodes = getattr(canvas, "tool_nodes", None) or []
 
     declared = declared_input_nodes(edges, attachment_nodes, agent_id)
     if not declared:
@@ -216,7 +276,14 @@ async def deliver_input_attachments(
         return InputAttachmentDeliveryResult()
 
     declared_by_id = {node.id: node for node in declared}
-    has_sandbox = agent_has_sandbox_access(agent_node, edges, tool_nodes)
+    # `file_path` is honored regardless of THIS agent's own sandbox tools
+    # (`enable_coding`/`enable_network`/`tool_access`): a router with none of
+    # those may still be the declared consumer, and forwards the resulting
+    # path to whichever downstream worker it hands off to (see
+    # `build_forwarded_attachment_text` / `HandoffToolBuilder.transfer`).
+    # `_materialize_in_sandbox` already degrades gracefully below when the
+    # sandbox pool itself is unavailable/busy.
+    has_sandbox = True
     # Mirrors AgentFactory's own CodeProvider pool selection so a materialized
     # file lands in the same session the agent's `run_code`/`pip_install`
     # tools use.
@@ -246,7 +313,7 @@ async def deliver_input_attachments(
         sandbox_path: str | None = None
         if method in ("file_path", "dual"):
             sandbox_path = await _materialize_in_sandbox(
-                conversation_id, node.name, instance.content, network_pool
+                conversation_id, _attachment_filename(node, instance), instance.content, network_pool
             )
             if sandbox_path is None:
                 # Sandbox saturated: degrade exactly like the no-sandbox case.
@@ -283,6 +350,7 @@ async def deliver_input_attachments(
                 source=instance.source,
                 delivery_method=method,
                 sandbox_path=sandbox_path,
+                original_filename=getattr(instance, "original_filename", None),
             )
         )
         await conversation_repo.mark_attachment_consumed(instance.id)
@@ -302,7 +370,7 @@ async def deliver_and_announce_input_attachments(
     run_id: uuid.UUID | None,
     user_prompt: str,
     emit_agent_start: bool,
-) -> tuple[str, dict[str, Any]]:
+) -> tuple[str, dict[str, Any], list[DeliveredAttachment]]:
     """Shared entry point for delivering input attachments right before an
     agent's ReAct loop starts (#88): resolves/materializes via
     ``deliver_input_attachments``, optionally emits ``agent_start``, then
@@ -316,14 +384,18 @@ async def deliver_and_announce_input_attachments(
     ``emit_agent_start`` differs between them — instead of each
     reimplementing the resolve → emit → announce → augment-prompt shape.
 
-    A no-op (returns ``user_prompt`` unchanged, no extra kwargs) when the
-    agent has no declared input Attachment node(s), or nothing unconsumed is
-    waiting.
+    A no-op (returns ``user_prompt`` unchanged, no extra kwargs, empty
+    delivered list) when the agent has no declared input Attachment node(s),
+    or nothing unconsumed is waiting.
 
     Returns:
-        tuple[str, dict[str, Any]]: The (possibly attachment-augmented)
-        unchanged prompt, and extra ``aforward`` kwargs for declared
-        attachment input fields (plus ``attachment_image`` when resolved).
+        tuple[str, dict[str, Any], list[DeliveredAttachment]]: The (possibly
+        attachment-augmented) prompt, extra ``aforward`` kwargs for declared
+        attachment input fields (plus ``attachment_image`` when resolved),
+        and the attachments delivered this call — callers should fold
+        ``sandbox_path``-bearing entries into
+        ``CanvasRunState.consumed_file_attachments`` so a later handoff can
+        forward them via ``build_forwarded_attachment_text``.
     """
     result = await deliver_input_attachments(
         agent_node=agent_node,
@@ -333,7 +405,7 @@ async def deliver_and_announce_input_attachments(
         conversation_id=conversation_id,
     )
     if not result.has_any:
-        return user_prompt, {}
+        return user_prompt, {}, []
 
     if emit_agent_start:
         await send_event(
@@ -358,10 +430,11 @@ async def deliver_and_announce_input_attachments(
             delivery_method=delivered.delivery_method,
             conversation_id=conversation_id,
             run_id=run_id,
+            original_filename=delivered.original_filename,
         )
 
     extra_kwargs: dict[str, Any] = dict(result.input_values)
     if result.image_data_uri is not None:
         extra_kwargs["attachment_image"] = dspy.Image(result.image_data_uri)
 
-    return user_prompt, extra_kwargs
+    return user_prompt, extra_kwargs, result.delivered

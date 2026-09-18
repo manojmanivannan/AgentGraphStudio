@@ -13,6 +13,7 @@ import dspy
 from canvas_server.events import EventCallback
 from canvas_server.runner.execution import store_output_attachments
 from canvas_server.runner.input_attachment_delivery import (
+    build_forwarded_attachment_text,
     deliver_and_announce_input_attachments,
 )
 from canvas_server.runner.tracing import agent_span
@@ -118,6 +119,17 @@ class HandoffToolBuilder:
 
             prompt = self.agent_factory.build_worker_prompt(task, history)
 
+            # Forward any attachments already materialized as sandbox file
+            # paths earlier in this run (#90) — commonly by the router doing
+            # the handing off, which may have no sandbox tools of its own to
+            # open the file. This lets the target open it even without its
+            # own declared `consumes` edge to the same Attachment node.
+            consumed_so_far = getattr(self.run_state, "consumed_file_attachments", None)
+            if consumed_so_far:
+                forwarded_text = build_forwarded_attachment_text(consumed_so_far)
+                if forwarded_text:
+                    prompt = f"{prompt}\n\n{forwarded_text}"
+
             # Resolve/materialize any declared input attachments for the
             # handoff target (#88). ``agent_start`` was already emitted
             # unconditionally above, so this passes ``emit_agent_start=False``
@@ -134,7 +146,7 @@ class HandoffToolBuilder:
             conversation_repo = getattr(self.conversation_service, "conversation_repo", None)
             conversation_id = getattr(self.conversation_service, "conversation_id", None)
             if canvas is not None and conversation_repo is not None and conversation_id is not None:
-                prompt, attachment_kwargs = await deliver_and_announce_input_attachments(
+                prompt, attachment_kwargs, delivered = await deliver_and_announce_input_attachments(
                     agent_node=target_node,
                     agent_id=target_id,
                     canvas=canvas,
@@ -146,6 +158,8 @@ class HandoffToolBuilder:
                     user_prompt=prompt,
                     emit_agent_start=False,
                 )
+                if consumed_so_far is not None:
+                    consumed_so_far.extend(d for d in delivered if d.sandbox_path is not None)
 
             try:
                 with agent_span(
