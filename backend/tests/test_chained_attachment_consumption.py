@@ -174,7 +174,7 @@ class TestChainedAgentOutputConsumedByHandoffTarget:
         emitted_types = [call.args[0]["type"] for call in send_event_b.await_args_list]
         assert emitted_types.index("agent_start") < emitted_types.index("attachment_consumed")
 
-        sandbox_path = f"{SANDBOX_ATTACHMENT_DIR}/orders"
+        sandbox_path = f"{SANDBOX_ATTACHMENT_DIR}/orders.csv"
 
         # Consumed — a later turn must never redeliver the same instance.
         remaining = await conversation_repo.get_unconsumed_input_attachments(

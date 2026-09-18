@@ -125,6 +125,7 @@ class ConversationRepo:
         source: str = "agent_output",
         attachment_node_id: uuid.UUID | None = None,
         produced_by_run_id: uuid.UUID | None = None,
+        original_filename: str | None = None,
     ) -> AttachmentInstance:
         size_bytes = len(content)
         if size_bytes > settings.max_attachment_size_bytes:
@@ -142,6 +143,7 @@ class ConversationRepo:
             source=source,
             attachment_node_id=attachment_node_id,
             produced_by_run_id=produced_by_run_id,
+            original_filename=original_filename,
         )
         self.session.add(attachment)
         await self.session.flush()

@@ -613,6 +613,7 @@ async def upload_chat_attachments(
                 file_type=outcome.file_type,
                 source="chat_upload",
                 attachment_node_id=outcome.node_id,
+                original_filename=outcome.filename,
             )
         except AttachmentTooLargeError as exc:
             results.append(
@@ -857,6 +858,7 @@ async def export_conversation(
                 "file_type": attachment.file_type,
                 "source": attachment.source,
                 "format": attachment.format,
+                "original_filename": attachment.original_filename,
                 "created_at": attachment.created_at.isoformat()
                 if attachment.created_at
                 else None,
@@ -990,6 +992,7 @@ async def import_conversation_zip(
             format=attachment_format,
             content=attachment_content,
             size_bytes=len(attachment_content),
+            original_filename=attachment_data.get("original_filename"),
             created_at=attachment_created_at,
         )
         session.add(new_attachment)

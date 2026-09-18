@@ -166,7 +166,7 @@ class TestDeliverInputAttachmentsFilePath:
         assert result.has_any is True
         delivered = result.delivered[0]
         assert delivered.delivery_method == "file_path"
-        assert delivered.sandbox_path == f"{SANDBOX_ATTACHMENT_DIR}/Report"
+        assert delivered.sandbox_path == f"{SANDBOX_ATTACHMENT_DIR}/Report.csv"
         assert result.input_values == {"report": delivered.sandbox_path}
         mock_session.copy_to_runtime.assert_called_once()
         conversation_repo.mark_attachment_consumed.assert_awaited_once_with(instance_id)
@@ -321,7 +321,7 @@ class TestDeliverInputAttachmentsImage:
 
         delivered = result.delivered[0]
         assert delivered.delivery_method == "dual"
-        assert delivered.sandbox_path == f"{SANDBOX_ATTACHMENT_DIR}/Chart"
+        assert delivered.sandbox_path == f"{SANDBOX_ATTACHMENT_DIR}/Chart.png"
         assert result.image_data_uri == "data:image/png;base64,iVBORw=="
 
     async def test_image_falls_back_to_inline_image_block_only_when_sandbox_unavailable(self):
@@ -532,7 +532,7 @@ class TestDeliverInputAttachmentsRealDockerE2E:
         delivered = result.delivered[0]
         assert delivered.delivery_method == "file_path"
         sandbox_path = delivered.sandbox_path
-        assert sandbox_path == f"{SANDBOX_ATTACHMENT_DIR}/People"
+        assert sandbox_path == f"{SANDBOX_ATTACHMENT_DIR}/People.csv"
         assert conversation_repo.mark_attachment_consumed.await_count == 1
 
         # Same conversation_id -> same (locked-pool) sandbox session, so a

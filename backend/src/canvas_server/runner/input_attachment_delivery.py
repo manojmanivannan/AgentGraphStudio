@@ -29,10 +29,12 @@ from typing import TYPE_CHECKING, Any
 import dspy
 
 from canvas_server.attachment_delivery import (
+    DeclaredInputNode,
     declared_input_nodes,
     input_attachment_field_names,
     resolve_delivery_method,
 )
+from canvas_server.output_extraction import file_type_to_format
 from canvas_server.runner.attachment_events import announce_attachment_consumed
 from canvas_server.sandbox import (
     NETWORK_POOL_DEFAULT,
@@ -164,6 +166,11 @@ async def _materialize_in_sandbox(
     ``SANDBOX_ATTACHMENT_DIR/<name>``, returning the container path, or
     ``None`` if the sandbox pool is saturated (never raises).
 
+    ``name`` should be the attachment's original uploaded filename when one
+    exists (see ``_attachment_filename``) so the materialized file reads
+    naturally to the agent/user, rather than always being the declared
+    Attachment node's own (unrelated) canvas label.
+
     ``network_pool`` must match the pool the consuming agent's own code
     session runs in (``NETWORK_POOL_NETWORKED`` when it has
     ``enable_network`` — mirroring ``AgentFactory``'s ``CodeProvider`` pool
@@ -199,6 +206,27 @@ async def _materialize_in_sandbox(
         )
         return None
     return result
+
+
+def _attachment_filename(node: DeclaredInputNode, instance: AttachmentInstance) -> str:
+    """Resolves the filename to materialize an attachment under (#90).
+
+    Prefers the filename the user actually uploaded (``instance.original_filename``,
+    e.g. "city_name.json") over the declared Attachment node's own ``name`` —
+    a stable canvas label (e.g. "CityName") that is a distinct concept from
+    the file's content/identity and, unlike an upload, carries no extension.
+    Agent-produced (``agent_output``) instances have no upload filename, so
+    fall back to ``<node.name>.<file_type-derived extension>`` (e.g.
+    "CityName.json") rather than an extension-less name a tool can't infer
+    the format of.
+    """
+    original_filename = getattr(instance, "original_filename", None)
+    if original_filename:
+        return original_filename
+    ext = file_type_to_format(node.file_type)
+    if node.name.lower().endswith(f".{ext}"):
+        return node.name
+    return f"{node.name}.{ext}"
 
 
 async def deliver_input_attachments(
@@ -280,7 +308,7 @@ async def deliver_input_attachments(
         sandbox_path: str | None = None
         if method in ("file_path", "dual"):
             sandbox_path = await _materialize_in_sandbox(
-                conversation_id, node.name, instance.content, network_pool
+                conversation_id, _attachment_filename(node, instance), instance.content, network_pool
             )
             if sandbox_path is None:
                 # Sandbox saturated: degrade exactly like the no-sandbox case.

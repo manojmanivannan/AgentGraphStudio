@@ -462,6 +462,14 @@ class AttachmentInstance(Base):
     format: Mapped[str] = mapped_column(String(10), default="png")
     content: Mapped[bytes] = mapped_column(sa.LargeBinary)
     size_bytes: Mapped[int] = mapped_column(sa.Integer, default=0)
+    # The filename the user uploaded it under (e.g. "city_name.json"), distinct
+    # from the declared Attachment node's `name` (a stable canvas label, e.g.
+    # "CityName") — #90. `None` for agent-produced (`agent_output`) rows,
+    # which have no upload filename; sandbox materialization falls back to
+    # the node's own name in that case (see `input_attachment_delivery.py`).
+    original_filename: Mapped[str | None] = mapped_column(
+        String(255), nullable=True, default=None
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=_utcnow,
