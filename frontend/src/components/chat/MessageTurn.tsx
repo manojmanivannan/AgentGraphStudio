@@ -75,7 +75,7 @@ export function MessageTurn({
     <div className="space-y-3">
       {/* User Message */}
       <div className="flex flex-col items-end animate-fade-in">
-        <div className="max-w-[85%] rounded-2xl px-4 py-2.5 text-[13px] leading-relaxed bg-[var(--color-accent)] text-[var(--color-text-inverse)] rounded-br-sm shadow-md font-medium">
+        <div className="chat-bubble-user max-w-[85%] rounded-2xl px-4 py-2.5 text-[13px] leading-relaxed rounded-br-sm shadow-md font-medium">
           {turn.userMessage.content}
         </div>
         {formatMessageTimestamp(turn.userMessage.created_at) && (

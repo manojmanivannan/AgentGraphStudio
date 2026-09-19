@@ -25,7 +25,9 @@
   /* Text */
   --color-text-primary: #f1f1f4;
   --color-text-secondary: #a3a3bd;
-  --color-text-tertiary: #74748b;
+  /* #82829a: lightened from #74748b to clear 4.5:1 against both --color-surface
+     (4.57:1) and --color-base (4.99:1) for regular-weight body text (WCAG 1.4.3). */
+  --color-text-tertiary: #82829a;
   --color-text-inverse: #121216;
   --color-text-contrast: #ffffff;
 
@@ -89,7 +91,9 @@ html[data-theme="light"] {
   /* Text */
   --color-text-primary: #1c1c28;
   --color-text-secondary: #6e6e82;
-  --color-text-tertiary: #9c9cb0;
+  /* #71718a: darkened from #9c9cb0 to clear 4.5:1 against --color-surface/--color-base
+     (both #fefefe in light mode); measures 4.70:1 (WCAG 1.4.3). */
+  --color-text-tertiary: #71718a;
   --color-text-inverse: #ffffff;
   --color-text-contrast: #000000;
 
@@ -763,11 +767,19 @@ html[data-theme="light"] .glow-danger {
 /* ─── Light Mode: Button Overrides ───────────────────────── */
 
 html[data-theme="light"] .btn-primary {
+  /* White text on the shared --color-accent (#0d9488) is 3.74:1 against WCAG's 4.5:1
+     floor for regular-weight text. --color-accent itself is left untouched (it's also
+     used for black-on-accent surfaces elsewhere, e.g. the theme toggle, which would
+     regress if --color-accent were darkened instead). --color-accent-dim (#0f766e)
+     clears 5.47:1 with white text. */
   color: #ffffff;
+  background-color: var(--color-accent-dim);
 }
 
 html[data-theme="light"] .btn-primary:hover {
-  background-color: var(--color-accent-bright);
+  /* Darken further (still white-text safe at ~6.4:1) instead of --color-accent-bright,
+     which fails white-text contrast (2.49:1). */
+  background-color: color-mix(in srgb, var(--color-accent-dim) 90%, black);
 }
 
 html[data-theme="light"] .btn-ghost:hover {
@@ -819,6 +831,20 @@ html[data-theme="light"] ::-webkit-scrollbar-thumb:hover {
 
 .delete-modal-title {
   color: #ffffff !important;
+}
+
+/* ─── Chat User Bubble ───────────────────────────────────── */
+
+.chat-bubble-user {
+  background-color: var(--color-accent);
+  color: var(--color-text-inverse);
+}
+
+/* Light mode: white --color-text-inverse on --color-accent (#0d9488) is 3.74:1,
+   below WCAG's 4.5:1 floor. --color-accent-dim (#0f766e) clears 5.47:1. Dark mode is
+   left untouched (dark --color-text-inverse on --color-accent already passes at 7.5:1). */
+html[data-theme="light"] .chat-bubble-user {
+  background-color: var(--color-accent-dim);
 }
 
 /* ─── Chat Markdown (MarkdownMessage) ────────────────────── */
