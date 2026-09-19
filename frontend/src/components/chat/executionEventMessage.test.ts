@@ -208,6 +208,7 @@ describe("executionEventToMessage", () => {
       name: "report.csv",
       file_type: "csv",
       source: "agent_output",
+      original_filename: "report_f00d.csv",
       agent: "ReportAgent",
       node_id: "node-3",
     };
@@ -227,6 +228,7 @@ describe("executionEventToMessage", () => {
         name: "report.csv",
         file_type: "csv",
         source: "agent_output",
+        original_filename: "report_f00d.csv",
       },
       created_at: "2026-01-01T00:00:00.000Z",
     });

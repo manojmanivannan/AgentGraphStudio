@@ -237,6 +237,7 @@ export function ExecutionStepsViewer({
                     name={String(stepMsg.args?.name ?? "")}
                     fileType={String(stepMsg.args?.file_type ?? "")}
                     attachmentId={String(stepMsg.args?.attachment_id ?? "")}
+                    originalFilename={stepMsg.args?.original_filename as string | null | undefined}
                   />
                 ) : isConsumedAttachment ? (
                   <ConsumedAttachmentCard

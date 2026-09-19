@@ -255,6 +255,7 @@ export function MessageTurn({
                 name={String(attachment.args?.name ?? "")}
                 fileType={String(attachment.args?.file_type ?? "")}
                 attachmentId={String(attachment.args?.attachment_id ?? "")}
+                originalFilename={attachment.args?.original_filename as string | null | undefined}
               />
             </div>
           ))}

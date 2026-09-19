@@ -164,6 +164,10 @@ class TestWorkerExecutionStoresOutputAttachments:
         assert call_kwargs["attachment_node_id"] == attachment_id
         assert call_kwargs["produced_by_run_id"] == ctx.run_id
         assert call_kwargs["conversation_id"] == harness.conversation_service.conversation_id
+        filename = call_kwargs["original_filename"]
+        assert filename.startswith("report_")
+        assert filename.endswith(".txt")
+        assert len(filename.removeprefix("report_").removesuffix(".txt")) == 32
 
         produced_events = [
             e for e in send_event.await_args_list if e.args[0].get("type") == "attachment_produced"
@@ -176,6 +180,7 @@ class TestWorkerExecutionStoresOutputAttachments:
         assert payload["run_id"] == str(ctx.run_id)
         assert payload["agent"] == "Reporter"
         assert payload["node_id"] == str(harness.agent_id)
+        assert payload["original_filename"] == filename
         assert "attachment_id" in payload
 
         # A persisted message row survives page reload (mirrors final_answer).

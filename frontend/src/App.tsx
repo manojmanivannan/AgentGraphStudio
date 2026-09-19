@@ -21,6 +21,7 @@ import {
   logout as logoutApi,
 } from "@/lib/api";
 import { decodeCanvasResponse } from "@/lib/canvasGraphCodec";
+import { resetCanvasHistory } from "@/store/canvasHistoryStore";
 import {
   Plus,
   FileText,
@@ -88,6 +89,10 @@ function CanvasEditorPage({
       const decoded = decodeCanvasResponse(canvas);
       setNodes(decoded.nodes);
       setEdges(decoded.edges);
+      // Loading a canvas isn't a user edit — it shouldn't be undoable, nor
+      // should it flag the canvas as having unsaved changes.
+      resetCanvasHistory();
+      useCanvasStore.getState().setIsDirty(false);
     } catch (err: any) {
       setError(err?.message || "Failed to open canvas.");
       console.error("Failed to open canvas:", err);

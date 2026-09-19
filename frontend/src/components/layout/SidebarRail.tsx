@@ -17,6 +17,7 @@ import {
   Settings as SettingsIcon,
 } from "lucide-react";
 import { useCanvasStore } from "@/store/canvasStore";
+import { resetCanvasHistory } from "@/store/canvasHistoryStore";
 import { useThemeStore } from "@/store/themeStore";
 import { useSettingsModalStore } from "@/store/settingsModalStore";
 import {
@@ -178,6 +179,10 @@ export function SidebarRail() {
       const decoded = decodeCanvasResponse(imported);
       setNodes(decoded.nodes);
       setEdges(decoded.edges);
+      // Importing loads a fresh canvas — not a user edit, so it shouldn't be
+      // undoable, nor should it flag the canvas as having unsaved changes.
+      resetCanvasHistory();
+      useCanvasStore.getState().setIsDirty(false);
     } catch (err) {
       console.error("Failed to import canvas:", err);
     }

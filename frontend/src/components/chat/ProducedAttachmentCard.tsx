@@ -13,6 +13,7 @@ interface ProducedAttachmentCardProps {
   name: string;
   fileType: string;
   attachmentId: string;
+  originalFilename?: string | null;
 }
 
 export function normalizeFileType(fileType: string) {
@@ -65,10 +66,11 @@ export function ProducedAttachmentCard({
   name,
   fileType,
   attachmentId,
+  originalFilename,
 }: ProducedAttachmentCardProps) {
   const downloadUrl = `${API_BASE}/attachments/${attachmentId}`;
   const isImageAttachment = normalizeFileType(fileType) === "image";
-  const displayName = withFileExtension(name, fileType);
+  const displayName = originalFilename || withFileExtension(name, fileType);
 
   return (
     <div className="rounded-lg border border-[var(--color-success)]/20 bg-[var(--color-base)] px-3 py-2 text-[var(--color-text-primary)]">

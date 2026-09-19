@@ -462,11 +462,9 @@ class AttachmentInstance(Base):
     format: Mapped[str] = mapped_column(String(10), default="png")
     content: Mapped[bytes] = mapped_column(sa.LargeBinary)
     size_bytes: Mapped[int] = mapped_column(sa.Integer, default=0)
-    # The filename the user uploaded it under (e.g. "city_name.json"), distinct
-    # from the declared Attachment node's `name` (a stable canvas label, e.g.
-    # "CityName") — #90. `None` for agent-produced (`agent_output`) rows,
-    # which have no upload filename; sandbox materialization falls back to
-    # the node's own name in that case (see `input_attachment_delivery.py`).
+    # The persisted filename, distinct from the declared Attachment node's
+    # stable canvas label. Uploads retain their client filename; generated
+    # files use a UUID-suffixed name so repeated outputs never collide.
     original_filename: Mapped[str | None] = mapped_column(
         String(255), nullable=True, default=None
     )
@@ -480,8 +478,8 @@ class AttachmentInstance(Base):
     # upstream handoff (#89) — so a multi-turn conversation never re-injects
     # the same file into the prompt / re-materializes it into the sandbox on
     # a later turn. Stays ``None`` forever for an ``agent_output`` row that no
-    # agent has declared as an input (the common case: it's only ever shown
-    # to the user).
+    # agent. Generated outputs are also independently rematerialized as
+    # conversation context for later entry-agent turns.
     consumed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True, default=None
     )

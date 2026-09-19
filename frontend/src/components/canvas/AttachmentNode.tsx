@@ -1,9 +1,10 @@
 import { memo } from "react";
 import { Handle, Position, NodeResizer, type NodeProps } from "@xyflow/react";
-import { Paperclip, Settings } from "lucide-react";
+import { Paperclip, Settings, Trash2 } from "lucide-react";
 import type { AttachmentNodeData } from "@/types";
 import { useCanvasStore } from "@/store/canvasStore";
 import { HANDLE_IDS } from "@/lib/canvasConnectionRules";
+import { deleteNodeWithConfirm } from "@/lib/nodeDeletion";
 
 function AttachmentNodeComponent({ id, data, selected }: NodeProps) {
   const attachmentData = data as unknown as AttachmentNodeData;
@@ -59,6 +60,19 @@ function AttachmentNodeComponent({ id, data, selected }: NodeProps) {
           title="Settings"
         >
           <Settings className="w-3 h-3" />
+        </button>
+        <button
+          data-testid="attachment-node-delete"
+          onPointerDown={(e) => e.nativeEvent.stopImmediatePropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
+            void deleteNodeWithConfirm(id);
+          }}
+          className="p-0.5 text-[var(--color-text-tertiary)] hover:text-[var(--color-danger)] rounded-md hover:bg-[var(--color-elevated)] transition-all duration-150"
+          title="Delete node"
+          aria-label="Delete node"
+        >
+          <Trash2 className="w-3 h-3" />
         </button>
       </div>
       <div className="px-2.5 py-2 flex-1 overflow-hidden">

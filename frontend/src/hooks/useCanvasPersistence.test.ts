@@ -1,181 +1,214 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { renderHook, act } from "@testing-library/react";
+import { act, renderHook } from "@testing-library/react";
 import { http, HttpResponse } from "msw";
 import { server } from "@/test/mocks/server";
+import { encodeCanvasGraph } from "@/lib/canvasGraphCodec";
 import { useCanvasStore } from "@/store/canvasStore";
-import { useCanvasPersistence } from "./useCanvasPersistence";
-import * as canvasGraphCodec from "@/lib/canvasGraphCodec";
+import {
+  saveCanvasNow,
+  useSaveShortcut,
+  useUnsavedChangesWarning,
+} from "./useCanvasPersistence";
 
 const store = () => useCanvasStore.getState();
+
+function buildCanvasResponse(name: string) {
+  return {
+    id: "canvas-1",
+    name,
+    nodes: { agents: [], tools: [], attachments: [] },
+    edges: [],
+    created_at: "",
+    updated_at: "",
+  };
+}
 
 beforeEach(() => {
   vi.useFakeTimers();
   store().reset();
-  store().setCanvas("canvas-1", "My Canvas");
 });
 
 afterEach(() => {
   vi.useRealTimers();
+  vi.restoreAllMocks();
 });
 
-describe("useCanvasPersistence", () => {
+describe("saveCanvasNow", () => {
   it("does nothing when canvasId is null", async () => {
-    store().reset(); // canvasId = null
     const saveSpy = vi.fn();
     server.use(
       http.put("http://localhost:8000/api/canvases/:id", () => {
         saveSpy();
-        return HttpResponse.json({});
+        return HttpResponse.json(buildCanvasResponse("Untitled Canvas"));
       })
     );
 
-    renderHook(() => useCanvasPersistence());
-    await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+    const result = await saveCanvasNow();
 
+    expect(result).toBe(false);
     expect(saveSpy).not.toHaveBeenCalled();
+    expect(store().saveStatus).toBe("idle");
   });
 
-  it("debounces save: does not call API before 500ms", async () => {
+  it("saves the encoded payload, clears dirty state, and returns true on success", async () => {
+    const nodes = [
+      {
+        id: "agent-1",
+        type: "agent",
+        position: { x: 10, y: 20 },
+        data: { name: "Planner" },
+      },
+    ] as any;
+    const edges = [{ id: "edge-1", source: "agent-1", target: "tool-1" }] as any;
+
+    store().setCanvas("canvas-1", "My Canvas");
+    store().setNodes(nodes);
+    store().setEdges(edges);
+
     const saveSpy = vi.fn();
     server.use(
-      http.put("http://localhost:8000/api/canvases/:id", () => {
-        saveSpy();
-        return HttpResponse.json({});
+      http.put("http://localhost:8000/api/canvases/:id", async ({ request, params }) => {
+        saveSpy(params.id, await request.json());
+        return HttpResponse.json(buildCanvasResponse("My Canvas"));
       })
     );
 
-    renderHook(() => useCanvasPersistence());
-    await act(async () => { await vi.advanceTimersByTimeAsync(499); });
-
-    expect(saveSpy).not.toHaveBeenCalled();
-  });
-
-  it("calls saveCanvas after 500ms debounce", async () => {
-    const saveSpy = vi.fn();
-    server.use(
-      http.put("http://localhost:8000/api/canvases/:id", async ({ request }) => {
-        const body = await request.json();
-        saveSpy(body);
-        return HttpResponse.json({ id: "canvas-1", name: "My Canvas", nodes: { agents: [], tools: [] }, edges: [], created_at: "", updated_at: "" });
-      })
-    );
-
-    renderHook(() => useCanvasPersistence());
-    await act(async () => { await vi.advanceTimersByTimeAsync(500); });
-
-    expect(saveSpy).toHaveBeenCalledOnce();
-    expect(saveSpy).toHaveBeenCalledWith(expect.objectContaining({ name: "My Canvas" }));
-  });
-
-  it("skips save when payload has not changed", async () => {
-    const saveSpy = vi.fn();
-    server.use(
-      http.put("http://localhost:8000/api/canvases/:id", () => {
-        saveSpy();
-        return HttpResponse.json({ id: "canvas-1", name: "My Canvas", nodes: { agents: [], tools: [] }, edges: [], created_at: "", updated_at: "" });
-      })
-    );
-
-    const { rerender } = renderHook(() => useCanvasPersistence());
-    await act(async () => { await vi.advanceTimersByTimeAsync(500); });
-    expect(saveSpy).toHaveBeenCalledOnce();
-
-    // Re-render without changing state — payload is identical
-    rerender();
-    await act(async () => { await vi.advanceTimersByTimeAsync(500); });
-    expect(saveSpy).toHaveBeenCalledOnce(); // still only once
-  });
-
-  it("saves again after state changes", async () => {
-    const saveSpy = vi.fn();
-    server.use(
-      http.put("http://localhost:8000/api/canvases/:id", () => {
-        saveSpy();
-        return HttpResponse.json({ id: "canvas-1", name: "My Canvas", nodes: { agents: [], tools: [] }, edges: [], created_at: "", updated_at: "" });
-      })
-    );
-
-    renderHook(() => useCanvasPersistence());
-    await act(async () => { await vi.advanceTimersByTimeAsync(500); });
-    expect(saveSpy).toHaveBeenCalledOnce();
-
-    act(() => { store().setName("Renamed"); });
-    await act(async () => { await vi.advanceTimersByTimeAsync(500); });
-    expect(saveSpy).toHaveBeenCalledTimes(2);
-  });
-
-  it("logs error on save failure without crashing", async () => {
-    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-    server.use(
-      http.put("http://localhost:8000/api/canvases/:id", () =>
-        new HttpResponse(null, { status: 500 })
-      )
-    );
-
-    renderHook(() => useCanvasPersistence());
-    await act(async () => { await vi.advanceTimersByTimeAsync(500); });
-
-    expect(consoleSpy).toHaveBeenCalledWith(
-      "Auto-save failed:",
-      expect.any(Error)
-    );
-    consoleSpy.mockRestore();
-  });
-
-  it("retries save on next state change after a failure", async () => {
-    const saveSpy = vi.fn();
-    // First call fails
-    server.use(
-      http.put("http://localhost:8000/api/canvases/:id", () =>
-        new HttpResponse(null, { status: 500 })
-      )
-    );
-
-    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-    renderHook(() => useCanvasPersistence());
-    await act(async () => { await vi.advanceTimersByTimeAsync(500); });
-
-    // Now fix the handler and change state to trigger a new save
-    server.use(
-      http.put("http://localhost:8000/api/canvases/:id", () => {
-        saveSpy();
-        return HttpResponse.json({ id: "canvas-1", name: "Retried", nodes: { agents: [], tools: [] }, edges: [], created_at: "", updated_at: "" });
-      })
-    );
-
-    act(() => { store().setName("Retried"); });
-    await act(async () => { await vi.advanceTimersByTimeAsync(500); });
-    expect(saveSpy).toHaveBeenCalledOnce();
-
-    consoleSpy.mockRestore();
-  });
-
-  it("defers encoding until debounce window elapses", async () => {
-    const encodeSpy = vi.spyOn(canvasGraphCodec, "encodeCanvasGraph");
-
-    renderHook(() => useCanvasPersistence());
-    encodeSpy.mockClear();
-
-    // Simulate rapid canvas updates (e.g., dragging nodes).
-    act(() => {
-      store().setNodes([
-        { id: "n1", type: "agent", position: { x: 0, y: 0 }, data: {} as any },
-      ]);
-      store().setNodes([
-        { id: "n1", type: "agent", position: { x: 10, y: 10 }, data: {} as any },
-      ]);
-      store().setNodes([
-        { id: "n1", type: "agent", position: { x: 20, y: 20 }, data: {} as any },
-      ]);
+    const result = await saveCanvasNow();
+    const expectedPayload = encodeCanvasGraph({
+      canvasName: "My Canvas",
+      nodes,
+      edges,
     });
 
-    // Heavy encoding should not run while updates are still being debounced.
-    expect(encodeSpy).not.toHaveBeenCalled();
+    expect(result).toBe(true);
+    expect(saveSpy).toHaveBeenCalledOnce();
+    expect(saveSpy).toHaveBeenCalledWith("canvas-1", expectedPayload);
+    expect(store().saveStatus).toBe("saved");
+    expect(store().isDirty).toBe(false);
+  });
+
+  it("sets error status, logs, and returns false on failure without throwing", async () => {
+    store().setCanvas("canvas-1", "Broken Canvas");
+    store().setName("Broken Canvas");
+
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    server.use(
+      http.put("http://localhost:8000/api/canvases/:id", () =>
+        new HttpResponse(null, { status: 500 })
+      )
+    );
+
+    await expect(saveCanvasNow()).resolves.toBe(false);
+
+    expect(store().saveStatus).toBe("error");
+    expect(store().isDirty).toBe(true);
+    expect(consoleSpy).toHaveBeenCalledWith("Save failed:", expect.any(Error));
+  });
+
+  it("resets save status to idle 3000ms after a successful save", async () => {
+    store().setCanvas("canvas-1", "My Canvas");
+    store().setName("Renamed Canvas");
+
+    server.use(
+      http.put("http://localhost:8000/api/canvases/:id", () =>
+        HttpResponse.json(buildCanvasResponse("Renamed Canvas"))
+      )
+    );
+
+    await saveCanvasNow();
+    expect(store().saveStatus).toBe("saved");
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(500);
+      await vi.advanceTimersByTimeAsync(3000);
     });
 
-    expect(encodeSpy).toHaveBeenCalledTimes(1);
+    expect(store().saveStatus).toBe("idle");
+  });
+
+  it("resets save status to idle 3000ms after a failed save", async () => {
+    store().setCanvas("canvas-1", "My Canvas");
+    store().setName("Unsaved Canvas");
+
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    server.use(
+      http.put("http://localhost:8000/api/canvases/:id", () =>
+        new HttpResponse(null, { status: 500 })
+      )
+    );
+
+    await saveCanvasNow();
+    expect(store().saveStatus).toBe("error");
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3000);
+    });
+
+    expect(store().saveStatus).toBe("idle");
+    expect(consoleSpy).toHaveBeenCalledOnce();
+  });
+});
+
+describe("useUnsavedChangesWarning", () => {
+  it("prevents unload when the canvas is dirty", () => {
+    renderHook(() => useUnsavedChangesWarning());
+    store().setIsDirty(true);
+
+    const event = new Event("beforeunload", { cancelable: true });
+    const dispatchResult = window.dispatchEvent(event);
+
+    expect(dispatchResult).toBe(false);
+    expect(event.defaultPrevented).toBe(true);
+  });
+
+  it("allows unload when the canvas is clean", () => {
+    renderHook(() => useUnsavedChangesWarning());
+    store().setIsDirty(false);
+
+    const event = new Event("beforeunload", { cancelable: true });
+    const dispatchResult = window.dispatchEvent(event);
+
+    expect(dispatchResult).toBe(true);
+    expect(event.defaultPrevented).toBe(false);
+  });
+});
+
+describe("useSaveShortcut", () => {
+  it("triggers a save attempt on Ctrl+S and prevents the browser default", async () => {
+    store().setCanvas("canvas-1", "Shortcut Canvas");
+    store().setName("Shortcut Canvas");
+
+    const saveSpy = vi.fn();
+    let resolveRequest: (() => void) | undefined;
+    const requestSeen = new Promise<void>((resolve) => {
+      resolveRequest = resolve;
+    });
+
+    server.use(
+      http.put("http://localhost:8000/api/canvases/:id", async ({ request }) => {
+        saveSpy(await request.json());
+        resolveRequest?.();
+        return HttpResponse.json(buildCanvasResponse("Shortcut Canvas"));
+      })
+    );
+
+    renderHook(() => useSaveShortcut());
+
+    const event = new KeyboardEvent("keydown", {
+      key: "s",
+      ctrlKey: true,
+      cancelable: true,
+    });
+
+    act(() => {
+      window.dispatchEvent(event);
+    });
+
+    await act(async () => {
+      await requestSeen;
+    });
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(saveSpy).toHaveBeenCalledOnce();
+    expect(store().saveStatus).toBe("saved");
   });
 });

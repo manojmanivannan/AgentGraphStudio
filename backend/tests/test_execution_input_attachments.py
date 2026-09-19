@@ -67,6 +67,7 @@ def make_harness(
         get_unconsumed_input_attachments=AsyncMock(
             return_value=unconsumed_attachments or []
         ),
+        get_generated_attachments=AsyncMock(return_value=[]),
         mark_attachment_consumed=AsyncMock(),
     )
     conversation_service = SimpleNamespace(
@@ -123,6 +124,41 @@ class TestWorkerExecutionInputAttachmentDelivery:
 
         emitted_types = [call.args[0]["type"] for call in send_event.await_args_list]
         assert "agent_start" not in emitted_types
+        harness.conversation_repo.get_unconsumed_input_attachments.assert_not_awaited()
+
+    async def test_prior_generated_files_are_listed_for_entry_agent_without_consumes_edge(self):
+        attachment_id = uuid.uuid4()
+        generated = SimpleNamespace(
+            id=attachment_id,
+            attachment_node_id=uuid.uuid4(),
+            content=b"png-bytes",
+            format="png",
+            file_type="image",
+            source="agent_output",
+            original_filename="plot_a1b2c3d4.png",
+        )
+        harness = make_harness()
+        harness.conversation_repo.get_generated_attachments.return_value = [generated]
+        harness.services.run_state.consumed_file_attachments = []
+        send_event = AsyncMock()
+        ctx = RunContext(
+            user_prompt="what is the value at 14:00?",
+            send_event=send_event,
+            target_agent_id=harness.agent_id,
+        )
+
+        with patch(
+            "canvas_server.runner.input_attachment_delivery._materialize_in_sandbox",
+            new=AsyncMock(return_value="/sandbox/attachments/plot_a1b2c3d4.png"),
+        ):
+            await WorkerExecution(harness.services).execute(harness.agent_id, ctx)
+
+        prompt = harness.fake_agent.last_kwargs["user_request"]
+        assert "Previously generated attachment file paths:" in prompt
+        assert "/sandbox/attachments/plot_a1b2c3d4.png" in prompt
+        assert [item.attachment_id for item in harness.services.run_state.consumed_file_attachments] == [
+            attachment_id
+        ]
         harness.conversation_repo.get_unconsumed_input_attachments.assert_not_awaited()
 
     async def test_declared_node_with_nothing_unconsumed_never_emits_agent_start(self):

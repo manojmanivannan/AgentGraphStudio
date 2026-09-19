@@ -23,7 +23,9 @@ import { ToolNode } from "./ToolNode";
 import { AttachmentNode } from "./AttachmentNode";
 import { CustomEdge } from "./CustomEdge";
 import { useCanvasStore } from "@/store/canvasStore";
-import { useCanvasPersistence } from "@/hooks/useCanvasPersistence";
+import { useUnsavedChangesWarning, useSaveShortcut } from "@/hooks/useCanvasPersistence";
+import { useCanvasDeleteKeyHandler } from "@/hooks/useCanvasDeleteKeyHandler";
+import { useCanvasUndoRedoShortcuts } from "@/hooks/useCanvasUndoRedoShortcuts";
 import { useThemeStore } from "@/store/themeStore";
 import { deriveEdgeType, getEdgeHandles, isValidNodeTypeConnection } from "@/lib/canvasConnectionRules";
 
@@ -83,7 +85,17 @@ export function CanvasView() {
     return () => clearTimeout(timeout);
   }, [propertiesOpen]);
 
-  useCanvasPersistence();
+  // Manual save: warn before closing/navigating away with unsaved changes,
+  // and support Ctrl/Cmd+S to save explicitly (see TopBar for the Save button).
+  useUnsavedChangesWarning();
+  useSaveShortcut();
+  // Replaces ReactFlow's default silent Backspace/Delete removal with a
+  // confirmed deletion (see useCanvasDeleteKeyHandler); deleteKeyCode is
+  // disabled below on <ReactFlow> so the two don't double-fire.
+  useCanvasDeleteKeyHandler();
+  // Ctrl/Cmd+Z to undo, Ctrl/Cmd+Shift+Z or Ctrl/Cmd+Y to redo (see TopBar
+  // for the Undo/Redo buttons backed by the same canvasHistoryStore).
+  useCanvasUndoRedoShortcuts();
 
   const onNodesChange: OnNodesChange = useCallback(
     (changes) => {
@@ -182,6 +194,7 @@ export function CanvasView() {
         edgeTypes={edgeTypes}
         isValidConnection={isValidConnection as any}
         defaultEdgeOptions={defaultEdgeOptions}
+        deleteKeyCode={null}
         fitView
         attributionPosition="bottom-right"
       >

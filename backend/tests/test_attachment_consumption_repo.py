@@ -92,6 +92,35 @@ class TestGetUnconsumedInputAttachments:
         assert await repo.get_unconsumed_input_attachments(conversation.id, []) == []
 
 
+class TestGetGeneratedAttachments:
+    async def test_returns_all_agent_outputs_for_conversation_in_creation_order(
+        self, test_session, conversation
+    ):
+        repo = ConversationRepo(test_session)
+        first = await repo.save_attachment(
+            conversation_id=conversation.id,
+            content=b"first",
+            source="agent_output",
+            original_filename="plot_a.png",
+        )
+        await repo.save_attachment(
+            conversation_id=conversation.id,
+            content=b"upload",
+            source="chat_upload",
+            original_filename="input.png",
+        )
+        second = await repo.save_attachment(
+            conversation_id=conversation.id,
+            content=b"second",
+            source="agent_output",
+            original_filename="plot_b.png",
+        )
+
+        result = await repo.get_generated_attachments(conversation.id)
+
+        assert [attachment.id for attachment in result] == [first.id, second.id]
+
+
 class TestMarkAttachmentConsumed:
     async def test_sets_consumed_at_timestamp(self, test_session, conversation):
         repo = ConversationRepo(test_session)

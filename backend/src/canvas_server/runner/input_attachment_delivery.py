@@ -82,10 +82,8 @@ class DeliveredAttachment:
     source: str
     delivery_method: str  # resolved: inline | file_path | dual | manifest_only
     sandbox_path: str | None = None
-    # The filename the user actually uploaded it under (e.g. "city_name.json"),
-    # distinct from `name` (the declared Attachment node's own canvas label,
-    # e.g. "CityName") — #90. `None` for agent-produced attachments, which
-    # were never uploaded.
+    # The persisted filename, distinct from `name` (the declared Attachment
+    # node's canvas label). Generated files use UUID-suffixed names.
     original_filename: str | None = None
 
 
@@ -164,6 +162,18 @@ def build_forwarded_attachment_text(consumed: list[DeliveredAttachment]) -> str:
     return "\n".join(blocks)
 
 
+def _generated_attachment_context_block(delivered: list[DeliveredAttachment]) -> str:
+    paths = [item.sandbox_path for item in delivered if item.sandbox_path is not None]
+    if not paths:
+        return ""
+    path_list = "\n".join(f"- {path}" for path in paths)
+    return (
+        "Previously generated attachment file paths:\n"
+        "Use these files when the user refers to earlier outputs.\n"
+        f"{path_list}"
+    )
+
+
 async def _materialize_in_sandbox(
     conversation_id: str | uuid.UUID, name: str, content: bytes, network_pool: str
 ) -> str | None:
@@ -232,6 +242,63 @@ def _attachment_filename(node: DeclaredInputNode, instance: AttachmentInstance) 
     if node.name.lower().endswith(f".{ext}"):
         return node.name
     return f"{node.name}.{ext}"
+
+
+def _generated_attachment_filename(instance: AttachmentInstance) -> str:
+    original_filename = getattr(instance, "original_filename", None)
+    if original_filename:
+        return original_filename
+    attachment_id = getattr(instance, "id", uuid.uuid4())
+    suffix = attachment_id.hex if isinstance(attachment_id, uuid.UUID) else str(attachment_id)
+    format_hint = getattr(instance, "format", None) or file_type_to_format(instance.file_type)
+    return f"attachment_{suffix}.{format_hint}"
+
+
+async def deliver_generated_attachment_context(
+    *,
+    agent_node: AgentNode,
+    conversation_repo: Any,
+    conversation_id: str | uuid.UUID,
+    user_prompt: str,
+) -> tuple[str, list[DeliveredAttachment]]:
+    """Materialize prior generated files and list their paths for an entry agent."""
+    get_generated = getattr(conversation_repo, "get_generated_attachments", None)
+    if get_generated is None:
+        return user_prompt, []
+
+    instances: list[AttachmentInstance] = await get_generated(conversation_id)
+    if not instances:
+        return user_prompt, []
+
+    network_pool = (
+        NETWORK_POOL_NETWORKED
+        if getattr(agent_node, "enable_network", False)
+        else NETWORK_POOL_DEFAULT
+    )
+    delivered: list[DeliveredAttachment] = []
+    for instance in instances:
+        filename = _generated_attachment_filename(instance)
+        sandbox_path = await _materialize_in_sandbox(
+            conversation_id, filename, instance.content, network_pool
+        )
+        if sandbox_path is None:
+            continue
+        delivered.append(
+            DeliveredAttachment(
+                attachment_id=instance.id,
+                name=filename,
+                file_type=instance.file_type,
+                source=instance.source,
+                delivery_method="file_path",
+                sandbox_path=sandbox_path,
+                original_filename=getattr(instance, "original_filename", None),
+            )
+        )
+
+    context = _generated_attachment_context_block(delivered)
+    if not context:
+        return user_prompt, []
+    return f"{user_prompt}\n\n{context}", delivered
 
 
 async def deliver_input_attachments(

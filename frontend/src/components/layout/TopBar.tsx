@@ -1,5 +1,8 @@
-import { Check, Loader2, AlertCircle, Home } from "lucide-react";
+import { Check, Loader2, AlertCircle, Home, Save, Undo2, Redo2 } from "lucide-react";
 import { useCanvasStore } from "@/store/canvasStore";
+import { useCanvasHistoryStore } from "@/store/canvasHistoryStore";
+import { saveCanvasNow } from "@/hooks/useCanvasPersistence";
+import { confirm } from "@/store/confirmStore";
 import { useNavigate } from "react-router-dom";
 import { AccountControls } from "@/components/layout/AccountControls";
 
@@ -8,10 +11,13 @@ export function TopBar() {
   const canvasName = useCanvasStore((s) => s.canvasName);
   const setName = useCanvasStore((s) => s.setName);
   const saveStatus = useCanvasStore((s) => s.saveStatus);
+  const isDirty = useCanvasStore((s) => s.isDirty);
   const selectedNodeId = useCanvasStore((s) => s.selectedNodeId);
   const propertiesWidth = useCanvasStore((s) => s.propertiesWidth);
   const isDraggingPanel = useCanvasStore((s) => s.isDraggingPanel);
   const sidebarCollapsed = useCanvasStore((s) => s.sidebarCollapsed);
+  const canUndo = useCanvasHistoryStore((s) => s.canUndo());
+  const canRedo = useCanvasHistoryStore((s) => s.canRedo());
 
   const navigate = useNavigate();
 
@@ -21,6 +27,20 @@ export function TopBar() {
 
   // Shift right edge to avoid being covered by overlay panels
   const rightOffset = propertiesOpen ? propertiesWidth : 0;
+
+  const handleHomeClick = async () => {
+    if (useCanvasStore.getState().isDirty) {
+      const confirmed = await confirm({
+        title: "Discard unsaved changes?",
+        description: "This canvas has unsaved changes. Leaving now will discard them.",
+        confirmLabel: "Discard changes",
+        danger: true,
+      });
+      if (!confirmed) return;
+    }
+    useCanvasStore.getState().reset();
+    navigate("/");
+  };
 
   return (
     <div
@@ -32,10 +52,7 @@ export function TopBar() {
     >
       {/* Home button */}
       <button
-        onClick={() => {
-          useCanvasStore.getState().reset();
-          navigate("/");
-        }}
+        onClick={handleHomeClick}
         data-testid="home-button"
         className="flex items-center justify-center p-1 rounded-md text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-elevated)] transition-all"
         title="Back to Landing Page"
@@ -53,7 +70,41 @@ export function TopBar() {
         placeholder="Canvas name"
       />
 
+      {/* Undo / Redo */}
+      <div className="flex items-center gap-0.5">
+        <button
+          onClick={() => useCanvasHistoryStore.getState().undo()}
+          disabled={!canUndo}
+          data-testid="undo-button"
+          className="flex items-center justify-center p-1 rounded-md text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-elevated)] disabled:opacity-30 disabled:hover:bg-transparent disabled:cursor-not-allowed transition-all"
+          title="Undo (Ctrl+Z)"
+        >
+          <Undo2 className="w-4 h-4" />
+        </button>
+        <button
+          onClick={() => useCanvasHistoryStore.getState().redo()}
+          disabled={!canRedo}
+          data-testid="redo-button"
+          className="flex items-center justify-center p-1 rounded-md text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-elevated)] disabled:opacity-30 disabled:hover:bg-transparent disabled:cursor-not-allowed transition-all"
+          title="Redo (Ctrl+Shift+Z)"
+        >
+          <Redo2 className="w-4 h-4" />
+        </button>
+      </div>
+
       <div className="flex-1" />
+
+      {/* Save button */}
+      <button
+        onClick={() => void saveCanvasNow()}
+        disabled={!canvasId || (!isDirty && saveStatus !== "error") || saveStatus === "saving"}
+        data-testid="save-button"
+        className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[12px] font-medium bg-[var(--color-accent-subtle)] text-[var(--color-accent)] hover:bg-[var(--color-accent)]/20 disabled:opacity-40 disabled:pointer-events-none transition-all"
+        title="Save (Ctrl+S)"
+      >
+        <Save className="w-3.5 h-3.5" />
+        Save
+      </button>
 
       {/* Save status indicator */}
       <div
@@ -78,6 +129,7 @@ export function TopBar() {
             <span className="text-[var(--color-danger)]">Save failed</span>
           </>
         )}
+        {saveStatus === "idle" && isDirty && <span>Unsaved changes</span>}
       </div>
 
       {/* Theme toggle + account + logout (shared chrome) */}

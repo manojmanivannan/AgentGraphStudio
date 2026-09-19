@@ -112,6 +112,7 @@ export function executionEventToMessage(
         name: event.name,
         file_type: event.file_type,
         source: event.source,
+        original_filename: event.original_filename,
       },
     };
   }

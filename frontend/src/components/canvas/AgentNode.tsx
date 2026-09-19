@@ -1,9 +1,10 @@
 import { memo } from "react";
 import { Handle, Position, NodeResizer, type NodeProps } from "@xyflow/react";
-import { Brain, GitBranch, Settings } from "lucide-react";
+import { Brain, GitBranch, Settings, Trash2 } from "lucide-react";
 import type { AgentNodeData } from "@/types";
 import { useCanvasStore } from "@/store/canvasStore";
 import { HANDLE_IDS } from "@/lib/canvasConnectionRules";
+import { deleteNodeWithConfirm } from "@/lib/nodeDeletion";
 
 function AgentNodeComponent({ id, data, selected }: NodeProps) {
   const agentData = data as unknown as AgentNodeData;
@@ -98,6 +99,19 @@ function AgentNodeComponent({ id, data, selected }: NodeProps) {
           title="Settings"
         >
           <Settings className="w-3.5 h-3.5" />
+        </button>
+        <button
+          data-testid="agent-node-delete"
+          onPointerDown={(e) => e.nativeEvent.stopImmediatePropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
+            void deleteNodeWithConfirm(id);
+          }}
+          className="p-1 text-[var(--color-text-tertiary)] hover:text-[var(--color-danger)] rounded-md hover:bg-[var(--color-elevated)] transition-all duration-150"
+          title="Delete node"
+          aria-label="Delete node"
+        >
+          <Trash2 className="w-3.5 h-3.5" />
         </button>
       </div>
       <div className="px-3 py-2.5 flex-1 overflow-hidden">

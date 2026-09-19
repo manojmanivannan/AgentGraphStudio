@@ -204,6 +204,20 @@ class ConversationRepo:
         )
         return list(result.scalars().all())
 
+    async def get_generated_attachments(
+        self, conversation_id: uuid.UUID
+    ) -> list[AttachmentInstance]:
+        """Return every agent-generated file available to later conversation turns."""
+        result = await self.session.execute(
+            select(AttachmentInstance)
+            .where(
+                AttachmentInstance.conversation_id == conversation_id,
+                AttachmentInstance.source == "agent_output",
+            )
+            .order_by(AttachmentInstance.created_at)
+        )
+        return list(result.scalars().all())
+
     async def mark_attachment_consumed(self, attachment_id: uuid.UUID) -> None:
         """Marks an input ``AttachmentInstance`` as delivered (#88).
 

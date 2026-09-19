@@ -1,53 +1,69 @@
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
 import { useCanvasStore } from "@/store/canvasStore";
 import { saveCanvas } from "@/lib/api";
 import { encodeCanvasGraph } from "@/lib/canvasGraphCodec";
 
-export function useCanvasPersistence() {
-  const canvasId = useCanvasStore((s) => s.canvasId);
-  const canvasName = useCanvasStore((s) => s.canvasName);
-  const nodes = useCanvasStore((s) => s.nodes);
-  const edges = useCanvasStore((s) => s.edges);
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const prevDataRef = useRef<string>("");
-  const statusTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+export async function saveCanvasNow(): Promise<boolean> {
+  const { canvasId, canvasName, nodes, edges } = useCanvasStore.getState();
+  if (!canvasId) return false;
 
+  useCanvasStore.getState().setSaveStatus("saving");
+
+  const payload = encodeCanvasGraph({
+    canvasName,
+    nodes,
+    edges,
+  });
+
+  try {
+    await saveCanvas(canvasId, payload);
+    useCanvasStore.getState().setIsDirty(false);
+    useCanvasStore.getState().setSaveStatus("saved");
+    setTimeout(() => {
+      useCanvasStore.getState().setSaveStatus("idle");
+    }, 3000);
+    return true;
+  } catch (err) {
+    console.error("Save failed:", err);
+    useCanvasStore.getState().setSaveStatus("error");
+    setTimeout(() => {
+      useCanvasStore.getState().setSaveStatus("idle");
+    }, 3000);
+    return false;
+  }
+}
+
+export function useUnsavedChangesWarning() {
   useEffect(() => {
-    if (!canvasId) return;
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (!useCanvasStore.getState().isDirty) return;
+      event.preventDefault();
+      event.returnValue = "";
+    };
 
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    if (statusTimeoutRef.current) clearTimeout(statusTimeoutRef.current);
-
-    debounceRef.current = setTimeout(async () => {
-      const payload = encodeCanvasGraph({
-        canvasName,
-        nodes,
-        edges,
-      });
-
-      const serialized = JSON.stringify(payload);
-      if (serialized === prevDataRef.current) return;
-      prevDataRef.current = serialized;
-
-      useCanvasStore.getState().setSaveStatus("saving");
-      try {
-        await saveCanvas(canvasId, payload);
-        useCanvasStore.getState().setSaveStatus("saved");
-        statusTimeoutRef.current = setTimeout(() => {
-          useCanvasStore.getState().setSaveStatus("idle");
-        }, 3000);
-      } catch (err) {
-        console.error("Auto-save failed:", err);
-        useCanvasStore.getState().setSaveStatus("error");
-        statusTimeoutRef.current = setTimeout(() => {
-          useCanvasStore.getState().setSaveStatus("idle");
-        }, 3000);
-      }
-    }, 500);
+    window.addEventListener("beforeunload", handleBeforeUnload);
 
     return () => {
-      if (debounceRef.current) clearTimeout(debounceRef.current);
-      if (statusTimeoutRef.current) clearTimeout(statusTimeoutRef.current);
+      window.removeEventListener("beforeunload", handleBeforeUnload);
     };
-  }, [canvasId, canvasName, nodes, edges]);
+  }, []);
+}
+
+export function useSaveShortcut() {
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const isSaveShortcut =
+        (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s";
+      if (!isSaveShortcut) return;
+
+      event.preventDefault();
+      void saveCanvasNow();
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, []);
 }

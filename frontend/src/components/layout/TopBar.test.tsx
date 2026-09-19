@@ -3,11 +3,13 @@ import { render, screen, waitFor, act } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { useCanvasStore } from "@/store/canvasStore";
+import { useCanvasHistoryStore } from "@/store/canvasHistoryStore";
 import { useAuthStore } from "@/store/authStore";
 import { server } from "@/test/mocks/server";
 import { mockConversationSummary } from "@/test/mocks/handlers";
 import { TopBar } from "./TopBar";
 import { SidebarRail } from "./SidebarRail";
+import { ConfirmDialogHost } from "@/components/ui/ConfirmDialogHost";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 
 const API = "http://localhost:8000/api";
@@ -21,6 +23,7 @@ const mockUser = {
 beforeEach(() => {
   useCanvasStore.getState().reset();
   useAuthStore.getState().reset();
+  useCanvasHistoryStore.setState({ past: [], future: [], applying: false });
   server.resetHandlers();
 });
 
@@ -293,6 +296,192 @@ describe("TopBar", () => {
       });
       expect(screen.getByTestId("login-page")).toBeInTheDocument();
       consoleSpy.mockRestore();
+    });
+  });
+
+  describe("Save button", () => {
+    it("is disabled when the canvas has no unsaved changes", () => {
+      useCanvasStore.getState().setCanvas("canvas-1", "Test Canvas");
+
+      render(
+        <MemoryRouter>
+          <TopBar />
+        </MemoryRouter>
+      );
+
+      expect(screen.getByTestId("save-button")).toBeDisabled();
+    });
+
+    it("enables once the canvas becomes dirty, saves on click, and clears the dirty flag", async () => {
+      const user = userEvent.setup();
+      useCanvasStore.getState().setCanvas("canvas-1", "Test Canvas");
+      useCanvasStore.getState().setNodes([
+        { id: "n1", type: "agent", position: { x: 0, y: 0 }, data: {} },
+      ] as any);
+      expect(useCanvasStore.getState().isDirty).toBe(true);
+
+      server.use(
+        http.put(`${API}/canvases/canvas-1`, () =>
+          HttpResponse.json({
+            id: "canvas-1",
+            name: "Test Canvas",
+            nodes: { agents: [], tools: [] },
+            edges: [],
+            created_at: "",
+            updated_at: "",
+          })
+        )
+      );
+
+      render(
+        <MemoryRouter>
+          <TopBar />
+        </MemoryRouter>
+      );
+
+      const saveButton = screen.getByTestId("save-button");
+      expect(saveButton).not.toBeDisabled();
+      expect(screen.getByText("Unsaved changes")).toBeInTheDocument();
+
+      await user.click(saveButton);
+
+      await waitFor(() => {
+        expect(useCanvasStore.getState().isDirty).toBe(false);
+      });
+      await waitFor(() => {
+        expect(screen.getByTestId("save-button")).toBeDisabled();
+      });
+    });
+  });
+
+  describe("Undo/Redo buttons", () => {
+    it("are disabled when there is no history", () => {
+      useCanvasStore.getState().setCanvas("canvas-1", "Test Canvas");
+
+      render(
+        <MemoryRouter>
+          <TopBar />
+        </MemoryRouter>
+      );
+
+      expect(screen.getByTestId("undo-button")).toBeDisabled();
+      expect(screen.getByTestId("redo-button")).toBeDisabled();
+    });
+
+    it("undo restores the previous snapshot and enables redo", async () => {
+      const user = userEvent.setup();
+      useCanvasStore.getState().setCanvas("canvas-1", "Test Canvas");
+      useCanvasHistoryStore.setState({
+        past: [{ nodes: [], edges: [] }],
+        future: [],
+        applying: false,
+      });
+
+      render(
+        <MemoryRouter>
+          <TopBar />
+        </MemoryRouter>
+      );
+
+      const undoButton = screen.getByTestId("undo-button");
+      expect(undoButton).not.toBeDisabled();
+      expect(screen.getByTestId("redo-button")).toBeDisabled();
+
+      await user.click(undoButton);
+
+      expect(useCanvasHistoryStore.getState().past).toHaveLength(0);
+      expect(useCanvasHistoryStore.getState().future).toHaveLength(1);
+      await waitFor(() => {
+        expect(screen.getByTestId("redo-button")).not.toBeDisabled();
+      });
+    });
+
+    it("redo re-applies an undone change", async () => {
+      const user = userEvent.setup();
+      useCanvasStore.getState().setCanvas("canvas-1", "Test Canvas");
+      useCanvasHistoryStore.setState({
+        past: [],
+        future: [{ nodes: [], edges: [] }],
+        applying: false,
+      });
+
+      render(
+        <MemoryRouter>
+          <TopBar />
+        </MemoryRouter>
+      );
+
+      const redoButton = screen.getByTestId("redo-button");
+      expect(redoButton).not.toBeDisabled();
+
+      await user.click(redoButton);
+
+      expect(useCanvasHistoryStore.getState().future).toHaveLength(0);
+      expect(useCanvasHistoryStore.getState().past).toHaveLength(1);
+    });
+  });
+
+  describe("unsaved changes guard on Home button", () => {
+    it("navigates home immediately when there are no unsaved changes", async () => {
+      const user = userEvent.setup();
+      useCanvasStore.getState().setCanvas("canvas-1", "Test Canvas");
+
+      render(
+        <MemoryRouter>
+          <TopBar />
+        </MemoryRouter>
+      );
+
+      await user.click(screen.getByTestId("home-button"));
+
+      expect(useCanvasStore.getState().canvasId).toBeNull();
+    });
+
+    it("shows an in-app confirm dialog before discarding unsaved changes", async () => {
+      const user = userEvent.setup();
+      useCanvasStore.getState().setCanvas("canvas-1", "Test Canvas");
+      useCanvasStore.getState().setNodes([
+        { id: "n1", type: "agent", position: { x: 0, y: 0 }, data: {} },
+      ] as any);
+
+      render(
+        <MemoryRouter>
+          <TopBar />
+          <ConfirmDialogHost />
+        </MemoryRouter>
+      );
+
+      await user.click(screen.getByTestId("home-button"));
+
+      expect(await screen.findByRole("dialog")).toHaveTextContent("unsaved changes");
+      expect(useCanvasStore.getState().canvasId).toBe("canvas-1");
+
+      await user.click(screen.getByRole("button", { name: "Discard changes" }));
+
+      await waitFor(() => {
+        expect(useCanvasStore.getState().canvasId).toBeNull();
+      });
+    });
+
+    it("keeps the canvas open when the discard confirmation is cancelled", async () => {
+      const user = userEvent.setup();
+      useCanvasStore.getState().setCanvas("canvas-1", "Test Canvas");
+      useCanvasStore.getState().setNodes([
+        { id: "n1", type: "agent", position: { x: 0, y: 0 }, data: {} },
+      ] as any);
+
+      render(
+        <MemoryRouter>
+          <TopBar />
+          <ConfirmDialogHost />
+        </MemoryRouter>
+      );
+
+      await user.click(screen.getByTestId("home-button"));
+      await screen.findByRole("dialog");
+      await user.click(screen.getByRole("button", { name: "Cancel" }));
+
+      expect(useCanvasStore.getState().canvasId).toBe("canvas-1");
     });
   });
 });
