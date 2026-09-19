@@ -551,7 +551,7 @@ export function ConversationReplayPanel() {
           <button
             onClick={handleBrowseConversations}
             disabled={loading}
-            className="btn-secondary text-[11px] px-2.5 py-1.5 flex items-center gap-1.5 disabled:opacity-60"
+            className="btn-secondary text-[13px] px-2.5 py-1.5 flex items-center gap-1.5 disabled:opacity-60"
             data-testid="replay-browse-button"
           >
             <List className="w-3.5 h-3.5" />
@@ -560,14 +560,14 @@ export function ConversationReplayPanel() {
           <button
             onClick={handleImportClick}
             disabled={loading}
-            className="btn-secondary text-[11px] px-2.5 py-1.5 flex items-center gap-1.5 disabled:opacity-60"
+            className="btn-secondary text-[13px] px-2.5 py-1.5 flex items-center gap-1.5 disabled:opacity-60"
             data-testid="replay-import-button"
           >
             <Upload className="w-3.5 h-3.5" />
             {loading ? "Importing..." : "Import"}
           </button>
           {conversationName && (
-            <span className="text-[11px] text-[var(--color-text-secondary)] truncate" data-testid="replay-conversation-name">
+            <span className="text-[13px] text-[var(--color-text-secondary)] truncate" data-testid="replay-conversation-name">
               {conversationName}
             </span>
           )}
@@ -583,7 +583,7 @@ export function ConversationReplayPanel() {
 
         {error && (
           <div
-            className="rounded-md border border-[var(--color-danger)]/30 bg-[var(--color-danger-subtle)] text-[11px] text-[var(--color-danger)] px-2.5 py-2 flex items-start gap-2"
+            className="rounded-md border border-[var(--color-danger)]/30 bg-[var(--color-danger-subtle)] text-[13px] text-[var(--color-danger)] px-2.5 py-2 flex items-start gap-2"
             data-testid="replay-error"
           >
             <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
@@ -602,13 +602,13 @@ export function ConversationReplayPanel() {
                 value={conversationSearch}
                 onChange={(event) => setConversationSearch(event.target.value)}
                 placeholder="Search"
-                className="flex-1 min-w-0 text-[11px] rounded-md border border-[var(--color-border-subtle)] bg-[var(--color-inset)] text-[var(--color-text-primary)] px-2 py-1"
+                className="flex-1 min-w-0 text-[13px] rounded-md border border-[var(--color-border-subtle)] bg-[var(--color-inset)] text-[var(--color-text-primary)] px-2 py-1"
                 data-testid="replay-conversation-search"
               />
               <select
                 value={conversationSort}
                 onChange={(event) => setConversationSort(event.target.value as "updated_desc" | "name_asc")}
-                className="text-[11px] rounded-md border border-[var(--color-border-subtle)] bg-[var(--color-inset)] text-[var(--color-text-primary)] px-1.5 py-1"
+                className="text-[13px] rounded-md border border-[var(--color-border-subtle)] bg-[var(--color-inset)] text-[var(--color-text-primary)] px-1.5 py-1"
                 data-testid="replay-conversation-sort"
               >
                 <option value="updated_desc">Recent</option>
@@ -624,7 +624,7 @@ export function ConversationReplayPanel() {
                   aria-label={conversation.name}
                   className="w-full text-left px-2.5 py-2 rounded-md hover:bg-[var(--color-elevated)] transition-colors"
                 >
-                  <span className="block text-[11px] text-[var(--color-text-primary)] truncate" data-testid="replay-conversation-item-name">
+                  <span className="block text-[13px] text-[var(--color-text-primary)] truncate" data-testid="replay-conversation-item-name">
                     {conversation.name}
                   </span>
                   <div className="mt-1 flex items-center gap-1.5">
@@ -646,7 +646,7 @@ export function ConversationReplayPanel() {
                 </button>
               ))
             ) : (
-              <div className="px-2.5 py-2 text-[11px] text-[var(--color-text-tertiary)]">
+              <div className="px-2.5 py-2 text-[13px] text-[var(--color-text-tertiary)]">
                 No matching conversations for this canvas.
               </div>
             )}
@@ -659,21 +659,21 @@ export function ConversationReplayPanel() {
               <div className="flex items-center justify-between mb-1.5">
                 <div className="flex items-center gap-1.5 min-w-0">
                   <span
-                    className={`text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded-md font-semibold ${getReplayBadgeColorClass(currentSemanticType)}`}
+                    className={`text-[12px] uppercase tracking-wide px-1.5 py-0.5 rounded-md font-semibold ${getReplayBadgeColorClass(currentSemanticType)}`}
                     data-testid="replay-current-role"
                   >
                     {formatRole(currentMessage)}
                   </span>
                   {currentActor && (
                     <span
-                      className="text-[10px] text-[var(--color-text-secondary)] truncate"
+                      className="text-[12px] text-[var(--color-text-secondary)] truncate"
                       data-testid="replay-current-actor"
                     >
                       {currentActor}
                     </span>
                   )}
                 </div>
-                <span className="text-[10px] text-[var(--color-text-tertiary)]" data-testid="replay-step-indicator">
+                <span className="text-[12px] text-[var(--color-text-tertiary)]" data-testid="replay-step-indicator">
                   {index + 1}/{replayMessages.length}
                 </span>
               </div>
@@ -682,7 +682,7 @@ export function ConversationReplayPanel() {
               </div>
             </>
           ) : (
-            <div className="flex-1 min-h-0 flex items-center justify-center text-center text-[11px] text-[var(--color-text-tertiary)]">
+            <div className="flex-1 min-h-0 flex items-center justify-center text-center text-[13px] text-[var(--color-text-tertiary)]">
               Import a conversation ZIP to replay user and assistant messages on the canvas.
             </div>
           )}
@@ -693,7 +693,7 @@ export function ConversationReplayPanel() {
             type="button"
             onClick={togglePlay}
             disabled={loading || replayMessages.length === 0}
-            className="btn-secondary text-[11px] px-2.5 py-1.5 disabled:opacity-50"
+            className="btn-secondary text-[13px] px-2.5 py-1.5 disabled:opacity-50"
             data-testid="replay-play-button"
           >
             {isPlaying ? "Pause" : "Play"}
@@ -702,7 +702,7 @@ export function ConversationReplayPanel() {
             value={String(playbackSpeed)}
             onChange={handlePlaybackSpeedChange}
             disabled={loading || replayMessages.length === 0}
-            className="text-[11px] rounded-md border border-[var(--color-border-subtle)] bg-[var(--color-surface)] text-[var(--color-text-primary)] px-2 py-1.5 disabled:opacity-50"
+            className="text-[13px] rounded-md border border-[var(--color-border-subtle)] bg-[var(--color-surface)] text-[var(--color-text-primary)] px-2 py-1.5 disabled:opacity-50"
             aria-label="Replay speed"
             data-testid="replay-speed-select"
           >
@@ -713,7 +713,7 @@ export function ConversationReplayPanel() {
           <button
             onClick={stepBack}
             disabled={loading || replayMessages.length === 0 || index === 0}
-            className="btn-secondary text-[11px] px-2.5 py-1.5 flex items-center gap-1 disabled:opacity-50"
+            className="btn-secondary text-[13px] px-2.5 py-1.5 flex items-center gap-1 disabled:opacity-50"
             data-testid="replay-prev-button"
           >
             <ChevronLeft className="w-3.5 h-3.5" />
@@ -722,7 +722,7 @@ export function ConversationReplayPanel() {
           <button
             onClick={stepForward}
             disabled={loading || replayMessages.length === 0 || index >= replayMessages.length - 1}
-            className="btn-secondary text-[11px] px-2.5 py-1.5 flex items-center gap-1 disabled:opacity-50"
+            className="btn-secondary text-[13px] px-2.5 py-1.5 flex items-center gap-1 disabled:opacity-50"
             data-testid="replay-next-button"
           >
             Next

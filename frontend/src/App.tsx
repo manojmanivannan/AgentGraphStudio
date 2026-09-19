@@ -425,13 +425,13 @@ function LandingPage({
       >
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4 px-1">
           <div className="flex items-center gap-3">
-            <h2 className="text-[11px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-[0.1em]">
+            <h2 className="text-[13px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-[0.1em]">
               Recent Canvases
             </h2>
             {canvases.length > 0 && !selectMode && (
               <button
                 onClick={() => setSelectMode(true)}
-                className="btn-secondary text-[10px] px-2 py-0.5 rounded-md font-medium cursor-pointer"
+                className="btn-secondary text-[12px] px-2 py-0.5 rounded-md font-medium cursor-pointer"
               >
                 Select
               </button>
@@ -440,7 +440,7 @@ function LandingPage({
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => handleToggleSelectAll(filteredCanvases)}
-                  className="btn-secondary text-[10px] px-2 py-0.5 rounded-md font-medium cursor-pointer"
+                  className="btn-secondary text-[12px] px-2 py-0.5 rounded-md font-medium cursor-pointer"
                 >
                   {filteredCanvases.length > 0 && filteredCanvases.every((c) => selectedCanvasIds.has(c.id))
                     ? "Deselect All"
@@ -448,14 +448,14 @@ function LandingPage({
                 </button>
                 <button
                   onClick={handleCancelSelect}
-                  className="btn-secondary text-[10px] px-2 py-0.5 rounded-md font-medium cursor-pointer"
+                  className="btn-secondary text-[12px] px-2 py-0.5 rounded-md font-medium cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={() => setDeleteConfirmIds(Array.from(selectedCanvasIds))}
                   disabled={selectedCanvasIds.size === 0}
-                  className="btn-primary bg-[var(--color-danger)] hover:bg-red-600 text-white text-[10px] px-2 py-0.5 rounded-md font-medium disabled:opacity-40 cursor-pointer disabled:cursor-not-allowed"
+                  className="btn-primary bg-[var(--color-danger)] hover:bg-red-600 text-white text-[12px] px-2 py-0.5 rounded-md font-medium disabled:opacity-40 cursor-pointer disabled:cursor-not-allowed"
                 >
                   Delete Selected ({selectedCanvasIds.size})
                 </button>
@@ -538,7 +538,7 @@ function LandingPage({
                     <span className="block text-[13px] font-semibold text-[var(--color-text-primary)] truncate">
                       {c.name}
                     </span>
-                    <span className="block text-[11px] text-[var(--color-text-tertiary)] font-light mt-0.5">
+                    <span className="block text-[13px] text-[var(--color-text-tertiary)] font-light mt-0.5">
                       {c.updated_at
                         ? `Updated ${getRelativeTimeString(c.updated_at)}`
                         : c.created_at

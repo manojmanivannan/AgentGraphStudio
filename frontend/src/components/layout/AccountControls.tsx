@@ -47,7 +47,7 @@ export function AccountControls({ themeToggleClassName = "hover:bg-[var(--color-
       {/* Logged-in user + account + logout */}
       {user && (
         <div className="flex items-center gap-2 pl-2 ml-1 border-l border-[var(--color-border-subtle)]">
-          <span className="text-[11px] text-[var(--color-text-tertiary)] truncate max-w-[140px]" title={user.email}>
+          <span className="text-[13px] text-[var(--color-text-tertiary)] truncate max-w-[140px]" title={user.email}>
             {user.email}
           </span>
           <button

@@ -73,7 +73,7 @@ export function AttachmentEditor() {
       </div>
 
       <div>
-        <label className="block text-[11px] font-semibold text-[var(--color-text-tertiary)] mb-1.5 uppercase tracking-[0.06em]">Name</label>
+        <label className="block text-[13px] font-semibold text-[var(--color-text-tertiary)] mb-1.5 uppercase tracking-[0.06em]">Name</label>
         <input
           type="text"
           value={localName}
@@ -88,7 +88,7 @@ export function AttachmentEditor() {
       </div>
 
       <div>
-        <label className="block text-[11px] font-semibold text-[var(--color-text-tertiary)] mb-1.5 uppercase tracking-[0.06em]">File Type</label>
+        <label className="block text-[13px] font-semibold text-[var(--color-text-tertiary)] mb-1.5 uppercase tracking-[0.06em]">File Type</label>
         <select
           value={selectValue}
           onChange={(e) => {
@@ -127,7 +127,7 @@ export function AttachmentEditor() {
       </div>
 
       <div>
-        <label className="block text-[11px] font-semibold text-[var(--color-text-tertiary)] mb-1.5 uppercase tracking-[0.06em]">Delivery Method</label>
+        <label className="block text-[13px] font-semibold text-[var(--color-text-tertiary)] mb-1.5 uppercase tracking-[0.06em]">Delivery Method</label>
         <select
           value={localDeliveryMethod}
           onChange={(e) => {
@@ -140,13 +140,13 @@ export function AttachmentEditor() {
           <option value="inline">Inline (text / image)</option>
           <option value="file_path">File path (sandbox)</option>
         </select>
-        <p className="mt-1 text-[10px] text-[var(--color-text-tertiary)]">
+        <p className="mt-1 text-[12px] text-[var(--color-text-tertiary)]">
           Preference for how this attachment is delivered to the consuming agent. The framework falls back automatically when this isn't feasible (e.g. binary/pdf content, or no sandbox available).
         </p>
       </div>
 
       <div>
-        <label className="block text-[11px] font-semibold text-[var(--color-text-tertiary)] mb-1.5 uppercase tracking-[0.06em]">Description</label>
+        <label className="block text-[13px] font-semibold text-[var(--color-text-tertiary)] mb-1.5 uppercase tracking-[0.06em]">Description</label>
         <textarea
           value={localDescription}
           onChange={(e) => {

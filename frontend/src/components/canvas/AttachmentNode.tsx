@@ -77,11 +77,11 @@ function AttachmentNodeComponent({ id, data, selected }: NodeProps) {
       </div>
       <div className="px-2.5 py-2 flex-1 overflow-hidden">
         {attachmentData.description ? (
-          <p className="text-[11px] text-[var(--color-text-secondary)] line-clamp-2 leading-relaxed">
+          <p className="text-[13px] text-[var(--color-text-secondary)] line-clamp-2 leading-relaxed">
             {attachmentData.description}
           </p>
         ) : (
-          <p className="text-[11px] text-[var(--color-text-tertiary)] italic">
+          <p className="text-[13px] text-[var(--color-text-tertiary)] italic">
             No description
           </p>
         )}

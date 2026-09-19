@@ -577,7 +577,7 @@ export default function ChatPage() {
           <div className="flex items-center gap-4">
             {allCanvases.length > 0 && (
               <div className="flex items-center gap-2">
-                <span className="text-[11px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-wider">
+                <span className="text-[13px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-wider">
                   Canvas:
                 </span>
                 <select
@@ -771,7 +771,7 @@ export default function ChatPage() {
                           )}
                         </div>
                         {isError && attachment.error && (
-                          <p className="mt-1 px-1 text-[11px] text-[var(--color-danger)]">
+                          <p className="mt-1 px-1 text-[13px] text-[var(--color-danger)]">
                             {attachment.error}
                           </p>
                         )}

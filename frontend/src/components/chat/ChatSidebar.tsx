@@ -153,7 +153,7 @@ export function ChatSidebar({
         {sidebarCollapsed ? (
           <div className="border-t border-[var(--color-border-subtle)] my-2" />
         ) : (
-          <div className="px-2 py-1.5 text-[10px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-[0.08em] whitespace-nowrap">
+          <div className="px-2 py-1.5 text-[12px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-[0.08em] whitespace-nowrap">
             Recent Chats
           </div>
         )}

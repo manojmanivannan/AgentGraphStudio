@@ -118,7 +118,7 @@ export function ExecutionStepsViewer({
           >
             <button
               onClick={() => toggleStepExpand(stepMsg.id)}
-              className="flex items-center gap-1.5 text-[10px] text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)] transition-colors cursor-pointer px-1 font-semibold tracking-wide mb-0.5"
+              className="flex items-center gap-1.5 text-[12px] text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)] transition-colors cursor-pointer px-1 font-semibold tracking-wide mb-0.5"
             >
               {isStepCollapsed ? (
                 <ChevronRight className="w-3 h-3" />
@@ -145,7 +145,7 @@ export function ExecutionStepsViewer({
                     : isWarning || stepMsg.event_type === "tool_approval_request"
                     ? "bg-[var(--color-warning-subtle)] text-[var(--color-warning)] border border-[var(--color-warning)]/20 rounded-bl-sm"
                     : isThought
-                    ? "bg-[var(--color-agent-subtle)] text-[var(--color-agent)] border border-[var(--color-agent)]/20 rounded-bl-sm font-mono whitespace-pre-wrap text-[11px]"
+                    ? "bg-[var(--color-agent-subtle)] text-[var(--color-agent)] border border-[var(--color-agent)]/20 rounded-bl-sm font-mono whitespace-pre-wrap text-[13px]"
                     : stepMsg.event_type === "human_input_request"
                     ? "bg-[var(--color-agent-subtle)] text-[var(--color-agent)] border border-[var(--color-agent)]/20 rounded-bl-sm"
                     : isToolResult
@@ -188,7 +188,7 @@ export function ExecutionStepsViewer({
                         />
                         <button
                           type="submit"
-                          className="px-3.5 py-1.5 bg-[var(--color-accent)] hover:bg-[var(--color-accent-bright)] text-white text-[11px] font-semibold rounded-lg shadow transition-colors"
+                          className="px-3.5 py-1.5 bg-[var(--color-accent)] hover:bg-[var(--color-accent-bright)] text-white text-[13px] font-semibold rounded-lg shadow transition-colors"
                         >
                           Submit
                         </button>
@@ -206,12 +206,12 @@ export function ExecutionStepsViewer({
                       <span className="w-2 h-2 rounded-full bg-[var(--color-warning)] animate-ping" />
                       <span>Tool Approval Required</span>
                     </div>
-                    <div className="bg-[var(--color-base)] border border-[var(--color-border-subtle)] rounded-lg p-2.5 font-mono text-[11px] text-[var(--color-text-secondary)] space-y-1 max-w-full overflow-x-auto">
+                    <div className="bg-[var(--color-base)] border border-[var(--color-border-subtle)] rounded-lg p-2.5 font-mono text-[13px] text-[var(--color-text-secondary)] space-y-1 max-w-full overflow-x-auto">
                       <div><strong>Tool:</strong> {activeInterrupt.tool}</div>
                       {activeInterrupt.args && Object.keys(activeInterrupt.args).length > 0 && (
                         <div>
                           <strong>Arguments:</strong>
-                          <pre className="mt-1 p-1.5 bg-[var(--color-elevated)] rounded border border-[var(--color-border-subtle)]/50 text-[10px] overflow-x-auto whitespace-pre-wrap">
+                          <pre className="mt-1 p-1.5 bg-[var(--color-elevated)] rounded border border-[var(--color-border-subtle)]/50 text-[12px] overflow-x-auto whitespace-pre-wrap">
                             {JSON.stringify(activeInterrupt.args, null, 2)}
                           </pre>
                         </div>
@@ -220,13 +220,13 @@ export function ExecutionStepsViewer({
                     <div className="flex gap-2 mt-1">
                       <button
                         onClick={() => handleSendToolApproval(true)}
-                        className="px-3.5 py-1.5 bg-[var(--color-success)] hover:bg-[var(--color-success)]/90 text-white text-[11px] font-semibold rounded-lg shadow flex items-center gap-1 transition-colors"
+                        className="px-3.5 py-1.5 bg-[var(--color-success)] hover:bg-[var(--color-success)]/90 text-white text-[13px] font-semibold rounded-lg shadow flex items-center gap-1 transition-colors"
                       >
                         Approve
                       </button>
                       <button
                         onClick={() => handleSendToolApproval(false)}
-                        className="px-3.5 py-1.5 bg-[var(--color-danger)] hover:bg-[var(--color-danger)]/90 text-white text-[11px] font-semibold rounded-lg shadow flex items-center gap-1 transition-colors"
+                        className="px-3.5 py-1.5 bg-[var(--color-danger)] hover:bg-[var(--color-danger)]/90 text-white text-[13px] font-semibold rounded-lg shadow flex items-center gap-1 transition-colors"
                       >
                         Deny
                       </button>
@@ -251,7 +251,7 @@ export function ExecutionStepsViewer({
                   <div className="space-y-2.5 w-full">
                     {pythonCode && (
                       <div className="rounded-lg overflow-hidden border border-[var(--color-border-subtle)] bg-[var(--color-base)] text-[var(--color-text-primary)]">
-                        <div className="flex items-center justify-between px-3 py-1.5 bg-[var(--color-surface)] border-b border-[var(--color-border-subtle)] text-[11px] font-mono text-[var(--color-text-secondary)]">
+                        <div className="flex items-center justify-between px-3 py-1.5 bg-[var(--color-surface)] border-b border-[var(--color-border-subtle)] text-[13px] font-mono text-[var(--color-text-secondary)]">
                           <div className="flex items-center gap-1.5 font-semibold text-[var(--color-text-primary)]">
                             <Code className="w-3.5 h-3.5 text-[var(--color-accent)]" />
                             <span>Python Code</span>
@@ -264,7 +264,7 @@ export function ExecutionStepsViewer({
                               setCopiedId(stepMsg.id);
                               setTimeout(() => setCopiedId(null), 2000);
                             }}
-                            className="flex items-center gap-1 text-[10px] text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)] transition-colors px-1.5 py-0.5 rounded hover:bg-[var(--color-elevated)] cursor-pointer"
+                            className="flex items-center gap-1 text-[12px] text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)] transition-colors px-1.5 py-0.5 rounded hover:bg-[var(--color-elevated)] cursor-pointer"
                             title="Copy code"
                           >
                             {copiedId === stepMsg.id ? (
@@ -280,7 +280,7 @@ export function ExecutionStepsViewer({
                             )}
                           </button>
                         </div>
-                        <pre className="p-3 text-[11px] font-mono leading-relaxed overflow-x-auto whitespace-pre">
+                        <pre className="p-3 text-[13px] font-mono leading-relaxed overflow-x-auto whitespace-pre">
                           <code>{pythonCode}</code>
                         </pre>
                       </div>
@@ -288,11 +288,11 @@ export function ExecutionStepsViewer({
 
                     {pipPackages && (
                       <div className="rounded-lg overflow-hidden border border-[var(--color-border-subtle)] bg-[var(--color-base)] text-[var(--color-text-primary)]">
-                        <div className="flex items-center gap-1.5 px-3 py-1.5 bg-[var(--color-surface)] border-b border-[var(--color-border-subtle)] text-[11px] font-mono font-semibold text-[var(--color-text-primary)]">
+                        <div className="flex items-center gap-1.5 px-3 py-1.5 bg-[var(--color-surface)] border-b border-[var(--color-border-subtle)] text-[13px] font-mono font-semibold text-[var(--color-text-primary)]">
                           <Terminal className="w-3.5 h-3.5 text-[var(--color-info)]" />
                           <span>pip install</span>
                         </div>
-                        <pre className="p-2.5 text-[11px] font-mono leading-relaxed overflow-x-auto whitespace-pre">
+                        <pre className="p-2.5 text-[13px] font-mono leading-relaxed overflow-x-auto whitespace-pre">
                           <code>pip install {pipPackages.join(" ")}</code>
                         </pre>
                       </div>
@@ -300,11 +300,11 @@ export function ExecutionStepsViewer({
 
                     {otherArgs && (
                       <div className="rounded-lg overflow-hidden border border-[var(--color-border-subtle)] bg-[var(--color-base)] text-[var(--color-text-primary)]">
-                        <div className="flex items-center gap-1.5 px-3 py-1.5 bg-[var(--color-surface)] border-b border-[var(--color-border-subtle)] text-[11px] font-mono font-semibold text-[var(--color-text-primary)]">
+                        <div className="flex items-center gap-1.5 px-3 py-1.5 bg-[var(--color-surface)] border-b border-[var(--color-border-subtle)] text-[13px] font-mono font-semibold text-[var(--color-text-primary)]">
                           <Terminal className="w-3.5 h-3.5 text-[var(--color-info)]" />
                           <span>Arguments</span>
                         </div>
-                        <pre className="p-2.5 text-[10px] font-mono leading-relaxed overflow-x-auto whitespace-pre-wrap">
+                        <pre className="p-2.5 text-[12px] font-mono leading-relaxed overflow-x-auto whitespace-pre-wrap">
                           {JSON.stringify(otherArgs, null, 2)}
                         </pre>
                       </div>
@@ -312,10 +312,10 @@ export function ExecutionStepsViewer({
 
                     {stepMsg.content && (
                       <div className="space-y-1">
-                        <div className="text-[10px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-wider px-0.5">
+                        <div className="text-[12px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-wider px-0.5">
                           Output
                         </div>
-                        <div className="bg-[var(--color-base)] rounded-lg p-2.5 border border-[var(--color-border-subtle)] font-mono text-[11px] text-[var(--color-text-secondary)] overflow-x-auto">
+                        <div className="bg-[var(--color-base)] rounded-lg p-2.5 border border-[var(--color-border-subtle)] font-mono text-[13px] text-[var(--color-text-secondary)] overflow-x-auto">
                           {renderMessageContent(stepMsg.content, true)}
                         </div>
                       </div>

@@ -108,7 +108,7 @@ export function TopBar() {
 
       {/* Save status indicator */}
       <div
-        className="flex items-center gap-1.5 text-[11px] text-[var(--color-text-tertiary)]"
+        className="flex items-center gap-1.5 text-[13px] text-[var(--color-text-tertiary)]"
         data-testid="save-status"
       >
         {saveStatus === "saving" && (

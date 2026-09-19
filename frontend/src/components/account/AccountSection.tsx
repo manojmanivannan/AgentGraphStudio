@@ -69,7 +69,7 @@ export function AccountSection() {
     <div className="flex flex-col gap-6">
       {/* Current user */}
       <div className="pb-4 border-b border-[var(--color-border-subtle)]">
-        <p className="text-[10px] uppercase tracking-wider text-[var(--color-text-tertiary)] font-medium">
+        <p className="text-[12px] uppercase tracking-wider text-[var(--color-text-tertiary)] font-medium">
           Signed in as
         </p>
         <p className="text-sm text-[var(--color-text-primary)] font-medium truncate" title={user?.email ?? ""}>

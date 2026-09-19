@@ -53,7 +53,7 @@ function ToolNodeComponent({ id, data, selected }: NodeProps) {
         <span className="font-semibold text-[13px] text-[var(--color-text-primary)] truncate flex-1">
           {toolData.name}
         </span>
-        <span className="text-[10px] px-1.5 py-0.5 rounded-md font-semibold tracking-wide uppercase bg-[var(--color-info-subtle)] text-[var(--color-info)]">
+        <span className="text-[12px] px-1.5 py-0.5 rounded-md font-semibold tracking-wide uppercase bg-[var(--color-info-subtle)] text-[var(--color-info)]">
           Tool
         </span>
         <button
@@ -83,11 +83,11 @@ function ToolNodeComponent({ id, data, selected }: NodeProps) {
       </div>
       <div className="px-3 py-2.5 flex-1 overflow-hidden">
         {codePreview ? (
-          <pre className="text-[10px] text-[var(--color-text-tertiary)] font-[var(--font-mono)] leading-relaxed overflow-hidden">
+          <pre className="text-[12px] text-[var(--color-text-tertiary)] font-[var(--font-mono)] leading-relaxed overflow-hidden">
             {codePreview}
           </pre>
         ) : (
-          <p className="text-[11px] text-[var(--color-text-tertiary)] italic">Write Python code</p>
+          <p className="text-[13px] text-[var(--color-text-tertiary)] italic">Write Python code</p>
         )}
       </div>
       <Handle

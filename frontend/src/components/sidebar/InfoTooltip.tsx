@@ -69,7 +69,7 @@ export function InfoTooltip({ content, ariaLabel, testId }: InfoTooltipProps) {
         <span
           id={tooltipId}
           role="tooltip"
-          className="fixed z-[80] rounded-md border border-[var(--color-border-default)] bg-[var(--color-surface)] px-2.5 py-2 text-[10px] leading-relaxed text-[var(--color-text-secondary)] shadow-lg"
+          className="fixed z-[80] rounded-md border border-[var(--color-border-default)] bg-[var(--color-surface)] px-2.5 py-2 text-[12px] leading-relaxed text-[var(--color-text-secondary)] shadow-lg"
           style={{
             width: 280,
             left: position.left,

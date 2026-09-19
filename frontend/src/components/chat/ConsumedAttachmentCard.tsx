@@ -51,7 +51,7 @@ export function ConsumedAttachmentCard({
                 </span>
               )}
             </div>
-            <div className="text-[10px] uppercase tracking-wide text-[var(--color-text-tertiary)]">
+            <div className="text-[12px] uppercase tracking-wide text-[var(--color-text-tertiary)]">
               {fileType} · input
             </div>
           </div>
@@ -60,7 +60,7 @@ export function ConsumedAttachmentCard({
           {showPathBadge && (
             <span
               data-testid="attachment-path-badge"
-              className="inline-flex items-center gap-1 rounded-md border border-[var(--color-border-default)] bg-[var(--color-elevated)] px-2 py-1 text-[10px] font-semibold text-[var(--color-text-secondary)]"
+              className="inline-flex items-center gap-1 rounded-md border border-[var(--color-border-default)] bg-[var(--color-elevated)] px-2 py-1 text-[12px] font-semibold text-[var(--color-text-secondary)]"
             >
               📁 file path
             </span>
@@ -68,7 +68,7 @@ export function ConsumedAttachmentCard({
           <a
             href={previewUrl}
             download={displayName}
-            className="inline-flex items-center gap-1.5 rounded-md border border-[var(--color-border-default)] bg-[var(--color-elevated)] px-2.5 py-1.5 text-[11px] font-semibold text-[var(--color-accent)] transition-colors hover:border-[var(--color-accent)] hover:text-[var(--color-accent-bright)]"
+            className="inline-flex items-center gap-1.5 rounded-md border border-[var(--color-border-default)] bg-[var(--color-elevated)] px-2.5 py-1.5 text-[13px] font-semibold text-[var(--color-accent)] transition-colors hover:border-[var(--color-accent)] hover:text-[var(--color-accent-bright)]"
           >
             <Download className="w-3.5 h-3.5" />
             <span>Download</span>
@@ -86,7 +86,7 @@ export function ConsumedAttachmentCard({
       {showManifestNote && (
         <div
           data-testid="attachment-manifest-note"
-          className="mt-2 text-[11px] text-[var(--color-text-tertiary)] italic"
+          className="mt-2 text-[13px] text-[var(--color-text-tertiary)] italic"
         >
           Not inlinable as text or an image, and no sandbox was available to materialize it as a file — the agent only received a manifest note.
         </div>

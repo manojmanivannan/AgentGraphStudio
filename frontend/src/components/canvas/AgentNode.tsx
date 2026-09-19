@@ -81,7 +81,7 @@ function AgentNodeComponent({ id, data, selected }: NodeProps) {
           {agentData.name}
         </span>
         <span
-          className={`text-[10px] px-1.5 py-0.5 rounded-md font-semibold tracking-wide uppercase ${
+          className={`text-[12px] px-1.5 py-0.5 rounded-md font-semibold tracking-wide uppercase ${
             isRouter
               ? "bg-[var(--color-agent-subtle)] text-[var(--color-agent)]"
               : "bg-[var(--color-accent-subtle)] text-[var(--color-accent)]"
@@ -121,12 +121,12 @@ function AgentNodeComponent({ id, data, selected }: NodeProps) {
           </p>
         )}
         {agentData.instructions && (
-          <p className="text-[11px] text-[var(--color-text-tertiary)] mt-1.5 line-clamp-4 leading-relaxed font-[var(--font-mono)]">
+          <p className="text-[13px] text-[var(--color-text-tertiary)] mt-1.5 line-clamp-4 leading-relaxed font-[var(--font-mono)]">
             {agentData.instructions}
           </p>
         )}
         {!agentData.role && !agentData.instructions && (
-          <p className="text-[11px] text-[var(--color-text-tertiary)] italic">
+          <p className="text-[13px] text-[var(--color-text-tertiary)] italic">
             Configure agent properties
           </p>
         )}

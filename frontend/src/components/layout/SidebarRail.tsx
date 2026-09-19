@@ -353,7 +353,7 @@ export function SidebarRail() {
           {sidebarCollapsed ? (
             <div className="border-t border-[var(--color-border-subtle)] my-2" />
           ) : (
-            <h3 className="text-[10px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-wider mb-2 whitespace-nowrap">
+            <h3 className="text-[12px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-wider mb-2 whitespace-nowrap">
               Build
             </h3>
           )}
@@ -402,7 +402,7 @@ export function SidebarRail() {
           {sidebarCollapsed ? (
             <div className="border-t border-[var(--color-border-subtle)] my-2" />
           ) : (
-            <h3 className="text-[10px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-wider mb-2 whitespace-nowrap">
+            <h3 className="text-[12px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-wider mb-2 whitespace-nowrap">
               Manage Canvas
             </h3>
           )}
@@ -445,19 +445,19 @@ export function SidebarRail() {
                 anchorRef={clearRef}
               >
                 <div className="p-3">
-                  <p className="text-[11px] text-[var(--color-text-secondary)] mb-2 whitespace-nowrap">
+                  <p className="text-[13px] text-[var(--color-text-secondary)] mb-2 whitespace-nowrap">
                     Clear all nodes and edges?
                   </p>
                   <div className="flex gap-2 justify-end">
                     <button
                       onClick={() => setClearOpen(false)}
-                      className="btn-ghost text-[10px] px-2 py-1"
+                      className="btn-ghost text-[12px] px-2 py-1"
                     >
                       Cancel
                     </button>
                     <button
                       onClick={clearCanvas}
-                      className="btn-danger-ghost text-[10px] px-2 py-1"
+                      className="btn-danger-ghost text-[12px] px-2 py-1"
                     >
                       Clear
                     </button>

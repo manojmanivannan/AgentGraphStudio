@@ -74,13 +74,13 @@ export function HitlAttachmentUpload({
         </button>
 
         {uploadState.status === "uploading" && (
-          <span className="text-[11px] text-[var(--color-text-secondary)]">
+          <span className="text-[13px] text-[var(--color-text-secondary)]">
             Uploading {uploadState.filename}...
           </span>
         )}
 
         {uploadState.status === "success" && (
-          <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-[var(--color-success)]">
+          <span className="inline-flex items-center gap-1.5 text-[13px] font-medium text-[var(--color-success)]">
             <Check className="w-3.5 h-3.5" />
             <span>Uploaded {uploadState.filename}</span>
           </span>
@@ -88,7 +88,7 @@ export function HitlAttachmentUpload({
       </div>
 
       {uploadState.status === "error" && (
-        <p className="text-[11px] text-[var(--color-danger)]">{uploadState.message}</p>
+        <p className="text-[13px] text-[var(--color-danger)]">{uploadState.message}</p>
       )}
 
       <input
