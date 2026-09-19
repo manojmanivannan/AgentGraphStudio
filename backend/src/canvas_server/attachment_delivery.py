@@ -139,6 +139,15 @@ def input_attachment_field_names(
     return names
 
 
+def first_image_attachment_field_name(nodes: Sequence[DeclaredInputNode]) -> str | None:
+    """Return the DSPy field name for the first declared image input, if any."""
+    field_names = input_attachment_field_names(nodes)
+    for node in nodes:
+        if node.file_type == "image":
+            return field_names[node.id]
+    return None
+
+
 def agent_has_sandbox_access(agent: Any, edges: list[Any], tool_nodes: list[Any]) -> bool:
     """Whether ``agent`` has any way to reach the Docker sandbox at runtime.
 

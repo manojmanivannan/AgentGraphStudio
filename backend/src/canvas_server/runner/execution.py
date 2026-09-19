@@ -20,6 +20,10 @@ from typing import TYPE_CHECKING, Any
 
 import dspy
 
+from canvas_server.attachment_delivery import (
+    declared_input_nodes,
+    first_image_attachment_field_name,
+)
 from canvas_server.exceptions import (
     AttachmentTooLargeError,
     LLMConfigurationError,
@@ -561,7 +565,13 @@ class ExecutionStrategy(ExecutionStrategyBase):
         if canvas is None or conversation_repo is None or conversation_id is None:
             return user_prompt, {}, []
 
+        declared_inputs = declared_input_nodes(
+            getattr(canvas, "edges", []) or [],
+            getattr(canvas, "attachment_nodes", []) or [],
+            agent_id,
+        )
         user_prompt, generated, generated_kwargs = await deliver_generated_attachment_context(
+            image_field_name=first_image_attachment_field_name(declared_inputs),
             agent_node=agent_node,
             conversation_repo=conversation_repo,
             conversation_id=conversation_id,

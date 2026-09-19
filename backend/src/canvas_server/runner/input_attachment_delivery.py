@@ -97,14 +97,15 @@ class DeliveredAttachment:
 @dataclass
 class InputAttachmentDeliveryResult:
     delivered: list[DeliveredAttachment] = field(default_factory=list)
-    input_values: dict[str, str] = field(default_factory=dict)
-    # At most one image is threaded through as the ``attachment_image``
+    input_values: dict[str, Any] = field(default_factory=dict)
+    # At most one image is threaded through as the declared image attachment
     # signature field — a reasonable single-image simplification; additional
     # declared image inputs still get their prompt text (name + path, when
     # materialized) but only the first resolved image is passed multimodally.
     # A base64 "data:" URI (see ``_image_data_uri``) — never raw bytes — so
     # ``dspy.Image(...)`` never needs Pillow to construct it.
     image_data_uri: str | None = None
+    image_field_name: str | None = None
 
     @property
     def has_any(self) -> bool:
@@ -293,6 +294,7 @@ async def deliver_generated_attachment_context(
     conversation_repo: Any,
     conversation_id: str | uuid.UUID,
     user_prompt: str,
+    image_field_name: str | None = None,
 ) -> tuple[str, list[DeliveredAttachment], dict[str, Any]]:
     """Materialize prior generated files and list their paths for an entry agent.
 
@@ -355,7 +357,9 @@ async def deliver_generated_attachment_context(
     if not context:
         return user_prompt, [], {}
     extra_kwargs: dict[str, Any] = (
-        {"attachment_image": dspy.Image(image_data_uri)} if image_data_uri is not None else {}
+        {image_field_name or "attachment_image": dspy.Image(image_data_uri)}
+        if image_data_uri is not None
+        else {}
     )
     return f"{user_prompt}\n\n{context}", delivered, extra_kwargs
 
@@ -461,6 +465,7 @@ async def deliver_input_attachments(
                 )
                 if result.image_data_uri is None:
                     result.image_data_uri = image_uri
+                    result.image_field_name = input_field_names[node.id]
             else:
                 result.input_values[input_field_names[node.id]] = _decode_text(instance.content)
         elif method == "file_path":
@@ -469,6 +474,7 @@ async def deliver_input_attachments(
             image_uri = _image_data_uri(instance.content, getattr(instance, "format", "png"))
             if result.image_data_uri is None:
                 result.image_data_uri = image_uri
+                result.image_field_name = input_field_names[node.id]
 
         result.delivered.append(
             DeliveredAttachment(
@@ -563,7 +569,7 @@ async def deliver_and_announce_input_attachments(
         )
 
     extra_kwargs: dict[str, Any] = dict(result.input_values)
-    if result.image_data_uri is not None:
-        extra_kwargs["attachment_image"] = dspy.Image(result.image_data_uri)
+    if result.image_data_uri is not None and result.image_field_name is not None:
+        extra_kwargs[result.image_field_name] = dspy.Image(result.image_data_uri)
 
     return user_prompt, extra_kwargs, result.delivered

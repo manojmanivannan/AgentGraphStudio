@@ -222,7 +222,7 @@ async def test_handoff_forwards_previously_generated_image_to_target(monkeypatch
     """#96: a router forwarding a plot generated earlier in the run (via
     `consumed_file_attachments`) must give the handoff target the actual
     image, not just a text mention of its sandbox file path — otherwise the
-    target's `attachment_image` field stays `None` even though its prompt
+    target's declared image field stays `None` even though its prompt
     literally invites it to "inspect the image"."""
     from canvas_server.runner.input_attachment_delivery import DeliveredAttachment
 
@@ -231,6 +231,24 @@ async def test_handoff_forwards_previously_generated_image_to_target(monkeypatch
     agent = make_agent("The temperature at 14:00 was 13C.")
     run_state = FakeRunState(
         node_map={target_id: target_node}, agents={target_id: agent}
+    )
+    attachment_node_id = uuid.uuid4()
+    run_state.canvas = SimpleNamespace(
+        edges=[
+            SimpleNamespace(
+                source_node_id=attachment_node_id,
+                target_node_id=target_id,
+                edge_type="consumes",
+            )
+        ],
+        attachment_nodes=[
+            SimpleNamespace(
+                id=attachment_node_id,
+                name="PlotImage",
+                file_type="image",
+                delivery_method="inline",
+            )
+        ],
     )
     run_state.consumed_file_attachments = [
         DeliveredAttachment(
@@ -250,5 +268,6 @@ async def test_handoff_forwards_previously_generated_image_to_target(monkeypatch
     await tool("Look at the plot and tell me the temperature at 14:00.")
 
     kwargs = agent.aforward.await_args.kwargs
-    assert kwargs["attachment_image"] == dspy.Image("data:image/png;base64,iVBORw==")
+    assert kwargs["plot_image"] == dspy.Image("data:image/png;base64,iVBORw==")
+    assert "attachment_image" not in kwargs
     assert "Attachment 'plot' (image) is available as a file at:" in kwargs["user_request"]

@@ -260,8 +260,6 @@ class AgentFactory:
         )
         input_field_names = input_attachment_field_names(declared_input_nodes_for_agent)
         for input_node in declared_input_nodes_for_agent:
-            if input_node.file_type == "image":
-                continue
             field_name = input_field_names[input_node.id]
             signature_cls = signature_cls.append(
                 field_name,
@@ -272,23 +270,16 @@ class AgentFactory:
                     ),
                     default=None,
                 ),
-                type_=str | None,
+                type_=dspy.Image | None if input_node.file_type == "image" else str | None,
             )
 
-        # Image inputs use DSPy's multimodal image field. Non-image inputs are
-        # represented above by one named field per declared Attachment node.
         has_image_input = any(node.file_type == "image" for node in declared_input_nodes_for_agent)
         if has_image_input:
             full_instructions += (
                 "\n\n[SYSTEM NOTE] You may receive an input image attachment as the "
-                "`attachment_image` field alongside this prompt — reason over it directly "
+                "declared Attachment field alongside this prompt — reason over it directly "
                 "when relevant; it may also be available as a file path mentioned in the "
                 "prompt text."
-            )
-            signature_cls = signature_cls.append(
-                "attachment_image",
-                dspy.InputField(default=None),
-                type_=dspy.Image | None,
             )
 
         return signature_cls.with_instructions(full_instructions)

@@ -168,6 +168,40 @@ class TestWorkerExecutionInputAttachmentDelivery:
             "data:image/png;base64," + base64.b64encode(b"png-bytes").decode("ascii")
         )
 
+    async def test_prior_generated_image_uses_declared_image_field_name(self):
+        attachment_node_id = uuid.uuid4()
+        generated = SimpleNamespace(
+            id=uuid.uuid4(),
+            attachment_node_id=attachment_node_id,
+            content=b"png-bytes",
+            format="png",
+            file_type="image",
+            source="agent_output",
+            original_filename="plot_a1b2c3d4.png",
+        )
+        harness = make_harness(
+            attachment_nodes=[_attachment_node(attachment_node_id, "PlotImage", "image")]
+        )
+        harness.services.run_state.canvas.edges = [_edge(attachment_node_id, harness.agent_id)]
+        harness.conversation_repo.get_generated_attachments.return_value = [generated]
+        harness.services.run_state.consumed_file_attachments = []
+        ctx = RunContext(
+            user_prompt="what is the value at 14:00?",
+            send_event=AsyncMock(),
+            target_agent_id=harness.agent_id,
+        )
+
+        with patch(
+            "canvas_server.runner.input_attachment_delivery._materialize_in_sandbox",
+            new=AsyncMock(return_value="/sandbox/attachments/plot_a1b2c3d4.png"),
+        ):
+            await WorkerExecution(harness.services).execute(harness.agent_id, ctx)
+
+        assert harness.fake_agent.last_kwargs["plot_image"] == dspy.Image(
+            "data:image/png;base64," + base64.b64encode(b"png-bytes").decode("ascii")
+        )
+        assert "attachment_image" not in harness.fake_agent.last_kwargs
+
     async def test_prior_generated_non_image_files_do_not_set_attachment_image(self):
         generated = SimpleNamespace(
             id=uuid.uuid4(),
@@ -245,10 +279,10 @@ class TestWorkerExecutionInputAttachmentDelivery:
         assert harness.fake_agent.last_kwargs["report"] == "a,b\n1,2"
         harness.conversation_repo.mark_attachment_consumed.assert_awaited_once_with(instance_id)
 
-    async def test_image_attachment_passes_attachment_image_kwarg(self):
+    async def test_image_attachment_passes_declared_image_field_kwarg(self):
         node_id = uuid.uuid4()
         instance_id = uuid.uuid4()
-        node = _attachment_node(node_id, "Chart", "image", delivery_method="inline")
+        node = _attachment_node(node_id, "PlotImage", "image", delivery_method="inline")
         instance = _instance(instance_id, node_id, b"\x89PNG", file_type="image")
         harness = make_harness(
             attachment_nodes=[node], unconsumed_attachments=[instance], enable_coding=False
@@ -276,8 +310,9 @@ class TestWorkerExecutionInputAttachmentDelivery:
         with patch("canvas_server.runner.input_attachment_delivery.get_sandbox", new=gs):
             await WorkerExecution(harness.services).execute(harness.agent_id, ctx)
 
-        image = harness.fake_agent.last_kwargs.get("attachment_image")
+        image = harness.fake_agent.last_kwargs.get("plot_image")
         assert image is not None
+        assert "attachment_image" not in harness.fake_agent.last_kwargs
 
 
 @pytest.mark.asyncio

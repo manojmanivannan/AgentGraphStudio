@@ -10,6 +10,10 @@ from typing import TYPE_CHECKING, Any
 
 import dspy
 
+from canvas_server.attachment_delivery import (
+    declared_input_nodes,
+    first_image_attachment_field_name,
+)
 from canvas_server.events import EventCallback
 from canvas_server.runner.execution import store_output_attachments
 from canvas_server.runner.input_attachment_delivery import (
@@ -169,8 +173,16 @@ class HandoffToolBuilder:
                     consumed_so_far.extend(d for d in delivered if d.sandbox_path is not None)
             # A freshly-resolved image (via the target's own declared
             # `consumes` edge) takes precedence over a forwarded one.
-            if forwarded_image is not None and "attachment_image" not in attachment_kwargs:
-                attachment_kwargs["attachment_image"] = dspy.Image(forwarded_image)
+            image_field_name = None
+            if canvas is not None:
+                declared_inputs = declared_input_nodes(
+                    getattr(canvas, "edges", []) or [],
+                    getattr(canvas, "attachment_nodes", []) or [],
+                    target_id,
+                )
+                image_field_name = first_image_attachment_field_name(declared_inputs)
+            if forwarded_image is not None and image_field_name not in attachment_kwargs:
+                attachment_kwargs[image_field_name or "attachment_image"] = dspy.Image(forwarded_image)
 
             try:
                 with agent_span(
