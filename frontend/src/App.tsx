@@ -404,9 +404,8 @@ function LandingPage({
             {[0, 1, 2].map((i) => (
               <span
                 key={i}
-                className="w-1.5 h-1.5 rounded-full bg-[var(--color-accent)]"
+                className="w-1.5 h-1.5 rounded-full bg-[var(--color-accent)] dot-pulse"
                 style={{
-                  animation: "dotPulse 1.2s ease-in-out infinite",
                   animationDelay: `${i * 0.15}s`,
                 }}
               />
@@ -497,7 +496,7 @@ function LandingPage({
                     toggleSelectCanvas(c.id);
                   }
                 }}
-                className={`group relative flex items-center justify-between p-4 bg-gradient-to-r from-[var(--color-surface)] to-[var(--color-elevated)] border rounded-xl transition-all duration-300 shadow-[0_4px_16px_rgba(0,0,0,0.25)] hover:shadow-[0_0_24px_-4px_rgba(116,116,139,0.18),0_0_8px_-2px_rgba(116,116,139,0.08),0_4px_12px_rgba(0,0,0,0.35)] ${selectMode
+                className={`group relative flex items-center justify-between p-4 bg-gradient-to-r from-[var(--color-surface)] to-[var(--color-elevated)] border rounded-xl transition-all duration-300 shadow-[0_4px_16px_rgba(0,0,0,0.25)] hover:shadow-[0_0_24px_-4px_rgba(116,116,139,0.18),0_0_8px_-2px_rgba(116,116,139,0.08),0_4px_12px_rgba(0,0,0,0.35)] animate-fade-in ${selectMode
                   ? selectedCanvasIds.has(c.id)
                     ? "border-[var(--color-accent)]"
                     : "border-[var(--color-border-subtle)] hover:border-[var(--color-border-default)] cursor-pointer"

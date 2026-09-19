@@ -74,7 +74,7 @@ export function MessageTurn({
   return (
     <div className="space-y-3">
       {/* User Message */}
-      <div className="flex flex-col items-end" style={{ animation: "staggerFadeIn 0.3s ease-out" }}>
+      <div className="flex flex-col items-end animate-fade-in">
         <div className="max-w-[85%] rounded-2xl px-4 py-2.5 text-[13px] leading-relaxed bg-[var(--color-accent)] text-[var(--color-text-inverse)] rounded-br-sm shadow-md font-medium">
           {turn.userMessage.content}
         </div>
@@ -145,7 +145,6 @@ export function MessageTurn({
       {!isStreaming && !isExpanded && turn.humanInterrupt && (
         <div
           className="flex flex-col items-start w-full animate-fade-in"
-          style={{ animation: "staggerFadeIn 0.3s ease-out" }}
         >
           {turn.humanInterrupt.agent_name && (
             <span className="text-[10px] text-[var(--color-text-tertiary)] mb-0.5 px-1 font-semibold tracking-wide">
@@ -240,8 +239,7 @@ export function MessageTurn({
       {/* Final Answer */}
       {turn.finalAnswer && (
         <div
-          className="flex flex-col items-start"
-          style={{ animation: "staggerFadeIn 0.3s ease-out" }}
+          className="flex flex-col items-start animate-fade-in"
         >
           {turn.finalAnswer.agent_name && (
             <span className="text-[10px] text-[var(--color-text-tertiary)] mb-0.5 px-1 font-semibold tracking-wide">

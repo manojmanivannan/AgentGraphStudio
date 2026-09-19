@@ -666,8 +666,7 @@ export default function ChatPage() {
                   {preTurnMessages.map((msg) => (
                     <div
                       key={msg.id}
-                      className="flex flex-col items-start"
-                      style={{ animation: "staggerFadeIn 0.3s ease-out" }}
+                      className="flex flex-col items-start animate-fade-in"
                     >
                       <div className="max-w-[85%] rounded-xl px-3.5 py-2.5 text-[13px] leading-relaxed bg-[var(--color-danger-subtle)] text-[var(--color-danger)] border border-[var(--color-danger)]/25 rounded-bl-sm">
                         {msg.content}
@@ -700,9 +699,8 @@ export default function ChatPage() {
                           {[0, 1, 2].map((i) => (
                             <span
                               key={i}
-                              className="w-1.5 h-1.5 rounded-full bg-[var(--color-accent)]"
+                              className="w-1.5 h-1.5 rounded-full bg-[var(--color-accent)] dot-pulse"
                               style={{
-                                animation: "dotPulse 1.2s ease-in-out infinite",
                                 animationDelay: `${i * 0.15}s`,
                               }}
                             />

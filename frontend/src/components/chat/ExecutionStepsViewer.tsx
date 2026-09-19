@@ -110,9 +110,8 @@ export function ExecutionStepsViewer({
         return (
           <div
             key={stepMsg.id}
-            className="flex flex-col items-start w-full"
+            className="flex flex-col items-start w-full animate-fade-in"
             style={{
-              animation: "staggerFadeIn 0.3s ease-out",
               paddingLeft: `${level * 24}px`,
               transition: "padding-left 0.2s ease-out",
             }}
