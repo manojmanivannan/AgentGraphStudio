@@ -11,7 +11,6 @@
   --font-mono: "JetBrains Mono", ui-monospace, monospace;
 
   /* Surface layers — slightly lighter, warm slate-grey */
-  --color-base: #121216;
   --color-surface: #1b1b22;
   --color-elevated: #252530;
   --color-overlay: #2d2d3a;
@@ -69,6 +68,23 @@
   --width-topbar: 40px;
   --width-properties-overlay: 320px;
   --width-chat-overlay: 400px;
+}
+
+/* `--color-base` is intentionally declared outside `@theme` (as a plain
+   custom property) rather than as a registered theme color. Tailwind v4
+   auto-generates a `text-{name}`/`bg-{name}`/etc. utility for every
+   `--color-*` token in `@theme`, and it derives the class name from the
+   suffix after `--color-`. "base" collides with Tailwind's own built-in
+   `text-base` font-size utility (1rem) — whichever rule Tailwind emits last
+   wins the `.text-base` selector, silently turning `text-base` into a text
+   *color* utility (`color: var(--color-base)`) instead of a font-size one.
+   That made any element combining `text-base` (for size) with an explicit
+   text color (e.g. dialog titles) render in `--color-base` — the *surface*
+   color — instead, making the text invisible against its own background.
+   Declaring it here avoids the collision entirely; every existing consumer
+   (`var(--color-base)`, `bg-[var(--color-base)]`, etc.) is unaffected. */
+:root {
+  --color-base: #121216;
 }
 
 /* ═══════════════════════════════════════════════════════════════

@@ -67,13 +67,18 @@ function extractBlock(source: string, startMarker: string): string {
 
 const darkTheme = extractBlock(css, "@theme {");
 const lightTheme = extractBlock(css, 'html[data-theme="light"] {');
+// `--color-base` lives outside `@theme` (in a plain `:root { ... }` block) so
+// Tailwind doesn't auto-generate a colliding `.text-base` color utility (it
+// would otherwise clash with Tailwind's own `text-base` font-size utility).
+// See the comment above its declaration in globals.css.
+const rootBlock = extractBlock(css, ":root {");
 
 const WCAG_AA_TEXT = 4.5;
 
 describe("globals.css contrast (ticket #100)", () => {
   it("dark-mode --color-text-tertiary clears 4.5:1 against --color-base and --color-surface", () => {
     const tertiary = extractToken(darkTheme, "color-text-tertiary");
-    const base = extractToken(darkTheme, "color-base");
+    const base = extractToken(rootBlock, "color-base");
     const surface = extractToken(darkTheme, "color-surface");
     expect(contrast(tertiary, base)).toBeGreaterThanOrEqual(WCAG_AA_TEXT);
     expect(contrast(tertiary, surface)).toBeGreaterThanOrEqual(WCAG_AA_TEXT);
