@@ -28,6 +28,7 @@ export const RailItem = forwardRef<HTMLButtonElement, RailItemProps>(
         onClick={onClick}
         data-testid={dataTestId}
         title={label}
+        aria-label={label}
         className={`rail-item ${active ? "rail-item-active" : ""} ${
           danger ? "rail-item-danger" : ""
         }`}
