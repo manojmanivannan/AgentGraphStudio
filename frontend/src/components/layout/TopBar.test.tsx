@@ -9,7 +9,7 @@ import { server } from "@/test/mocks/server";
 import { mockConversationSummary } from "@/test/mocks/handlers";
 import { TopBar } from "./TopBar";
 import { SidebarRail } from "./SidebarRail";
-import { ConfirmDialogHost } from "@/components/ui/ConfirmDialogHost";
+import { UnsavedChangesDialogHost } from "@/components/ui/UnsavedChangesDialogHost";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 
 const API = "http://localhost:8000/api";
@@ -437,7 +437,7 @@ describe("TopBar", () => {
       expect(useCanvasStore.getState().canvasId).toBeNull();
     });
 
-    it("shows an in-app confirm dialog before discarding unsaved changes", async () => {
+    it("shows a save/discard/cancel dialog before discarding unsaved changes", async () => {
       const user = userEvent.setup();
       useCanvasStore.getState().setCanvas("canvas-1", "Test Canvas");
       useCanvasStore.getState().setNodes([
@@ -447,13 +447,13 @@ describe("TopBar", () => {
       render(
         <MemoryRouter>
           <TopBar />
-          <ConfirmDialogHost />
+          <UnsavedChangesDialogHost />
         </MemoryRouter>
       );
 
       await user.click(screen.getByTestId("home-button"));
 
-      expect(await screen.findByRole("dialog")).toHaveTextContent("unsaved changes");
+      expect(await screen.findByRole("dialog")).toHaveTextContent("Unsaved changes");
       expect(useCanvasStore.getState().canvasId).toBe("canvas-1");
 
       await user.click(screen.getByRole("button", { name: "Discard changes" }));
@@ -463,7 +463,7 @@ describe("TopBar", () => {
       });
     });
 
-    it("keeps the canvas open when the discard confirmation is cancelled", async () => {
+    it("keeps the canvas open when the dialog is cancelled", async () => {
       const user = userEvent.setup();
       useCanvasStore.getState().setCanvas("canvas-1", "Test Canvas");
       useCanvasStore.getState().setNodes([
@@ -473,7 +473,7 @@ describe("TopBar", () => {
       render(
         <MemoryRouter>
           <TopBar />
-          <ConfirmDialogHost />
+          <UnsavedChangesDialogHost />
         </MemoryRouter>
       );
 
@@ -482,6 +482,42 @@ describe("TopBar", () => {
       await user.click(screen.getByRole("button", { name: "Cancel" }));
 
       expect(useCanvasStore.getState().canvasId).toBe("canvas-1");
+    });
+
+    it("saves then navigates home when Save & continue is chosen", async () => {
+      const user = userEvent.setup();
+      useCanvasStore.getState().setCanvas("canvas-1", "Test Canvas");
+      useCanvasStore.getState().setNodes([
+        { id: "n1", type: "agent", position: { x: 0, y: 0 }, data: {} },
+      ] as any);
+
+      server.use(
+        http.put(`${API}/canvases/canvas-1`, () =>
+          HttpResponse.json({
+            id: "canvas-1",
+            name: "Test Canvas",
+            nodes: { agents: [], tools: [] },
+            edges: [],
+            created_at: "",
+            updated_at: "",
+          })
+        )
+      );
+
+      render(
+        <MemoryRouter>
+          <TopBar />
+          <UnsavedChangesDialogHost />
+        </MemoryRouter>
+      );
+
+      await user.click(screen.getByTestId("home-button"));
+      await screen.findByRole("dialog");
+      await user.click(screen.getByRole("button", { name: "Save & continue" }));
+
+      await waitFor(() => {
+        expect(useCanvasStore.getState().canvasId).toBeNull();
+      });
     });
   });
 });

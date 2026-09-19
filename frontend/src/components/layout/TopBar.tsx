@@ -2,7 +2,7 @@ import { Check, Loader2, AlertCircle, Home, Save, Undo2, Redo2 } from "lucide-re
 import { useCanvasStore } from "@/store/canvasStore";
 import { useCanvasHistoryStore } from "@/store/canvasHistoryStore";
 import { saveCanvasNow } from "@/hooks/useCanvasPersistence";
-import { confirm } from "@/store/confirmStore";
+import { guardUnsavedNavigation } from "@/lib/unsavedChangesGuard";
 import { useNavigate } from "react-router-dom";
 import { AccountControls } from "@/components/layout/AccountControls";
 
@@ -29,17 +29,10 @@ export function TopBar() {
   const rightOffset = propertiesOpen ? propertiesWidth : 0;
 
   const handleHomeClick = async () => {
-    if (useCanvasStore.getState().isDirty) {
-      const confirmed = await confirm({
-        title: "Discard unsaved changes?",
-        description: "This canvas has unsaved changes. Leaving now will discard them.",
-        confirmLabel: "Discard changes",
-        danger: true,
-      });
-      if (!confirmed) return;
-    }
-    useCanvasStore.getState().reset();
-    navigate("/");
+    await guardUnsavedNavigation(() => {
+      useCanvasStore.getState().reset();
+      navigate("/");
+    });
   };
 
   return (

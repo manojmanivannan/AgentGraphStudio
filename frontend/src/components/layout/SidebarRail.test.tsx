@@ -3,7 +3,8 @@ import { render, screen, fireEvent, waitFor, act } from "@testing-library/react"
 import userEvent from "@testing-library/user-event";
 import { SidebarRail } from "./SidebarRail";
 import { useCanvasStore } from "@/store/canvasStore";
-import { MemoryRouter } from "react-router-dom";
+import { UnsavedChangesDialogHost } from "@/components/ui/UnsavedChangesDialogHost";
+import { MemoryRouter, Route, Routes } from "react-router-dom";
 
 vi.mock("@/lib/api", () => ({
   exportCanvasZip: vi.fn(),
@@ -20,8 +21,19 @@ describe("SidebarRail", () => {
 
   const renderSidebar = () => {
     return render(
-      <MemoryRouter>
-        <SidebarRail />
+      <MemoryRouter initialEntries={["/canvas/canvas-1"]}>
+        <Routes>
+          <Route
+            path="/canvas/:canvas_id"
+            element={
+              <>
+                <SidebarRail />
+                <UnsavedChangesDialogHost />
+              </>
+            }
+          />
+          <Route path="/" element={<div data-testid="home-page" />} />
+        </Routes>
       </MemoryRouter>
     );
   };
@@ -205,6 +217,87 @@ describe("SidebarRail", () => {
 
     await waitFor(() => {
       expect(listConversations).toHaveBeenCalledWith("canvas-1");
+    });
+  });
+
+  describe("unsaved changes guard", () => {
+    it("navigates to Home immediately when there are no unsaved changes", async () => {
+      const user = userEvent.setup();
+      useCanvasStore.getState().setCanvas("canvas-1", "Test Canvas");
+      renderSidebar();
+
+      await user.click(screen.getByText("Home"));
+
+      expect(await screen.findByTestId("home-page")).toBeInTheDocument();
+    });
+
+    it("shows a save/discard/cancel dialog before leaving to Home with unsaved changes", async () => {
+      const user = userEvent.setup();
+      useCanvasStore.getState().setCanvas("canvas-1", "Test Canvas");
+      useCanvasStore.getState().setNodes([
+        { id: "n1", type: "agent", position: { x: 0, y: 0 }, data: {} as any },
+      ]);
+      renderSidebar();
+
+      await user.click(screen.getByText("Home"));
+
+      expect(await screen.findByRole("dialog")).toHaveTextContent("Unsaved changes");
+      expect(screen.queryByTestId("home-page")).not.toBeInTheDocument();
+    });
+
+    it("stays on the canvas when the dialog is cancelled", async () => {
+      const user = userEvent.setup();
+      useCanvasStore.getState().setCanvas("canvas-1", "Test Canvas");
+      useCanvasStore.getState().setNodes([
+        { id: "n1", type: "agent", position: { x: 0, y: 0 }, data: {} as any },
+      ]);
+      renderSidebar();
+
+      await user.click(screen.getByText("Home"));
+      await screen.findByRole("dialog");
+      await user.click(screen.getByRole("button", { name: "Cancel" }));
+
+      expect(screen.queryByTestId("home-page")).not.toBeInTheDocument();
+      expect(useCanvasStore.getState().isDirty).toBe(true);
+    });
+
+    it("navigates to Home after discarding unsaved changes", async () => {
+      const user = userEvent.setup();
+      useCanvasStore.getState().setCanvas("canvas-1", "Test Canvas");
+      useCanvasStore.getState().setNodes([
+        { id: "n1", type: "agent", position: { x: 0, y: 0 }, data: {} as any },
+      ]);
+      renderSidebar();
+
+      await user.click(screen.getByText("Home"));
+      await screen.findByRole("dialog");
+      await user.click(screen.getByRole("button", { name: "Discard changes" }));
+
+      expect(await screen.findByTestId("home-page")).toBeInTheDocument();
+    });
+
+    it("guards navigating to Agent Chat when there are unsaved changes", async () => {
+      const user = userEvent.setup();
+      useCanvasStore.getState().setCanvas("canvas-1", "Test Canvas");
+      useCanvasStore.getState().setNodes([
+        { id: "n1", type: "agent", position: { x: 0, y: 0 }, data: {} as any },
+      ]);
+
+      const { listConversations } = await import("@/lib/api");
+      vi.mocked(listConversations).mockResolvedValue([]);
+
+      renderSidebar();
+
+      await user.click(screen.getByTestId("chat-toggle"));
+
+      expect(await screen.findByRole("dialog")).toHaveTextContent("Unsaved changes");
+      expect(listConversations).not.toHaveBeenCalled();
+
+      await user.click(screen.getByRole("button", { name: "Discard changes" }));
+
+      await waitFor(() => {
+        expect(listConversations).toHaveBeenCalledWith("canvas-1");
+      });
     });
   });
 

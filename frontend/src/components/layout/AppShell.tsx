@@ -5,6 +5,7 @@ import { TopBar } from "@/components/layout/TopBar";
 import { PropertiesOverlay } from "@/components/PropertiesOverlay";
 import { ToastHost } from "@/components/ui/ToastHost";
 import { ConfirmDialogHost } from "@/components/ui/ConfirmDialogHost";
+import { UnsavedChangesDialogHost } from "@/components/ui/UnsavedChangesDialogHost";
 import { useCanvasStore } from "@/store/canvasStore";
 
 export function AppShell() {
@@ -36,6 +37,7 @@ export function AppShell() {
       <TopBar />
       <ToastHost />
       <ConfirmDialogHost />
+      <UnsavedChangesDialogHost />
     </div>
   );
 }

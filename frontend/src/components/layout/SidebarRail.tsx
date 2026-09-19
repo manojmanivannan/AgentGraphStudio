@@ -20,6 +20,7 @@ import { useCanvasStore } from "@/store/canvasStore";
 import { resetCanvasHistory } from "@/store/canvasHistoryStore";
 import { useThemeStore } from "@/store/themeStore";
 import { useSettingsModalStore } from "@/store/settingsModalStore";
+import { guardUnsavedNavigation } from "@/lib/unsavedChangesGuard";
 import {
   exportCanvasZip,
   importCanvas,
@@ -192,23 +193,25 @@ export function SidebarRail() {
 
   const handleChatClick = async () => {
     if (!canvasId) return;
-    try {
-      const convs = await listConversations(canvasId);
-      if (convs && convs.length > 0) {
-        navigate(`/chat/${convs[0].id}`);
-      } else {
-        const newConv = await createConversation(canvasId, "New Conversation");
-        navigate(`/chat/${newConv.id}`);
-      }
-    } catch (err) {
-      console.error("Failed to list/create conversations in SidebarRail:", err);
+    await guardUnsavedNavigation(async () => {
       try {
-        const newConv = await createConversation(canvasId, "New Conversation");
-        navigate(`/chat/${newConv.id}`);
-      } catch (e) {
-        console.error("Fallback new conversation creation failed:", e);
+        const convs = await listConversations(canvasId);
+        if (convs && convs.length > 0) {
+          navigate(`/chat/${convs[0].id}`);
+        } else {
+          const newConv = await createConversation(canvasId, "New Conversation");
+          navigate(`/chat/${newConv.id}`);
+        }
+      } catch (err) {
+        console.error("Failed to list/create conversations in SidebarRail:", err);
+        try {
+          const newConv = await createConversation(canvasId, "New Conversation");
+          navigate(`/chat/${newConv.id}`);
+        } catch (e) {
+          console.error("Fallback new conversation creation failed:", e);
+        }
       }
-    }
+    });
   };
 
   const navItemClass = (toPath: string, testId?: string) => {
@@ -300,6 +303,11 @@ export function SidebarRail() {
         <div className="space-y-1.5 w-full">
           <Link
             to="/"
+            onClick={(e) => {
+              if (!useCanvasStore.getState().isDirty) return;
+              e.preventDefault();
+              void guardUnsavedNavigation(() => navigate("/"));
+            }}
             className={navItemClass("/")}
             title="Home"
           >
