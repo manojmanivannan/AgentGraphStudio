@@ -85,6 +85,13 @@ class DeliveredAttachment:
     # The persisted filename, distinct from `name` (the declared Attachment
     # node's canvas label). Generated files use UUID-suffixed names.
     original_filename: str | None = None
+    # Set only for image attachments delivered as "inline"/"dual" (or, for
+    # re-surfaced generated attachments, whenever `file_type == "image"`) —
+    # a base64 "data:" URI carried alongside the file-path text so a later
+    # cross-turn re-delivery (`deliver_generated_attachment_context`) or
+    # cross-agent handoff forward (`forwarded_attachment_image`) can still
+    # give the consuming agent actual vision input, not just a path mention.
+    image_data_uri: str | None = None
 
 
 @dataclass
@@ -131,6 +138,32 @@ def _inline_text_block(name: str, file_type: str, content: bytes) -> str:
 
 def _file_path_block(name: str, file_type: str, path: str) -> str:
     return f"Attachment '{name}' ({file_type}) is available as a file at: {path}"
+
+
+def forwarded_attachment_image(consumed: list[DeliveredAttachment]) -> str | None:
+    """Finds the first forwardable image among already-delivered attachments.
+
+    Companion to ``build_forwarded_attachment_text``: that function re-states
+    a file's *path* in prompt text, but a path alone loses vision reasoning
+    for images (the consuming agent never gets the pixels, only a mention
+    that a file exists). Callers that also forward text via
+    ``build_forwarded_attachment_text`` (``HandoffToolBuilder.transfer``)
+    should pair it with this to additionally set the ``attachment_image``
+    kwarg — same single-image simplification as
+    ``InputAttachmentDeliveryResult.image_data_uri``.
+
+    Args:
+        consumed: Attachments delivered so far (this run, or from
+            ``deliver_generated_attachment_context`` on a later turn).
+
+    Returns:
+        str | None: The first non-``None`` ``image_data_uri``, or ``None``
+        when nothing forwardable carries one.
+    """
+    for item in consumed:
+        if item.image_data_uri is not None:
+            return item.image_data_uri
+    return None
 
 
 def build_forwarded_attachment_text(consumed: list[DeliveredAttachment]) -> str:
@@ -260,15 +293,31 @@ async def deliver_generated_attachment_context(
     conversation_repo: Any,
     conversation_id: str | uuid.UUID,
     user_prompt: str,
-) -> tuple[str, list[DeliveredAttachment]]:
-    """Materialize prior generated files and list their paths for an entry agent."""
+) -> tuple[str, list[DeliveredAttachment], dict[str, Any]]:
+    """Materialize prior generated files and list their paths for an entry agent.
+
+    A generated ``image`` (e.g. a prior turn's plot) also gets a base64
+    ``data:`` URI computed alongside its file path (like
+    ``deliver_input_attachments`` does for a fresh "dual" image delivery) so
+    the returned kwargs carry ``attachment_image`` — otherwise the agent only
+    ever sees a text mention that a file exists at a path, never the actual
+    pixels, even though its prompt/signature explicitly invites it to
+    "inspect the image" (#96). Single-image simplification: only the first
+    generated image found is threaded through.
+
+    Returns:
+        tuple[str, list[DeliveredAttachment], dict[str, Any]]: The
+        (possibly attachment-augmented) prompt, the attachments delivered,
+        and extra ``aforward`` kwargs (``attachment_image`` when a generated
+        image was found and materialized).
+    """
     get_generated = getattr(conversation_repo, "get_generated_attachments", None)
     if get_generated is None:
-        return user_prompt, []
+        return user_prompt, [], {}
 
     instances: list[AttachmentInstance] = await get_generated(conversation_id)
     if not instances:
-        return user_prompt, []
+        return user_prompt, [], {}
 
     network_pool = (
         NETWORK_POOL_NETWORKED
@@ -276,6 +325,7 @@ async def deliver_generated_attachment_context(
         else NETWORK_POOL_DEFAULT
     )
     delivered: list[DeliveredAttachment] = []
+    image_data_uri: str | None = None
     for instance in instances:
         filename = _generated_attachment_filename(instance)
         sandbox_path = await _materialize_in_sandbox(
@@ -283,6 +333,11 @@ async def deliver_generated_attachment_context(
         )
         if sandbox_path is None:
             continue
+        uri: str | None = None
+        if instance.file_type == "image":
+            uri = _image_data_uri(instance.content, getattr(instance, "format", "png"))
+            if image_data_uri is None:
+                image_data_uri = uri
         delivered.append(
             DeliveredAttachment(
                 attachment_id=instance.id,
@@ -292,13 +347,17 @@ async def deliver_generated_attachment_context(
                 delivery_method="file_path",
                 sandbox_path=sandbox_path,
                 original_filename=getattr(instance, "original_filename", None),
+                image_data_uri=uri,
             )
         )
 
     context = _generated_attachment_context_block(delivered)
     if not context:
-        return user_prompt, []
-    return f"{user_prompt}\n\n{context}", delivered
+        return user_prompt, [], {}
+    extra_kwargs: dict[str, Any] = (
+        {"attachment_image": dspy.Image(image_data_uri)} if image_data_uri is not None else {}
+    )
+    return f"{user_prompt}\n\n{context}", delivered, extra_kwargs
 
 
 async def deliver_input_attachments(
@@ -378,6 +437,7 @@ async def deliver_input_attachments(
         )
 
         sandbox_path: str | None = None
+        image_uri: str | None = None
         if method in ("file_path", "dual"):
             sandbox_path = await _materialize_in_sandbox(
                 conversation_id, _attachment_filename(node, instance), instance.content, network_pool
@@ -396,18 +456,19 @@ async def deliver_input_attachments(
             )
         elif method == "inline":
             if node.file_type == "image":
+                image_uri = _image_data_uri(
+                    instance.content, getattr(instance, "format", "png")
+                )
                 if result.image_data_uri is None:
-                    result.image_data_uri = _image_data_uri(
-                        instance.content, getattr(instance, "format", "png")
-                    )
+                    result.image_data_uri = image_uri
             else:
                 result.input_values[input_field_names[node.id]] = _decode_text(instance.content)
         elif method == "file_path":
             result.input_values[input_field_names[node.id]] = sandbox_path or ""
-        elif method == "dual" and result.image_data_uri is None:
-            result.image_data_uri = _image_data_uri(
-                instance.content, getattr(instance, "format", "png")
-            )
+        elif method == "dual":
+            image_uri = _image_data_uri(instance.content, getattr(instance, "format", "png"))
+            if result.image_data_uri is None:
+                result.image_data_uri = image_uri
 
         result.delivered.append(
             DeliveredAttachment(
@@ -418,6 +479,7 @@ async def deliver_input_attachments(
                 delivery_method=method,
                 sandbox_path=sandbox_path,
                 original_filename=getattr(instance, "original_filename", None),
+                image_data_uri=image_uri if method in ("inline", "dual") and node.file_type == "image" else None,
             )
         )
         await conversation_repo.mark_attachment_consumed(instance.id)

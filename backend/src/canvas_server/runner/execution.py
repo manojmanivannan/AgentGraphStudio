@@ -561,7 +561,7 @@ class ExecutionStrategy(ExecutionStrategyBase):
         if canvas is None or conversation_repo is None or conversation_id is None:
             return user_prompt, {}, []
 
-        user_prompt, generated = await deliver_generated_attachment_context(
+        user_prompt, generated, generated_kwargs = await deliver_generated_attachment_context(
             agent_node=agent_node,
             conversation_repo=conversation_repo,
             conversation_id=conversation_id,
@@ -580,7 +580,11 @@ class ExecutionStrategy(ExecutionStrategyBase):
             user_prompt=user_prompt,
             emit_agent_start=emit_agent_start,
         )
-        return prompt, attachment_kwargs, [*generated, *delivered]
+        # A freshly-delivered input attachment's own image (if any) takes
+        # precedence over a re-surfaced generated one — `attachment_kwargs`
+        # is merged in second so it overrides `generated_kwargs`.
+        merged_kwargs = {**generated_kwargs, **attachment_kwargs}
+        return prompt, merged_kwargs, [*generated, *delivered]
 
     def _record_consumed_file_attachments(self, delivered: list[DeliveredAttachment]) -> None:
         """Folds this call's ``sandbox_path``-bearing deliveries into

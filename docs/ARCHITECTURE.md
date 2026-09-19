@@ -233,13 +233,17 @@ AgentGraphStudio/
 │       ├── types/
 │       │   └── index.ts          # AgentNodeData, ToolNodeData, ExecutionEvent, API types
 │       ├── store/
-│       │   ├── canvasStore.ts    # zustand: nodes, edges, selection, execution state, viewport
+│       │   ├── canvasStore.ts    # zustand: nodes, edges, selection, execution state, viewport, isDirty
+│       │   ├── canvasHistoryStore.ts  # zustand: undo/redo history (burst-debounced snapshots)
 │       │   └── themeStore.ts     # zustand: dark/light, localStorage persistence
 │       ├── lib/
-│       │   └── api.ts            # fetch wrappers for all REST endpoints
+│       │   ├── api.ts            # fetch wrappers for all REST endpoints
+│       │   └── nodeDeletion.ts   # confirmed node deletion (trash button + Delete/Backspace)
 │       ├── hooks/
-│       │   ├── useCanvasPersistence.ts  # Debounced auto-save (500ms) to backend
-│       │   └── useCanvasPersistence.test.ts
+│       │   ├── useCanvasPersistence.ts  # Manual save: saveCanvasNow(), unsaved-changes/Ctrl+S guards
+│       │   ├── useCanvasPersistence.test.ts
+│       │   ├── useCanvasDeleteKeyHandler.ts       # Delete/Backspace → confirmed node deletion
+│       │   └── useCanvasUndoRedoShortcuts.ts      # Ctrl/Cmd+Z / Shift+Z / Y → undo/redo
 │       ├── components/
 │       │   ├── canvas/
 │       │   │   ├── CanvasView.tsx    # ReactFlow container, edge validation, viewport tracking
@@ -1170,15 +1174,25 @@ interface ThemeState {
 - WebSocket lifecycle: connects on submit, runs, and closes on complete/error.
 - Intermediate execution steps and tool approval requests are persisted directly to the database and loaded upon conversation switch/navigation.
 
-### Auto-Save
+### Manual Save
 
-`useCanvasPersistence()` hook:
-- Debounces 500ms after nodes/edges/name change
-- Serializes to `CanvasSavePayload` format
-- PUTs to `/api/canvases/{id}`
-- Shows save status in TopBar (saving/saved/error)
-- Maintains a serialized JSON ref to skip unchanged saves
-- Status auto-resets to idle after 3s
+The canvas uses **explicit manual save**, not continuous auto-save:
+- `canvasStore.isDirty` is set `true` by `setNodes`/`setEdges`/`setName`, and cleared by a successful save or by a fresh canvas load/import (`resetCanvasHistory()` call-sites in `App.tsx`/`SidebarRail.tsx` also reset `isDirty`).
+- `saveCanvasNow()` (from `useCanvasPersistence.ts`) encodes the current graph via `encodeCanvasGraph` and PUTs to `/api/canvases/{id}`, updating `saveStatus` (`saving`/`saved`/`error`, auto-resetting to `idle` after 3s) and clearing `isDirty` on success.
+- The TopBar **Save** button calls `saveCanvasNow()` and is disabled while there are no unsaved changes; **Ctrl/Cmd+S** (`useSaveShortcut()`) triggers the same action from anywhere on the canvas.
+- `useUnsavedChangesWarning()` attaches a `beforeunload` guard so closing/refreshing the tab with unsaved changes prompts the browser's native confirmation; the TopBar **Home** button shows an in-app confirm dialog (`confirm()`) before discarding unsaved changes and navigating away.
+
+### Undo / Redo
+
+`canvasHistoryStore.ts` tracks `nodes`/`edges` history for the currently open canvas:
+- Subscribes to `canvasStore` and coalesces rapid changes (e.g. every mousemove of a node drag) into a single undo step via a 400ms debounce — the snapshot captured is the state right before the burst of changes started. History is capped at 50 entries.
+- `undo()`/`redo()` apply a snapshot via `setNodes`/`setEdges` while flagging `applying: true` so the replay isn't itself recorded as a new history entry; any new edit after an `undo()` clears the redo stack.
+- `resetCanvasHistory()` is called whenever a different canvas is loaded or imported (`App.tsx`, `SidebarRail.tsx`) so switching canvases is never itself undoable and history never leaks across canvases.
+- `useCanvasUndoRedoShortcuts()` wires **Ctrl/Cmd+Z** (undo) and **Ctrl/Cmd+Shift+Z** / **Ctrl/Cmd+Y** (redo) globally, ignoring editable targets (inputs, textareas, the Monaco tool editor). The TopBar **Undo**/**Redo** buttons call the same store actions and disable themselves via `canUndo()`/`canRedo()`.
+
+### Node Deletion
+
+Nodes (agent/tool/attachment) can be deleted via a **trash icon** in each node's header or via **Delete/Backspace** once a node is selected — both routes go through `nodeDeletion.ts`, which shows an in-app confirm dialog (`confirm()`) before removing the node and any edges attached to it. ReactFlow's default silent `Backspace` deletion is disabled (`deleteKeyCode={null}` on `<ReactFlow>`) in favor of `useCanvasDeleteKeyHandler()`, which performs the same confirmed deletion for all currently-selected nodes.
 
 ### ObservabilityPage
 
@@ -1401,7 +1415,10 @@ span grouping.
 | File | What It Tests |
 |---|---|
 | `canvasStore.test.ts` | Zustand store actions |
-| `useCanvasPersistence.test.ts` | Auto-save debounce and API integration |
+| `canvasHistoryStore.test.ts` | Undo/redo burst-coalescing, history stack behavior |
+| `useCanvasPersistence.test.ts` | Manual save (`saveCanvasNow`), unsaved-changes/Ctrl+S guards |
+| `useCanvasDeleteKeyHandler.test.tsx` | Delete/Backspace confirmed node deletion |
+| `useCanvasUndoRedoShortcuts.test.tsx` | Ctrl/Cmd+Z / Shift+Z / Y shortcut routing |
 | `AgentNode.test.tsx` | Agent node rendering |
 | `ToolNode.test.tsx` | Tool node rendering |
 | `AgentEditor.test.tsx` | Agent property editor UI |

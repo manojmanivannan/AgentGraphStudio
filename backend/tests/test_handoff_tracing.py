@@ -5,6 +5,7 @@ from contextlib import contextmanager
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
+import dspy
 import pytest
 
 from canvas_server.runner.handoff import HandoffToolBuilder
@@ -214,3 +215,40 @@ async def test_handoff_stores_delegated_agent_output_attachments(monkeypatch):
     assert call_kwargs["conversation_service"] is run_state.conversation_service
     assert call_kwargs["canvas"] is None
     assert call_kwargs["run_id"] == run_state.run_id
+
+
+@pytest.mark.asyncio
+async def test_handoff_forwards_previously_generated_image_to_target(monkeypatch):
+    """#96: a router forwarding a plot generated earlier in the run (via
+    `consumed_file_attachments`) must give the handoff target the actual
+    image, not just a text mention of its sandbox file path — otherwise the
+    target's `attachment_image` field stays `None` even though its prompt
+    literally invites it to "inspect the image"."""
+    from canvas_server.runner.input_attachment_delivery import DeliveredAttachment
+
+    target_id = uuid.uuid4()
+    target_node = SimpleNamespace(name="WeatherAgent", agent_type="worker", role=None)
+    agent = make_agent("The temperature at 14:00 was 13C.")
+    run_state = FakeRunState(
+        node_map={target_id: target_node}, agents={target_id: agent}
+    )
+    run_state.consumed_file_attachments = [
+        DeliveredAttachment(
+            attachment_id=uuid.uuid4(),
+            name="plot",
+            file_type="image",
+            source="agent_output",
+            delivery_method="file_path",
+            sandbox_path="/sandbox/attachments/plot.png",
+            image_data_uri="data:image/png;base64,iVBORw==",
+        )
+    ]
+
+    builder = HandoffToolBuilder(run_state)
+    tool = builder.make_handoff_tool(target_id, "MasterAgent", AsyncMock(), history="")
+
+    await tool("Look at the plot and tell me the temperature at 14:00.")
+
+    kwargs = agent.aforward.await_args.kwargs
+    assert kwargs["attachment_image"] == dspy.Image("data:image/png;base64,iVBORw==")
+    assert "Attachment 'plot' (image) is available as a file at:" in kwargs["user_request"]

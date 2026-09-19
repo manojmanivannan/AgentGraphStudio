@@ -15,6 +15,7 @@ from canvas_server.runner.execution import store_output_attachments
 from canvas_server.runner.input_attachment_delivery import (
     build_forwarded_attachment_text,
     deliver_and_announce_input_attachments,
+    forwarded_attachment_image,
 )
 from canvas_server.runner.tracing import agent_span
 
@@ -125,10 +126,16 @@ class HandoffToolBuilder:
             # open the file. This lets the target open it even without its
             # own declared `consumes` edge to the same Attachment node.
             consumed_so_far = getattr(self.run_state, "consumed_file_attachments", None)
+            forwarded_image: str | None = None
             if consumed_so_far:
                 forwarded_text = build_forwarded_attachment_text(consumed_so_far)
                 if forwarded_text:
                     prompt = f"{prompt}\n\n{forwarded_text}"
+                # A path mention alone loses vision reasoning for images
+                # (#96) — pair it with the actual image so the target can
+                # still "look at" a plot/photo generated or forwarded
+                # earlier in this run, not just open its file path.
+                forwarded_image = forwarded_attachment_image(consumed_so_far)
 
             # Resolve/materialize any declared input attachments for the
             # handoff target (#88). ``agent_start`` was already emitted
@@ -160,6 +167,10 @@ class HandoffToolBuilder:
                 )
                 if consumed_so_far is not None:
                     consumed_so_far.extend(d for d in delivered if d.sandbox_path is not None)
+            # A freshly-resolved image (via the target's own declared
+            # `consumes` edge) takes precedence over a forwarded one.
+            if forwarded_image is not None and "attachment_image" not in attachment_kwargs:
+                attachment_kwargs["attachment_image"] = dspy.Image(forwarded_image)
 
             try:
                 with agent_span(

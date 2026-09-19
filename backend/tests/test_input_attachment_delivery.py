@@ -13,7 +13,9 @@ import pytest
 
 from canvas_server.runner.input_attachment_delivery import (
     SANDBOX_ATTACHMENT_DIR,
+    DeliveredAttachment,
     deliver_input_attachments,
+    forwarded_attachment_image,
 )
 
 requires_docker = pytest.mark.skipif(
@@ -323,6 +325,7 @@ class TestDeliverInputAttachmentsImage:
         assert delivered.delivery_method == "dual"
         assert delivered.sandbox_path == f"{SANDBOX_ATTACHMENT_DIR}/Chart.png"
         assert result.image_data_uri == "data:image/png;base64,iVBORw=="
+        assert delivered.image_data_uri == "data:image/png;base64,iVBORw=="
 
     async def test_image_falls_back_to_inline_image_block_only_when_sandbox_unavailable(self):
         agent_id = uuid.uuid4()
@@ -362,6 +365,7 @@ class TestDeliverInputAttachmentsImage:
         assert delivered.delivery_method == "inline"
         assert delivered.sandbox_path is None
         assert result.image_data_uri == "data:image/png;base64,iVBORw=="
+        assert delivered.image_data_uri == "data:image/png;base64,iVBORw=="
 
 
 
@@ -560,3 +564,50 @@ class TestDeliverInputAttachmentsRealDockerE2E:
             # execution tests).
             sandbox = await get_sandbox()
             sandbox.release_session(conversation_id)
+
+
+class TestForwardedAttachmentImage:
+    """Unit tests for `forwarded_attachment_image` (#96): pairs the text-only
+    `build_forwarded_attachment_text` path with the actual image bytes so a
+    handoff target (or a later turn's re-surfaced generated attachment) can
+    still see a previously materialized image, not just its file path."""
+
+    def test_returns_first_image_uri_among_consumed(self):
+        consumed = [
+            DeliveredAttachment(
+                attachment_id=uuid.uuid4(),
+                name="CurrentTemperature",
+                file_type="text",
+                source="agent_output",
+                delivery_method="file_path",
+                sandbox_path="/sandbox/attachments/CurrentTemperature.txt",
+            ),
+            DeliveredAttachment(
+                attachment_id=uuid.uuid4(),
+                name="plot",
+                file_type="image",
+                source="agent_output",
+                delivery_method="file_path",
+                sandbox_path="/sandbox/attachments/plot.png",
+                image_data_uri="data:image/png;base64,iVBORw==",
+            ),
+        ]
+
+        assert forwarded_attachment_image(consumed) == "data:image/png;base64,iVBORw=="
+
+    def test_returns_none_when_nothing_carries_an_image(self):
+        consumed = [
+            DeliveredAttachment(
+                attachment_id=uuid.uuid4(),
+                name="CurrentTemperature",
+                file_type="text",
+                source="agent_output",
+                delivery_method="file_path",
+                sandbox_path="/sandbox/attachments/CurrentTemperature.txt",
+            )
+        ]
+
+        assert forwarded_attachment_image(consumed) is None
+
+    def test_empty_list_returns_none(self):
+        assert forwarded_attachment_image([]) is None

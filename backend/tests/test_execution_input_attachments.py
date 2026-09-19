@@ -6,10 +6,12 @@ emitting ``agent_start`` + ``attachment_consumed`` once, only when there is
 something to deliver this turn.
 """
 
+import base64
 import uuid
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import dspy
 import pytest
 
 from canvas_server.runner.config import RunContext
@@ -160,6 +162,39 @@ class TestWorkerExecutionInputAttachmentDelivery:
             attachment_id
         ]
         harness.conversation_repo.get_unconsumed_input_attachments.assert_not_awaited()
+        # #96: a re-surfaced generated *image* must give the agent actual
+        # vision input, not just a text mention that a file exists at a path.
+        assert harness.fake_agent.last_kwargs["attachment_image"] == dspy.Image(
+            "data:image/png;base64," + base64.b64encode(b"png-bytes").decode("ascii")
+        )
+
+    async def test_prior_generated_non_image_files_do_not_set_attachment_image(self):
+        generated = SimpleNamespace(
+            id=uuid.uuid4(),
+            attachment_node_id=uuid.uuid4(),
+            content=b"42.0",
+            format="txt",
+            file_type="text",
+            source="agent_output",
+            original_filename="CurrentTemperature.txt",
+        )
+        harness = make_harness()
+        harness.conversation_repo.get_generated_attachments.return_value = [generated]
+        harness.services.run_state.consumed_file_attachments = []
+        send_event = AsyncMock()
+        ctx = RunContext(
+            user_prompt="what was the temperature?",
+            send_event=send_event,
+            target_agent_id=harness.agent_id,
+        )
+
+        with patch(
+            "canvas_server.runner.input_attachment_delivery._materialize_in_sandbox",
+            new=AsyncMock(return_value="/sandbox/attachments/CurrentTemperature.txt"),
+        ):
+            await WorkerExecution(harness.services).execute(harness.agent_id, ctx)
+
+        assert "attachment_image" not in harness.fake_agent.last_kwargs
 
     async def test_declared_node_with_nothing_unconsumed_never_emits_agent_start(self):
         node_id = uuid.uuid4()
