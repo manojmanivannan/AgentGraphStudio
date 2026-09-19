@@ -71,4 +71,11 @@ describe("ToolNode", () => {
     );
     expect(container.querySelectorAll(".react-flow__resize-control").length).toBeGreaterThan(0);
   });
+
+  it("gives the Settings gear button a p-1.5 hit target instead of p-1", () => {
+    render(<ToolNode {...makeProps()} />);
+    const settingsButton = screen.getByTitle("Settings");
+    expect(settingsButton).toHaveClass("p-1.5");
+    expect(settingsButton).not.toHaveClass("p-1");
+  });
 });

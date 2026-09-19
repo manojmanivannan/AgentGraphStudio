@@ -62,7 +62,7 @@ function ToolNodeComponent({ id, data, selected }: NodeProps) {
             e.stopPropagation();
             selectNode(id);
           }}
-          className="p-1 text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)] rounded-md hover:bg-[var(--color-elevated)] transition-all duration-150"
+          className="p-1.5 text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)] rounded-md hover:bg-[var(--color-elevated)] transition-all duration-150"
           title="Settings"
         >
           <Settings className="w-3.5 h-3.5" />

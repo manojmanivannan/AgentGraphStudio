@@ -79,4 +79,11 @@ describe("AgentNode", () => {
     const { container } = render(<AgentNode {...makeProps({ id: "node-1" })} />);
     expect(container.firstChild).not.toHaveClass("glow-active-pulse");
   });
+
+  it("gives the Settings gear button a p-1.5 hit target instead of p-1", () => {
+    render(<AgentNode {...makeProps()} />);
+    const settingsButton = screen.getByTitle("Settings");
+    expect(settingsButton).toHaveClass("p-1.5");
+    expect(settingsButton).not.toHaveClass("p-1");
+  });
 });
