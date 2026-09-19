@@ -437,6 +437,26 @@ html[data-theme="light"] .rail-popover {
   background-color: var(--color-elevated);
 }
 
+.btn-danger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-inverse);
+  background-color: var(--color-danger);
+  border-radius: 8px;
+  border: none;
+  cursor: pointer;
+  transition: background-color 0.15s ease, opacity 0.15s ease;
+  letter-spacing: 0.01em;
+}
+
+.btn-danger:hover {
+  opacity: 0.9;
+}
+
 .btn-danger-ghost {
   display: inline-flex;
   align-items: center;

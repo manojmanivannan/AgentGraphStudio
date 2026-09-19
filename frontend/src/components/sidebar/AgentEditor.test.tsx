@@ -3,8 +3,12 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { useCanvasStore } from "@/store/canvasStore";
+import { useToastStore } from "@/store/toastStore";
+import { useConfirmStore } from "@/store/confirmStore";
 import { server } from "@/test/mocks/server";
 import { AgentEditor } from "./AgentEditor";
+import { ToastHost } from "@/components/ui/ToastHost";
+import { ConfirmDialogHost } from "@/components/ui/ConfirmDialogHost";
 import type { Node } from "@xyflow/react";
 
 const API = "http://localhost:8000/api";
@@ -25,6 +29,8 @@ const agentNode: Node = {
 
 beforeEach(() => {
   useCanvasStore.getState().reset();
+  useToastStore.setState({ toasts: [] });
+  useConfirmStore.setState({ pending: null });
   server.resetHandlers();
 });
 
@@ -359,6 +365,159 @@ describe("AgentEditor", () => {
       expect(screen.getByText("Documents")).toBeInTheDocument();
       expect(screen.getByText("Upload File")).toBeInTheDocument();
     });
+  });
+
+  it("shows an in-app confirm dialog (not native confirm) before deleting a document, and deletes on Delete", async () => {
+    const user = userEvent.setup();
+    const ragNode = { ...agentNode, data: { ...agentNode.data, enableRag: true } };
+    useCanvasStore.getState().setNodes([ragNode]);
+    useCanvasStore.getState().selectNode("agent-1");
+    useCanvasStore.setState({ canvasId: "test-canvas" });
+
+    server.use(
+      http.get(`${API}/canvases/test-canvas/agents/agent-1/documents`, () =>
+        HttpResponse.json([{ id: "doc-1", name: "notes.txt" }])
+      ),
+      http.delete(`${API}/canvases/test-canvas/agents/agent-1/documents/doc-1`, () =>
+        HttpResponse.json({})
+      )
+    );
+
+    render(
+      <>
+        <AgentEditor />
+        <ConfirmDialogHost />
+      </>
+    );
+
+    await screen.findByText("notes.txt");
+    await user.click(screen.getByTestId("agent-delete-document-doc-1"));
+
+    expect(await screen.findByRole("dialog")).toHaveTextContent(
+      "Are you sure you want to delete this document?"
+    );
+
+    await user.click(screen.getByRole("button", { name: "Delete" }));
+
+    await waitFor(() => {
+      expect(screen.queryByText("notes.txt")).not.toBeInTheDocument();
+    });
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("keeps the document when the delete confirm dialog is cancelled", async () => {
+    const user = userEvent.setup();
+    const ragNode = { ...agentNode, data: { ...agentNode.data, enableRag: true } };
+    useCanvasStore.getState().setNodes([ragNode]);
+    useCanvasStore.getState().selectNode("agent-1");
+    useCanvasStore.setState({ canvasId: "test-canvas" });
+
+    server.use(
+      http.get(`${API}/canvases/test-canvas/agents/agent-1/documents`, () =>
+        HttpResponse.json([{ id: "doc-1", name: "notes.txt" }])
+      )
+    );
+
+    render(
+      <>
+        <AgentEditor />
+        <ConfirmDialogHost />
+      </>
+    );
+
+    await screen.findByText("notes.txt");
+    await user.click(screen.getByTestId("agent-delete-document-doc-1"));
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+
+    expect(screen.getByText("notes.txt")).toBeInTheDocument();
+  });
+
+  it("shows an in-app toast (not native alert) when document deletion fails", async () => {
+    const user = userEvent.setup();
+    const ragNode = { ...agentNode, data: { ...agentNode.data, enableRag: true } };
+    useCanvasStore.getState().setNodes([ragNode]);
+    useCanvasStore.getState().selectNode("agent-1");
+    useCanvasStore.setState({ canvasId: "test-canvas" });
+
+    server.use(
+      http.get(`${API}/canvases/test-canvas/agents/agent-1/documents`, () =>
+        HttpResponse.json([{ id: "doc-1", name: "notes.txt" }])
+      ),
+      http.delete(`${API}/canvases/test-canvas/agents/agent-1/documents/doc-1`, () =>
+        HttpResponse.json({ detail: "boom" }, { status: 500 })
+      )
+    );
+
+    render(
+      <>
+        <AgentEditor />
+        <ConfirmDialogHost />
+        <ToastHost />
+      </>
+    );
+
+    await screen.findByText("notes.txt");
+    await user.click(screen.getByTestId("agent-delete-document-doc-1"));
+    await user.click(screen.getByRole("button", { name: "Delete" }));
+
+    expect(await screen.findByRole("status")).toHaveTextContent("Failed to delete document");
+  });
+
+  it("shows an in-app toast (not native alert) when document upload fails", async () => {
+    const user = userEvent.setup();
+    const ragNode = { ...agentNode, data: { ...agentNode.data, enableRag: true } };
+    useCanvasStore.getState().setNodes([ragNode]);
+    useCanvasStore.getState().selectNode("agent-1");
+    useCanvasStore.setState({ canvasId: "test-canvas" });
+
+    server.use(
+      http.get(`${API}/canvases/test-canvas/agents/agent-1/documents`, () =>
+        HttpResponse.json([])
+      ),
+      http.post(`${API}/canvases/test-canvas/agents/agent-1/documents`, () =>
+        HttpResponse.json({ detail: "boom" }, { status: 500 })
+      )
+    );
+
+    render(
+      <>
+        <AgentEditor />
+        <ToastHost />
+      </>
+    );
+
+    await screen.findByText("Upload File");
+    const file = new File(["hello"], "notes.txt", { type: "text/plain" });
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    await user.upload(input, file);
+
+    expect(await screen.findByRole("status")).toHaveTextContent("Failed to upload document");
+  });
+
+  it("shows an in-app toast (not native alert) when selecting a second entry point", async () => {
+    const user = userEvent.setup();
+    const otherNode: Node = {
+      id: "agent-2",
+      type: "agent",
+      position: { x: 0, y: 0 },
+      data: { id: "agent-2", name: "Planner", agentType: "worker", isEntryPoint: true },
+    };
+    useCanvasStore.getState().setNodes([agentNode, otherNode]);
+    useCanvasStore.getState().selectNode("agent-1");
+
+    render(
+      <>
+        <AgentEditor />
+        <ToastHost />
+      </>
+    );
+
+    await user.click(screen.getByTestId("agent-is-entry-point"));
+
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      "Agent 'Planner' is already selected as the entry point."
+    );
+    expect(screen.getByTestId("agent-is-entry-point")).not.toBeChecked();
   });
 
   it("shows connected tools when edges exist", () => {

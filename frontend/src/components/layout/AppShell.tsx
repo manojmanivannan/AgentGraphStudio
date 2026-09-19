@@ -3,6 +3,8 @@ import { SidebarRail } from "@/components/layout/SidebarRail";
 import { ConversationReplayPanel } from "@/components/layout/ConversationReplayPanel";
 import { TopBar } from "@/components/layout/TopBar";
 import { PropertiesOverlay } from "@/components/PropertiesOverlay";
+import { ToastHost } from "@/components/ui/ToastHost";
+import { ConfirmDialogHost } from "@/components/ui/ConfirmDialogHost";
 import { useCanvasStore } from "@/store/canvasStore";
 
 export function AppShell() {
@@ -32,6 +34,8 @@ export function AppShell() {
       <ConversationReplayPanel />
       {/* Shared across both modes — persists across mode switches */}
       <TopBar />
+      <ToastHost />
+      <ConfirmDialogHost />
     </div>
   );
 }

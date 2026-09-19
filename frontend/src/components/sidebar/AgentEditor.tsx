@@ -4,6 +4,8 @@ import { Wrench, Plus, Loader2, FileText, Trash2, Paperclip } from "lucide-react
 import { listAgentDocuments, uploadAgentDocument, deleteAgentDocument } from "@/lib/api";
 import type { AgentDocument } from "@/types";
 import { InfoTooltip } from "./InfoTooltip";
+import { toast } from "@/store/toastStore";
+import { confirm } from "@/store/confirmStore";
 
 export function AgentEditor() {
   const selectedNodeId = useCanvasStore((s) => s.selectedNodeId);
@@ -52,7 +54,7 @@ export function AgentEditor() {
       setDocuments((prev) => [doc, ...prev]);
     } catch (err) {
       console.error("Failed to upload document:", err);
-      alert("Failed to upload document");
+      toast.error("Failed to upload document");
     } finally {
       setUploading(false);
       e.target.value = "";
@@ -61,13 +63,19 @@ export function AgentEditor() {
 
   const handleDeleteDoc = async (docId: string) => {
     if (!canvasId || !selectedNodeId) return;
-    if (!confirm("Are you sure you want to delete this document?")) return;
+    const confirmed = await confirm({
+      title: "Delete document",
+      description: "Are you sure you want to delete this document?",
+      confirmLabel: "Delete",
+      danger: true,
+    });
+    if (!confirmed) return;
     try {
       await deleteAgentDocument(canvasId, selectedNodeId, docId);
       setDocuments((prev) => prev.filter((d) => d.id !== docId));
     } catch (err) {
       console.error("Failed to delete document:", err);
-      alert("Failed to delete document");
+      toast.error("Failed to delete document");
     }
   };
 
@@ -209,7 +217,9 @@ export function AgentEditor() {
                       n.data?.isEntryPoint === true
                   );
                   if (otherEntryPointAgent) {
-                    alert(`Agent '${otherEntryPointAgent.data.name}' is already selected as the entry point.`);
+                    toast.error(
+                      `Agent '${otherEntryPointAgent.data.name}' is already selected as the entry point.`
+                    );
                     return;
                   }
                 }
@@ -458,6 +468,8 @@ export function AgentEditor() {
                           </span>
                           <button
                             onClick={() => handleDeleteDoc(doc.id)}
+                            data-testid={`agent-delete-document-${doc.id}`}
+                            aria-label={`Delete ${doc.name}`}
                             className="text-[var(--color-text-tertiary)] hover:text-red-500 hover:bg-red-500/10 p-1 rounded-md transition-colors"
                           >
                             <Trash2 className="w-3 h-3" />
