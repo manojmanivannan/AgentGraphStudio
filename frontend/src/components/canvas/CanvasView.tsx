@@ -28,6 +28,7 @@ import { useCanvasDeleteKeyHandler } from "@/hooks/useCanvasDeleteKeyHandler";
 import { useCanvasUndoRedoShortcuts } from "@/hooks/useCanvasUndoRedoShortcuts";
 import { useThemeStore } from "@/store/themeStore";
 import { deriveEdgeType, getEdgeHandles, isValidNodeTypeConnection } from "@/lib/canvasConnectionRules";
+import { withoutMeasurementChanges } from "@/lib/canvasNodeChanges";
 
 const nodeTypes = {
   agent: AgentNode,
@@ -99,7 +100,13 @@ export function CanvasView() {
 
   const onNodesChange: OnNodesChange = useCallback(
     (changes) => {
-      setNodes(applyNodeChanges(changes, nodes));
+      // ReactFlow reports `dimensions` changes when it measures nodes on render;
+      // those are not user edits, so drop them to keep the canvas from being
+      // marked dirty on load (see withoutMeasurementChanges).
+      const edits = withoutMeasurementChanges(changes);
+      if (edits.length > 0) {
+        setNodes(applyNodeChanges(edits, nodes));
+      }
     },
     [nodes, setNodes]
   );
