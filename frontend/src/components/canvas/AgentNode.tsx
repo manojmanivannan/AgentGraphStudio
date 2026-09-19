@@ -48,6 +48,8 @@ function AgentNodeComponent({ id, data, selected }: NodeProps) {
         type="target"
         position={Position.Top}
         className="!bg-[var(--color-text-tertiary)] !w-2 !h-2 !border-2 !border-[var(--color-surface)]"
+        title="Agent handoff input"
+        aria-label="Agent handoff input"
       />
       <Handle
         id={HANDLE_IDS.agentAttachmentTarget}
@@ -56,6 +58,7 @@ function AgentNodeComponent({ id, data, selected }: NodeProps) {
         style={{ left: "75%" }}
         className="!bg-[var(--color-warning)] !w-2 !h-2 !border-2 !border-[var(--color-surface)]"
         title="Attachment input (consumes)"
+        aria-label="Attachment input (consumes)"
       />
       <div
         className={`flex items-center gap-2 px-3 py-2.5 rounded-t-xl border-b ${
@@ -144,6 +147,8 @@ function AgentNodeComponent({ id, data, selected }: NodeProps) {
         className={`!w-2 !h-2 !border-2 !border-[var(--color-surface)] ${
           isRouter ? "!bg-[var(--color-agent)]" : "!bg-[var(--color-accent)]"
         }`}
+        title="Agent handoff output"
+        aria-label="Agent handoff output"
       />
       <Handle
         id={HANDLE_IDS.agentToolSource}
@@ -152,6 +157,7 @@ function AgentNodeComponent({ id, data, selected }: NodeProps) {
         style={{ left: "25%" }}
         className="!bg-[var(--color-info)] !w-2 !h-2 !border-2 !border-[var(--color-surface)]"
         title="Tool access"
+        aria-label="Tool access"
       />
       <Handle
         id={HANDLE_IDS.agentAttachmentSource}
@@ -160,6 +166,7 @@ function AgentNodeComponent({ id, data, selected }: NodeProps) {
         style={{ left: "75%" }}
         className="!bg-[var(--color-warning)] !w-2 !h-2 !border-2 !border-[var(--color-surface)]"
         title="Attachment output (produces)"
+        aria-label="Attachment output (produces)"
       />
     </div>
   );

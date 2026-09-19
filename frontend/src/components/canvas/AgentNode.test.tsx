@@ -4,12 +4,15 @@ import { useCanvasStore } from "@/store/canvasStore";
 import { AgentNode } from "./AgentNode";
 import type { AgentNodeData } from "@/types";
 
-// Handle requires ReactFlow's internal context — replace with a no-op in unit tests
+// Handle requires ReactFlow's internal context — replace with a plain div in unit
+// tests so we can still assert on the accessibility props passed through to it.
 vi.mock("@xyflow/react", async () => {
   const actual = await vi.importActual<typeof import("@xyflow/react")>("@xyflow/react");
   return {
     ...actual,
-    Handle: () => null,
+    Handle: ({ id, title, "aria-label": ariaLabel }: any) => (
+      <div data-testid={`handle-${id}`} title={title} aria-label={ariaLabel} />
+    ),
   };
 });
 
@@ -78,5 +81,21 @@ describe("AgentNode", () => {
     useCanvasStore.getState().setActiveNodeId("other-node");
     const { container } = render(<AgentNode {...makeProps({ id: "node-1" })} />);
     expect(container.firstChild).not.toHaveClass("glow-active-pulse");
+  });
+
+  it("gives every connection handle a matching title and aria-label", () => {
+    render(<AgentNode {...makeProps()} />);
+    const expected: Record<string, string> = {
+      "handle-agent-in": "Agent handoff input",
+      "handle-agent-out": "Agent handoff output",
+      "handle-tool-out": "Tool access",
+      "handle-attachment-in": "Attachment input (consumes)",
+      "handle-attachment-out": "Attachment output (produces)",
+    };
+    for (const [testId, label] of Object.entries(expected)) {
+      const handle = screen.getByTestId(testId);
+      expect(handle).toHaveAttribute("title", label);
+      expect(handle).toHaveAttribute("aria-label", label);
+    }
   });
 });
