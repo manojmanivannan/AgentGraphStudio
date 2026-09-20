@@ -46,10 +46,12 @@ and edges on a ReactFlow canvas, then run workflows against a FastAPI + DSPy bac
 | Memory provider | `backend/src/canvas_server/memory_provider.py` | mem0 wrapper as DSPy tool functions |
 | Error types | `backend/src/canvas_server/exceptions.py` | CanvasNotFoundError, ToolCompilationError, ToolExecutionError, LLMConfigurationError, PythonSyntaxError, PythonImportError, RAGEmbeddingError |
 | App root | `frontend/src/App.tsx` | Landing page or AppShell |
-| Zustand store | `frontend/src/store/canvasStore.ts` | All UI state |
+| Zustand store | `frontend/src/store/canvasStore.ts` | All UI state (incl. `isDirty` unsaved-changes flag) |
+| Undo/redo store | `frontend/src/store/canvasHistoryStore.ts` | Burst-debounced undo/redo history for nodes/edges |
 | Theme store | `frontend/src/store/themeStore.ts` | Dark/light + localStorage persistence |
 | API wrappers | `frontend/src/lib/api.ts` | All REST fetch calls |
-| Auto-save hook | `frontend/src/hooks/useCanvasPersistence.ts` | 500ms debounce → PUT to backend |
+| Node deletion | `frontend/src/lib/nodeDeletion.ts` | Confirmed delete (trash button + Delete/Backspace) |
+| Manual save hook | `frontend/src/hooks/useCanvasPersistence.ts` | `saveCanvasNow()` (Save button/Ctrl+S) → PUT to backend; unsaved-changes warning |
 | ReactFlow canvas | `frontend/src/components/canvas/CanvasView.tsx` | Nodes, edges, connections, fitView |
 | Agent node | `frontend/src/components/canvas/AgentNode.tsx` | Visual node with role/instructions preview |
 | Tool node | `frontend/src/components/canvas/ToolNode.tsx` | Visual node with code preview |

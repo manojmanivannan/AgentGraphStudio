@@ -23,9 +23,12 @@ import { ToolNode } from "./ToolNode";
 import { AttachmentNode } from "./AttachmentNode";
 import { CustomEdge } from "./CustomEdge";
 import { useCanvasStore } from "@/store/canvasStore";
-import { useCanvasPersistence } from "@/hooks/useCanvasPersistence";
+import { useUnsavedChangesWarning, useSaveShortcut } from "@/hooks/useCanvasPersistence";
+import { useCanvasDeleteKeyHandler } from "@/hooks/useCanvasDeleteKeyHandler";
+import { useCanvasUndoRedoShortcuts } from "@/hooks/useCanvasUndoRedoShortcuts";
 import { useThemeStore } from "@/store/themeStore";
 import { deriveEdgeType, getEdgeHandles, isValidNodeTypeConnection } from "@/lib/canvasConnectionRules";
+import { hasSubstantiveChanges, withoutMeasurementChanges } from "@/lib/canvasChanges";
 
 const nodeTypes = {
   agent: AgentNode,
@@ -61,7 +64,9 @@ export function CanvasView() {
   const nodes = useCanvasStore((s) => s.nodes);
   const edges = useCanvasStore((s) => s.edges);
   const setNodes = useCanvasStore((s) => s.setNodes);
+  const setNodesSilently = useCanvasStore((s) => s.setNodesSilently);
   const setEdges = useCanvasStore((s) => s.setEdges);
+  const setEdgesSilently = useCanvasStore((s) => s.setEdgesSilently);
   const selectNode = useCanvasStore((s) => s.selectNode);
   const setViewport = useCanvasStore((s) => s.setViewport);
   const selectedNodeId = useCanvasStore((s) => s.selectedNodeId);
@@ -83,20 +88,53 @@ export function CanvasView() {
     return () => clearTimeout(timeout);
   }, [propertiesOpen]);
 
-  useCanvasPersistence();
+  // Manual save: warn before closing/navigating away with unsaved changes,
+  // and support Ctrl/Cmd+S to save explicitly (see TopBar for the Save button).
+  useUnsavedChangesWarning();
+  useSaveShortcut();
+  // Replaces ReactFlow's default silent Backspace/Delete removal with a
+  // confirmed deletion (see useCanvasDeleteKeyHandler); deleteKeyCode is
+  // disabled below on <ReactFlow> so the two don't double-fire.
+  useCanvasDeleteKeyHandler();
+  // Ctrl/Cmd+Z to undo, Ctrl/Cmd+Shift+Z or Ctrl/Cmd+Y to redo (see TopBar
+  // for the Undo/Redo buttons backed by the same canvasHistoryStore).
+  useCanvasUndoRedoShortcuts();
 
   const onNodesChange: OnNodesChange = useCallback(
     (changes) => {
-      setNodes(applyNodeChanges(changes, nodes));
+      // ReactFlow reports `dimensions` changes when it measures nodes on render;
+      // those are not user edits, so drop them to keep the canvas from being
+      // marked dirty on load (see withoutMeasurementChanges).
+      const edits = withoutMeasurementChanges(changes);
+      if (edits.length === 0) return;
+
+      const next = applyNodeChanges(edits, nodes);
+      // Only structural edits (add/remove/replace) count as unsaved changes.
+      // Position drags and selection changes update the store but must not trip
+      // the unsaved-changes guard (see hasSubstantiveChanges).
+      if (hasSubstantiveChanges(edits)) {
+        setNodes(next);
+      } else {
+        setNodesSilently(next);
+      }
     },
-    [nodes, setNodes]
+    [nodes, setNodes, setNodesSilently]
   );
 
   const onEdgesChange: OnEdgesChange = useCallback(
     (changes) => {
-      setEdges(applyEdgeChanges(changes, edges));
+      if (changes.length === 0) return;
+
+      const next = applyEdgeChanges(changes, edges);
+      // Selecting an edge is not an edit; only structural edge changes
+      // (add/remove/replace) count as unsaved changes.
+      if (hasSubstantiveChanges(changes)) {
+        setEdges(next);
+      } else {
+        setEdgesSilently(next);
+      }
     },
-    [edges, setEdges]
+    [edges, setEdges, setEdgesSilently]
   );
 
   const onConnect = useCallback(
@@ -182,6 +220,7 @@ export function CanvasView() {
         edgeTypes={edgeTypes}
         isValidConnection={isValidConnection as any}
         defaultEdgeOptions={defaultEdgeOptions}
+        deleteKeyCode={null}
         fitView
         attributionPosition="bottom-right"
       >

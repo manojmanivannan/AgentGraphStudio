@@ -1,9 +1,10 @@
 import { memo } from "react";
 import { Handle, Position, NodeResizer, type NodeProps } from "@xyflow/react";
-import { Brain, GitBranch, Settings } from "lucide-react";
+import { Brain, GitBranch, Settings, Trash2 } from "lucide-react";
 import type { AgentNodeData } from "@/types";
 import { useCanvasStore } from "@/store/canvasStore";
 import { HANDLE_IDS } from "@/lib/canvasConnectionRules";
+import { deleteNodeWithConfirm } from "@/lib/nodeDeletion";
 
 function AgentNodeComponent({ id, data, selected }: NodeProps) {
   const agentData = data as unknown as AgentNodeData;
@@ -22,7 +23,9 @@ function AgentNodeComponent({ id, data, selected }: NodeProps) {
         shadow-[0_4px_24px_-4px_rgba(0,0,0,0.5)]
         transition-all duration-200
         ${selected
-          ? "border-[var(--color-accent)] shadow-[0_0_0_1px_var(--color-accent),0_4px_24px_-4px_rgba(20,184,166,0.2)]"
+          ? isRouter
+            ? "border-[var(--color-agent)] shadow-[0_0_0_1px_var(--color-agent),0_4px_24px_-4px_var(--color-agent-glow)]"
+            : "border-[var(--color-accent)] shadow-[0_0_0_1px_var(--color-accent),0_4px_24px_-4px_var(--color-accent-glow)]"
           : isRouter
           ? "border-[var(--color-agent)]/30"
           : "border-[var(--color-border-default)]"
@@ -34,8 +37,12 @@ function AgentNodeComponent({ id, data, selected }: NodeProps) {
         isVisible={selected}
         minWidth={200}
         minHeight={100}
-        handleClassName="!w-2 !h-2 !bg-[var(--color-surface)] !border-[var(--color-accent)] !rounded-sm"
-        lineClassName="!border-[var(--color-accent)]/50"
+        handleClassName={`!w-2 !h-2 !bg-[var(--color-surface)] !rounded-sm ${
+          isRouter ? "!border-[var(--color-agent)]" : "!border-[var(--color-accent)]"
+        }`}
+        lineClassName={
+          isRouter ? "!border-[var(--color-agent)]/50" : "!border-[var(--color-accent)]/50"
+        }
       />
       {/*
         Two target handles on top: handoff stays centered (agent-to-agent),
@@ -80,7 +87,7 @@ function AgentNodeComponent({ id, data, selected }: NodeProps) {
           {agentData.name}
         </span>
         <span
-          className={`text-[10px] px-1.5 py-0.5 rounded-md font-semibold tracking-wide uppercase ${
+          className={`text-[12px] px-1.5 py-0.5 rounded-md font-semibold tracking-wide uppercase ${
             isRouter
               ? "bg-[var(--color-agent-subtle)] text-[var(--color-agent)]"
               : "bg-[var(--color-accent-subtle)] text-[var(--color-accent)]"
@@ -94,10 +101,23 @@ function AgentNodeComponent({ id, data, selected }: NodeProps) {
             e.stopPropagation();
             selectNode(id);
           }}
-          className="p-1 text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)] rounded-md hover:bg-[var(--color-elevated)] transition-all duration-150"
+          className="p-1.5 text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)] rounded-md hover:bg-[var(--color-elevated)] transition-all duration-150"
           title="Settings"
         >
           <Settings className="w-3.5 h-3.5" />
+        </button>
+        <button
+          data-testid="agent-node-delete"
+          onPointerDown={(e) => e.nativeEvent.stopImmediatePropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
+            void deleteNodeWithConfirm(id);
+          }}
+          className="p-1 text-[var(--color-text-tertiary)] hover:text-[var(--color-danger)] rounded-md hover:bg-[var(--color-elevated)] transition-all duration-150"
+          title="Delete node"
+          aria-label="Delete node"
+        >
+          <Trash2 className="w-3.5 h-3.5" />
         </button>
       </div>
       <div className="px-3 py-2.5 flex-1 overflow-hidden">
@@ -107,12 +127,12 @@ function AgentNodeComponent({ id, data, selected }: NodeProps) {
           </p>
         )}
         {agentData.instructions && (
-          <p className="text-[11px] text-[var(--color-text-tertiary)] mt-1.5 line-clamp-4 leading-relaxed font-[var(--font-mono)]">
+          <p className="text-[13px] text-[var(--color-text-tertiary)] mt-1.5 line-clamp-4 leading-relaxed font-[var(--font-mono)]">
             {agentData.instructions}
           </p>
         )}
         {!agentData.role && !agentData.instructions && (
-          <p className="text-[11px] text-[var(--color-text-tertiary)] italic">
+          <p className="text-[13px] text-[var(--color-text-tertiary)] italic">
             Configure agent properties
           </p>
         )}

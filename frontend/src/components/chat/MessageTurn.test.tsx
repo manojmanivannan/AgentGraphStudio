@@ -107,6 +107,22 @@ describe("MessageTurn timestamps", () => {
     expect(answerTimestamp.closest(".items-start")).not.toBeNull();
   });
 
+  it("applies the animate-fade-in class (not an inline animation style) to the user and final answer bubbles, so prefers-reduced-motion can neutralize the entrance", () => {
+    render(
+      <MessageTurn
+        {...defaultProps}
+        turn={{ ...baseTurn, userMessage, finalAnswer }}
+      />,
+    );
+
+    const userWrapper = screen.getByTitle("2026-01-01 14:30:05").closest(".items-end");
+    const answerWrapper = screen.getByTitle("2026-01-01 14:30:42").closest(".items-start");
+    expect(userWrapper?.className).toContain("animate-fade-in");
+    expect(answerWrapper?.className).toContain("animate-fade-in");
+    expect(userWrapper).not.toHaveAttribute("style");
+    expect(answerWrapper).not.toHaveAttribute("style");
+  });
+
   it("omits the timestamp when created_at is missing", () => {
     render(
       <MessageTurn

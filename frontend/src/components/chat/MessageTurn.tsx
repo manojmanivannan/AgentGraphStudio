@@ -74,15 +74,15 @@ export function MessageTurn({
   return (
     <div className="space-y-3">
       {/* User Message */}
-      <div className="flex flex-col items-end" style={{ animation: "staggerFadeIn 0.3s ease-out" }}>
-        <div className="max-w-[85%] rounded-2xl px-4 py-2.5 text-[13px] leading-relaxed bg-[var(--color-accent)] text-[var(--color-text-inverse)] rounded-br-sm shadow-md font-medium">
+      <div className="flex flex-col items-end animate-fade-in">
+        <div className="chat-bubble-user max-w-[85%] rounded-2xl px-4 py-2.5 text-[13px] leading-relaxed rounded-br-sm shadow-md font-medium">
           {turn.userMessage.content}
         </div>
         {formatMessageTimestamp(turn.userMessage.created_at) && (
           <time
             dateTime={turn.userMessage.created_at}
             title={formatMessageTimestamp(turn.userMessage.created_at)}
-            className="text-[10px] text-[var(--color-text-tertiary)] mt-0.5 px-1"
+            className="text-[12px] text-[var(--color-text-tertiary)] mt-0.5 px-1"
           >
             {formatMessageTimestamp(turn.userMessage.created_at)}
           </time>
@@ -107,7 +107,7 @@ export function MessageTurn({
       {!isStreaming && hasSteps && (
         <button
           onClick={() => toggleExpand(turn.id)}
-          className="flex items-center gap-1.5 text-[11px] text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)] transition-colors cursor-pointer px-1 font-semibold"
+          className="flex items-center gap-1.5 text-[13px] text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)] transition-colors cursor-pointer px-1 font-semibold"
         >
           {isExpanded ? (
             <>
@@ -145,10 +145,9 @@ export function MessageTurn({
       {!isStreaming && !isExpanded && turn.humanInterrupt && (
         <div
           className="flex flex-col items-start w-full animate-fade-in"
-          style={{ animation: "staggerFadeIn 0.3s ease-out" }}
         >
           {turn.humanInterrupt.agent_name && (
-            <span className="text-[10px] text-[var(--color-text-tertiary)] mb-0.5 px-1 font-semibold tracking-wide">
+            <span className="text-[12px] text-[var(--color-text-tertiary)] mb-0.5 px-1 font-semibold tracking-wide">
               {turn.humanInterrupt.agent_name} · {turn.humanInterrupt.event_type === "tool_approval_request" ? "tool_approval_request" : "human_input_request"}
             </span>
           )}
@@ -186,7 +185,7 @@ export function MessageTurn({
                     />
                     <button
                       type="submit"
-                      className="px-3.5 py-1.5 bg-[var(--color-accent)] hover:bg-[var(--color-accent-bright)] text-white text-[11px] font-semibold rounded-lg shadow transition-colors"
+                      className="px-3.5 py-1.5 bg-[var(--color-accent)] hover:bg-[var(--color-accent-bright)] text-white text-[13px] font-semibold rounded-lg shadow transition-colors"
                     >
                       Submit
                     </button>
@@ -204,12 +203,12 @@ export function MessageTurn({
                   <span className="w-2 h-2 rounded-full bg-[var(--color-warning)] animate-ping" />
                   <span>Tool Approval Required</span>
                 </div>
-                <div className="bg-[var(--color-base)] border border-[var(--color-border-subtle)] rounded-lg p-2.5 font-mono text-[11px] text-[var(--color-text-secondary)] space-y-1 max-w-full overflow-x-auto">
+                <div className="bg-[var(--color-base)] border border-[var(--color-border-subtle)] rounded-lg p-2.5 font-mono text-[13px] text-[var(--color-text-secondary)] space-y-1 max-w-full overflow-x-auto">
                   <div><strong>Tool:</strong> {activeInterrupt.tool}</div>
                   {activeInterrupt.args && Object.keys(activeInterrupt.args).length > 0 && (
                     <div>
                       <strong>Arguments:</strong>
-                      <pre className="mt-1 p-1.5 bg-[var(--color-elevated)] rounded border border-[var(--color-border-subtle)]/50 text-[10px] overflow-x-auto whitespace-pre-wrap">
+                      <pre className="mt-1 p-1.5 bg-[var(--color-elevated)] rounded border border-[var(--color-border-subtle)]/50 text-[12px] overflow-x-auto whitespace-pre-wrap">
                         {JSON.stringify(activeInterrupt.args, null, 2)}
                       </pre>
                     </div>
@@ -218,13 +217,13 @@ export function MessageTurn({
                 <div className="flex gap-2 mt-1">
                   <button
                     onClick={() => handleSendToolApproval(true)}
-                    className="px-3.5 py-1.5 bg-[var(--color-success)] hover:bg-[var(--color-success)]/90 text-white text-[11px] font-semibold rounded-lg shadow flex items-center gap-1 transition-colors"
+                    className="px-3.5 py-1.5 bg-[var(--color-success)] hover:bg-[var(--color-success)]/90 text-white text-[13px] font-semibold rounded-lg shadow flex items-center gap-1 transition-colors"
                   >
                     Approve
                   </button>
                   <button
                     onClick={() => handleSendToolApproval(false)}
-                    className="px-3.5 py-1.5 bg-[var(--color-danger)] hover:bg-[var(--color-danger)]/90 text-white text-[11px] font-semibold rounded-lg shadow flex items-center gap-1 transition-colors"
+                    className="px-3.5 py-1.5 bg-[var(--color-danger)] hover:bg-[var(--color-danger)]/90 text-white text-[13px] font-semibold rounded-lg shadow flex items-center gap-1 transition-colors"
                   >
                     Deny
                   </button>
@@ -240,11 +239,10 @@ export function MessageTurn({
       {/* Final Answer */}
       {turn.finalAnswer && (
         <div
-          className="flex flex-col items-start"
-          style={{ animation: "staggerFadeIn 0.3s ease-out" }}
+          className="flex flex-col items-start animate-fade-in"
         >
           {turn.finalAnswer.agent_name && (
-            <span className="text-[10px] text-[var(--color-text-tertiary)] mb-0.5 px-1 font-semibold tracking-wide">
+            <span className="text-[12px] text-[var(--color-text-tertiary)] mb-0.5 px-1 font-semibold tracking-wide">
               {turn.finalAnswer.agent_name}
             </span>
           )}
@@ -257,6 +255,7 @@ export function MessageTurn({
                 name={String(attachment.args?.name ?? "")}
                 fileType={String(attachment.args?.file_type ?? "")}
                 attachmentId={String(attachment.args?.attachment_id ?? "")}
+                originalFilename={attachment.args?.original_filename as string | null | undefined}
               />
             </div>
           ))}
@@ -264,7 +263,7 @@ export function MessageTurn({
             <time
               dateTime={turn.finalAnswer.created_at}
               title={formatMessageTimestamp(turn.finalAnswer.created_at)}
-              className="text-[10px] text-[var(--color-text-tertiary)] mt-0.5 px-1"
+              className="text-[12px] text-[var(--color-text-tertiary)] mt-0.5 px-1"
             >
               {formatMessageTimestamp(turn.finalAnswer.created_at)}
             </time>

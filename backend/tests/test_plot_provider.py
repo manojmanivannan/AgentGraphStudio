@@ -1,5 +1,5 @@
 import uuid
-from unittest.mock import AsyncMock, MagicMock, mock_open, patch
+from unittest.mock import ANY, AsyncMock, MagicMock, mock_open, patch
 
 import pytest
 from llm_sandbox.data import ExecutionResult, FileType, PlotOutput
@@ -145,7 +145,12 @@ async def test_plot_provider_success_db():
             file_type="image",
             source="agent_output",
             produced_by_run_id=None,
+            original_filename=ANY,
         )
+        filename = mock_repo.save_attachment.await_args.kwargs["original_filename"]
+        assert filename.startswith("plot_")
+        assert filename.endswith(".png")
+        assert len(filename.removeprefix("plot_").removesuffix(".png")) == 32
         # #87: the tool no longer embeds a markdown link for the LLM to copy
         # — the plot is announced via the unified `attachment_produced` event
         # instead, so the return value stays a plain confirmation string.
@@ -207,6 +212,7 @@ async def test_plot_provider_fires_attachment_produced_event_and_persists_messag
         file_type="image",
         source="agent_output",
         produced_by_run_id=run_id,
+        original_filename=ANY,
     )
 
     send_event.assert_awaited_once()
@@ -218,6 +224,9 @@ async def test_plot_provider_fires_attachment_produced_event_and_persists_messag
     assert payload["agent"] == "Plotter"
     assert payload["node_id"] == str(agent_id)
     assert payload["run_id"] == str(run_id)
+    assert payload["original_filename"] == mock_repo.save_attachment.await_args.kwargs[
+        "original_filename"
+    ]
     assert payload["conversation_id"] == str(conversation_id)
 
     conversation_service.persist_message.assert_awaited_once()

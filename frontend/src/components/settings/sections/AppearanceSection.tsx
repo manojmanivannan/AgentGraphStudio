@@ -51,7 +51,7 @@ export function AppearanceSection() {
               <span className="block text-sm font-medium text-[var(--color-text-primary)]">
                 {option.label}
               </span>
-              <span className="block text-[11px] text-[var(--color-text-tertiary)] mt-0.5">
+              <span className="block text-[13px] text-[var(--color-text-tertiary)] mt-0.5">
                 {option.description}
               </span>
             </button>

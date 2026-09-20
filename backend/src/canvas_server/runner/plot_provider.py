@@ -104,7 +104,7 @@ class PlotProvider:
         os.makedirs(plots_dir, exist_ok=True)
 
         markdown_links = []
-        stored_attachments: list[tuple[AttachmentInstance, str]] = []
+        stored_attachments: list[tuple[AttachmentInstance, str, str]] = []
         plots = result.plots if hasattr(result, "plots") and result.plots else []
         run_id = self.run_state.run_id if self.run_state else None
         for index, plot in enumerate(plots, start=1):
@@ -124,6 +124,7 @@ class PlotProvider:
                     else self.conversation_id
                 )
                 name = "plot" if len(plots) == 1 else f"plot_{index}"
+                original_filename = f"{name}_{uuid.uuid4().hex}.{ext}"
                 plot_record = await self.conversation_repo.save_attachment(
                     conversation_id=conv_id,
                     content=plot_bytes,
@@ -131,8 +132,9 @@ class PlotProvider:
                     file_type="image",
                     source="agent_output",
                     produced_by_run_id=run_id,
+                    original_filename=original_filename,
                 )
-                stored_attachments.append((plot_record, name))
+                stored_attachments.append((plot_record, name, original_filename))
             else:
                 filename = f"{uuid.uuid4().hex}.{ext}"
                 filepath = os.path.join(plots_dir, filename)
@@ -159,7 +161,7 @@ class PlotProvider:
                 if isinstance(self.conversation_id, str)
                 else self.conversation_id
             )
-            for plot_record, name in stored_attachments:
+            for plot_record, name, original_filename in stored_attachments:
                 await announce_attachment_produced(
                     send_event=self.run_state.send_event,
                     conversation_service=getattr(self.run_state, "conversation_service", None),
@@ -171,10 +173,11 @@ class PlotProvider:
                     source="agent_output",
                     conversation_id=conv_id_for_event,
                     run_id=run_id,
+                    original_filename=original_filename,
                 )
 
         if stored_attachments:
-            names = ", ".join(f"'{name}'" for _, name in stored_attachments)
+            names = ", ".join(f"'{name}'" for _, name, _ in stored_attachments)
             plural = "s" if len(stored_attachments) > 1 else ""
             result_str = (
                 f"Plot{plural} generated successfully and attached to the "

@@ -155,24 +155,24 @@ export function ToolEditor() {
       </div>
 
       <div className="flex items-center justify-between p-2.5 bg-[var(--color-info-surface)] border border-[var(--color-info)]/15 rounded-lg">
-        <span className="text-[10px] font-semibold text-[var(--color-info)] uppercase tracking-[0.1em]">
+        <span className="text-[12px] font-semibold text-[var(--color-info)] uppercase tracking-[0.1em]">
           Inferred Arguments
         </span>
         <div className="flex gap-1">
           {args.length > 0 ? (
             args.map((arg) => (
-              <span key={arg} className="px-1.5 py-0.5 bg-[var(--color-base)] border border-[var(--color-info)]/20 text-[var(--color-info)] rounded text-[10px] font-[var(--font-mono)]">
+              <span key={arg} className="px-1.5 py-0.5 bg-[var(--color-base)] border border-[var(--color-info)]/20 text-[var(--color-info)] rounded text-[12px] font-[var(--font-mono)]">
                 {arg}
               </span>
             ))
           ) : (
-            <span className="text-[10px] text-[var(--color-text-tertiary)] italic">None detected</span>
+            <span className="text-[12px] text-[var(--color-text-tertiary)] italic">None detected</span>
           )}
         </div>
       </div>
 
       <div>
-        <label className="block text-[11px] font-semibold text-[var(--color-text-tertiary)] mb-1.5 uppercase tracking-[0.06em]">Name</label>
+        <label className="block text-[13px] font-semibold text-[var(--color-text-tertiary)] mb-1.5 uppercase tracking-[0.06em]">Name</label>
         <input
           type="text"
           value={localName}
@@ -187,7 +187,7 @@ export function ToolEditor() {
       </div>
 
       <div>
-        <label className="block text-[11px] font-semibold text-[var(--color-text-tertiary)] mb-1.5 uppercase tracking-[0.06em]">Python Packages</label>
+        <label className="block text-[13px] font-semibold text-[var(--color-text-tertiary)] mb-1.5 uppercase tracking-[0.06em]">Python Packages</label>
         <input
           type="text"
           value={localPackages}
@@ -221,14 +221,14 @@ export function ToolEditor() {
           />
           <div>
             <span className="text-[12px] font-medium text-[var(--color-text-secondary)] group-hover:text-[var(--color-text-primary)] transition-colors">Requires Approval</span>
-            <p className="text-[10px] text-[var(--color-text-tertiary)] mt-0.5">Require human approval before running this tool</p>
+            <p className="text-[12px] text-[var(--color-text-tertiary)] mt-0.5">Require human approval before running this tool</p>
           </div>
         </label>
       </div>
 
       <div>
         <div className="mb-1.5 flex items-center gap-1.5">
-          <label className="text-[11px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-[0.06em]">Python Code</label>
+          <label className="text-[13px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-[0.06em]">Python Code</label>
           <InfoTooltip
             testId="tool-python-code-info"
             ariaLabel="Tool python code tips"
@@ -269,7 +269,7 @@ export function ToolEditor() {
             <path d="M9 12l2 2 4-4" />
             <circle cx="12" cy="12" r="10" />
           </svg>
-          <h4 className="text-[11px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-[0.06em]">
+          <h4 className="text-[13px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-[0.06em]">
             Test Tool
           </h4>
         </div>
@@ -302,16 +302,16 @@ export function ToolEditor() {
             {/* Argument inputs */}
             {argumentInfo.length > 0 && (
               <div className="space-y-1.5">
-                <span className="text-[10px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-[0.06em]">
+                <span className="text-[12px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-[0.06em]">
                   Arguments
                 </span>
                 {argumentInfo.map((arg) => {
                   const inputType = getInputTypeForHint(arg.type_hint);
                   return (
                     <div key={arg.name} className="flex items-center gap-2">
-                      <label className="text-[11px] text-[var(--color-text-secondary)] font-medium min-w-[60px]">
+                      <label className="text-[13px] text-[var(--color-text-secondary)] font-medium min-w-[60px]">
                         {arg.name}
-                        <span className="text-[var(--color-text-tertiary)] ml-1 text-[10px]">
+                        <span className="text-[var(--color-text-tertiary)] ml-1 text-[12px]">
                           {arg.type_hint}
                         </span>
                       </label>
@@ -357,7 +357,7 @@ export function ToolEditor() {
 
             {/* No-args message */}
             {argumentInfo.length === 0 && (
-              <p className="text-[11px] text-[var(--color-text-tertiary)] italic">
+              <p className="text-[13px] text-[var(--color-text-tertiary)] italic">
                 No arguments required
               </p>
             )}
@@ -374,7 +374,7 @@ export function ToolEditor() {
               </button>
               <button
                 onClick={handleResetTest}
-                className="btn-ghost text-[11px] px-2 py-1"
+                className="btn-ghost text-[13px] px-2 py-1"
               >
                 Reset
               </button>
@@ -390,11 +390,11 @@ export function ToolEditor() {
                 data-testid="tool-test-result"
               >
                 <div className="flex items-center justify-between mb-1">
-                  <span className={`text-[10px] font-semibold uppercase tracking-[0.06em] ${testResult.success ? "text-[var(--color-success)]" : "text-[var(--color-danger)]"
+                  <span className={`text-[12px] font-semibold uppercase tracking-[0.06em] ${testResult.success ? "text-[var(--color-success)]" : "text-[var(--color-danger)]"
                     }`}>
                     {testResult.success ? "Output" : "Error"}
                   </span>
-                  <span className="text-[10px] text-[var(--color-text-tertiary)]">
+                  <span className="text-[12px] text-[var(--color-text-tertiary)]">
                     {testResult.execution_time_ms.toFixed(1)}ms
                   </span>
                 </div>

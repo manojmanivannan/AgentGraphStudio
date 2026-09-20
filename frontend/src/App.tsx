@@ -21,8 +21,8 @@ import {
   logout as logoutApi,
 } from "@/lib/api";
 import { decodeCanvasResponse } from "@/lib/canvasGraphCodec";
+import { resetCanvasHistory } from "@/store/canvasHistoryStore";
 import {
-  Plus,
   FileText,
   Upload,
   Trash2,
@@ -31,7 +31,6 @@ import {
   X,
   HelpCircle,
   Check,
-  MessageSquare,
   Settings as SettingsIcon,
   LogOut,
 } from "lucide-react";
@@ -39,6 +38,7 @@ import type { CanvasListItem, CanvasSavePayload } from "@/types";
 import type { Node } from "@xyflow/react";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { useThemeStore } from "@/store/themeStore";
+import { LandingHero } from "@/components/landing/LandingHero";
 
 function getRelativeTimeString(dateStr: string): string {
   try {
@@ -88,6 +88,10 @@ function CanvasEditorPage({
       const decoded = decodeCanvasResponse(canvas);
       setNodes(decoded.nodes);
       setEdges(decoded.edges);
+      // Loading a canvas isn't a user edit — it shouldn't be undoable, nor
+      // should it flag the canvas as having unsaved changes.
+      resetCanvasHistory();
+      useCanvasStore.getState().setIsDirty(false);
     } catch (err: any) {
       setError(err?.message || "Failed to open canvas.");
       console.error("Failed to open canvas:", err);
@@ -260,11 +264,6 @@ function LandingPage({
         className="hidden"
       />
 
-      {/* Ambient background glow */}
-      <div className="absolute top-1/4 left-1/3 w-[500px] h-[500px] bg-[var(--color-accent)] opacity-[0.03] rounded-full blur-[120px] pointer-events-none" />
-      <div className="absolute bottom-1/4 right-1/3 w-[400px] h-[400px] bg-[var(--color-secondary)] opacity-[0.02] rounded-full blur-[100px] pointer-events-none" />
-      <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-gradient-to-tr from-slate-500 to-zinc-400 opacity-[0.03] rounded-full blur-[130px] pointer-events-none" />
-
       {/* Header */}
       <header className="w-full max-w-4xl flex items-center justify-between mb-12 relative z-10">
         <div className="flex items-center gap-3">
@@ -325,77 +324,16 @@ function LandingPage({
         </div>
       )}
 
-      {/* Hero Cards Grid */}
-      <div className={`grid grid-cols-1 ${canvases.length > 0 ? "md:grid-cols-3" : "md:grid-cols-2"} gap-6 w-full max-w-4xl mb-12 relative z-10`}>
-        {/* New Canvas Card */}
-        <button
-          onClick={handleCreateCanvas}
-          disabled={loading}
-          className="group relative flex flex-col items-start p-6 rounded-2xl bg-gradient-to-br from-[var(--color-surface)] to-[var(--color-elevated)] border border-[var(--color-border-default)] hover:border-[var(--color-accent)] transition-all duration-300 text-left shadow-[0_4px_20px_rgba(0,0,0,0.35),0_0_12px_rgba(255,255,255,0.02)] hover:shadow-[0_0_30px_-5px_rgba(20,184,166,0.15),0_0_15px_rgba(255,255,255,0.04),0_8px_32px_-4px_rgba(0,0,0,0.5)] disabled:opacity-40"
-        >
-          <div className="w-12 h-12 rounded-xl bg-[var(--color-accent-subtle)] border border-[var(--color-border-default)] flex items-center justify-center text-[var(--color-accent)] group-hover:scale-110 transition-transform duration-300 mb-4 shadow-inner">
-            <Plus className="w-6 h-6" />
-          </div>
-          <h3 className="text-lg font-semibold text-[var(--color-text-primary)] mb-1">
-            New Canvas
-          </h3>
-          <p className="text-xs text-[var(--color-text-secondary)] leading-relaxed">
-            Start building a custom multi-agent system from scratch using the interactive visual node designer.
-          </p>
-          <div className="absolute bottom-4 right-4 text-xs text-[var(--color-accent)] font-semibold opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-            Create &rarr;
-          </div>
-        </button>
-
-        {/* Import ZIP Card */}
-        <button
-          onClick={() => fileInputRef.current?.click()}
-          disabled={loading}
-          className="group relative flex flex-col items-start p-6 rounded-2xl bg-gradient-to-br from-[var(--color-surface)] to-[var(--color-elevated)] border border-[var(--color-border-default)] hover:border-[var(--color-secondary)] transition-all duration-300 text-left shadow-[0_4px_20px_rgba(0,0,0,0.35),0_0_12px_rgba(255,255,255,0.02)] hover:shadow-[0_0_30px_-5px_rgba(245,158,11,0.15),0_0_15px_rgba(255,255,255,0.04),0_8px_32px_-4px_rgba(0,0,0,0.5)] disabled:opacity-40"
-        >
-          <div className="w-12 h-12 rounded-xl bg-[var(--color-secondary-subtle)] border border-[var(--color-border-default)] flex items-center justify-center text-[var(--color-secondary)] group-hover:scale-110 transition-transform duration-300 mb-4 shadow-inner">
-            <Upload className="w-6 h-6" />
-          </div>
-          <h3 className="text-lg font-semibold text-[var(--color-text-primary)] mb-1">
-            Import Canvas
-          </h3>
-          <p className="text-xs text-[var(--color-text-secondary)] leading-relaxed">
-            Upload a `.zip` archive or `.json` file containing agent configurations, custom tool code, and RAG document artifacts.
-          </p>
-          <div className="absolute bottom-4 right-4 text-xs text-[var(--color-secondary)] font-semibold opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-            Upload &rarr;
-          </div>
-        </button>
-
-        {/* Agent Chat Card */}
-        {canvases.length > 0 && (
-          <button
-            onClick={() => {
-              const canvasId = canvases[0]?.id;
-              if (canvasId) {
-                navigate(`/chat/empty?canvas=${canvasId}`);
-              } else {
-                navigate(`/chat/empty`);
-              }
-            }}
-            disabled={loading}
-            className="group relative flex flex-col items-start p-6 rounded-2xl bg-gradient-to-br from-[var(--color-surface)] to-[var(--color-elevated)] border border-[var(--color-border-default)] hover:border-[var(--color-agent)] transition-all duration-300 text-left shadow-[0_4px_20px_rgba(0,0,0,0.35),0_0_12px_rgba(255,255,255,0.02)] hover:shadow-[0_0_30px_-5px_rgba(99,102,241,0.15),0_0_15px_rgba(255,255,255,0.04),0_8px_32px_-4px_rgba(0,0,0,0.5)] disabled:opacity-40"
-          >
-            <div className="w-12 h-12 rounded-xl bg-[var(--color-agent-subtle)] border border-[var(--color-border-default)] flex items-center justify-center text-[var(--color-agent)] group-hover:scale-110 transition-transform duration-300 mb-4 shadow-inner">
-              <MessageSquare className="w-6 h-6" />
-            </div>
-            <h3 className="text-lg font-semibold text-[var(--color-text-primary)] mb-1">
-              Agent Chat
-            </h3>
-            <p className="text-xs text-[var(--color-text-secondary)] leading-relaxed">
-              Start chatting with your agent workflow, ask questions, run tool actions, and orchestrate agent task completion.
-            </p>
-            <div className="absolute bottom-4 right-4 text-xs text-[var(--color-agent)] font-semibold opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-              Chat &rarr;
-            </div>
-          </button>
-        )}
-      </div>
+      <LandingHero
+        hasCanvases={canvases.length > 0}
+        loading={loading}
+        onCreateCanvas={handleCreateCanvas}
+        onImportClick={() => fileInputRef.current?.click()}
+        onChatClick={() => {
+          const canvasId = canvases[0]?.id;
+          navigate(canvasId ? `/chat/empty?canvas=${canvasId}` : "/chat/empty");
+        }}
+      />
 
       {/* Loading Spinner */}
       {loading && (
@@ -404,9 +342,8 @@ function LandingPage({
             {[0, 1, 2].map((i) => (
               <span
                 key={i}
-                className="w-1.5 h-1.5 rounded-full bg-[var(--color-accent)]"
+                className="w-1.5 h-1.5 rounded-full bg-[var(--color-accent)] dot-pulse"
                 style={{
-                  animation: "dotPulse 1.2s ease-in-out infinite",
                   animationDelay: `${i * 0.15}s`,
                 }}
               />
@@ -421,13 +358,13 @@ function LandingPage({
       >
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4 px-1">
           <div className="flex items-center gap-3">
-            <h2 className="text-[11px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-[0.1em]">
+            <h2 className="text-[13px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-[0.1em]">
               Recent Canvases
             </h2>
             {canvases.length > 0 && !selectMode && (
               <button
                 onClick={() => setSelectMode(true)}
-                className="btn-secondary text-[10px] px-2 py-0.5 rounded-md font-medium cursor-pointer"
+                className="btn-secondary text-[12px] px-2 py-0.5 rounded-md font-medium cursor-pointer"
               >
                 Select
               </button>
@@ -436,7 +373,7 @@ function LandingPage({
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => handleToggleSelectAll(filteredCanvases)}
-                  className="btn-secondary text-[10px] px-2 py-0.5 rounded-md font-medium cursor-pointer"
+                  className="btn-secondary text-[12px] px-2 py-0.5 rounded-md font-medium cursor-pointer"
                 >
                   {filteredCanvases.length > 0 && filteredCanvases.every((c) => selectedCanvasIds.has(c.id))
                     ? "Deselect All"
@@ -444,14 +381,14 @@ function LandingPage({
                 </button>
                 <button
                   onClick={handleCancelSelect}
-                  className="btn-secondary text-[10px] px-2 py-0.5 rounded-md font-medium cursor-pointer"
+                  className="btn-secondary text-[12px] px-2 py-0.5 rounded-md font-medium cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={() => setDeleteConfirmIds(Array.from(selectedCanvasIds))}
                   disabled={selectedCanvasIds.size === 0}
-                  className="btn-primary bg-[var(--color-danger)] hover:bg-red-600 text-white text-[10px] px-2 py-0.5 rounded-md font-medium disabled:opacity-40 cursor-pointer disabled:cursor-not-allowed"
+                  className="btn-primary bg-[var(--color-danger)] hover:bg-red-600 text-white text-[12px] px-2 py-0.5 rounded-md font-medium disabled:opacity-40 cursor-pointer disabled:cursor-not-allowed"
                 >
                   Delete Selected ({selectedCanvasIds.size})
                 </button>
@@ -497,7 +434,7 @@ function LandingPage({
                     toggleSelectCanvas(c.id);
                   }
                 }}
-                className={`group relative flex items-center justify-between p-4 bg-gradient-to-r from-[var(--color-surface)] to-[var(--color-elevated)] border rounded-xl transition-all duration-300 shadow-[0_4px_16px_rgba(0,0,0,0.25)] hover:shadow-[0_0_24px_-4px_rgba(116,116,139,0.18),0_0_8px_-2px_rgba(116,116,139,0.08),0_4px_12px_rgba(0,0,0,0.35)] ${selectMode
+                className={`group relative flex items-center justify-between p-4 bg-gradient-to-r from-[var(--color-surface)] to-[var(--color-elevated)] border rounded-xl transition-all duration-300 shadow-[0_4px_16px_rgba(0,0,0,0.25)] hover:shadow-[0_0_24px_-4px_rgba(116,116,139,0.18),0_0_8px_-2px_rgba(116,116,139,0.08),0_4px_12px_rgba(0,0,0,0.35)] animate-fade-in ${selectMode
                   ? selectedCanvasIds.has(c.id)
                     ? "border-[var(--color-accent)]"
                     : "border-[var(--color-border-subtle)] hover:border-[var(--color-border-default)] cursor-pointer"
@@ -534,7 +471,7 @@ function LandingPage({
                     <span className="block text-[13px] font-semibold text-[var(--color-text-primary)] truncate">
                       {c.name}
                     </span>
-                    <span className="block text-[11px] text-[var(--color-text-tertiary)] font-light mt-0.5">
+                    <span className="block text-[13px] text-[var(--color-text-tertiary)] font-light mt-0.5">
                       {c.updated_at
                         ? `Updated ${getRelativeTimeString(c.updated_at)}`
                         : c.created_at

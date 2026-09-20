@@ -65,4 +65,21 @@ describe("ProducedAttachmentCard", () => {
       "CurrentTemperature.txt"
     );
   });
+
+  it("prefers the persisted unique filename", () => {
+    render(
+      <ProducedAttachmentCard
+        name="plot"
+        fileType="image"
+        attachmentId="attachment-plot"
+        originalFilename="plot_a1b2c3d4.png"
+      />
+    );
+
+    expect(screen.getByText("plot_a1b2c3d4.png")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /download/i })).toHaveAttribute(
+      "download",
+      "plot_a1b2c3d4.png"
+    );
+  });
 });

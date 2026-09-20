@@ -12,6 +12,7 @@ Three strategies, each extracted from the three-way branch in the original
 from __future__ import annotations
 
 import logging
+import re
 import uuid
 from abc import ABC, abstractmethod
 from collections.abc import Callable
@@ -19,6 +20,10 @@ from typing import TYPE_CHECKING, Any
 
 import dspy
 
+from canvas_server.attachment_delivery import (
+    declared_input_nodes,
+    first_image_attachment_field_name,
+)
 from canvas_server.exceptions import (
     AttachmentTooLargeError,
     LLMConfigurationError,
@@ -33,6 +38,7 @@ from canvas_server.runner.attachment_events import announce_attachment_produced
 from canvas_server.runner.config import RunContext
 from canvas_server.runner.input_attachment_delivery import (
     deliver_and_announce_input_attachments,
+    deliver_generated_attachment_context,
 )
 from canvas_server.runner.sandbox_output_capture import read_sandbox_file
 from canvas_server.runner.tracing import agent_span
@@ -332,6 +338,12 @@ async def store_output_attachments(
                 continue
             content = sandbox_bytes
 
+        filename_stem = re.sub(r"[^A-Za-z0-9_.-]+", "_", attachment.name).strip("._")
+        filename_stem = filename_stem or "attachment"
+        original_filename = (
+            f"{filename_stem}_{uuid.uuid4().hex}.{file_type_to_format(attachment.file_type)}"
+        )
+
         try:
             stored = await conversation_repo.save_attachment(
                 conversation_id=conversation_id,
@@ -341,6 +353,7 @@ async def store_output_attachments(
                 source="agent_output",
                 attachment_node_id=attachment.node_id,
                 produced_by_run_id=run_id,
+                original_filename=original_filename,
             )
         except AttachmentTooLargeError as exc:
             logger.warning(
@@ -362,6 +375,7 @@ async def store_output_attachments(
             source="agent_output",
             conversation_id=conversation_id,
             run_id=run_id,
+            original_filename=original_filename,
         )
 
 
@@ -551,7 +565,20 @@ class ExecutionStrategy(ExecutionStrategyBase):
         if canvas is None or conversation_repo is None or conversation_id is None:
             return user_prompt, {}, []
 
-        return await deliver_and_announce_input_attachments(
+        declared_inputs = declared_input_nodes(
+            getattr(canvas, "edges", []) or [],
+            getattr(canvas, "attachment_nodes", []) or [],
+            agent_id,
+        )
+        user_prompt, generated, generated_kwargs = await deliver_generated_attachment_context(
+            image_field_name=first_image_attachment_field_name(declared_inputs),
+            agent_node=agent_node,
+            conversation_repo=conversation_repo,
+            conversation_id=conversation_id,
+            user_prompt=user_prompt,
+        )
+
+        prompt, attachment_kwargs, delivered = await deliver_and_announce_input_attachments(
             agent_node=agent_node,
             agent_id=agent_id,
             canvas=canvas,
@@ -563,6 +590,11 @@ class ExecutionStrategy(ExecutionStrategyBase):
             user_prompt=user_prompt,
             emit_agent_start=emit_agent_start,
         )
+        # A freshly-delivered input attachment's own image (if any) takes
+        # precedence over a re-surfaced generated one — `attachment_kwargs`
+        # is merged in second so it overrides `generated_kwargs`.
+        merged_kwargs = {**generated_kwargs, **attachment_kwargs}
+        return prompt, merged_kwargs, [*generated, *delivered]
 
     def _record_consumed_file_attachments(self, delivered: list[DeliveredAttachment]) -> None:
         """Folds this call's ``sandbox_path``-bearing deliveries into

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
+import { ReactFlowProvider } from "@xyflow/react";
 import { useCanvasStore } from "@/store/canvasStore";
 import { AgentNode } from "./AgentNode";
 import type { AgentNodeData } from "@/types";
@@ -78,5 +79,36 @@ describe("AgentNode", () => {
     useCanvasStore.getState().setActiveNodeId("other-node");
     const { container } = render(<AgentNode {...makeProps({ id: "node-1" })} />);
     expect(container.firstChild).not.toHaveClass("glow-active-pulse");
+  });
+
+  it("gives the Settings gear button a p-1.5 hit target instead of p-1", () => {
+    render(<AgentNode {...makeProps()} />);
+    const settingsButton = screen.getByTitle("Settings");
+    expect(settingsButton).toHaveClass("p-1.5");
+    expect(settingsButton).not.toHaveClass("p-1");
+  });
+
+  it("uses the worker accent color for the selected border", () => {
+    const { container } = render(
+      <ReactFlowProvider>
+        <AgentNode {...makeProps({ agentType: "worker" })} selected />
+      </ReactFlowProvider>
+    );
+    expect(container.firstChild).toHaveClass("border-[var(--color-accent)]");
+    expect(container.firstChild).not.toHaveClass("border-[var(--color-agent)]");
+    expect(container.firstChild).toHaveClass(/var\(--color-accent-glow\)/);
+    expect(container.firstChild).not.toHaveClass(/rgba\(20,184,166/);
+  });
+
+  it("uses the router color for the selected border instead of the worker accent", () => {
+    const { container } = render(
+      <ReactFlowProvider>
+        <AgentNode {...makeProps({ agentType: "router" })} selected />
+      </ReactFlowProvider>
+    );
+    expect(container.firstChild).toHaveClass("border-[var(--color-agent)]");
+    expect(container.firstChild).not.toHaveClass("border-[var(--color-accent)]");
+    expect(container.firstChild).toHaveClass(/var\(--color-agent-glow\)/);
+    expect(container.firstChild).not.toHaveClass(/rgba\(139,92,246/);
   });
 });

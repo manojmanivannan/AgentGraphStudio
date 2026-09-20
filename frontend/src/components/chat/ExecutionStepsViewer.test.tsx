@@ -47,6 +47,26 @@ describe("ExecutionStepsViewer", () => {
     expect(screen.getByText("2.0")).toBeInTheDocument();
   });
 
+  it("uses the animate-fade-in class (not an inline animation style) for the step entrance, so prefers-reduced-motion can neutralize it", () => {
+    const step: Message = {
+      id: "step-1",
+      conversation_id: "conv-1",
+      role: "tool",
+      content: "done",
+      agent_name: "CoderAgent",
+      tool: "run_code",
+      event_type: "tool_result",
+      created_at: "2026-01-01T00:00:00.000Z",
+    };
+
+    const { container } = render(<ExecutionStepsViewer {...defaultProps} steps={[step]} />);
+
+    const stepWrapper = container.querySelector(".animate-fade-in");
+    expect(stepWrapper).not.toBeNull();
+    const style = stepWrapper?.getAttribute("style") ?? "";
+    expect(style).not.toContain("animation");
+  });
+
   it("allows copying python code to clipboard", async () => {
     const pythonCode = "print('hello world')";
     const writeTextMock = vi.fn().mockResolvedValue(undefined);

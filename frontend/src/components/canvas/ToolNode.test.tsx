@@ -71,4 +71,21 @@ describe("ToolNode", () => {
     );
     expect(container.querySelectorAll(".react-flow__resize-control").length).toBeGreaterThan(0);
   });
+
+  it("gives the Settings gear button a p-1.5 hit target instead of p-1", () => {
+    render(<ToolNode {...makeProps()} />);
+    const settingsButton = screen.getByTitle("Settings");
+    expect(settingsButton).toHaveClass("p-1.5");
+    expect(settingsButton).not.toHaveClass("p-1");
+  });
+
+  it("uses the info glow variable for the selected shadow", () => {
+    const { container } = render(
+      <ReactFlowProvider>
+        <ToolNode {...makeProps({ id: "tool-1" })} selected />
+      </ReactFlowProvider>
+    );
+    expect(container.firstChild).toHaveClass(/var\(--color-info-glow\)/);
+    expect(container.firstChild).not.toHaveClass(/rgba\(59,130,246/);
+  });
 });

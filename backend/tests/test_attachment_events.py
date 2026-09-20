@@ -39,6 +39,7 @@ async def test_announce_attachment_produced_fires_event_and_persists_message():
         source="agent_output",
         conversation_id=conversation_id,
         run_id=run_id,
+        original_filename="report_abc123.txt",
     )
 
     send_event.assert_awaited_once()
@@ -53,6 +54,7 @@ async def test_announce_attachment_produced_fires_event_and_persists_message():
         "run_id": str(run_id),
         "agent": "Reporter",
         "node_id": str(agent_id),
+        "original_filename": "report_abc123.txt",
     }
 
     conversation_service.persist_message.assert_awaited_once_with(
@@ -67,6 +69,7 @@ async def test_announce_attachment_produced_fires_event_and_persists_message():
             "file_type": "text",
             "source": "agent_output",
             "run_id": str(run_id),
+            "original_filename": "report_abc123.txt",
         },
     )
 

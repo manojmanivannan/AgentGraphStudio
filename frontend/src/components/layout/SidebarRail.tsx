@@ -17,8 +17,10 @@ import {
   Settings as SettingsIcon,
 } from "lucide-react";
 import { useCanvasStore } from "@/store/canvasStore";
+import { resetCanvasHistory } from "@/store/canvasHistoryStore";
 import { useThemeStore } from "@/store/themeStore";
 import { useSettingsModalStore } from "@/store/settingsModalStore";
+import { guardUnsavedNavigation } from "@/lib/unsavedChangesGuard";
 import {
   exportCanvasZip,
   importCanvas,
@@ -178,6 +180,10 @@ export function SidebarRail() {
       const decoded = decodeCanvasResponse(imported);
       setNodes(decoded.nodes);
       setEdges(decoded.edges);
+      // Importing loads a fresh canvas — not a user edit, so it shouldn't be
+      // undoable, nor should it flag the canvas as having unsaved changes.
+      resetCanvasHistory();
+      useCanvasStore.getState().setIsDirty(false);
     } catch (err) {
       console.error("Failed to import canvas:", err);
     }
@@ -187,23 +193,25 @@ export function SidebarRail() {
 
   const handleChatClick = async () => {
     if (!canvasId) return;
-    try {
-      const convs = await listConversations(canvasId);
-      if (convs && convs.length > 0) {
-        navigate(`/chat/${convs[0].id}`);
-      } else {
-        const newConv = await createConversation(canvasId, "New Conversation");
-        navigate(`/chat/${newConv.id}`);
-      }
-    } catch (err) {
-      console.error("Failed to list/create conversations in SidebarRail:", err);
+    await guardUnsavedNavigation(async () => {
       try {
-        const newConv = await createConversation(canvasId, "New Conversation");
-        navigate(`/chat/${newConv.id}`);
-      } catch (e) {
-        console.error("Fallback new conversation creation failed:", e);
+        const convs = await listConversations(canvasId);
+        if (convs && convs.length > 0) {
+          navigate(`/chat/${convs[0].id}`);
+        } else {
+          const newConv = await createConversation(canvasId, "New Conversation");
+          navigate(`/chat/${newConv.id}`);
+        }
+      } catch (err) {
+        console.error("Failed to list/create conversations in SidebarRail:", err);
+        try {
+          const newConv = await createConversation(canvasId, "New Conversation");
+          navigate(`/chat/${newConv.id}`);
+        } catch (e) {
+          console.error("Fallback new conversation creation failed:", e);
+        }
       }
-    }
+    });
   };
 
   const navItemClass = (toPath: string, testId?: string) => {
@@ -295,6 +303,11 @@ export function SidebarRail() {
         <div className="space-y-1.5 w-full">
           <Link
             to="/"
+            onClick={(e) => {
+              if (!useCanvasStore.getState().isDirty) return;
+              e.preventDefault();
+              void guardUnsavedNavigation(() => navigate("/"));
+            }}
             className={navItemClass("/")}
             title="Home"
           >
@@ -348,7 +361,7 @@ export function SidebarRail() {
           {sidebarCollapsed ? (
             <div className="border-t border-[var(--color-border-subtle)] my-2" />
           ) : (
-            <h3 className="text-[10px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-wider mb-2 whitespace-nowrap">
+            <h3 className="text-[12px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-wider mb-2 whitespace-nowrap">
               Build
             </h3>
           )}
@@ -397,7 +410,7 @@ export function SidebarRail() {
           {sidebarCollapsed ? (
             <div className="border-t border-[var(--color-border-subtle)] my-2" />
           ) : (
-            <h3 className="text-[10px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-wider mb-2 whitespace-nowrap">
+            <h3 className="text-[12px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-wider mb-2 whitespace-nowrap">
               Manage Canvas
             </h3>
           )}
@@ -440,19 +453,19 @@ export function SidebarRail() {
                 anchorRef={clearRef}
               >
                 <div className="p-3">
-                  <p className="text-[11px] text-[var(--color-text-secondary)] mb-2 whitespace-nowrap">
+                  <p className="text-[13px] text-[var(--color-text-secondary)] mb-2 whitespace-nowrap">
                     Clear all nodes and edges?
                   </p>
                   <div className="flex gap-2 justify-end">
                     <button
                       onClick={() => setClearOpen(false)}
-                      className="btn-ghost text-[10px] px-2 py-1"
+                      className="btn-ghost text-[12px] px-2 py-1"
                     >
                       Cancel
                     </button>
                     <button
                       onClick={clearCanvas}
-                      className="btn-danger-ghost text-[10px] px-2 py-1"
+                      className="btn-danger-ghost text-[12px] px-2 py-1"
                     >
                       Clear
                     </button>

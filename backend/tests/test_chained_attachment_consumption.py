@@ -164,7 +164,7 @@ class TestChainedAgentOutputConsumedByHandoffTarget:
             )
             send_event_b = AsyncMock()
 
-            await deliver_and_announce_input_attachments(
+            _, _, delivered = await deliver_and_announce_input_attachments(
                 agent_node=agent_node_b,
                 agent_id=agent_b_id,
                 canvas=canvas_b,
@@ -180,7 +180,10 @@ class TestChainedAgentOutputConsumedByHandoffTarget:
             emitted_types = [call.args[0]["type"] for call in send_event_b.await_args_list]
             assert emitted_types.index("agent_start") < emitted_types.index("attachment_consumed")
 
-            sandbox_path = f"{SANDBOX_ATTACHMENT_DIR}/orders.csv"
+            sandbox_path = delivered[0].sandbox_path
+            assert sandbox_path is not None
+            assert sandbox_path.startswith(f"{SANDBOX_ATTACHMENT_DIR}/orders_")
+            assert sandbox_path.endswith(".csv")
 
             # Consumed — a later turn must never redeliver the same instance.
             remaining = await conversation_repo.get_unconsumed_input_attachments(

@@ -108,7 +108,7 @@ export function SettingsDialog() {
                     <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">
                       {label}
                     </h3>
-                    <p className="text-[11px] text-[var(--color-text-tertiary)]">
+                    <p className="text-[13px] text-[var(--color-text-tertiary)]">
                       {description}
                     </p>
                   </div>

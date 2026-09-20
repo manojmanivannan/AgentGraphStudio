@@ -112,6 +112,7 @@ async def announce_attachment_produced(
     source: str,
     conversation_id: uuid.UUID | str,
     run_id: uuid.UUID | None,
+    original_filename: str | None = None,
 ) -> None:
     """Fires the ``attachment_produced`` WS event and persists a durable message.
 
@@ -132,6 +133,8 @@ async def announce_attachment_produced(
         source: Either ``"agent_output"`` or ``"chat_upload"``.
         conversation_id: The conversation the attachment belongs to.
         run_id: The durable run that produced this attachment, if any.
+        original_filename: The unique persisted filename shown to the user
+            and rematerialized for later conversation turns.
     """
     run_id_str = str(run_id) if run_id else None
 
@@ -147,6 +150,7 @@ async def announce_attachment_produced(
                 "run_id": run_id_str,
                 "agent": agent_name,
                 "node_id": str(agent_id),
+                "original_filename": original_filename,
             }
         )
 
@@ -163,5 +167,6 @@ async def announce_attachment_produced(
                 "file_type": file_type,
                 "source": source,
                 "run_id": run_id_str,
+                "original_filename": original_filename,
             },
         )

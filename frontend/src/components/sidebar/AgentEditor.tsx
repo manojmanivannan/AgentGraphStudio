@@ -4,6 +4,8 @@ import { Wrench, Plus, Loader2, FileText, Trash2, Paperclip } from "lucide-react
 import { listAgentDocuments, uploadAgentDocument, deleteAgentDocument } from "@/lib/api";
 import type { AgentDocument } from "@/types";
 import { InfoTooltip } from "./InfoTooltip";
+import { toast } from "@/store/toastStore";
+import { confirm } from "@/store/confirmStore";
 
 export function AgentEditor() {
   const selectedNodeId = useCanvasStore((s) => s.selectedNodeId);
@@ -52,7 +54,7 @@ export function AgentEditor() {
       setDocuments((prev) => [doc, ...prev]);
     } catch (err) {
       console.error("Failed to upload document:", err);
-      alert("Failed to upload document");
+      toast.error("Failed to upload document");
     } finally {
       setUploading(false);
       e.target.value = "";
@@ -61,13 +63,19 @@ export function AgentEditor() {
 
   const handleDeleteDoc = async (docId: string) => {
     if (!canvasId || !selectedNodeId) return;
-    if (!confirm("Are you sure you want to delete this document?")) return;
+    const confirmed = await confirm({
+      title: "Delete document",
+      description: "Are you sure you want to delete this document?",
+      confirmLabel: "Delete",
+      danger: true,
+    });
+    if (!confirmed) return;
     try {
       await deleteAgentDocument(canvasId, selectedNodeId, docId);
       setDocuments((prev) => prev.filter((d) => d.id !== docId));
     } catch (err) {
       console.error("Failed to delete document:", err);
-      alert("Failed to delete document");
+      toast.error("Failed to delete document");
     }
   };
 
@@ -134,7 +142,7 @@ export function AgentEditor() {
       </div>
 
       <div>
-        <label className="block text-[11px] font-semibold text-[var(--color-text-tertiary)] mb-1.5 uppercase tracking-[0.06em]">Type</label>
+        <label className="block text-[13px] font-semibold text-[var(--color-text-tertiary)] mb-1.5 uppercase tracking-[0.06em]">Type</label>
         <select
           value={(data as any).agentType ?? "worker"}
           onChange={(e) => handleAgentTypeChange(e.target.value)}
@@ -147,7 +155,7 @@ export function AgentEditor() {
       </div>
 
       <div>
-        <label className="block text-[11px] font-semibold text-[var(--color-text-tertiary)] mb-1.5 uppercase tracking-[0.06em]">Name</label>
+        <label className="block text-[13px] font-semibold text-[var(--color-text-tertiary)] mb-1.5 uppercase tracking-[0.06em]">Name</label>
         <input
           type="text"
           value={(data as any).name ?? ""}
@@ -159,7 +167,7 @@ export function AgentEditor() {
       </div>
 
       <div>
-        <label className="block text-[11px] font-semibold text-[var(--color-text-tertiary)] mb-1.5 uppercase tracking-[0.06em]">Role</label>
+        <label className="block text-[13px] font-semibold text-[var(--color-text-tertiary)] mb-1.5 uppercase tracking-[0.06em]">Role</label>
         <input
           type="text"
           value={(data as any).role ?? ""}
@@ -172,7 +180,7 @@ export function AgentEditor() {
 
       <div>
         <div className="mb-1.5 flex items-center gap-1.5">
-          <label className="text-[11px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-[0.06em]">Instructions</label>
+          <label className="text-[13px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-[0.06em]">Instructions</label>
           {(data as any).agentType === "worker" && (
             <InfoTooltip
               testId="agent-instructions-info"
@@ -192,7 +200,7 @@ export function AgentEditor() {
       </div>
 
       <div className="pt-4 border-t border-[var(--color-border-subtle)] space-y-3">
-        <h4 className="text-[11px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-[0.06em]">Capabilities</h4>
+        <h4 className="text-[13px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-[0.06em]">Capabilities</h4>
 
         <div>
           <label className="flex items-center gap-2.5 cursor-pointer group">
@@ -209,7 +217,9 @@ export function AgentEditor() {
                       n.data?.isEntryPoint === true
                   );
                   if (otherEntryPointAgent) {
-                    alert(`Agent '${otherEntryPointAgent.data.name}' is already selected as the entry point.`);
+                    toast.error(
+                      `Agent '${otherEntryPointAgent.data.name}' is already selected as the entry point.`
+                    );
                     return;
                   }
                 }
@@ -225,7 +235,7 @@ export function AgentEditor() {
             />
             <div>
               <span className="text-[12px] font-medium text-[var(--color-text-secondary)] group-hover:text-[var(--color-text-primary)] transition-colors">Entry Point</span>
-              <p className="text-[10px] text-[var(--color-text-tertiary)] mt-0.5">Designate this agent as the conversation entry point</p>
+              <p className="text-[12px] text-[var(--color-text-tertiary)] mt-0.5">Designate this agent as the conversation entry point</p>
             </div>
           </label>
         </div>
@@ -249,7 +259,7 @@ export function AgentEditor() {
             />
             <div>
               <span className="text-[12px] font-medium text-[var(--color-text-secondary)] group-hover:text-[var(--color-text-primary)] transition-colors">Enable Memory</span>
-              <p className="text-[10px] text-[var(--color-text-tertiary)] mt-0.5">Agent stores and retrieves long-term memories</p>
+              <p className="text-[12px] text-[var(--color-text-tertiary)] mt-0.5">Agent stores and retrieves long-term memories</p>
             </div>
           </label>
         </div>
@@ -274,7 +284,7 @@ export function AgentEditor() {
               />
               <div>
                 <span className="text-[12px] font-medium text-[var(--color-text-secondary)] group-hover:text-[var(--color-text-primary)] transition-colors">Enable Plotting</span>
-                <p className="text-[10px] text-[var(--color-text-tertiary)] mt-0.5">Agent can generate charts and plots</p>
+                <p className="text-[12px] text-[var(--color-text-tertiary)] mt-0.5">Agent can generate charts and plots</p>
               </div>
             </label>
           </div>
@@ -300,7 +310,7 @@ export function AgentEditor() {
               />
               <div>
                 <span className="text-[12px] font-medium text-[var(--color-text-secondary)] group-hover:text-[var(--color-text-primary)] transition-colors">Enable Coding</span>
-                <p className="text-[10px] text-[var(--color-text-tertiary)] mt-0.5">Agent can write and run its own Python</p>
+                <p className="text-[12px] text-[var(--color-text-tertiary)] mt-0.5">Agent can write and run its own Python</p>
               </div>
             </label>
           </div>
@@ -326,7 +336,7 @@ export function AgentEditor() {
               />
               <div>
                 <span className="text-[12px] font-medium text-[var(--color-text-secondary)] group-hover:text-[var(--color-text-primary)] transition-colors">Enable Network</span>
-                <p className="text-[10px] text-[var(--color-text-tertiary)] mt-0.5">Sandbox gets internet + a pip_install tool (open egress)</p>
+                <p className="text-[12px] text-[var(--color-text-tertiary)] mt-0.5">Sandbox gets internet + a pip_install tool (open egress)</p>
               </div>
             </label>
           </div>
@@ -352,7 +362,7 @@ export function AgentEditor() {
               />
               <div>
                 <span className="text-[12px] font-medium text-[var(--color-text-secondary)] group-hover:text-[var(--color-text-primary)] transition-colors">Enable Human-in-the-Loop</span>
-                <p className="text-[10px] text-[var(--color-text-tertiary)] mt-0.5">Let agent ask for clarification or input</p>
+                <p className="text-[12px] text-[var(--color-text-tertiary)] mt-0.5">Let agent ask for clarification or input</p>
               </div>
             </label>
           </div>
@@ -379,14 +389,14 @@ export function AgentEditor() {
               />
               <div>
                 <span className="text-[12px] font-medium text-[var(--color-text-secondary)] group-hover:text-[var(--color-text-primary)] transition-colors">Enable RAG Documents</span>
-                <p className="text-[10px] text-[var(--color-text-tertiary)] mt-0.5">Substitute retrieved documents into prompt</p>
+                <p className="text-[12px] text-[var(--color-text-tertiary)] mt-0.5">Substitute retrieved documents into prompt</p>
               </div>
             </label>
 
             {(data as any).enableRag && (
               <div className="mt-3 pl-7 space-y-3 border-l border-[var(--color-border-subtle)]">
                 <div>
-                  <label className="block text-[10px] font-semibold text-[var(--color-text-tertiary)] mb-1 uppercase tracking-[0.06em]">Chunk Size (tokens)</label>
+                  <label className="block text-[12px] font-semibold text-[var(--color-text-tertiary)] mb-1 uppercase tracking-[0.06em]">Chunk Size (tokens)</label>
                   <input
                     type="number"
                     value={(data as any).ragChunkSize ?? 1000}
@@ -406,7 +416,7 @@ export function AgentEditor() {
                 </div>
 
                 <div>
-                  <label className="block text-[10px] font-semibold text-[var(--color-text-tertiary)] mb-1 uppercase tracking-[0.06em]">Top K Chunks</label>
+                  <label className="block text-[12px] font-semibold text-[var(--color-text-tertiary)] mb-1 uppercase tracking-[0.06em]">Top K Chunks</label>
                   <input
                     type="number"
                     value={(data as any).ragTopK ?? 5}
@@ -428,8 +438,8 @@ export function AgentEditor() {
 
                 <div className="space-y-2 pt-1">
                   <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-[0.06em]">Documents</span>
-                    <label className="text-[11px] text-[var(--color-accent)] hover:text-[var(--color-accent-bright)] cursor-pointer flex items-center gap-1 font-medium transition-colors">
+                    <span className="text-[12px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-[0.06em]">Documents</span>
+                    <label className="text-[13px] text-[var(--color-accent)] hover:text-[var(--color-accent-bright)] cursor-pointer flex items-center gap-1 font-medium transition-colors">
                       {uploading ? (
                         <Loader2 className="w-3 h-3 animate-spin" />
                       ) : (
@@ -448,16 +458,18 @@ export function AgentEditor() {
 
                   <div className="space-y-1 max-h-[150px] overflow-y-auto pr-1">
                     {loadingDocs ? (
-                      <p className="text-[11px] text-[var(--color-text-tertiary)] italic">Loading documents...</p>
+                      <p className="text-[13px] text-[var(--color-text-tertiary)] italic">Loading documents...</p>
                     ) : documents.length > 0 ? (
                       documents.map((doc) => (
-                        <div key={doc.id} className="flex items-center justify-between px-2 py-1.5 bg-[var(--color-warning-surface)]/20 border border-[var(--color-border-subtle)] rounded-lg text-[11px] text-[var(--color-text-secondary)]">
+                        <div key={doc.id} className="flex items-center justify-between px-2 py-1.5 bg-[var(--color-warning-surface)]/20 border border-[var(--color-border-subtle)] rounded-lg text-[13px] text-[var(--color-text-secondary)]">
                           <span className="truncate flex items-center gap-1.5 max-w-[80%]">
                             <FileText className="w-3.5 h-3.5 text-[var(--color-text-tertiary)] flex-shrink-0" />
                             <span className="truncate" title={doc.name}>{doc.name}</span>
                           </span>
                           <button
                             onClick={() => handleDeleteDoc(doc.id)}
+                            data-testid={`agent-delete-document-${doc.id}`}
+                            aria-label={`Delete ${doc.name}`}
                             className="text-[var(--color-text-tertiary)] hover:text-red-500 hover:bg-red-500/10 p-1 rounded-md transition-colors"
                           >
                             <Trash2 className="w-3 h-3" />
@@ -465,7 +477,7 @@ export function AgentEditor() {
                         </div>
                       ))
                     ) : (
-                      <p className="text-[11px] text-[var(--color-text-tertiary)] italic">No documents uploaded.</p>
+                      <p className="text-[13px] text-[var(--color-text-tertiary)] italic">No documents uploaded.</p>
                     )}
                   </div>
                 </div>
@@ -494,14 +506,14 @@ export function AgentEditor() {
               />
               <div>
                 <span className="text-[12px] font-medium text-[var(--color-text-secondary)] group-hover:text-[var(--color-text-primary)] transition-colors">Enable Conversation History</span>
-                <p className="text-[10px] text-[var(--color-text-tertiary)] mt-0.5">Agent sees prior conversation turns</p>
+                <p className="text-[12px] text-[var(--color-text-tertiary)] mt-0.5">Agent sees prior conversation turns</p>
               </div>
             </label>
           </div>
         )}
 
         <div className="pt-3 border-t border-[var(--color-border-subtle)]">
-          <h4 className="text-[11px] font-semibold text-[var(--color-text-tertiary)] mb-2 uppercase tracking-[0.06em] flex items-center gap-1.5">
+          <h4 className="text-[13px] font-semibold text-[var(--color-text-tertiary)] mb-2 uppercase tracking-[0.06em] flex items-center gap-1.5">
             <Paperclip className="w-3 h-3" /> Linked Attachments
           </h4>
           <div className="space-y-1">
@@ -516,7 +528,7 @@ export function AgentEditor() {
                 return (
                   <div
                     key={attachment.id}
-                    className="flex items-center justify-between px-2.5 py-1.5 bg-[var(--color-warning-surface)]/40 text-[var(--color-text-secondary)] border border-[var(--color-warning)]/15 rounded-lg text-[11px] font-medium transition-colors hover:border-[var(--color-warning)]/30"
+                    className="flex items-center justify-between px-2.5 py-1.5 bg-[var(--color-warning-surface)]/40 text-[var(--color-text-secondary)] border border-[var(--color-warning)]/15 rounded-lg text-[13px] font-medium transition-colors hover:border-[var(--color-warning)]/30"
                   >
                     <span className="truncate flex items-center gap-1.5">
                       <Paperclip className="w-3 h-3 text-[var(--color-warning)] flex-shrink-0" />
@@ -534,13 +546,13 @@ export function AgentEditor() {
                 );
               })
             ) : (
-              <p className="text-[11px] text-[var(--color-text-tertiary)] italic">No attachments linked</p>
+              <p className="text-[13px] text-[var(--color-text-tertiary)] italic">No attachments linked</p>
             )}
           </div>
         </div>
 
         <div className="pt-3 border-t border-[var(--color-border-subtle)]">
-          <h4 className="text-[11px] font-semibold text-[var(--color-text-tertiary)] mb-2 uppercase tracking-[0.06em] flex items-center gap-1.5">
+          <h4 className="text-[13px] font-semibold text-[var(--color-text-tertiary)] mb-2 uppercase tracking-[0.06em] flex items-center gap-1.5">
             <Wrench className="w-3 h-3" /> Connected Tools
           </h4>
           <div className="space-y-1">
@@ -548,7 +560,7 @@ export function AgentEditor() {
               connectedTools.map((tool) => (
                 <div
                   key={tool.id}
-                  className="flex items-center justify-between px-2.5 py-1.5 bg-[var(--color-info-surface)] text-[var(--color-info)] border border-[var(--color-info)]/15 rounded-lg text-[11px] font-medium transition-colors hover:border-[var(--color-info)]/30"
+                  className="flex items-center justify-between px-2.5 py-1.5 bg-[var(--color-info-surface)] text-[var(--color-info)] border border-[var(--color-info)]/15 rounded-lg text-[13px] font-medium transition-colors hover:border-[var(--color-info)]/30"
                 >
                   <span className="truncate">{(tool.data as any)?.name}</span>
                   <button
@@ -560,7 +572,7 @@ export function AgentEditor() {
                 </div>
               ))
             ) : (
-              <p className="text-[11px] text-[var(--color-text-tertiary)] italic">No tools connected</p>
+              <p className="text-[13px] text-[var(--color-text-tertiary)] italic">No tools connected</p>
             )}
           </div>
         </div>
