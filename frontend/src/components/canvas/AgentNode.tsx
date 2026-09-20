@@ -23,7 +23,9 @@ function AgentNodeComponent({ id, data, selected }: NodeProps) {
         shadow-[0_4px_24px_-4px_rgba(0,0,0,0.5)]
         transition-all duration-200
         ${selected
-          ? "border-[var(--color-accent)] shadow-[0_0_0_1px_var(--color-accent),0_4px_24px_-4px_rgba(20,184,166,0.2)]"
+          ? isRouter
+            ? "border-[var(--color-agent)] shadow-[0_0_0_1px_var(--color-agent),0_4px_24px_-4px_rgba(139,92,246,0.2)]"
+            : "border-[var(--color-accent)] shadow-[0_0_0_1px_var(--color-accent),0_4px_24px_-4px_rgba(20,184,166,0.2)]"
           : isRouter
           ? "border-[var(--color-agent)]/30"
           : "border-[var(--color-border-default)]"
@@ -35,8 +37,12 @@ function AgentNodeComponent({ id, data, selected }: NodeProps) {
         isVisible={selected}
         minWidth={200}
         minHeight={100}
-        handleClassName="!w-2 !h-2 !bg-[var(--color-surface)] !border-[var(--color-accent)] !rounded-sm"
-        lineClassName="!border-[var(--color-accent)]/50"
+        handleClassName={`!w-2 !h-2 !bg-[var(--color-surface)] !rounded-sm ${
+          isRouter ? "!border-[var(--color-agent)]" : "!border-[var(--color-accent)]"
+        }`}
+        lineClassName={
+          isRouter ? "!border-[var(--color-agent)]/50" : "!border-[var(--color-accent)]/50"
+        }
       />
       {/*
         Two target handles on top: handoff stays centered (agent-to-agent),

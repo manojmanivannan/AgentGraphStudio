@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
+import { ReactFlowProvider } from "@xyflow/react";
 import { useCanvasStore } from "@/store/canvasStore";
 import { AgentNode } from "./AgentNode";
 import type { AgentNodeData } from "@/types";
@@ -85,5 +86,25 @@ describe("AgentNode", () => {
     const settingsButton = screen.getByTitle("Settings");
     expect(settingsButton).toHaveClass("p-1.5");
     expect(settingsButton).not.toHaveClass("p-1");
+  });
+
+  it("uses the worker accent color for the selected border", () => {
+    const { container } = render(
+      <ReactFlowProvider>
+        <AgentNode {...makeProps({ agentType: "worker" })} selected />
+      </ReactFlowProvider>
+    );
+    expect(container.firstChild).toHaveClass("border-[var(--color-accent)]");
+    expect(container.firstChild).not.toHaveClass("border-[var(--color-agent)]");
+  });
+
+  it("uses the router color for the selected border instead of the worker accent", () => {
+    const { container } = render(
+      <ReactFlowProvider>
+        <AgentNode {...makeProps({ agentType: "router" })} selected />
+      </ReactFlowProvider>
+    );
+    expect(container.firstChild).toHaveClass("border-[var(--color-agent)]");
+    expect(container.firstChild).not.toHaveClass("border-[var(--color-accent)]");
   });
 });
