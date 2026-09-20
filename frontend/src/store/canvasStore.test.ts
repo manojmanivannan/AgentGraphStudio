@@ -50,11 +50,49 @@ describe("canvasStore", () => {
     });
   });
 
+  describe("setNodesSilently", () => {
+    it("replaces the nodes array without marking the canvas dirty", () => {
+      const nodes = [{ id: "n1", type: "agent", position: { x: 10, y: 20 }, data: {} }] as any;
+      store().setNodesSilently(nodes);
+      expect(store().nodes).toEqual(nodes);
+      expect(store().isDirty).toBe(false);
+    });
+
+    it("preserves an existing dirty flag rather than clearing it", () => {
+      store().setName("Renamed");
+      expect(store().isDirty).toBe(true);
+
+      store().setNodesSilently([
+        { id: "n1", type: "agent", position: { x: 10, y: 20 }, data: {} },
+      ] as any);
+
+      expect(store().isDirty).toBe(true);
+    });
+  });
+
   describe("setEdges", () => {
     it("replaces edges array and marks the canvas dirty", () => {
       const edges = [{ id: "e1", source: "n1", target: "n2" }] as any;
       store().setEdges(edges);
       expect(store().edges).toEqual(edges);
+      expect(store().isDirty).toBe(true);
+    });
+  });
+
+  describe("setEdgesSilently", () => {
+    it("replaces the edges array without marking the canvas dirty", () => {
+      const edges = [{ id: "e1", source: "n1", target: "n2" }] as any;
+      store().setEdgesSilently(edges);
+      expect(store().edges).toEqual(edges);
+      expect(store().isDirty).toBe(false);
+    });
+
+    it("preserves an existing dirty flag rather than clearing it", () => {
+      store().setName("Renamed");
+      expect(store().isDirty).toBe(true);
+
+      store().setEdgesSilently([{ id: "e1", source: "n1", target: "n2" }] as any);
+
       expect(store().isDirty).toBe(true);
     });
   });
