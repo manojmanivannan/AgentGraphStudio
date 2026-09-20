@@ -96,6 +96,8 @@ describe("AgentNode", () => {
     );
     expect(container.firstChild).toHaveClass("border-[var(--color-accent)]");
     expect(container.firstChild).not.toHaveClass("border-[var(--color-agent)]");
+    expect(container.firstChild).toHaveClass(/var\(--color-accent-glow\)/);
+    expect(container.firstChild).not.toHaveClass(/rgba\(20,184,166/);
   });
 
   it("uses the router color for the selected border instead of the worker accent", () => {
@@ -106,5 +108,7 @@ describe("AgentNode", () => {
     );
     expect(container.firstChild).toHaveClass("border-[var(--color-agent)]");
     expect(container.firstChild).not.toHaveClass("border-[var(--color-accent)]");
+    expect(container.firstChild).toHaveClass(/var\(--color-agent-glow\)/);
+    expect(container.firstChild).not.toHaveClass(/rgba\(139,92,246/);
   });
 });

@@ -36,6 +36,7 @@
   --color-accent-bright: #2dd4bf;
   --color-accent-subtle: rgba(20, 184, 166, 0.12);
   --color-accent-surface: rgba(20, 184, 166, 0.06);
+  --color-accent-glow: rgba(20, 184, 166, 0.2);
 
   /* Secondary accent — warm amber for tools */
   --color-secondary: #f59e0b;
@@ -53,15 +54,18 @@
   --color-warning: #f59e0b;
   --color-warning-subtle: rgba(245, 158, 11, 0.12);
   --color-warning-surface: rgba(245, 158, 11, 0.06);
+  --color-warning-glow: rgba(245, 158, 11, 0.2);
   --color-info: #3b82f6;
   --color-info-subtle: rgba(59, 130, 246, 0.12);
   --color-info-surface: rgba(59, 130, 246, 0.06);
+  --color-info-glow: rgba(59, 130, 246, 0.2);
   --color-info-bright: #60a5fa;
 
   /* Agent purple */
   --color-agent: #8b5cf6;
   --color-agent-subtle: rgba(139, 92, 246, 0.12);
   --color-agent-surface: rgba(139, 92, 246, 0.06);
+  --color-agent-glow: rgba(139, 92, 246, 0.2);
 
   /* Layout tokens */
   --width-rail: 48px;
@@ -119,6 +123,7 @@ html[data-theme="light"] {
   --color-accent-bright: #14b8a6;
   --color-accent-subtle: rgba(13, 148, 136, 0.10);
   --color-accent-surface: rgba(13, 148, 136, 0.05);
+  --color-accent-glow: rgba(13, 148, 136, 0.2);
 
   /* Secondary accent — amber (adjusted for light bg) */
   --color-secondary: #d97706;
@@ -136,15 +141,18 @@ html[data-theme="light"] {
   --color-warning: #d97706;
   --color-warning-subtle: rgba(217, 119, 6, 0.10);
   --color-warning-surface: rgba(217, 119, 6, 0.05);
+  --color-warning-glow: rgba(217, 119, 6, 0.2);
   --color-info: #2563eb;
   --color-info-subtle: rgba(37, 99, 235, 0.08);
   --color-info-surface: rgba(37, 99, 235, 0.05);
+  --color-info-glow: rgba(37, 99, 235, 0.2);
   --color-info-bright: #3b82f6;
 
   /* Agent purple (adjusted for light bg) */
   --color-agent: #7c3aed;
   --color-agent-subtle: rgba(124, 58, 237, 0.10);
   --color-agent-surface: rgba(124, 58, 237, 0.05);
+  --color-agent-glow: rgba(124, 58, 237, 0.2);
 }
 
 /* ─── Theme Transition ───────────────────────────────────── */

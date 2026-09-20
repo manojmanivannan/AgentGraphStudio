@@ -24,8 +24,8 @@ function AgentNodeComponent({ id, data, selected }: NodeProps) {
         transition-all duration-200
         ${selected
           ? isRouter
-            ? "border-[var(--color-agent)] shadow-[0_0_0_1px_var(--color-agent),0_4px_24px_-4px_rgba(139,92,246,0.2)]"
-            : "border-[var(--color-accent)] shadow-[0_0_0_1px_var(--color-accent),0_4px_24px_-4px_rgba(20,184,166,0.2)]"
+            ? "border-[var(--color-agent)] shadow-[0_0_0_1px_var(--color-agent),0_4px_24px_-4px_var(--color-agent-glow)]"
+            : "border-[var(--color-accent)] shadow-[0_0_0_1px_var(--color-accent),0_4px_24px_-4px_var(--color-accent-glow)]"
           : isRouter
           ? "border-[var(--color-agent)]/30"
           : "border-[var(--color-border-default)]"

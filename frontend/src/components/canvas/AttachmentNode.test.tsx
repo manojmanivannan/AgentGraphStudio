@@ -80,4 +80,14 @@ describe("AttachmentNode", () => {
     );
     expect(container.querySelectorAll(".react-flow__resize-control").length).toBeGreaterThan(0);
   });
+
+  it("uses the warning glow variable for the selected shadow", () => {
+    const { container } = render(
+      <ReactFlowProvider>
+        <AttachmentNode {...makeProps({ id: "att-1" })} selected />
+      </ReactFlowProvider>
+    );
+    expect(container.firstChild).toHaveClass(/var\(--color-warning-glow\)/);
+    expect(container.firstChild).not.toHaveClass(/rgba\(245,158,11/);
+  });
 });

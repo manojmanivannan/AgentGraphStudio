@@ -21,7 +21,7 @@ function AttachmentNodeComponent({ id, data, selected }: NodeProps) {
         shadow-[0_4px_24px_-4px_rgba(0,0,0,0.5)]
         transition-all duration-200
         ${selected
-          ? "border-[var(--color-warning)] shadow-[0_0_0_1px_var(--color-warning),0_4px_24px_-4px_rgba(245,158,11,0.2)]"
+          ? "border-[var(--color-warning)] shadow-[0_0_0_1px_var(--color-warning),0_4px_24px_-4px_var(--color-warning-glow)]"
           : "border-[var(--color-border-default)]"
         }
         ${isActive ? "border-[var(--color-danger)] glow-active-pulse" : ""}
