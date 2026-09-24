@@ -194,6 +194,8 @@ export default function ChatPage() {
   const chatInputRef = useRef<HTMLInputElement>(null);
   const inlineInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const isAtBottomRef = useRef(true);
+  const lastPromptIdRef = useRef<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const attachmentInputRef = useRef<HTMLInputElement>(null);
   const currentConversationIdRef = useRef<string | undefined>(conversation_id);
@@ -265,12 +267,39 @@ export default function ChatPage() {
     loadingConv,
   });
 
+  // Track whether the user is at the bottom of the scroll area so streaming
+  // updates stop yanking the viewport once they've scrolled up to read.
+  const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    const el = e.currentTarget;
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    isAtBottomRef.current = distanceFromBottom < 80;
+  }, []);
+
+  // Auto-scroll to the newest message whenever content grows, but only while
+  // the user is already at the bottom. Sending a brand-new message (a fresh
+  // user prompt, not a HITL response) always pulls the view down.
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    let lastPromptId: string | null = null;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const msg = messages[i];
+      if (msg.role === "user" && msg.event_type !== "human_input_response") {
+        lastPromptId = msg.id;
+        break;
+      }
+    }
+
+    const userJustSentPrompt =
+      lastPromptId !== null && lastPromptId !== lastPromptIdRef.current;
+    lastPromptIdRef.current = lastPromptId;
+
+    if (userJustSentPrompt || isAtBottomRef.current) {
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
   }, [messages]);
 
   useEffect(() => {
     currentConversationIdRef.current = conversation_id;
+    isAtBottomRef.current = true;
     setStagedAttachments([]);
     if (attachmentInputRef.current) {
       attachmentInputRef.current.value = "";
@@ -606,7 +635,11 @@ export default function ChatPage() {
         </header>
 
         {/* Main Content Area */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-4">
+        <div
+          className="flex-1 overflow-y-auto p-6 space-y-4"
+          onScroll={handleScroll}
+          data-testid="messages-scroll"
+        >
           {error && (
             <div className="p-4 rounded-xl bg-[var(--color-danger-subtle)] border border-[var(--color-danger)]/20 text-[var(--color-danger)] flex items-start gap-3 animate-fade-in max-w-2xl mx-auto shadow-lg">
               <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
