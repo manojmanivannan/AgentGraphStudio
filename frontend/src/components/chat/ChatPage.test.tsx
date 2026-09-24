@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
@@ -1941,6 +1941,114 @@ describe("ChatPage component", () => {
         // Verify that the approval buttons are gone (since activeInterrupt is cleared)
         await waitFor(() => {
             expect(screen.queryByRole("button", { name: /approve/i })).not.toBeInTheDocument();
+        });
+    });
+
+    describe("auto-scroll during streaming", () => {
+        function setupLiveChat() {
+            server.use(
+                http.get(`${API}/canvases`, () =>
+                    HttpResponse.json([{ id: "canvas-1", name: "My Canvas" }])
+                ),
+                http.get(`${API}/canvases/conversations/conv-1`, () =>
+                    HttpResponse.json(
+                        mockConversation({ id: "conv-1", canvas_id: "canvas-1", name: "Live Chat", messages: [] })
+                    )
+                ),
+                http.get(`${API}/canvases/canvas-1`, () =>
+                    HttpResponse.json({ id: "canvas-1", name: "My Canvas", nodes: { agents: [], tools: [] }, edges: [] })
+                ),
+                http.get(`${API}/canvases/canvas-1/conversations`, () =>
+                    HttpResponse.json([mockConversationSummary({ id: "conv-1", name: "Live Chat" })])
+                )
+            );
+        }
+
+        async function startRun(user: ReturnType<typeof userEvent.setup>) {
+            renderChatPage("conv-1");
+            await waitFor(() => expect(screen.getByTestId("chat-input")).toBeInTheDocument());
+            // Wait for the conversation to finish loading (the input is disabled
+            // while `loadingConv` is true).
+            await waitFor(() => expect(screen.getByTestId("chat-input")).toBeEnabled());
+            await user.type(screen.getByTestId("chat-input"), "run the workflow");
+            await user.click(screen.getByTestId("send-button"));
+            await waitFor(() => expect(FakeWebSocket.instances).toHaveLength(1));
+            return FakeWebSocket.instances[0];
+        }
+
+        // jsdom exposes scrollHeight/clientHeight as read-only getters that return 0,
+        // so simulate a tall scrollable area so the "scrolled up" state is reachable.
+        function scrollUp() {
+            const el = screen.getByTestId("messages-scroll");
+            Object.defineProperty(el, "scrollHeight", { value: 2000, configurable: true, writable: true });
+            el.scrollTop = 0;
+            fireEvent.scroll(el);
+        }
+
+        it("keeps auto-scrolling to the latest event while the user is at the bottom", async () => {
+            const user = userEvent.setup();
+            const scrollSpy = vi.spyOn(Element.prototype, "scrollIntoView").mockImplementation(() => {});
+            setupLiveChat();
+
+            const socket = await startRun(user);
+
+            const callsBefore = scrollSpy.mock.calls.length;
+
+            await act(async () => {
+                socket.simulateMessage({ type: "run_queued", run_id: "run-1" });
+                socket.simulateMessage({ type: "thought", agent: "Planner", content: "thinking", sequence: 1, run_id: "run-1" });
+            });
+
+            expect(scrollSpy.mock.calls.length).toBeGreaterThan(callsBefore);
+
+            scrollSpy.mockRestore();
+        });
+
+        it("does not auto-scroll when the user has scrolled up", async () => {
+            const user = userEvent.setup();
+            const scrollSpy = vi.spyOn(Element.prototype, "scrollIntoView").mockImplementation(() => {});
+            setupLiveChat();
+
+            const socket = await startRun(user);
+
+            scrollUp();
+
+            const callsBefore = scrollSpy.mock.calls.length;
+
+            await act(async () => {
+                socket.simulateMessage({ type: "run_queued", run_id: "run-2" });
+                socket.simulateMessage({ type: "thought", agent: "Planner", content: "thinking", sequence: 1, run_id: "run-2" });
+            });
+
+            expect(scrollSpy.mock.calls.length).toBe(callsBefore);
+
+            scrollSpy.mockRestore();
+        });
+
+        it("scrolls to the bottom when a new message is sent even if the user had scrolled up", async () => {
+            const user = userEvent.setup();
+            const scrollSpy = vi.spyOn(Element.prototype, "scrollIntoView").mockImplementation(() => {});
+            setupLiveChat();
+
+            const socket = await startRun(user);
+
+            // Finish the first run so the input re-enables.
+            await act(async () => {
+                socket.simulateMessage({ type: "run_queued", run_id: "run-3" });
+                socket.simulateMessage({ type: "final_answer", agent: "Planner", content: "done", sequence: 1, run_id: "run-3" });
+                socket.simulateMessage({ type: "run_complete", result: "ok", sequence: 2, run_id: "run-3" });
+            });
+
+            scrollUp();
+
+            const callsBefore = scrollSpy.mock.calls.length;
+
+            await user.type(screen.getByTestId("chat-input"), "second message");
+            await user.click(screen.getByTestId("send-button"));
+
+            await waitFor(() => expect(scrollSpy.mock.calls.length).toBeGreaterThan(callsBefore));
+
+            scrollSpy.mockRestore();
         });
     });
 
