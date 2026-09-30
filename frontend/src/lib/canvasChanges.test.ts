@@ -25,6 +25,25 @@ describe("withoutMeasurementChanges", () => {
     expect(withoutMeasurementChanges(changes)).toEqual([]);
   });
 
+  it("keeps dimensions changes emitted during and after a user resize", () => {
+    const activeResizeChange: NodeChange = {
+      type: "dimensions",
+      id: "n1",
+      dimensions: { width: 240, height: 160 },
+      resizing: true,
+    };
+    const completedResizeChange: NodeChange = {
+      type: "dimensions",
+      id: "n1",
+      dimensions: { width: 260, height: 180 },
+      resizing: false,
+    };
+
+    expect(
+      withoutMeasurementChanges([activeResizeChange, completedResizeChange]),
+    ).toEqual([activeResizeChange, completedResizeChange]);
+  });
+
   it("keeps add, remove, and replace changes untouched", () => {
     const changes: NodeChange[] = [
       { type: "add", item: { id: "n1", position: { x: 0, y: 0 }, data: {} } },

@@ -29,6 +29,7 @@ import { useCanvasUndoRedoShortcuts } from "@/hooks/useCanvasUndoRedoShortcuts";
 import { useThemeStore } from "@/store/themeStore";
 import { deriveEdgeType, getEdgeHandles, isValidNodeTypeConnection } from "@/lib/canvasConnectionRules";
 import { hasSubstantiveChanges, withoutMeasurementChanges } from "@/lib/canvasChanges";
+import { resolveNodeOverlap, type Size } from "@/lib/nodeCollision";
 
 const nodeTypes = {
   agent: AgentNode,
@@ -56,6 +57,28 @@ function isValidConnection(connection: Connection): boolean {
 
   if (!sourceNode || !targetNode) return true;
   return isValidNodeTypeConnection(sourceNode.type, targetNode.type);
+}
+
+/**
+ * Rendered node sizes keyed by node id, read straight off the DOM.
+ *
+ * Neither source ReactFlow exposes is complete: the nodes we hand it carry no
+ * dimensions at all, and its internal records are missing measurements for
+ * some nodes. `offsetWidth`/`offsetHeight` are layout pixels, which match flow
+ * units because the zoom transform lives on an ancestor.
+ */
+function measuredSizes(container: HTMLElement | null): Map<string, Size> {
+  const sizes = new Map<string, Size>();
+  const elements = container?.querySelectorAll<HTMLElement>(
+    ".react-flow__node[data-id]",
+  );
+  for (const element of Array.from(elements ?? [])) {
+    const id = element.dataset.id;
+    if (id && element.offsetWidth && element.offsetHeight) {
+      sizes.set(id, { width: element.offsetWidth, height: element.offsetHeight });
+    }
+  }
+  return sizes;
 }
 
 export function CanvasView() {
@@ -102,13 +125,18 @@ export function CanvasView() {
 
   const onNodesChange: OnNodesChange = useCallback(
     (changes) => {
-      // ReactFlow reports `dimensions` changes when it measures nodes on render;
-      // those are not user edits, so drop them to keep the canvas from being
-      // marked dirty on load (see withoutMeasurementChanges).
-      const edits = withoutMeasurementChanges(changes);
-      if (edits.length === 0) return;
+      if (changes.length === 0) return;
 
-      const next = applyNodeChanges(edits, nodes);
+      // ReactFlow reports `dimensions` changes when it measures nodes on render;
+      // apply that geometry to controlled node state, but exclude passive
+      // measurements when classifying whether the canvas was edited.
+      const edits = withoutMeasurementChanges(changes);
+
+      // Read from the store rather than the render-time `nodes` closure: a drag
+      // emits changes faster than React re-renders, and the drag-stop change
+      // carries no position of its own, so a stale base array would silently
+      // revert the just-resolved position.
+      const next = applyNodeChanges(changes, useCanvasStore.getState().nodes);
       // Only structural edits (add/remove/replace) count as unsaved changes.
       // Position drags and selection changes update the store but must not trip
       // the unsaved-changes guard (see hasSubstantiveChanges).
@@ -118,7 +146,7 @@ export function CanvasView() {
         setNodesSilently(next);
       }
     },
-    [nodes, setNodes, setNodesSilently]
+    [setNodes, setNodesSilently]
   );
 
   const onEdgesChange: OnEdgesChange = useCallback(
@@ -181,6 +209,21 @@ export function CanvasView() {
     [selectNode],
   );
 
+  // Nodes may be dragged freely, but on release a dropped node is nudged out
+  // of any node it landed on so boxes never sit on top of each other. Sizes
+  // come from the ReactFlow instance because nodes differ in height and width
+  // and the store copies carry no measurements.
+  const onNodeDragStop = useCallback(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (_event: any, node: Node) => {
+      const current = useCanvasStore.getState().nodes;
+      const sizes = measuredSizes(containerRef.current);
+      const next = resolveNodeOverlap(current, node.id, { sizes });
+      if (next !== current) setNodesSilently(next);
+    },
+    [setNodesSilently],
+  );
+
   const onPaneClick = useCallback(() => {
     selectNode(null);
   }, [selectNode]);
@@ -214,6 +257,7 @@ export function CanvasView() {
         onConnect={onConnect}
         onPaneClick={onPaneClick}
         onNodeClick={onNodeClick}
+        onNodeDragStop={onNodeDragStop}
         onMoveEnd={onMoveEnd}
         onInit={onInit}
         nodeTypes={nodeTypes}
