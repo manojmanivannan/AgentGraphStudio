@@ -1,11 +1,16 @@
 import type { ComponentType } from "react";
 import type { LucideIcon } from "lucide-react";
-import { MonitorSmartphone, PlugZap, Palette } from "lucide-react";
+import { MonitorSmartphone, PlugZap, Server, Palette } from "lucide-react";
 import { AccountSection } from "@/components/account/AccountSection";
 import { ProviderSection } from "@/components/settings/sections/ProviderSection";
+import { McpServersSection } from "@/components/settings/sections/McpServersSection";
 import { AppearanceSection } from "@/components/settings/sections/AppearanceSection";
 
-export type SettingsSectionId = "account" | "providers" | "appearance";
+export type SettingsSectionId =
+  | "account"
+  | "providers"
+  | "mcp-servers"
+  | "appearance";
 
 export const DEFAULT_SECTION: SettingsSectionId = "account";
 
@@ -38,6 +43,13 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     description: "Model provider used by every agent in this workspace",
     icon: PlugZap,
     Component: ProviderSection,
+  },
+  {
+    id: "mcp-servers",
+    label: "MCP Servers",
+    description: "External MCP endpoints, credentials and URL policy",
+    icon: Server,
+    Component: McpServersSection,
   },
   {
     id: "appearance",
