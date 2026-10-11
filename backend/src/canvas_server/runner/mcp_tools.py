@@ -170,19 +170,6 @@ def format_mcp_result(
     return frame_untrusted_mcp_output(observation, tool_name=tool_name), raw_blocks
 
 
-def _make_failed_stub(
-    name: str,
-    error: Exception,
-    node_id: uuid.UUID,
-) -> DspyTool:
-    """A DSPy-ready stub that raises *error* at call time → observation.
-
-    Same posture as ``ToolRegistry``'s failed-compile stub: the run continues
-    and the agent can reason about (and report) the failure (#118/#132).
-    """
-    return make_unavailable_stub(name, error, node_id)
-
-
 def make_unavailable_stub(
     name: str,
     error: BaseException,
@@ -190,8 +177,9 @@ def make_unavailable_stub(
 ) -> DspyTool:
     """A DSPy-ready stub for an MCP tool that cannot be served by the run.
 
-    Raises *error* at call time → StreamingReAct converts it to the standard
-    execution-error observation; the run continues degraded (#132, spec
+    Same posture as ``ToolRegistry``'s failed-compile stub: raises *error*
+    at call time → StreamingReAct converts it to the standard
+    execution-error observation; the run continues degraded (#118/#132, spec
     §4.6).
     """
 
@@ -246,7 +234,7 @@ def build_mcp_tool(
             server_tool.name,
             e,
         )
-        return _make_failed_stub(display_name, e, node_id)
+        return make_unavailable_stub(display_name, e, node_id)
 
     args = dict(descriptor.args or {})
     arg_types = dict(descriptor.arg_types or {})

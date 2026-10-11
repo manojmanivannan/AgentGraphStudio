@@ -176,10 +176,7 @@ class ToolRegistry:
                     # #139: a stale session at grant time gets its one
                     # re-handshake + one ``tools/list`` retry, then normal
                     # resolution continues.
-                    rehandshake = getattr(mcp_registry, "rehandshake", None)
-                    fresh = (
-                        await rehandshake(server_id) if callable(rehandshake) else None
-                    )
+                    fresh = await mcp_registry.rehandshake(server_id)
                     if fresh is not None:
                         session = fresh
                         try:
@@ -270,11 +267,9 @@ class ToolRegistry:
     ) -> str:
         """Human-readable server name for flag messages (id fallback)."""
         if mcp_registry is not None:
-            resolver = getattr(mcp_registry, "server_name", None)
-            if callable(resolver):
-                resolved = resolver(server_id)
-                if resolved:
-                    return str(resolved)
+            resolved = mcp_registry.server_name(server_id)
+            if resolved:
+                return str(resolved)
         return str(server_id)
 
     @staticmethod
