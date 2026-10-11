@@ -340,6 +340,12 @@ class CanvasRunner:
         # Build worker agents (routers are built lazily at run time)
         self.agents = await self._agent_factory.build_workers(self.canvas.agent_nodes)
 
+        # Surface MCP degradation/staleness/collision notes (#139, spec
+        # §4.5/§4.6): drained after tool compile *and* agent build so one
+        # pass covers both; rides the existing "warning" event machinery —
+        # zero new event types.
+        await self._emit_tool_registry_flags(send_event)
+
         self._handoff_tool_builder = HandoffToolBuilder(self.run_state)
         self.run_state.handoff_tool_builder = self._handoff_tool_builder
 
@@ -367,6 +373,32 @@ class CanvasRunner:
             len(self.tools),
             len(self.agents),
         )
+
+    async def _emit_tool_registry_flags(self, send_event: EventCallback | None) -> None:
+        """Drain the ToolRegistry's #139 flag notes and surface each through
+        the existing ``warning`` event (plus a durable system message so the
+        note lands in history and the agent can report about it). Non-fatal:
+        the run continues no matter what is flagged or observed."""
+        for flag in self._tool_registry.drain_flags():
+            message = flag["message"]
+            node_id = flag.get("node_id")
+            if send_event is not None:
+                payload = {"type": "warning", "message": message}
+                if node_id is not None:
+                    payload["node_id"] = str(node_id)
+                try:
+                    await send_event(payload)
+                except Exception:  # noqa: BLE001 — flagging must never fail a run
+                    logger.exception("Failed to emit MCP flag event")
+            try:
+                await self._conversation.persist_message(
+                    role="system",
+                    content=message,
+                    node_id=node_id if isinstance(node_id, uuid.UUID) else None,
+                    event_type="warning",
+                )
+            except Exception:  # noqa: BLE001
+                logger.exception("Failed to persist MCP flag message")
 
     async def _install_dependencies(self, tool_nodes):
         """Collect and install all unique package dependencies from tool nodes."""

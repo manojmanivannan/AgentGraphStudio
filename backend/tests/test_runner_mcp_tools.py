@@ -350,3 +350,43 @@ class TestEndToEndWorkerInvocation:
         assert result.process_result == "The tool timed out."
 
         await runner.release_mcp_sessions()
+
+
+class TestSetupFlagsSurfaceThroughWarningEvents:
+    """Spec §4.5: staleness flagging rides the existing event machinery —
+    a "warning" event naming the N-of-M count, on the Tool Node's node_id."""
+
+    async def test_vanished_tools_flag_a_warning_event_on_the_node(
+        self, make_ref_mcp_server, test_session, _compile_stub
+    ):
+        obs = make_ref_mcp_server(tools=("add",))
+        server = await _register_server(test_session, obs.url)
+        worker = FakeAgentNode(name="Worker")
+        tool = FakeToolNode(
+            name="math",
+            mcp_server_id=server.id,
+            mcp_tools=[{"name": "add"}, {"name": "vanished"}],
+        )
+        canvas = FakeCanvas(
+            agent_nodes=[worker], tool_nodes=[tool], edges=[_tool_access(worker, tool)]
+        )
+
+        runner = CanvasRunner(canvas)
+        events = []
+
+        async def capture(event):
+            events.append(event)
+
+        await runner.setup(send_event=capture)
+        agent = runner.agents[worker.id]
+
+        # The vanished tool is never granted; the live one still is.
+        assert "add" in agent.tools
+        assert "vanished" not in agent.tools
+
+        warnings = [e for e in events if e.get("type") == "warning"]
+        assert len(warnings) == 1
+        assert warnings[0]["node_id"] == str(tool.id)
+        assert "1 of 2 enabled tools unavailable" in warnings[0]["message"]
+
+        await runner.release_mcp_sessions()

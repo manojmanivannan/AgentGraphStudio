@@ -218,6 +218,64 @@ class TestGrantSemantics:
         assert registry.get_tools_for_agent(worker.id, [_edge(worker, node)]) == []
 
 
+class TestStalenessFlagging:
+    """Spec §4.5 / #139: enabled tools the live ``tools/list`` no longer
+    offers are excluded from the grant and flagged "N of M enabled tools
+    unavailable" via the existing event machinery (drained by the runner)."""
+
+    async def test_vanished_grants_are_counted_and_flagged(self, _compile_stub):
+        node = FakeToolNode(
+            name="math",
+            mcp_server_id=uuid.uuid4(),
+            mcp_tools=[{"name": "add"}, {"name": "echo"}, {"name": "vanished"}],
+        )
+        mcp_registry = FakeMcpRegistry(
+            tools=[server_tool("add"), server_tool("echo")], session=object()
+        )
+        registry = ToolRegistry()
+        await _compile(registry, [node], mcp_registry)
+
+        worker = FakeAgentNode(name="Worker")
+        assert [t.name for t in registry.get_tools_for_agent(worker.id, [_edge(worker, node)])] == [
+            "add",
+            "echo",
+        ]
+
+        flags = registry.drain_flags()
+        stale = [f for f in flags if f.get("kind") == "stale_tools"]
+        assert len(stale) == 1
+        assert stale[0]["node_id"] == node.id
+        assert "1 of 3 enabled tools unavailable" in stale[0]["message"]
+
+    async def test_no_flag_when_everything_granted_is_offered(self, _compile_stub):
+        node = FakeToolNode(
+            name="math",
+            mcp_server_id=uuid.uuid4(),
+            mcp_tools=[{"name": "add"}, {"name": "echo"}],
+        )
+        mcp_registry = FakeMcpRegistry(
+            tools=[server_tool("add"), server_tool("echo")], session=object()
+        )
+        registry = ToolRegistry()
+        await _compile(registry, [node], mcp_registry)
+
+        registry.get_tools_for_agent(uuid.uuid4(), [])
+        assert registry.drain_flags() == []
+
+    async def test_drain_flags_empties_the_queue(self, _compile_stub):
+        node = FakeToolNode(
+            name="math",
+            mcp_server_id=uuid.uuid4(),
+            mcp_tools=[{"name": "add"}, {"name": "vanished"}],
+        )
+        mcp_registry = FakeMcpRegistry(tools=[server_tool("add")], session=object())
+        registry = ToolRegistry()
+        await _compile(registry, [node], mcp_registry)
+
+        assert registry.drain_flags()
+        assert registry.drain_flags() == []
+
+
 class TestDegradedServers:
     async def test_connect_failure_makes_error_stubs_that_raise_at_call_time(
         self, _compile_stub

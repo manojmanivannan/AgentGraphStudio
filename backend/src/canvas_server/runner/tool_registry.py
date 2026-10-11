@@ -47,6 +47,20 @@ class ToolRegistry:
         self.tools: dict[uuid.UUID, object] = {}
         self._mcp_tools: dict[uuid.UUID, list[object]] = {}
         self._tool_name_to_id: dict[str, uuid.UUID] = {}
+        # Degradation/staleness/collision notes (#139), drained once by the
+        # runner and surfaced through the existing "warning" event machinery.
+        self._flags: list[dict[str, Any]] = []
+
+    def drain_flags(self) -> list[dict[str, Any]]:
+        """Unread flag notes (and clear them) — the runner's emit pass."""
+        flags, self._flags = self._flags, []
+        return flags
+
+    def _record_flag(self, kind: str, node_id: uuid.UUID, message: str) -> None:
+        logger.warning("MCP flag (%s) node %s: %s", kind, node_id, message)
+        self._flags.append(
+            {"kind": kind, "node_id": node_id, "message": message}
+        )
 
     async def compile_all(
         self,
@@ -146,6 +160,7 @@ class ToolRegistry:
                 error = error or e
 
         built: list[object] = []
+        vanished: list[str] = []
         for grant in grants:
             display_name = sanitize_tool_name(grant["name"])
             if error is not None:
@@ -164,14 +179,15 @@ class ToolRegistry:
             else:
                 server_tool = listing.get(grant["name"])
                 if server_tool is None:
-                    # Enabled-but-vanished: omitted from the grant; the
-                    # staleness flagging event is #139's scope.
+                    # Enabled-but-vanished: omitted from the grant and
+                    # flagged "N of M enabled tools unavailable" (spec §4.5).
                     logger.info(
                         "Granted MCP tool %r of server %s is not in the run's "
                         "tools/list — omitted",
                         grant["name"],
                         server_id,
                     )
+                    vanished.append(grant["name"])
                     continue
                 descriptor = build_mcp_tool(
                     session,
@@ -190,6 +206,15 @@ class ToolRegistry:
 
         if built:
             self._mcp_tools[tool_node.id] = built
+
+        if vanished:
+            self._record_flag(
+                "stale_tools",
+                tool_node.id,
+                f"MCP tool node '{tool_node.name}': "
+                f"{len(vanished)} of {len(grants)} enabled tools unavailable "
+                "— omitted from this run.",
+            )
 
     @staticmethod
     def _parse_mcp_grants(tool_node: ToolNode) -> list[dict[str, Any]]:
