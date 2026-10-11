@@ -100,6 +100,41 @@ class McpToolGrant(BaseModel):
         return trimmed
 
 
+class McpSnapshotTool(BaseModel):
+    """One tool inside an exported metadata snapshot (spec §2.3): name,
+    description, and the raw JSON input schema — never credentials."""
+
+    name: str
+    description: str | None = None
+    input_schema: dict = Field(default_factory=dict)
+
+
+class McpServerSnapshot(BaseModel):
+    """Metadata snapshot captured live at export time via the shared MCP probe
+    path (spec §2.3). ``captured=False`` records the snapshot as unavailable
+    (``detail`` carries the probe's failure summary) instead of failing the
+    export."""
+
+    captured: bool
+    server_name: str | None = None
+    server_version: str | None = None
+    protocol_revision: str | None = None
+    detail: str = ""
+    tools: list[McpSnapshotTool] = Field(default_factory=list)
+
+
+class McpServerReference(BaseModel):
+    """A MCP server reference ZIP export/import (spec §2.3 / §5.1): the
+    resolved registered name + URL, or ``resolved=False`` when the export
+    could not resolve the node's grant against the workspace registry. Import
+    re-points by name (then URL); the URL itself is never imported."""
+
+    resolved: bool
+    name: str | None = None
+    url: str | None = None
+    snapshot: McpServerSnapshot | None = None
+
+
 class ToolNodeInput(BaseModel):
     id: uuid.UUID
     name: str = "Tool"
@@ -114,6 +149,10 @@ class ToolNodeInput(BaseModel):
     # ``mcp_tools`` is the enabled-tools selection for the server grant.
     mcp_server_id: uuid.UUID | None = None
     mcp_tools: list[McpToolGrant] = Field(default_factory=list)
+    # Import-only reference metadata (#136): the ZIP manifest's server
+    # reference + snapshot, re-points ``mcp_server_id`` on import and reappears
+    # in the import response. Never persisted; canvas saves ignore it.
+    mcp_reference: McpServerReference | None = None
 
 
 class ToolNodeResponse(ToolNodeInput):
@@ -237,6 +276,8 @@ class CanvasResponse(BaseModel):
     updated_at: datetime
     nodes: CanvasNodesResponse
     edges: list[EdgeResponse]
+    # Import notices (#136): e.g. an MCP grant imported not-yet-granting.
+    warnings: list[str] = Field(default_factory=list)
 
     model_config = {"from_attributes": True}
 

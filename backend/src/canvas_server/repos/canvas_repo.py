@@ -94,9 +94,17 @@ class CanvasRepo:
             )
             self.session.add(node)
 
+        # Import-only MCP reference metadata (#136): keyed by *new* id so it
+        # can be re-attached to the reloaded nodes below. It is NOT persisted —
+        # spec §2.3 keeps snapshots out of the node — it only survives this
+        # call so the import response can surface it as reference metadata.
+        tool_references: dict[uuid.UUID, object] = {}
+
         for t in tools:
             new_id = uuid.uuid4()
             id_map[t.id] = new_id
+            if t.mcp_reference is not None:
+                tool_references[new_id] = t.mcp_reference
             node = ToolNode(
                 id=new_id,
                 canvas_id=canvas_id,
@@ -177,7 +185,13 @@ class CanvasRepo:
         result = await self.session.execute(
             self._eager_query().where(Canvas.id == canvas_id)
         )
-        return result.scalar_one()
+        canvas = result.scalar_one()
+        if tool_references:
+            for node in canvas.tool_nodes:
+                ref = tool_references.get(node.id)
+                if ref is not None:
+                    node.mcp_reference = ref
+        return canvas
 
     async def get(self, canvas_id: uuid.UUID) -> Canvas | None:
         result = await self.session.execute(
