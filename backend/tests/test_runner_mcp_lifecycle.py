@@ -12,8 +12,34 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from canvas_server import mcp_config
+from canvas_server.conversation_run_coordinator import ConversationRunCoordinator
 from canvas_server.models.mcp import McpServer
+from canvas_server.mcp_config import McpServerConfig
+from canvas_server.runner.mcp_sessions import McpSessionRegistry
 from canvas_server.runner.runner import CanvasRunner
+
+
+class FakeSession:
+    def __init__(self):
+        self.commit = AsyncMock()
+
+
+class FakeConversationRepo:
+    def __init__(self, conversation):
+        self.conversation = conversation
+
+    async def get_or_404(self, conversation_id):
+        assert conversation_id == self.conversation.id
+        return self.conversation
+
+
+class FakeCanvasRepo:
+    def __init__(self, canvas):
+        self.canvas = canvas
+
+    async def get_or_404(self, canvas_id):
+        assert canvas_id == self.canvas.id
+        return self.canvas
 
 
 class FakeCanvas:
@@ -174,3 +200,96 @@ class TestSetupOpensSessionsForWorkerGrants:
         assert runner.mcp_session_registry.server_ids == set()
 
         await runner.release_mcp_sessions()
+
+class TestCoordinatorClosesSessionsAtRunEnd:
+    """The run's MCP sessions terminate in ConversationRunCoordinator.run's
+    finally — next to sandbox.release_session — even when the run errors."""
+
+    def _coordinator(self, conversation, canvas, runner):
+        return ConversationRunCoordinator(
+            session=FakeSession(),
+            conversation_repo=FakeConversationRepo(conversation),
+            canvas_repo=FakeCanvasRepo(canvas),
+            runner_factory=AsyncMock(return_value=runner),
+        )
+
+    def _conversation(self, canvas_id=None):
+        return SimpleNamespace(
+            id=uuid.uuid4(),
+            canvas_id=canvas_id or uuid.uuid4(),
+            name="Existing Conversation",
+            messages=[object()],
+        )
+
+    def _canvas(self, canvas_id):
+        return SimpleNamespace(id=canvas_id)
+
+    def _runner(self, failure=None):
+        reg = McpSessionRegistry(servers=())
+        runner = SimpleNamespace(
+            generate_conversation_title=AsyncMock(),
+            run=AsyncMock(side_effect=failure) if failure else AsyncMock(),
+            _conversation=SimpleNamespace(persist_message=AsyncMock()),
+            mcp_session_registry=reg,
+            release_mcp_sessions=AsyncMock(),
+        )
+        return runner
+
+    async def _open_sessions(self, runner, make_ref_mcp_server):
+        obs = make_ref_mcp_server()
+        cfg = McpServerConfig(
+            id=uuid.uuid4(), name="ref", url=obs.url,
+            credential_header=None, credential_value=None,
+        )
+        runner.mcp_session_registry = McpSessionRegistry(servers=(cfg,))
+        await runner.mcp_session_registry.open([cfg.id])
+
+        async def _release():
+            await runner.mcp_session_registry.close()
+        runner.release_mcp_sessions = AsyncMock(side_effect=_release)
+        return runner, obs, cfg.id
+
+    async def test_closes_sessions_after_success(self, make_ref_mcp_server):
+        runner = self._runner()
+        runner, obs, sid = await self._open_sessions(runner, make_ref_mcp_server)
+        canvas = self._canvas(uuid.uuid4())
+        conversation = self._conversation(canvas.id)
+
+        await self._coordinator(conversation, canvas, runner).run(
+            conversation_id=conversation.id, user_prompt="hi",
+            send_event=AsyncMock(),
+        )
+
+        assert runner.release_mcp_sessions.await_count == 1
+        assert runner.mcp_session_registry.get_session(sid) is None
+        assert obs.delete_count == 1  # server sees the session terminate
+
+    async def test_closes_sessions_when_run_errors(self, make_ref_mcp_server):
+        runner = self._runner(failure=RuntimeError("boom"))
+        runner, obs, sid = await self._open_sessions(runner, make_ref_mcp_server)
+        canvas = SimpleNamespace(
+            id=uuid.uuid4(), agent_nodes=[SimpleNamespace(id=uuid.uuid4(), name="A")]
+        )
+        conversation = self._conversation(canvas.id)
+
+        await self._coordinator(conversation, canvas, runner).run(
+            conversation_id=conversation.id, user_prompt="hi",
+            send_event=AsyncMock(),
+        )
+
+        assert runner.release_mcp_sessions.await_count == 1
+        assert runner.mcp_session_registry.get_session(sid) is None
+        assert obs.delete_count == 1
+
+    async def test_release_failure_does_not_break_the_turn(self, make_ref_mcp_server):
+        runner = self._runner()
+        runner, _obs, _sid = await self._open_sessions(runner, make_ref_mcp_server)
+        runner.release_mcp_sessions = AsyncMock(side_effect=RuntimeError("release boom"))
+        canvas = self._canvas(uuid.uuid4())
+        conversation = self._conversation(canvas.id)
+
+        # No raise — cleanup must never block the turn.
+        await self._coordinator(conversation, canvas, runner).run(
+            conversation_id=conversation.id, user_prompt="hi",
+            send_event=AsyncMock(),
+        )
