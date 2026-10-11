@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 import sqlalchemy as sa
 from sqlalchemy import (
@@ -302,6 +302,11 @@ class ToolNode(Base):
     mcp_seen_tools: Mapped[list[str]] = mapped_column(
         JSON, default=[], server_default=sa.text("'[]'"), nullable=False
     )
+    # Transient, never persisted: the canvas import path stamps the API-shape
+    # MCP server reference here (see routes/canvas.py), and it is re-read when
+    # re-pointing imported MCP nodes. Absent on ordinary nodes — consumers
+    # must read it defensively (getattr).
+    mcp_reference: ClassVar[Any | None] = None
 
     canvas: Mapped[Canvas] = relationship("Canvas", back_populates="tool_nodes")
 

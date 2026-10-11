@@ -2,7 +2,7 @@ import logging
 import uuid
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
-from typing import Any
+from typing import Any, cast
 
 import dspy
 import mlflow
@@ -166,7 +166,10 @@ class StreamingReAct(dspy.ReAct):
                 # observation instead of raising out of the loop. The guarded
                 # reference also serves the invocation below, so no unguarded
                 # ``self.tools[name]`` lookup remains.
-                tool_obj = self.tools.get(pred.next_tool_name)
+                # dspy rebinds ReAct.tools to a name → Tool dict at runtime,
+                # but its ``tools: list[Callable]`` annotation makes pyright
+                # infer the attribute as a list — cast before the dict lookup.
+                tool_obj = cast(dict[str, Any], self.tools).get(pred.next_tool_name)
                 if tool_obj is None:
                     observation = (
                         f"Execution error in {pred.next_tool_name}: "

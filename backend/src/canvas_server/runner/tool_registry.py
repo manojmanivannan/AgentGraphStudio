@@ -46,8 +46,10 @@ class ToolRegistry:
     """
 
     def __init__(self) -> None:
-        self.tools: dict[uuid.UUID, object] = {}
-        self._mcp_tools: dict[uuid.UUID, list[object]] = {}
+        # Values are plain callables (compiled code tools) or dspy ``Tool``
+        # descriptors (MCP grants) — both callable.
+        self.tools: dict[uuid.UUID, Callable[..., Any]] = {}
+        self._mcp_tools: dict[uuid.UUID, list[Callable[..., Any]]] = {}
         self._tool_name_to_id: dict[str, uuid.UUID] = {}
         # Degradation/staleness/collision notes (#139), drained once by the
         # runner and surfaced through the existing "warning" event machinery.
@@ -164,17 +166,22 @@ class ToolRegistry:
         error = (
             mcp_registry.error_for(server_id) if mcp_registry is not None else None
         )
-        async def _list_tools_by_name() -> dict[str, mcp_types.Tool]:
+        async def _list_tools_by_name(
+            registry: McpSessionRegistry,
+        ) -> dict[str, mcp_types.Tool]:
             """One ``tools/list`` collected into a name → Tool map."""
             return {
                 server_tool.name: server_tool
-                for server_tool in await mcp_registry.list_tools(server_id)
+                for server_tool in await registry.list_tools(server_id)
             }
 
         listing: dict[str, mcp_types.Tool] | None = None
-        if session is not None:
+        # session comes from the registry, so session non-None ⇒ registry
+        # non-None; the conjunction is also what narrows the registry for the
+        # closure calls below.
+        if session is not None and mcp_registry is not None:
             try:
-                listing = await _list_tools_by_name()
+                listing = await _list_tools_by_name(mcp_registry)
             except Exception as e:  # noqa: BLE001 — handled below
                 if _is_stale_session_error(e):
                     # #139: a stale session at grant time gets its one
@@ -184,7 +191,7 @@ class ToolRegistry:
                     if fresh is not None:
                         session = fresh
                         try:
-                            listing = await _list_tools_by_name()
+                            listing = await _list_tools_by_name(mcp_registry)
                         except Exception as retry_error:  # noqa: BLE001
                             logger.warning(
                                 "tools/list failed for MCP server %s after its "
@@ -215,7 +222,7 @@ class ToolRegistry:
             )
             return
 
-        built: list[object] = []
+        built: list[Callable[..., Any]] = []
         vanished: list[str] = []
         for grant in grants:
             display_name = sanitize_tool_name(grant["name"])
@@ -329,12 +336,12 @@ class ToolRegistry:
         ``include_mcp=False`` (routers, spec §4.3 / arch decision 8) skips
         MCP-backed tool nodes entirely while keeping their sandbox tools.
         """
-        kept: dict[str, tuple[object, uuid.UUID | None, int]] = {}
-        ordered: list[object] = []
+        kept: dict[str, tuple[Callable[..., Any], uuid.UUID | None, int]] = {}
+        ordered: list[Callable[..., Any]] = []
         for edge in edges:
             if edge.source_node_id != agent_id or edge.edge_type != "tool_access":
                 continue
-            candidates: list[Any] = []
+            candidates: list[Callable[..., Any]] = []
             if include_mcp:
                 candidates.extend(self._mcp_tools.get(edge.target_node_id, []))
             fn = self.tools.get(edge.target_node_id)
@@ -368,6 +375,13 @@ class ToolRegistry:
                 )
         return ordered
 
+    def _node_label(self, node_id: uuid.UUID | None) -> str:
+        """Registry label for *node_id*, falling back to its string form
+        (``"None"`` when a colliding tool carried no owning node)."""
+        if node_id is None:
+            return "None"
+        return self._node_labels.get(node_id, str(node_id))
+
     def _record_collision(
         self,
         name: str,
@@ -381,8 +395,8 @@ class ToolRegistry:
         if key in self._collision_keys:
             return
         self._collision_keys.add(key)
-        dropped = self._node_labels.get(dropped_node, str(dropped_node))
-        kept = self._node_labels.get(kept_node, str(kept_node))
+        dropped = self._node_label(dropped_node)
+        kept = self._node_label(kept_node)
         message = (
             f"tool '{name}' from {dropped} was dropped — name already taken "
             f"by a tool from {kept}"

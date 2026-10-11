@@ -68,7 +68,11 @@ async def _build_mcp_reference_blocks(
     spec §2.3). Returns ``{tool_node_id: reference}`` — only MCP-backed nodes
     get an entry; a node whose server no longer resolves is recorded as
     ``resolved=False`` (no URL to probe, no snapshot)."""
-    mcp_nodes = [n for n in canvas.tool_nodes if n.mcp_server_id is not None]
+    mcp_nodes = [
+        (n, n.mcp_server_id)
+        for n in canvas.tool_nodes
+        if n.mcp_server_id is not None
+    ]
     if not mcp_nodes:
         return {}
 
@@ -77,8 +81,8 @@ async def _build_mcp_reference_blocks(
     blocks: dict[uuid.UUID, McpServerReference] = {}
     snapshots: dict[uuid.UUID, McpServerSnapshot] = {}  # one probe per server
 
-    for node in mcp_nodes:
-        server = by_id.get(node.mcp_server_id)
+    for node, server_id in mcp_nodes:
+        server = by_id.get(server_id)
         if server is None:
             blocks[node.id] = McpServerReference(
                 resolved=False,
@@ -111,6 +115,7 @@ def _canvas_to_response(canvas: Canvas, *, warnings: list[str] | None = None) ->
         AttachmentNodeResponse,
         CanvasNodesResponse,
         EdgeResponse,
+        McpToolGrant,
         ToolNodeResponse,
     )
 
@@ -155,7 +160,9 @@ def _canvas_to_response(canvas: Canvas, *, warnings: list[str] | None = None) ->
                     args=n.args,
                     requires_approval=n.requires_approval,
                     mcp_server_id=n.mcp_server_id,
-                    mcp_tools=n.mcp_tools,
+                    # ORM row is the JSON ``list[dict]``; grant rows re-verify
+                    # at the API seam (same validation pydantic ran before).
+                    mcp_tools=[McpToolGrant.model_validate(t) for t in n.mcp_tools],
                     mcp_seen_tools=n.mcp_seen_tools,
                     mcp_reference=getattr(n, "mcp_reference", None),
                     position_x=n.position_x,

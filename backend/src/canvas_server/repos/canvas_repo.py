@@ -1,6 +1,7 @@
 import logging
 import uuid
 from datetime import UTC, datetime
+from typing import Any, cast
 
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -191,7 +192,10 @@ class CanvasRepo:
             for node in canvas.tool_nodes:
                 ref = tool_references.get(node.id)
                 if ref is not None:
-                    node.mcp_reference = ref
+                    # Transient stamp on the ORM row (see ToolNode.mcp_reference):
+                    # the attr is ClassVar-declared for the declarative mapper,
+                    # so the instance-level write needs the explicit cast.
+                    cast(Any, node).mcp_reference = ref
         return canvas
 
     async def get(self, canvas_id: uuid.UUID) -> Canvas | None:

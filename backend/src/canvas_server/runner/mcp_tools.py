@@ -170,6 +170,28 @@ def format_mcp_result(
     return frame_untrusted_mcp_output(observation, tool_name=tool_name), raw_blocks
 
 
+def _attach_mcp_metadata(
+    fn,
+    *,
+    requires_approval: bool,
+    node_id: uuid.UUID,
+    mcp_origin: bool = True,
+    last_raw_content_blocks: list[dict[str, Any]] | None = None,
+) -> None:
+    """Attach the StreamingReAct metadata seam to an MCP tool callable.
+
+    MCP callables are plain async functions; approval, owning node, MCP
+    origin and raw content blocks ride on them as dynamic attributes read
+    back via ``getattr`` (see ``streaming_react.py``) — the same convention
+    as ``ToolRegistry._attach_tool_metadata``. *fn* stays untyped because
+    ``FunctionType`` cannot declare these attributes to pyright.
+    """
+    fn.requires_approval = requires_approval
+    fn.node_id = node_id
+    fn.mcp_origin = mcp_origin
+    fn.last_raw_content_blocks = last_raw_content_blocks
+
+
 def make_unavailable_stub(
     name: str,
     error: BaseException,
@@ -188,8 +210,9 @@ def make_unavailable_stub(
         raise error
 
     failed_tool.__name__ = name
-    failed_tool.requires_approval = False
-    failed_tool.node_id = node_id
+    _attach_mcp_metadata(
+        failed_tool, requires_approval=False, node_id=node_id, mcp_origin=False
+    )
     return DspyTool(
         func=failed_tool, name=name, desc=failed_tool.__doc__,
         args={}, arg_types={}, arg_desc={},
@@ -291,15 +314,17 @@ def build_mcp_tool(
                 settings.mcp_tool_call_timeout_seconds, kwargs
             )
         observation, raw_blocks = format_mcp_result(result, tool_name=display_name)
-        mcp_tool_call.last_raw_content_blocks = raw_blocks
+        _attach_mcp_metadata(
+            mcp_tool_call,
+            requires_approval=requires_approval,
+            node_id=node_id,
+            last_raw_content_blocks=raw_blocks,
+        )
         return observation
 
     mcp_tool_call.__name__ = display_name
     mcp_tool_call.__doc__ = description
-    mcp_tool_call.requires_approval = requires_approval
-    mcp_tool_call.mcp_origin = True
-    mcp_tool_call.node_id = node_id
-    mcp_tool_call.last_raw_content_blocks = None
+    _attach_mcp_metadata(mcp_tool_call, requires_approval=requires_approval, node_id=node_id)
 
     return DspyTool(
         func=mcp_tool_call,

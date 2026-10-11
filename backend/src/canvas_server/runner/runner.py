@@ -18,7 +18,8 @@ import os
 import re
 import sys
 import uuid
-from typing import TYPE_CHECKING
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any
 
 import dspy
 import mlflow
@@ -121,11 +122,11 @@ class CanvasRunner:
     # -- backward-compat properties so existing tests don't break ----------
 
     @property
-    def tools(self) -> dict[uuid.UUID, object]:
+    def tools(self) -> dict[uuid.UUID, Callable[..., Any]]:
         return self.run_state.tool_registry.tools
 
     @tools.setter
-    def tools(self, value: dict[uuid.UUID, object]) -> None:
+    def tools(self, value: dict[uuid.UUID, Callable[..., Any]]) -> None:
         self.run_state.tool_registry.tools = value
 
     @property
@@ -457,7 +458,11 @@ class CanvasRunner:
                 and edge.source_node_id in worker_ids
                 and edge.target_node_id in mcp_tool_nodes
             ):
-                server_ids[mcp_tool_nodes[edge.target_node_id].mcp_server_id] = None
+                # mcp_tool_nodes only holds nodes with a server, but the
+                # column is nullable — narrow for the type checker.
+                server_id = mcp_tool_nodes[edge.target_node_id].mcp_server_id
+                if server_id is not None:
+                    server_ids[server_id] = None
         return list(server_ids)
 
     async def release_mcp_sessions(self) -> None:
