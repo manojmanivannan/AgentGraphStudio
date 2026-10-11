@@ -88,12 +88,33 @@ export interface AgentDocument {
   created_at: string;
 }
 
+/** One enabled tool of an MCP-backed Tool Node's grant (spec §2.1/#132):
+ * per-tool approval granularity (#119 Q9). Wire shape (snake_case, matches
+ * the backend payloads and responses). */
+export interface McpToolGrant {
+  name: string;
+  requires_approval: boolean;
+}
+
+/** Same grant entry in ReactFlow node-data shape (camelCase, mirrors
+ * `ToolNodeData` conventions). */
+export interface McpToolGrantData {
+  name: string;
+  requiresApproval: boolean;
+}
+
 export interface ToolNodeData {
   id: string;
   name: string;
   code: string;
   packages?: string;
   requiresApproval?: boolean;
+  /** Non-null ⇒ MCP-backed node: the node grants a subset of one registered
+   * server's tools and `code`/`args` stay empty (#132). */
+  mcpServerId?: string | null;
+  /** Enabled-tools selection for the server grant (camelCase mirrors the
+   * other node-data fields). */
+  mcpTools?: McpToolGrantData[];
 }
 
 export type AttachmentFileType =
@@ -212,6 +233,8 @@ export interface CanvasSavePayload {
       packages?: string;
       args: ToolArgument[];
       requires_approval: boolean;
+      mcp_server_id: string | null;
+      mcp_tools: McpToolGrant[];
       position_x: number;
       position_y: number;
     }[];
@@ -268,6 +291,8 @@ export interface CanvasResponse {
       packages?: string;
       args: ToolArgument[];
       requires_approval: boolean;
+      mcp_server_id: string | null;
+      mcp_tools: McpToolGrant[];
       position_x: number;
       position_y: number;
     }>;

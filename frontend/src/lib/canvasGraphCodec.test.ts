@@ -75,6 +75,8 @@ describe("canvasGraphCodec", () => {
             packages: "",
             args: [],
             requires_approval: false,
+            mcp_server_id: null,
+            mcp_tools: [],
             position_x: 30,
             position_y: 40,
           },
@@ -184,6 +186,8 @@ describe("canvasGraphCodec", () => {
           packages: "requests",
           args: [],
           requiresApproval: true,
+          mcpServerId: null,
+          mcpTools: [],
         },
       },
     ]);
@@ -202,6 +206,206 @@ describe("canvasGraphCodec", () => {
         },
       },
     ]);
+  });
+
+  describe("MCP tool node grants (#132)", () => {
+    it("encodes an MCP grant into the save payload", () => {
+      const result = encodeCanvasGraph({
+        canvasName: "MCP Canvas",
+        nodes: [
+          {
+            id: "tool-1",
+            type: "tool",
+            position: { x: 0, y: 0 },
+            data: {
+              id: "tool-1",
+              name: "Search Tools",
+              code: "",
+              mcpServerId: "srv-1",
+              mcpTools: [
+                { name: "web_search", requiresApproval: true },
+                { name: "read_doc", requiresApproval: false },
+              ],
+            },
+          },
+        ],
+        edges: [],
+      });
+
+      expect(result.nodes.tools).toEqual([
+        {
+          id: "tool-1",
+          name: "Search Tools",
+          code: "",
+          packages: "",
+          args: [],
+          requires_approval: false,
+          mcp_server_id: "srv-1",
+          mcp_tools: [
+            { name: "web_search", requires_approval: true },
+            { name: "read_doc", requires_approval: false },
+          ],
+          position_x: 0,
+          position_y: 0,
+        },
+      ]);
+    });
+
+    it("encodes a code tool with MCP defaults (no server, empty grant)", () => {
+      const result = encodeCanvasGraph({
+        canvasName: "Code Canvas",
+        nodes: [
+          {
+            id: "tool-1",
+            type: "tool",
+            position: { x: 0, y: 0 },
+            data: {
+              id: "tool-1",
+              name: "Calc",
+              code: "def add(a, b): return a + b",
+            },
+          },
+        ],
+        edges: [],
+      });
+
+      expect(result.nodes.tools[0].mcp_server_id).toBeNull();
+      expect(result.nodes.tools[0].mcp_tools).toEqual([]);
+      expect(result.nodes.tools[0].code).toBe("def add(a, b): return a + b");
+    });
+
+    it("decodes MCP fields into tool node data", () => {
+      const result = decodeCanvasResponse({
+        id: "canvas-1",
+        name: "MCP Canvas",
+        created_at: "2026-10-11T00:00:00Z",
+        updated_at: "2026-10-11T00:00:00Z",
+        nodes: {
+          agents: [],
+          tools: [
+            {
+              id: "tool-1",
+              canvas_id: "canvas-1",
+              name: "Search Tools",
+              code: "",
+              packages: "",
+              args: [],
+              requires_approval: false,
+              mcp_server_id: "srv-1",
+              mcp_tools: [{ name: "web_search", requires_approval: true }],
+              position_x: 1,
+              position_y: 2,
+            },
+          ],
+        },
+        edges: [],
+      });
+
+      expect(result.nodes).toEqual([
+        {
+          id: "tool-1",
+          type: "tool",
+          position: { x: 1, y: 2 },
+          style: { width: 220 },
+          data: {
+            id: "tool-1",
+            name: "Search Tools",
+            code: "",
+            packages: "",
+            args: [],
+            requiresApproval: false,
+            mcpServerId: "srv-1",
+            mcpTools: [{ name: "web_search", requiresApproval: true }],
+          },
+        },
+      ]);
+    });
+
+    it("decodes a legacy tool without MCP fields to defaults", () => {
+      const result = decodeCanvasResponse({
+        id: "canvas-1",
+        name: "Legacy Canvas",
+        created_at: "2026-10-11T00:00:00Z",
+        updated_at: "2026-10-11T00:00:00Z",
+        nodes: {
+          agents: [],
+          tools: [
+            {
+              id: "tool-1",
+              canvas_id: "canvas-1",
+              name: "Lookup",
+              code: "def f(): pass",
+              packages: "",
+              args: [],
+              requires_approval: true,
+              position_x: 1,
+              position_y: 2,
+            },
+          ],
+        },
+        edges: [],
+      });
+
+      const tool = result.nodes[0] as { data: Record<string, unknown> };
+      expect(tool.data.mcpServerId).toBeNull();
+      expect(tool.data.mcpTools).toEqual([]);
+    });
+
+    it("round-trips an MCP grant through encode and decode", () => {
+      const encoded = encodeCanvasGraph({
+        canvasName: "Round Trip",
+        nodes: [
+          {
+            id: "tool-1",
+            type: "tool",
+            position: { x: 0, y: 0 },
+            data: {
+              id: "tool-1",
+              name: "Search Tools",
+              code: "",
+              mcpServerId: "srv-1",
+              mcpTools: [{ name: "web_search", requiresApproval: true }],
+            },
+          },
+        ],
+        edges: [],
+      });
+
+      const decoded = decodeCanvasResponse({
+        id: "canvas-1",
+        name: "Round Trip",
+        created_at: "2026-10-11T00:00:00Z",
+        updated_at: "2026-10-11T00:00:00Z",
+        nodes: {
+          agents: [],
+          tools: [
+            {
+              id: "tool-1",
+              canvas_id: "canvas-1",
+              name: encoded.nodes.tools[0].name,
+              code: encoded.nodes.tools[0].code,
+              packages: encoded.nodes.tools[0].packages,
+              args: encoded.nodes.tools[0].args,
+              requires_approval: encoded.nodes.tools[0].requires_approval,
+              mcp_server_id: encoded.nodes.tools[0].mcp_server_id,
+              mcp_tools: encoded.nodes.tools[0].mcp_tools,
+              position_x: 0,
+              position_y: 0,
+            },
+          ],
+        },
+        edges: [],
+      });
+
+      const data = decoded.nodes[0].data as {
+        mcpServerId: string;
+        mcpTools: { name: string; requiresApproval: boolean }[];
+      };
+      expect(data.mcpServerId).toBe("srv-1");
+      expect(data.mcpTools).toEqual([
+        { name: "web_search", requiresApproval: true },
+      ]);
+    });
   });
 
   it("round-trips defaulted fields through encode and decode", () => {

@@ -280,6 +280,21 @@ class ToolNode(Base):
     requires_approval: Mapped[bool] = mapped_column(
         sa.Boolean(), default=False, server_default=sa.text("false"), nullable=False
     )
+    # MCP variant (#132, spec §2.1): non-null ⇒ MCP-backed node — the node
+    # grants a subset of one registered server's tools, ``code``/``args`` stay
+    # empty (no schema snapshot is persisted; Tool Inspection probes live).
+    mcp_server_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid,
+        ForeignKey("mcp_servers.id"),
+        nullable=True,
+        default=None,
+    )
+    # Enabled-tools selection: [{name, requires_approval}] — per-tool approval
+    # granularity (#119 Q9). The node-level ``requires_approval`` governs
+    # author (code) tools only.
+    mcp_tools: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSON, default=[], server_default=sa.text("'[]'"), nullable=False
+    )
 
     canvas: Mapped[Canvas] = relationship("Canvas", back_populates="tool_nodes")
 

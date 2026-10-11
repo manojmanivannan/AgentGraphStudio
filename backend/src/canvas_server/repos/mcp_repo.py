@@ -7,6 +7,7 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from canvas_server.models.canvas import Canvas, ToolNode
 from canvas_server.models.mcp import McpServer
 
 
@@ -68,3 +69,19 @@ class McpServerRepo:
     async def delete(self, row: McpServer) -> None:
         await self._session.delete(row)
         await self._session.flush()
+
+    async def list_referencing_canvases(self, server_id: uuid.UUID) -> list[Canvas]:
+        """Canvases holding a Tool Node whose grant references ``server_id``.
+
+        Backs the deletion guard (#132): a server still referenced by any
+        Tool Node must not be deletable; the caller surfaces these canvases
+        to the user. DISTINCT because one canvas may hold several such nodes.
+        """
+        result = await self._session.execute(
+            select(Canvas)
+            .join(ToolNode, ToolNode.canvas_id == Canvas.id)
+            .where(ToolNode.mcp_server_id == server_id)
+            .distinct()
+            .order_by(Canvas.name)
+        )
+        return list(result.scalars().all())

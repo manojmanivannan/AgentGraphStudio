@@ -159,6 +159,77 @@ class TestToolNodeInput:
             ToolNodeInput()
 
 
+class TestToolNodeMcpGrant:
+    """MCP variant of the Tool Node (spec §2.1/#132): a grant is
+    (one registered server, an enabled-tools selection); each entry carries
+    name + requires_approval (#119 Q9)."""
+
+    def test_mcp_fields_default_to_unreferenced(self):
+        tool = ToolNodeInput(id=uuid.uuid4())
+        assert tool.mcp_server_id is None
+        assert tool.mcp_tools == []
+
+    def test_mcp_grant_roundtrip(self):
+        server_id = uuid.uuid4()
+        tool = ToolNodeInput(
+            id=uuid.uuid4(),
+            name="Search Tools",
+            mcp_server_id=server_id,
+            mcp_tools=[{"name": "web_search", "requires_approval": True}],
+        )
+        assert tool.mcp_server_id == server_id
+        assert tool.mcp_tools[0].name == "web_search"
+        assert tool.mcp_tools[0].requires_approval is True
+        dumped = tool.model_dump()["mcp_tools"]
+        assert dumped == [{"name": "web_search", "requires_approval": True}]
+
+    def test_multiple_grants_keep_each_approval_default(self):
+        tool = ToolNodeInput(
+            id=uuid.uuid4(),
+            mcp_server_id=uuid.uuid4(),
+            mcp_tools=[
+                {"name": "read_doc", "requires_approval": False},
+                {"name": "send_email", "requires_approval": True},
+            ],
+        )
+        assert [(g.name, g.requires_approval) for g in tool.mcp_tools] == [
+            ("read_doc", False),
+            ("send_email", True),
+        ]
+
+    def test_grant_entry_missing_requires_approval_is_rejected(self):
+        with pytest.raises(ValidationError, match="requires_approval"):
+            ToolNodeInput(
+                id=uuid.uuid4(),
+                mcp_server_id=uuid.uuid4(),
+                mcp_tools=[{"name": "web_search"}],
+            )
+
+    def test_grant_entry_missing_name_is_rejected(self):
+        with pytest.raises(ValidationError, match="name"):
+            ToolNodeInput(
+                id=uuid.uuid4(),
+                mcp_server_id=uuid.uuid4(),
+                mcp_tools=[{"requires_approval": False}],
+            )
+
+    def test_grant_entry_blank_name_is_rejected(self):
+        with pytest.raises(ValidationError, match="name"):
+            ToolNodeInput(
+                id=uuid.uuid4(),
+                mcp_server_id=uuid.uuid4(),
+                mcp_tools=[{"name": "   ", "requires_approval": False}],
+            )
+
+    def test_grant_entry_non_dict_is_rejected(self):
+        with pytest.raises(ValidationError):
+            ToolNodeInput(
+                id=uuid.uuid4(),
+                mcp_server_id=uuid.uuid4(),
+                mcp_tools=["web_search"],
+            )
+
+
 class TestEdgeInput:
     def test_creation(self):
         eid = uuid.uuid4()

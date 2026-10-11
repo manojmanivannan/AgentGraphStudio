@@ -3,6 +3,118 @@ import json
 import uuid
 import zipfile
 
+ORIGIN = {"Origin": "http://test"}
+
+
+class TestSaveCanvasMcpToolNode:
+    """MCP-backed Tool Node persistence through the canvas API (#132): the
+    grant (server reference + enabled-tools selection) round-trips save /
+    reload; malformed grants are rejected at the API boundary."""
+
+    async def _register_server(self, authed_client, name="Context7") -> str:
+        res = await authed_client.post(
+            "/api/mcp/servers",
+            json={"name": name, "url": "https://mcp.context7.com/mcp"},
+            headers=ORIGIN,
+        )
+        assert res.status_code == 201, res.text
+        return res.json()["id"]
+
+    async def test_save_and_reload_mcp_grant(self, authed_client):
+        created = await authed_client.post("/api/canvases", json={"name": "MCP"})
+        cid = created.json()["id"]
+        server_id = await self._register_server(authed_client)
+        tid = str(uuid.uuid4())
+
+        payload = {
+            "name": "MCP",
+            "nodes": {
+                "agents": [],
+                "tools": [
+                    {
+                        "id": tid,
+                        "name": "Search Tools",
+                        "mcp_server_id": server_id,
+                        "mcp_tools": [
+                            {"name": "web_search", "requires_approval": True},
+                            {"name": "read_doc", "requires_approval": False},
+                        ],
+                    },
+                ],
+            },
+            "edges": [],
+        }
+
+        resp = await authed_client.put(f"/api/canvases/{cid}", json=payload)
+        assert resp.status_code == 200, resp.text
+        tool = resp.json()["nodes"]["tools"][0]
+        assert tool["mcp_server_id"] == server_id
+        assert tool["mcp_tools"] == [
+            {"name": "web_search", "requires_approval": True},
+            {"name": "read_doc", "requires_approval": False},
+        ]
+
+        get_resp = await authed_client.get(f"/api/canvases/{cid}")
+        assert get_resp.status_code == 200
+        tool = get_resp.json()["nodes"]["tools"][0]
+        assert tool["mcp_server_id"] == server_id
+        assert tool["mcp_tools"][0]["name"] == "web_search"
+        assert tool["mcp_tools"][0]["requires_approval"] is True
+
+    async def test_save_code_tool_has_no_mcp_fields(self, authed_client):
+        """Regression: author (code) tools save unchanged — MCP columns stay
+        empty (null server ref, empty grant list)."""
+        created = await authed_client.post("/api/canvases", json={"name": "Code"})
+        cid = created.json()["id"]
+        tid = str(uuid.uuid4())
+
+        payload = {
+            "name": "Code",
+            "nodes": {
+                "agents": [],
+                "tools": [
+                    {"id": tid, "name": "Calc", "code": "def add(a, b): return a + b",
+                     "requires_approval": True},
+                ],
+            },
+            "edges": [],
+        }
+        resp = await authed_client.put(f"/api/canvases/{cid}", json=payload)
+        assert resp.status_code == 200
+        tool = resp.json()["nodes"]["tools"][0]
+        assert tool["mcp_server_id"] is None
+        assert tool["mcp_tools"] == []
+        assert tool["code"] == "def add(a, b): return a + b"
+
+        get_resp = await authed_client.get(f"/api/canvases/{cid}")
+        tool = get_resp.json()["nodes"]["tools"][0]
+        assert tool["mcp_server_id"] is None
+        assert tool["mcp_tools"] == []
+
+    async def test_save_malformed_grant_entry_is_422(self, authed_client):
+        """Each grant entry must carry name + requires_approval (#132)."""
+        created = await authed_client.post("/api/canvases", json={"name": "Bad"})
+        cid = created.json()["id"]
+
+        payload = {
+            "name": "Bad",
+            "nodes": {
+                "agents": [],
+                "tools": [
+                    {
+                        "id": str(uuid.uuid4()),
+                        "name": "Bad Grant",
+                        "mcp_server_id": str(uuid.uuid4()),
+                        "mcp_tools": [{"name": "web_search"}],
+                    },
+                ],
+            },
+            "edges": [],
+        }
+        resp = await authed_client.put(f"/api/canvases/{cid}", json=payload)
+        assert resp.status_code == 422
+        assert "requires_approval" in resp.text
+
 
 class TestCreateCanvas:
     async def test_create_default(self, authed_client):

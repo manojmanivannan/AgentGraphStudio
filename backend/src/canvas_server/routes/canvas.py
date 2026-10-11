@@ -104,6 +104,8 @@ def _canvas_to_response(canvas: Canvas) -> CanvasResponse:
                     dependencies=n.dependencies,
                     args=n.args,
                     requires_approval=n.requires_approval,
+                    mcp_server_id=n.mcp_server_id,
+                    mcp_tools=n.mcp_tools,
                     position_x=n.position_x,
                     position_y=n.position_y,
                 )

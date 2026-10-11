@@ -10,6 +10,7 @@ from canvas_server.models.api import (
     ToolNodeInput,
 )
 from canvas_server.models.auth import User
+from canvas_server.models.mcp import McpServer
 from canvas_server.repos.canvas_repo import CanvasRepo
 
 
@@ -446,3 +447,111 @@ class TestCanvasRepoAttachments:
         new_attachment_id = canvas.attachment_nodes[0].id
         assert canvas.edges[0].source_node_id == new_agent_id
         assert canvas.edges[0].target_node_id == new_attachment_id
+
+
+class TestCanvasRepoMcpToolNode:
+    """MCP-backed Tool Node persistence (#132): a grant is (one registered
+    server, an enabled-tools selection) and must survive save -> reload."""
+
+    async def _create_server(self, test_session) -> "McpServer":
+        server = McpServer(name="Context7", url="https://mcp.context7.com/mcp")
+        test_session.add(server)
+        await test_session.commit()
+        return server
+
+    async def test_save_persists_mcp_grant(self, blank_canvas, test_session):
+        server = await self._create_server(test_session)
+        repo = CanvasRepo(test_session)
+        tid = uuid.uuid4()
+        grant = [{"name": "web_search", "requires_approval": True}]
+
+        await repo.save_nodes_and_edges(
+            blank_canvas.id,
+            "MCP Canvas",
+            [],
+            [
+                ToolNodeInput(
+                    id=tid,
+                    name="Search Tools",
+                    mcp_server_id=server.id,
+                    mcp_tools=grant,
+                )
+            ],
+            [],
+        )
+        canvas = await repo.get_or_404(blank_canvas.id)
+        node = canvas.tool_nodes[0]
+        assert node.mcp_server_id == server.id
+        assert node.mcp_tools == grant
+        # MCP-backed nodes carry no code payload.
+        assert node.code == ""
+
+    async def test_save_persists_multi_tool_grant(self, blank_canvas, test_session):
+        server = await self._create_server(test_session)
+        repo = CanvasRepo(test_session)
+        tid = uuid.uuid4()
+        grant = [
+            {"name": "read_doc", "requires_approval": False},
+            {"name": "send_email", "requires_approval": True},
+        ]
+
+        await repo.save_nodes_and_edges(
+            blank_canvas.id,
+            "MCP Canvas",
+            [],
+            [
+                ToolNodeInput(
+                    id=tid,
+                    name="Docs Tools",
+                    mcp_server_id=server.id,
+                    mcp_tools=grant,
+                )
+            ],
+            [],
+        )
+        canvas = await repo.get_or_404(blank_canvas.id)
+        assert canvas.tool_nodes[0].mcp_tools == grant
+
+    async def test_code_tool_save_leaves_mcp_columns_default(self, blank_canvas, test_session):
+        """Regression: author (code) tools save unchanged — MCP columns stay
+        empty (null server ref, empty grant list)."""
+        repo = CanvasRepo(test_session)
+        tid = uuid.uuid4()
+
+        await repo.save_nodes_and_edges(
+            blank_canvas.id,
+            "Code Canvas",
+            [],
+            [ToolNodeInput(id=tid, name="Calc", code="def add(a, b): return a + b",
+                           requires_approval=True)],
+            [],
+        )
+        canvas = await repo.get_or_404(blank_canvas.id)
+        node = canvas.tool_nodes[0]
+        assert node.mcp_server_id is None
+        assert node.mcp_tools == []
+        assert node.code == "def add(a, b): return a + b"
+        assert node.requires_approval is True
+
+    async def test_create_full_persists_mcp_grant(self, test_session, test_user):
+        server = await self._create_server(test_session)
+        repo = CanvasRepo(test_session)
+        grant = [{"name": "lookup", "requires_approval": False}]
+
+        canvas = await repo.create_full(
+            "MCP Import",
+            [],
+            [
+                ToolNodeInput(
+                    id=uuid.uuid4(),
+                    name="Lookup Tools",
+                    mcp_server_id=server.id,
+                    mcp_tools=grant,
+                )
+            ],
+            [],
+            owner_id=test_user.id,
+        )
+        node = canvas.tool_nodes[0]
+        assert node.mcp_server_id == server.id
+        assert node.mcp_tools == grant

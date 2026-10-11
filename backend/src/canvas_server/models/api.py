@@ -80,6 +80,26 @@ class AgentNodeResponse(AgentNodeBase):
     canvas_id: uuid.UUID
 
 
+class McpToolGrant(BaseModel):
+    """One enabled tool of an MCP-backed Tool Node's grant (spec §2.1).
+
+    The grant unit is ``(server reference, enabled-tools selection)`` (#119);
+    approval granularity is per enabled tool (#119 Q9) — the node-level
+    ``requires_approval`` boolean continues to govern author (code) tools only.
+    """
+
+    name: str
+    requires_approval: bool
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, v: str) -> str:
+        trimmed = v.strip()
+        if not trimmed:
+            raise ValueError("mcp_tools entry: name must not be empty")
+        return trimmed
+
+
 class ToolNodeInput(BaseModel):
     id: uuid.UUID
     name: str = "Tool"
@@ -90,6 +110,10 @@ class ToolNodeInput(BaseModel):
     requires_approval: bool = False
     position_x: float = 0
     position_y: float = 0
+    # MCP variant (#132): non-null ⇒ MCP-backed node (code/args stay empty);
+    # ``mcp_tools`` is the enabled-tools selection for the server grant.
+    mcp_server_id: uuid.UUID | None = None
+    mcp_tools: list[McpToolGrant] = Field(default_factory=list)
 
 
 class ToolNodeResponse(ToolNodeInput):
