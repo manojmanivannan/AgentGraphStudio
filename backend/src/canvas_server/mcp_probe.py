@@ -26,6 +26,7 @@ import logging
 import re
 import time
 from collections.abc import Iterator
+from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass, field
 
 from mcp import ClientSession
@@ -65,6 +66,32 @@ class McpProbeResult:
     server_version: str | None = None
     tools: list[str] = field(default_factory=list)
     tool_count: int = 0
+    latency_ms: int = 0
+    detail: str = ""
+    classification: str | None = None
+    protocol_revision: str | None = None
+
+
+@dataclass(frozen=True)
+class McpToolDescriptor:
+    """One catalog entry: name + description + the server-provided input
+    schema, exactly as the server serves it — no client-side reshaping (#134)."""
+
+    name: str
+    description: str | None = None
+    input_schema: dict = field(default_factory=dict)
+
+
+@dataclass
+class McpCatalogResult:
+    """Full-descriptor sibling of :class:`McpProbeResult` for the editor's
+    live-catalog fetch (#134, spec §6.3): same short-lived probe connection,
+    same never-raises contract, but carries descriptions + input schemas."""
+
+    ok: bool
+    tools: list[McpToolDescriptor] = field(default_factory=list)
+    server_name: str | None = None
+    server_version: str | None = None
     latency_ms: int = 0
     detail: str = ""
     classification: str | None = None
@@ -172,13 +199,35 @@ async def probe_mcp_server(
     )
 
 
+def _open_session(
+    url: str, *, headers: dict[str, str] | None, timeout: float
+) -> AbstractAsyncContextManager:
+    """The shared transport block: Streamable HTTP + ``ClientSession``.
+
+    One client primitive, two consumers (#126 §4): the name-only probe
+    (:func:`probe_mcp_server`) and the full-descriptor catalog fetch
+    (:func:`fetch_mcp_catalog`) both open, handshake, and close through here.
+    """
+    return _session_cm(url, headers=headers, timeout=timeout)
+
+
+@asynccontextmanager
+async def _session_cm(
+    url: str, *, headers: dict[str, str] | None, timeout: float
+):
+    async with streamablehttp_client(
+        url, headers=headers, timeout=timeout, sse_read_timeout=timeout
+    ) as (read_stream, write_stream, _get_session_id), ClientSession(
+        read_stream, write_stream
+    ) as session:
+        yield session
+
+
 async def _connect_and_list(
     url: str, *, headers: dict[str, str] | None, timeout: float
 ) -> dict:
     """Run the full handshake + tools/list; returns McpProbeResult fields."""
-    async with streamablehttp_client(
-        url, headers=headers, timeout=timeout, sse_read_timeout=timeout
-    ) as (read_stream, write_stream, _get_session_id), ClientSession(read_stream, write_stream) as session:
+    async with _session_cm(url, headers=headers, timeout=timeout) as session:
         init = await session.initialize()
         listing = await session.list_tools()
 
@@ -187,5 +236,73 @@ async def _connect_and_list(
         "server_version": init.serverInfo.version,
         "tools": [tool.name for tool in listing.tools],
         "tool_count": len(listing.tools),
+        "protocol_revision": init.protocolVersion,
+    }
+
+
+async def fetch_mcp_catalog(
+    url: str,
+    *,
+    credential_header: str | None = None,
+    credential_value: str | None = None,
+    timeout: float | None = None,
+) -> McpCatalogResult:
+    """Connect, handshake, and list full tool descriptors, then close.
+
+    The editor's live-catalog read (#134, spec §6.3): rides the same
+    short-lived probe connection as :func:`probe_mcp_server` — no cache lives
+    anywhere. Never raises; failures come back as ``ok=False`` with the
+    classified detail so the picker can show an honest error.
+    """
+    timeout = timeout if timeout is not None else settings.llm_validation_timeout_seconds
+    headers = (
+        {credential_header: credential_value}
+        if credential_header and credential_value
+        else None
+    )
+
+    start = time.perf_counter()
+    try:
+        result = await asyncio.wait_for(
+            _connect_and_catalog(url, headers=headers, timeout=timeout),
+            timeout=timeout,
+        )
+    except Exception as exc:  # noqa: BLE001 — probes never raise (§3.1)
+        logger.info("MCP catalog fetch %r failed: %r", url.split("?")[0], exc)
+        classification = classify_mcp_failure(exc)
+        return McpCatalogResult(
+            ok=False,
+            detail=classification.detail,
+            latency_ms=int((time.perf_counter() - start) * 1000),
+            classification=classification.category,
+            protocol_revision=classification.protocol_revision,
+        )
+    latency = int((time.perf_counter() - start) * 1000)
+    return McpCatalogResult(
+        ok=True,
+        detail="OK",
+        latency_ms=latency,
+        **result,
+    )
+
+
+async def _connect_and_catalog(
+    url: str, *, headers: dict[str, str] | None, timeout: float
+) -> dict:
+    async with _session_cm(url, headers=headers, timeout=timeout) as session:
+        init = await session.initialize()
+        listing = await session.list_tools()
+
+    return {
+        "tools": [
+            McpToolDescriptor(
+                name=tool.name,
+                description=tool.description,
+                input_schema=dict(tool.inputSchema) if tool.inputSchema else {},
+            )
+            for tool in listing.tools
+        ],
+        "server_name": init.serverInfo.name,
+        "server_version": init.serverInfo.version,
         "protocol_revision": init.protocolVersion,
     }

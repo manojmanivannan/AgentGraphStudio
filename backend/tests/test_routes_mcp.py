@@ -476,3 +476,99 @@ class TestConnectionProbe:
         assert body["ok"] is False
         assert body["detail"]
         assert body["classification"] == "connection_failure"
+
+
+class TestToolCatalogEndpoint:
+    """POST /api/mcp/servers/{id}/tools — the editor's live-catalog read
+    (#134, spec §6.3): one shared endpoint riding the short-lived probe
+    connection; no cache is written anywhere; an unreachable server comes
+    back as a structured ok=False response, never stale data."""
+
+    async def test_requires_auth(self, test_client):
+        res = await test_client.post(
+            "/api/mcp/servers/00000000-0000-0000-0000-000000000000/tools"
+        )
+        assert res.status_code == 401
+
+    async def test_requires_same_origin(self, authed_client):
+        res = await authed_client.post(
+            "/api/mcp/servers/00000000-0000-0000-0000-000000000000/tools",
+            headers={"Origin": "http://evil.example"},
+        )
+        assert res.status_code == 403
+
+    async def test_unknown_server_id_is_404(self, authed_client):
+        res = await authed_client.post(
+            "/api/mcp/servers/00000000-0000-0000-0000-000000000000/tools",
+            headers=ORIGIN,
+        )
+        assert res.status_code == 404
+
+    async def test_returns_live_catalog_through_the_probe_path(
+        self, authed_client, ref_mcp_server
+    ):
+        created = (await _create(authed_client, url=ref_mcp_server)).json()
+        res = await authed_client.post(
+            f"/api/mcp/servers/{created['id']}/tools", headers=ORIGIN
+        )
+        assert res.status_code == 200
+        body = res.json()
+        assert body["ok"] is True
+        assert body["server_id"] == created["id"]
+        assert body["server_name"] == "ags-probe-ref"
+        assert body["latency_ms"] >= 0
+        # Full descriptors, not bare names — the editor renders the
+        # description and the server-provided input schema from this data.
+        assert len(body["tools"]) == 1
+        tool = body["tools"][0]
+        assert tool["name"] == "add"
+        assert "two integers" in (tool["description"] or "")
+        assert tool["input_schema"]["properties"]["a"]["type"] == "integer"
+        # Never echoes the credential (§5.4), even for a reachable server.
+        assert SECRET not in res.text
+
+    async def test_unreachable_server_is_a_structured_error_not_an_http_error(
+        self, authed_client
+    ):
+        import socket
+
+        with socket.socket() as sock:
+            sock.bind(("127.0.0.1", 0))
+            dead_port = sock.getsockname()[1]
+
+        created = (
+            await _create(authed_client, name="Dead", url=f"http://127.0.0.1:{dead_port}/mcp")
+        ).json()
+        res = await authed_client.post(
+            f"/api/mcp/servers/{created['id']}/tools", headers=ORIGIN
+        )
+        assert res.status_code == 200
+        body = res.json()
+        assert body["ok"] is False
+        assert body["tools"] == []
+        assert body["detail"]
+        assert body["classification"] == "connection_failure"
+
+    async def test_no_catalog_snapshot_is_persisted(
+        self, authed_client, ref_mcp_server
+    ):
+        """The endpoint is a live read: repeated calls hit the server again
+        and nothing is stored on the registration row."""
+        created = (await _create(authed_client, url=ref_mcp_server)).json()
+        first = (
+            await authed_client.post(f"/api/mcp/servers/{created['id']}/tools", headers=ORIGIN)
+        ).json()
+        second = (
+            await authed_client.post(f"/api/mcp/servers/{created['id']}/tools", headers=ORIGIN)
+        ).json()
+        assert first["ok"] and second["ok"]
+        assert first["latency_ms"] >= 0 and second["latency_ms"] >= 0
+
+        # The registration response still carries no tool/column snapshot.
+        listed = (
+            await authed_client.get("/api/mcp/servers", headers=ORIGIN)
+        ).json()["servers"][0]
+        assert set(listed) == {
+            "id", "name", "url", "credential_header", "credential_set",
+            "credential_preview", "url_warning",
+        }

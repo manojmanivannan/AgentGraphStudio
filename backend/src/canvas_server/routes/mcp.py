@@ -19,9 +19,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from canvas_server.auth import get_current_user, verify_origin
 from canvas_server.database import get_session
 from canvas_server.mcp_config import get_mcp_servers, refresh_mcp_servers
-from canvas_server.mcp_probe import probe_mcp_server
 from canvas_server.mcp_url_policy import validate_mcp_server_url
 from canvas_server.models.api import (
+    McpCatalogTool,
+    McpServerCatalogResponse,
     McpServerCreate,
     McpServerListResponse,
     McpServerResponse,
@@ -29,6 +30,7 @@ from canvas_server.models.api import (
     McpServerTestResponse,
     McpServerUpdate,
 )
+from canvas_server.mcp_probe import fetch_mcp_catalog, probe_mcp_server
 from canvas_server.models.auth import User
 from canvas_server.repos.mcp_repo import McpServerRepo
 
@@ -199,3 +201,45 @@ async def test_mcp_server(
 
     probe = await probe_mcp_server(url, credential_header=header, credential_value=value)
     return McpServerTestResponse(**vars(probe))
+
+
+@mcp_router.post("/{server_id}/tools", response_model=McpServerCatalogResponse)
+async def list_mcp_server_tools(
+    server_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+    _user: User = Depends(get_current_user),
+    _origin: None = Depends(verify_origin),
+) -> McpServerCatalogResponse:
+    """Live catalog read for the Tool Node editor's checklist (#134, §6.3).
+
+    One shared endpoint riding the short-lived probe connection
+    (:func:`fetch_mcp_catalog`): open, handshake, ``tools/list``, close —
+    every request hits the server live; **no catalog cache exists anywhere**
+    (no DB snapshot, no in-process memo). An unreachable server comes back as
+    a structured ``ok=False`` response (honest error, never stale data); the
+    response never contains the credential (§5.4).
+    """
+    row = await _get_row_or_404(session, server_id)
+    catalog = await fetch_mcp_catalog(
+        row.url,
+        credential_header=row.credential_header,
+        credential_value=row.credential_value,
+    )
+    return McpServerCatalogResponse(
+        ok=catalog.ok,
+        server_id=server_id,
+        tools=[
+            McpCatalogTool(
+                name=tool.name,
+                description=tool.description,
+                input_schema=tool.input_schema,
+            )
+            for tool in catalog.tools
+        ],
+        server_name=catalog.server_name,
+        server_version=catalog.server_version,
+        latency_ms=catalog.latency_ms,
+        detail=catalog.detail,
+        classification=catalog.classification,
+        protocol_revision=catalog.protocol_revision,
+    )
