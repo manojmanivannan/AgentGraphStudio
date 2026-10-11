@@ -109,6 +109,8 @@ class CanvasRepo:
                 ),
                 args=t.args,
                 requires_approval=t.requires_approval,
+                mcp_server_id=t.mcp_server_id,
+                mcp_tools=[grant.model_dump() for grant in t.mcp_tools],
                 position_x=t.position_x,
                 position_y=t.position_y,
             )
@@ -322,6 +324,8 @@ class CanvasRepo:
                 ),
                 args=t.args,
                 requires_approval=t.requires_approval,
+                mcp_server_id=t.mcp_server_id,
+                mcp_tools=[grant.model_dump() for grant in t.mcp_tools],
                 position_x=t.position_x,
                 position_y=t.position_y,
             )

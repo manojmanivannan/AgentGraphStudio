@@ -135,6 +135,23 @@ async def delete_mcp_server(
     _origin: None = Depends(verify_origin),
 ) -> None:
     row = await _get_row_or_404(session, server_id)
+    # Deletion guard (#132): a server still granted by any Tool Node stays.
+    referencing = await McpServerRepo(session).list_referencing_canvases(server_id)
+    if referencing:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": (
+                    "This MCP server is still referenced by tool nodes in "
+                    f"{len(referencing)} canvas(es). Remove those tool nodes' "
+                    "server grants before deleting the server."
+                ),
+                "referencing_canvases": [
+                    {"id": str(canvas.id), "name": canvas.name}
+                    for canvas in referencing
+                ],
+            },
+        )
     await McpServerRepo(session).delete(row)
     await session.commit()
     await refresh_mcp_servers(session)

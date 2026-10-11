@@ -75,6 +75,82 @@ class TestMcpServerRepoGet:
         assert row.credential_value == "Bearer ctx7-secret-token"
 
 
+class TestMcpServerRepoReferencingCanvases:
+    """Deletion-guard lookup (#132): which canvases hold a Tool Node granting
+    tools from this server."""
+
+    async def _canvas_with_grant(self, test_session, owner_id, server_id, name):
+        from canvas_server.models.api import ToolNodeInput
+        from canvas_server.repos.canvas_repo import CanvasRepo
+
+        canvas = await CanvasRepo(test_session).create(name, owner_id=owner_id)
+        await CanvasRepo(test_session).save_nodes_and_edges(
+            canvas.id,
+            name,
+            [],
+            [
+                ToolNodeInput(
+                    id=uuid.uuid4(),
+                    name="MCP Tools",
+                    mcp_server_id=server_id,
+                    mcp_tools=[{"name": "web_search", "requires_approval": False}],
+                )
+            ],
+            [],
+        )
+        return canvas
+
+    async def test_lists_canvas_id_and_name_for_referencing_nodes(
+        self, test_session, test_user, one_server
+    ):
+        canvas = await self._canvas_with_grant(
+            test_session, test_user.id, one_server.id, "Docs Canvas"
+        )
+        referencing = await McpServerRepo(test_session).list_referencing_canvases(
+            one_server.id
+        )
+        assert [(c.id, c.name) for c in referencing] == [(canvas.id, "Docs Canvas")]
+
+    async def test_lists_every_referencing_canvas_distinct(self, test_session, test_user):
+        server = await McpServerRepo(test_session).create(
+            name="Shared", url="https://shared.example/mcp"
+        )
+        await test_session.commit()
+        c1 = await self._canvas_with_grant(test_session, test_user.id, server.id, "C1")
+        c2 = await self._canvas_with_grant(test_session, test_user.id, server.id, "C2")
+        # A second node in one canvas referencing the same server must not
+        # duplicate the canvas in the result.
+        from canvas_server.models.api import ToolNodeInput
+        from canvas_server.repos.canvas_repo import CanvasRepo
+
+        await CanvasRepo(test_session).save_nodes_and_edges(
+            c2.id,
+            "C2",
+            [],
+            [
+                ToolNodeInput(
+                    id=uuid.uuid4(),
+                    name="Other Tools",
+                    mcp_server_id=server.id,
+                    mcp_tools=[{"name": "docs", "requires_approval": True}],
+                )
+            ],
+            [],
+        )
+        referencing = await McpServerRepo(test_session).list_referencing_canvases(
+            server.id
+        )
+        assert sorted(c.id for c in referencing) == sorted([c1.id, c2.id])
+
+    async def test_unreferenced_server_has_no_referencing_canvases(
+        self, test_session, one_server
+    ):
+        assert (
+            await McpServerRepo(test_session).list_referencing_canvases(one_server.id)
+            == []
+        )
+
+
 class TestMcpServerRepoUpdate:
     async def test_update_changes_fields(self, test_session, one_server):
         repo = McpServerRepo(test_session)

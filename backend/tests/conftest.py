@@ -48,6 +48,9 @@ def mock_embedder(monkeypatch):
 
 @pytest_asyncio.fixture
 async def fresh_db():
+    # Register every model table (FK targets included) before create_all.
+    import canvas_server.models.canvas  # noqa: F401  (registers all canvas-side tables)
+    import canvas_server.models.mcp  # noqa: F401  (mcp_servers — tool_nodes.mcp_server_id FK target)
     from canvas_server.database import Base, async_reset_session_factory, get_engine
 
     _reset_engine_and_factory()

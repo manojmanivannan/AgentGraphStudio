@@ -113,6 +113,86 @@ class TestCrudRoundTrip:
         listed = (await authed_client.get("/api/mcp/servers")).json()["servers"]
         assert listed == []
 
+
+class TestDeleteGuardReferencedServer:
+    """Deleting a server referenced by any Tool Node is rejected (HTTP 409)
+    with the referencing canvases listed; unreferenced servers delete (#132)."""
+
+    async def _save_canvas_with_grant(self, authed_client, server_id, canvas_name):
+        import uuid as uuid_mod
+
+        created = await authed_client.post(
+            "/api/canvases", json={"name": canvas_name}
+        )
+        cid = created.json()["id"]
+        payload = {
+            "name": canvas_name,
+            "nodes": {
+                "agents": [],
+                "tools": [
+                    {
+                        "id": str(uuid_mod.uuid4()),
+                        "name": "MCP Tools",
+                        "mcp_server_id": server_id,
+                        "mcp_tools": [
+                            {"name": "web_search", "requires_approval": False}
+                        ],
+                    },
+                ],
+            },
+            "edges": [],
+        }
+        res = await authed_client.put(f"/api/canvases/{cid}", json=payload)
+        assert res.status_code == 200, res.text
+        return cid
+
+    async def test_delete_referenced_server_is_409_listing_the_canvas(
+        self, authed_client
+    ):
+        server = (await _create(authed_client)).json()
+        cid = await self._save_canvas_with_grant(
+            authed_client, server["id"], "Docs Pipeline"
+        )
+
+        res = await authed_client.delete(
+            f"/api/mcp/servers/{server['id']}", headers=ORIGIN
+        )
+        assert res.status_code == 409, res.text
+        detail = res.json()["detail"]
+        canvases = detail["referencing_canvases"]
+        assert canvases[0]["id"] == cid
+        assert canvases[0]["name"] == "Docs Pipeline"
+
+        # The server must remain registered.
+        listed = (await authed_client.get("/api/mcp/servers")).json()["servers"]
+        assert [s["id"] for s in listed] == [server["id"]]
+
+    async def test_delete_severs_grant_after_referencing_canvas_is_cleared(
+        self, authed_client
+    ):
+        server = (await _create(authed_client)).json()
+        cid = await self._save_canvas_with_grant(
+            authed_client, server["id"], "Later Cleared"
+        )
+        # User re-saves the canvas without the MCP node: the grant is gone.
+        empty_save = await authed_client.put(
+            f"/api/canvases/{cid}",
+            json={"name": "Later Cleared", "nodes": {"agents": [], "tools": []}, "edges": []},
+        )
+        assert empty_save.status_code == 200
+
+        res = await authed_client.delete(
+            f"/api/mcp/servers/{server['id']}", headers=ORIGIN
+        )
+        assert res.status_code == 204, res.text
+
+    async def test_delete_unreferenced_server_succeeds(self, authed_client):
+        server = (await _create(authed_client)).json()
+        res = await authed_client.delete(
+            f"/api/mcp/servers/{server['id']}", headers=ORIGIN
+        )
+        assert res.status_code == 204
+
     async def test_list_ordered_by_name(self, authed_client):
         await _create(authed_client, name="zeta")
         await _create(authed_client, name="alpha")
