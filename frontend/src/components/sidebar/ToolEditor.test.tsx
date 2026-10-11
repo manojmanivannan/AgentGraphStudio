@@ -26,6 +26,18 @@ vi.mock("@monaco-editor/react", () => ({
 vi.mock("@/lib/api", () => ({
   inspectTool: vi.fn(),
   testTool: vi.fn(),
+  listMcpServers: vi.fn().mockResolvedValue([]),
+  fetchMcpServerCatalog: vi.fn().mockResolvedValue({
+    ok: false,
+    server_id: "",
+    tools: [],
+    server_name: null,
+    server_version: null,
+    latency_ms: 0,
+    detail: "",
+    classification: null,
+    protocol_revision: null,
+  }),
 }));
 
 import { inspectTool, testTool } from "@/lib/api";
@@ -275,5 +287,58 @@ describe("ToolEditor", () => {
     expect(
       screen.getByText(/conversation replay highlighting/)
     ).toBeInTheDocument();
+  });
+
+  // --- MCP-backed variant (#134): the code/Monaco body is replaced by the
+  // picker body; the name field keeps working; code tools get an attach
+  // affordance. ---
+
+  const mcpNode: Node = {
+    id: "tool-1",
+    type: "tool",
+    position: { x: 0, y: 0 },
+    data: {
+      id: "tool-1",
+      name: "Search Tools",
+      code: "",
+      mcpServerId: "srv-1",
+      mcpTools: [{ name: "web_search", requiresApproval: true }],
+      mcpSeenTools: ["web_search"],
+    },
+  };
+
+  it("replaces the code editing body with the MCP picker for an MCP-backed node", () => {
+    useCanvasStore.getState().setNodes([mcpNode]);
+    useCanvasStore.getState().selectNode("tool-1");
+    render(<ToolEditor />);
+
+    // Name keeps working; packages/args/code/test panels do not apply.
+    expect(screen.getByTestId("tool-name-input")).toHaveValue("Search Tools");
+    expect(screen.getByTestId("mcp-tool-picker")).toBeInTheDocument();
+    expect(screen.getByTestId("mcp-server-chip")).toBeInTheDocument();
+    expect(screen.queryByTestId("tool-code-editor")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("tool-packages-input")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("tool-test-button")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("tool-requires-approval")).not.toBeInTheDocument();
+  });
+
+  it("keeps editing the name on an MCP-backed node", async () => {
+    const user = userEvent.setup();
+    useCanvasStore.getState().setNodes([mcpNode]);
+    useCanvasStore.getState().selectNode("tool-1");
+    render(<ToolEditor />);
+
+    await user.type(screen.getByTestId("tool-name-input"), "X");
+    const stored = useCanvasStore.getState().nodes.find((n) => n.id === "tool-1");
+    expect(stored?.data.name).toBe("Search ToolsX");
+  });
+
+  it("offers the attach-server affordance to a code tool node while keeping the code body", () => {
+    useCanvasStore.getState().setNodes([toolNode]);
+    useCanvasStore.getState().selectNode("tool-1");
+    render(<ToolEditor />);
+
+    expect(screen.getByTestId("mcp-attach-server")).toBeInTheDocument();
+    expect(screen.getByTestId("tool-code-editor")).toBeInTheDocument();
   });
 });

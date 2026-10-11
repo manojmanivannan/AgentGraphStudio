@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
-import { AlertCircle, Check, Loader2, Pencil, Plus, Trash2 } from "lucide-react";
+import { AlertCircle, Check, Loader2, Pencil, Plus, Trash2, Zap } from "lucide-react";
 import {
   createMcpServer,
   deleteMcpServer,
   listMcpServers,
+  testMcpServer,
   updateMcpServer,
 } from "@/lib/api";
-import type { McpServer, McpServerForm } from "@/types";
+import type { McpServer, McpServerForm, McpServerTestResponse } from "@/types";
 
 type Feedback =
   | { kind: "success"; message: string }
@@ -49,6 +50,28 @@ export function McpServersSection() {
   const [editor, setEditor] = useState<EditorState | null>(null);
   const [feedback, setFeedback] = useState<Feedback>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  // Test connection (#131, wired in #134): one in-flight probe + the last
+  // result per server, rendered inline on the server row.
+  const [testingId, setTestingId] = useState<string | null>(null);
+  const [testResults, setTestResults] = useState<
+    Record<string, McpServerTestResponse>
+  >({});
+
+  const test = async (server: McpServer) => {
+    setTestingId(server.id);
+    setFeedback(null);
+    try {
+      const result = await testMcpServer({ server_id: server.id });
+      setTestResults((prev) => ({ ...prev, [server.id]: result }));
+    } catch (err: any) {
+      setFeedback({
+        kind: "error",
+        message: err?.message || "Failed to test MCP server.",
+      });
+    } finally {
+      setTestingId(null);
+    }
+  };
 
   const load = useCallback(async () => {
     try {
@@ -199,8 +222,46 @@ export function McpServersSection() {
                     {server.url_warning}
                   </span>
                 )}
+                {testResults[server.id] && (
+                  <div
+                    data-testid={`mcp-test-result-${server.name}`}
+                    data-ok={String(testResults[server.id].ok)}
+                    className={`flex items-start gap-2 p-2 rounded-lg border text-xs ${
+                      testResults[server.id].ok
+                        ? "bg-[var(--color-success-subtle)] border-[var(--color-success)]/30 text-[var(--color-success)]"
+                        : "bg-[var(--color-danger-subtle)] border-[var(--color-danger)]/30 text-[var(--color-danger)]"
+                    }`}
+                  >
+                    {testResults[server.id].ok ? (
+                      <Check className="w-4 h-4 shrink-0 mt-0.5" />
+                    ) : (
+                      <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                    )}
+                    <p>
+                      {testResults[server.id].ok
+                        ? `${testResults[server.id].server_name ?? "Server"} (${testResults[server.id].server_version ?? "?"}) — `
+                        : ""}
+                      {testResults[server.id].detail}
+                      {` · ${testResults[server.id].latency_ms} ms`}
+                    </p>
+                  </div>
+                )}
               </div>
               <div className="flex items-center gap-1 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => test(server)}
+                  disabled={testingId === server.id}
+                  data-testid={`mcp-test-button-${server.name}`}
+                  aria-label={`Test connection to ${server.name}`}
+                  className="p-2 rounded-lg text-[var(--color-text-secondary)] hover:bg-[var(--color-elevated)] transition-colors disabled:opacity-50"
+                >
+                  {testingId === server.id ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Zap className="w-4 h-4" />
+                  )}
+                </button>
                 <button
                   type="button"
                   onClick={() => openEdit(server)}
