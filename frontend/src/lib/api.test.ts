@@ -30,6 +30,8 @@ import {
   logout,
   getMe,
   onUnauthorized,
+  fetchMcpServerCatalog,
+  testMcpServer,
 } from "./api";
 
 const API = "http://localhost:8000/api";
@@ -668,6 +670,90 @@ describe("api", () => {
         await expect(listCanvases()).rejects.toThrow();
         expect(listener).not.toHaveBeenCalled();
       });
+    });
+  });
+
+  describe("fetchMcpServerCatalog (#134)", () => {
+    it("POSTs to the catalog endpoint and returns the live catalog", async () => {
+      const catalog = {
+        ok: true,
+        server_id: "srv-1",
+        tools: [
+          {
+            name: "add",
+            description: "Add two integers.",
+            input_schema: { type: "object", properties: { a: { type: "integer" } } },
+          },
+        ],
+        server_name: "ags-probe-ref",
+        server_version: "1.0",
+        latency_ms: 4,
+        detail: "OK",
+        classification: null,
+        protocol_revision: "2025-06-18",
+      };
+      let seenUrl = "";
+      let seenMethod = "";
+      server.use(
+        http.post(`${API}/mcp/servers/srv-1/tools`, ({ request }) => {
+          seenUrl = request.url;
+          seenMethod = request.method;
+          return HttpResponse.json(catalog);
+        })
+      );
+      const result = await fetchMcpServerCatalog("srv-1");
+      expect(seenMethod).toBe("POST");
+      expect(seenUrl.endsWith("/api/mcp/servers/srv-1/tools")).toBe(true);
+      expect(result.ok).toBe(true);
+      expect(result.tools[0].name).toBe("add");
+      expect(result.tools[0].input_schema.properties.a.type).toBe("integer");
+    });
+
+    it("resolves the structured unreachable-server error instead of throwing", async () => {
+      server.use(
+        http.post(`${API}/mcp/servers/srv-dead/tools`, () =>
+          HttpResponse.json({
+            ok: false,
+            server_id: "srv-dead",
+            tools: [],
+            server_name: null,
+            server_version: null,
+            latency_ms: 2,
+            detail: "Connection refused.",
+            classification: "connection_failure",
+            protocol_revision: null,
+          })
+        )
+      );
+      const result = await fetchMcpServerCatalog("srv-dead");
+      expect(result.ok).toBe(false);
+      expect(result.detail).toContain("refused");
+    });
+  });
+
+  describe("testMcpServer (#131 Settings Test button)", () => {
+    it("POSTs the test endpoint with the server id and returns the probe result", async () => {
+      let seenBody: unknown = null;
+      server.use(
+        http.post(`${API}/mcp/servers/test`, async ({ request }) => {
+          seenBody = await request.json();
+          return HttpResponse.json({
+            ok: true,
+            server_name: "ags-probe-ref",
+            server_version: "1.0",
+            tools: ["add"],
+            tool_count: 1,
+            latency_ms: 3,
+            detail: "OK",
+            classification: null,
+            protocol_revision: "2025-06-18",
+          });
+        })
+      );
+      const result = await testMcpServer({ server_id: "srv-9" });
+      expect(seenBody).toEqual({ server_id: "srv-9" });
+      expect(result.ok).toBe(true);
+      expect(result.tool_count).toBe(1);
     });
   });
 });

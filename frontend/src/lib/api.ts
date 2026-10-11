@@ -12,7 +12,10 @@ import type {
   ToolTestResponse,
   AgentDocument,
   McpServer,
+  McpServerCatalog,
   McpServerForm,
+  McpServerTestRequest,
+  McpServerTestResponse,
   ProviderSettings,
   ProviderSettingsForm,
   ProviderTestResponse,
@@ -317,6 +320,39 @@ export async function deleteMcpServer(id: string): Promise<void> {
   if (!res.ok) {
     throw new Error(await readErrorDetail(res, "Failed to delete MCP server"));
   }
+}
+
+/**
+ * Live tool catalog for the Tool Node editor's checklist (#134, §6.3): a
+ * live read through the probe path — no caching or polling client-side.
+ * An unreachable server resolves (not throws) with the structured
+ * `ok: false` error response; only transport-level failures throw.
+ */
+export async function fetchMcpServerCatalog(
+  serverId: string
+): Promise<McpServerCatalog> {
+  const res = await apiFetch(`${API_BASE}/mcp/servers/${serverId}/tools`, {
+    method: "POST",
+  });
+  if (!res.ok) {
+    throw new Error(await readErrorDetail(res, "Failed to load MCP tool catalog"));
+  }
+  return (await res.json()) as McpServerCatalog;
+}
+
+/** Connection probe for the Settings MCP section's Test button (#131). */
+export async function testMcpServer(
+  request: McpServerTestRequest
+): Promise<McpServerTestResponse> {
+  const res = await apiFetch(`${API_BASE}/mcp/servers/test`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(request),
+  });
+  if (!res.ok) {
+    throw new Error(await readErrorDetail(res, "Failed to test MCP server"));
+  }
+  return (await res.json()) as McpServerTestResponse;
 }
 
 export async function createCanvas(

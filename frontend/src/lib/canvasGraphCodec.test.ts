@@ -77,6 +77,7 @@ describe("canvasGraphCodec", () => {
             requires_approval: false,
             mcp_server_id: null,
             mcp_tools: [],
+            mcp_seen_tools: [],
             position_x: 30,
             position_y: 40,
           },
@@ -188,6 +189,7 @@ describe("canvasGraphCodec", () => {
           requiresApproval: true,
           mcpServerId: null,
           mcpTools: [],
+          mcpSeenTools: [],
         },
       },
     ]);
@@ -245,6 +247,7 @@ describe("canvasGraphCodec", () => {
             { name: "web_search", requires_approval: true },
             { name: "read_doc", requires_approval: false },
           ],
+          mcp_seen_tools: [],
           position_x: 0,
           position_y: 0,
         },
@@ -316,6 +319,7 @@ describe("canvasGraphCodec", () => {
             requiresApproval: false,
             mcpServerId: "srv-1",
             mcpTools: [{ name: "web_search", requiresApproval: true }],
+            mcpSeenTools: [],
           },
         },
       ]);
@@ -405,6 +409,103 @@ describe("canvasGraphCodec", () => {
       expect(data.mcpTools).toEqual([
         { name: "web_search", requiresApproval: true },
       ]);
+    });
+
+    it("round-trips the mcp_seen_tools enablement history", () => {
+      const encoded = encodeCanvasGraph({
+        canvasName: "History",
+        nodes: [
+          {
+            id: "tool-1",
+            type: "tool",
+            position: { x: 0, y: 0 },
+            data: {
+              id: "tool-1",
+              name: "Search Tools",
+              code: "",
+              mcpServerId: "srv-1",
+              mcpTools: [],
+              mcpSeenTools: ["web_search", "read_doc"],
+            },
+          },
+        ],
+        edges: [],
+      });
+
+      expect(encoded.nodes.tools[0].mcp_seen_tools).toEqual([
+        "web_search",
+        "read_doc",
+      ]);
+
+      const decoded = decodeCanvasResponse({
+        id: "canvas-1",
+        name: "History",
+        created_at: "2026-10-11T00:00:00Z",
+        updated_at: "2026-10-11T00:00:00Z",
+        nodes: {
+          agents: [],
+          tools: [
+            {
+              id: "tool-1",
+              canvas_id: "canvas-1",
+              name: encoded.nodes.tools[0].name,
+              code: encoded.nodes.tools[0].code,
+              packages: encoded.nodes.tools[0].packages,
+              args: encoded.nodes.tools[0].args,
+              requires_approval: encoded.nodes.tools[0].requires_approval,
+              mcp_server_id: encoded.nodes.tools[0].mcp_server_id,
+              mcp_tools: encoded.nodes.tools[0].mcp_tools,
+              mcp_seen_tools: encoded.nodes.tools[0].mcp_seen_tools,
+              position_x: 0,
+              position_y: 0,
+            },
+          ],
+        },
+        edges: [],
+      });
+
+      const data = decoded.nodes[0].data as { mcpSeenTools: string[] };
+      expect(data.mcpSeenTools).toEqual(["web_search", "read_doc"]);
+    });
+
+    it("encodes code tools with an empty mcp_seen_tools default", () => {
+      const encoded = encodeCanvasGraph({
+        canvasName: "Code",
+        nodes: [
+          {
+            id: "tool-1",
+            type: "tool",
+            position: { x: 0, y: 0 },
+            data: { id: "tool-1", name: "Calc", code: "def add(a, b): pass" },
+          },
+        ],
+        edges: [],
+      });
+      expect(encoded.nodes.tools[0].mcp_seen_tools).toEqual([]);
+
+      const decoded = decodeCanvasResponse({
+        id: "canvas-1",
+        name: "Code",
+        created_at: "2026-10-11T00:00:00Z",
+        updated_at: "2026-10-11T00:00:00Z",
+        nodes: {
+          agents: [],
+          tools: [
+            {
+              id: "tool-1",
+              canvas_id: "canvas-1",
+              name: "Calc",
+              code: "def add(a, b): pass",
+              mcp_seen_tools: [],
+              position_x: 0,
+              position_y: 0,
+            },
+          ],
+        },
+        edges: [],
+      });
+      const data = decoded.nodes[0].data as { mcpSeenTools: string[] };
+      expect(data.mcpSeenTools).toEqual([]);
     });
   });
 
