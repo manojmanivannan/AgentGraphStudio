@@ -23,6 +23,7 @@ const makeProps = (data: Partial<ToolNodeData> = {}): any => ({
   yPos: 0,
   dragging: false,
   data: {
+    ...data,
     id: data.id ?? "tool-1",
     name: data.name ?? "My Tool",
     code: data.code ?? "",
@@ -88,6 +89,46 @@ describe("ToolNode", () => {
     );
     expect(container.firstChild).toHaveClass(/var\(--color-info-glow\)/);
     expect(container.firstChild).not.toHaveClass(/rgba\(59,130,246/);
+  });
+
+  // --- MCP grant indication (#136): resolved vs not-yet-granting imports ---
+
+  it("renders a resolved MCP-backed node with #133's visuals (no unresolved hint)", () => {
+    render(
+      <ToolNode
+        {...makeProps({
+          code: "",
+          mcpServerId: "srv-1",
+          mcpTools: [
+            { name: "web_search", requiresApproval: true },
+            { name: "read_doc", requiresApproval: false },
+          ],
+        })}
+      />
+    );
+    expect(screen.getByTestId("mcp-tools-badge")).toHaveTextContent("2 tools");
+    expect(screen.queryByTestId("mcp-unresolved-indicator")).not.toBeInTheDocument();
+  });
+
+  it("shows an unresolved indication for a not-yet-granting MCP import", () => {
+    render(
+      <ToolNode
+        {...makeProps({
+          code: "",
+          mcpServerId: null,
+          mcpTools: [{ name: "web_search", requiresApproval: false }],
+        })}
+      />
+    );
+    expect(screen.getByTestId("mcp-unresolved-indicator")).toBeInTheDocument();
+    expect(screen.getByTestId("mcp-unresolved-indicator")).toHaveTextContent(
+      /MCP server unresolved/i
+    );
+  });
+
+  it("shows no unresolved indication for a plain code tool", () => {
+    render(<ToolNode {...makeProps({ code: "def add(): ..." })} />);
+    expect(screen.queryByTestId("mcp-unresolved-indicator")).not.toBeInTheDocument();
   });
 });
 

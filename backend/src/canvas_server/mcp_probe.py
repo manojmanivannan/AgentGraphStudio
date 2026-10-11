@@ -33,6 +33,7 @@ from mcp import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
 from mcp.shared.exceptions import McpError
 from mcp.types import LATEST_PROTOCOL_VERSION, TextContent
+from mcp.types import Tool as McpTool
 
 from canvas_server.config import settings
 
@@ -472,3 +473,76 @@ async def call_mcp_tool(
         latency_ms=int((time.perf_counter() - start) * 1000),
         **result,
     )
+
+
+async def capture_mcp_metadata_snapshot(
+    url: str,
+    *,
+    credential_header: str | None = None,
+    credential_value: str | None = None,
+    timeout: float | None = None,
+) -> dict:
+    """Full metadata snapshot for the ZIP export (ticket #136, spec §2.3).
+
+    Same probe path as :func:`probe_mcp_server` (short-lived backend-side
+    Streamable HTTP connection), but returns each tool's description and raw
+    JSON ``inputSchema`` alongside the name. Never raises — the result is the
+    manifest's ``mcp_reference.snapshot`` block:
+
+    ``{"captured": True, "server_name", "server_version", "protocol_revision",
+    "tools": [{"name", "description", "input_schema"}]}`` on success, or
+    ``{"captured": False, "detail": "...", "tools": []}`` when the live fetch
+    fails (export records the snapshot as unavailable rather than failing).
+    The credential never appears in the returned metadata.
+    """
+    timeout = timeout if timeout is not None else settings.llm_validation_timeout_seconds
+    headers = (
+        {credential_header: credential_value}
+        if credential_header and credential_value
+        else None
+    )
+    try:
+        result = await asyncio.wait_for(
+            _connect_and_snapshot(url, headers=headers, timeout=timeout),
+            timeout=timeout,
+        )
+    except Exception as exc:  # noqa: BLE001 — snapshots never raise (§3.1 parity)
+        logger.info("MCP snapshot %r failed: %r", url.split("?")[0], exc)
+        return {
+            "captured": False,
+            "detail": classify_mcp_failure(exc).detail,
+            "tools": [],
+        }
+    return result
+
+
+async def _connect_and_snapshot(
+    url: str, *, headers: dict[str, str] | None, timeout: float
+) -> dict:
+    """Handshake + tools/list, keeping descriptions and input schemas."""
+    async with _session_cm(url, headers=headers, timeout=timeout) as session:
+        init = await session.initialize()
+        listing = await session.list_tools()
+
+    return {
+        "captured": True,
+        "server_name": init.serverInfo.name,
+        "server_version": init.serverInfo.version,
+        "protocol_revision": init.protocolVersion,
+        "tools": [
+            {
+                "name": tool.name,
+                "description": tool.description,
+                "input_schema": _get_tool_input_schema(tool),
+            }
+            for tool in listing.tools
+        ],
+    }
+
+
+def _get_tool_input_schema(tool: McpTool) -> dict:
+    """The raw JSON schema dict, tolerant of camelCase/snake_case SDK shapes."""
+    schema = getattr(tool, "inputSchema", None) or getattr(tool, "input_schema", None)
+    if schema is None:
+        return {}
+    return schema if isinstance(schema, dict) else dict(schema)
