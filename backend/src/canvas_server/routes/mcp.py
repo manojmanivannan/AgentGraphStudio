@@ -33,6 +33,7 @@ from canvas_server.models.api import (
 )
 from canvas_server.models.auth import User
 from canvas_server.repos.mcp_repo import McpServerRepo
+from canvas_server.routes import get_mcp_server_row_or_404
 
 mcp_router = APIRouter(prefix="/api/mcp/servers", tags=["mcp"])
 
@@ -75,13 +76,6 @@ def _validated_url_or_400(url: str) -> str:
     return url
 
 
-async def _get_row_or_404(session: AsyncSession, server_id: uuid.UUID):
-    row = await McpServerRepo(session).get(server_id)
-    if row is None:
-        raise HTTPException(status_code=404, detail="MCP server not found.")
-    return row
-
-
 @mcp_router.get("", response_model=McpServerListResponse)
 async def list_mcp_servers(
     session: AsyncSession = Depends(get_session),
@@ -118,7 +112,7 @@ async def update_mcp_server(
     _user: User = Depends(get_current_user),
     _origin: None = Depends(verify_origin),
 ) -> McpServerResponse:
-    row = await _get_row_or_404(session, server_id)
+    row = await get_mcp_server_row_or_404(session, server_id)
     _validated_url_or_400(body.url)
     await McpServerRepo(session).update(
         row,
@@ -140,7 +134,7 @@ async def delete_mcp_server(
     _user: User = Depends(get_current_user),
     _origin: None = Depends(verify_origin),
 ) -> None:
-    row = await _get_row_or_404(session, server_id)
+    row = await get_mcp_server_row_or_404(session, server_id)
     # Deletion guard (#132): a server still granted by any Tool Node stays.
     referencing = await McpServerRepo(session).list_referencing_canvases(server_id)
     if referencing:
@@ -219,7 +213,7 @@ async def list_mcp_server_tools(
     a structured ``ok=False`` response (honest error, never stale data); the
     response never contains the credential (§5.4).
     """
-    row = await _get_row_or_404(session, server_id)
+    row = await get_mcp_server_row_or_404(session, server_id)
     catalog = await fetch_mcp_catalog(
         row.url,
         credential_header=row.credential_header,

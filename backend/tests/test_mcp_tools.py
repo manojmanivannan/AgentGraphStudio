@@ -232,14 +232,40 @@ class TestResultFraming:
         tool = make_descriptor(session)
         observation = await tool.acall(a=1, b=2)
 
-        # The cap is the only truncation (spec §5.2) and stays inside the
-        # untrusted-data delimiters.
-        inner = observation.split(MCP_UNTRUSTED_OPEN, 1)[1].rsplit(
-            MCP_UNTRUSTED_CLOSE, 1
-        )[0]
-        assert "A" * MCP_RESULT_MAX_CHARS in inner
+        # The cap bounds the FINAL delivered observation — frame + content
+        # (spec §4.5): the framing can no longer push the agent-visible text
+        # past 50k, and the truncation note survives inside the delimiters.
+        assert len(observation) <= MCP_RESULT_MAX_CHARS
         assert "truncated" in observation
-        assert len(inner) <= MCP_RESULT_MAX_CHARS + 100
+        assert observation.startswith(MCP_UNTRUSTED_OPEN) or (
+            MCP_UNTRUSTED_OPEN in observation
+        )
+        assert observation.endswith(MCP_UNTRUSTED_CLOSE)
+
+    async def test_output_just_under_the_cap_is_delivered_intact(
+        self,
+    ):
+        # Content that fits without framing must not be degraded by the
+        # re-wrap: no truncation note, full content present, still ≤ 50k.
+        session = RecordingSession(text_result("B" * 45_000))
+        tool = make_descriptor(session)
+        observation = await tool.acall(a=1, b=2)
+
+        assert len(observation) <= MCP_RESULT_MAX_CHARS
+        assert "truncated" not in observation
+        assert "B" * 45_000 in observation
+
+    async def test_content_under_cap_but_over_with_framing_is_truncated_to_cap(
+        self,
+    ):
+        # The cap counts the delivered observation: content that alone fits
+        # 50k but overflows once framed is trimmed so the total respects it.
+        session = RecordingSession(text_result("C" * (MCP_RESULT_MAX_CHARS - 100)))
+        tool = make_descriptor(session)
+        observation = await tool.acall(a=1, b=2)
+
+        assert len(observation) <= MCP_RESULT_MAX_CHARS
+        assert "truncated" in observation
         assert observation.endswith(MCP_UNTRUSTED_CLOSE)
 
     async def test_callables_mark_mcp_origin(self):

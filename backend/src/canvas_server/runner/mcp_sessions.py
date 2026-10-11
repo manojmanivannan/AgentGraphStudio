@@ -34,6 +34,7 @@ from mcp.client.streamable_http import streamablehttp_client
 
 from canvas_server import mcp_config
 from canvas_server.config import settings
+from canvas_server.mcp_probe import iter_exception_leaves
 
 logger = logging.getLogger("canvas_server.runner.mcp_sessions")
 
@@ -50,28 +51,32 @@ _STALE_SESSION_MARKERS = ("session terminated", "session not found")
 def is_stale_session_error(exc: BaseException) -> bool:
     """True when *exc*'s tree reports a dead server-side session.
 
-    Walks exception groups / causes — transport errors usually arrive
-    wrapped in an anyio ``ExceptionGroup`` whose ``str`` hides the leaf.
-    Deliberately narrow: tool errors, auth failures and plain transport
-    drops must NOT trigger the one-shot re-handshake.
+    Walks the shared exception-leaf walker (:func:
+    ``canvas_server.mcp_probe.iter_exception_leaves``) — transport errors
+    usually arrive wrapped in an anyio ``ExceptionGroup`` whose ``str`` hides
+    the leaf. Deliberately narrow: tool errors, auth failures and plain
+    transport drops must NOT trigger the one-shot re-handshake.
     """
-    stack: list[BaseException] = [exc]
-    seen: set[int] = set()
-    while stack:
-        current = stack.pop()
-        if id(current) in seen:
-            continue
-        seen.add(id(current))
-        if not isinstance(current, BaseException):
-            continue  # pydantic payloads etc. — no message/cause graph
-        text = str(current).lower()
-        if any(marker in text for marker in _STALE_SESSION_MARKERS):
-            return True
-        stack.extend(getattr(current, "exceptions", ()) or ())
-        for linked in (current.__cause__, current.__context__):
-            if isinstance(linked, BaseException):
-                stack.append(linked)
-    return False
+    return any(
+        marker in str(leaf).lower()
+        for leaf in iter_exception_leaves(exc)
+        for marker in _STALE_SESSION_MARKERS
+    )
+
+
+async def _terminate_task_lifetimes(
+    tasks: Iterable[asyncio.Task], grace: float = _CLOSE_GRACE_SECONDS
+) -> list[BaseException]:
+    """Grace out *tasks*, cancel stragglers, and return their exit results
+    (exceptions included — callers decide whether close-time transport noise
+    matters). Shared by :meth:`McpSessionRegistry.rehandshake` and
+    :meth:`McpSessionRegistry.close`."""
+    done, pending = await asyncio.wait(tasks, timeout=grace)
+    for task in pending:
+        task.cancel()
+    return await asyncio.gather(
+        *(list(done) + list(pending)), return_exceptions=True
+    )
 
 
 class McpSessionRegistry:
@@ -92,9 +97,10 @@ class McpSessionRegistry:
         self._close_events: dict[uuid.UUID, asyncio.Event] = {}
         self._ready_events: dict[uuid.UUID, asyncio.Event] = {}
         self._errors: dict[uuid.UUID, BaseException] = {}
-        # Servers whose one re-handshake attempt also failed (#139): degraded
-        # for the rest of the run — no further handshake attempts.
-        self._rehandshake_failed: dict[uuid.UUID, bool] = {}
+        # Servers whose single per-run re-handshake budget is spent (#139):
+        # degraded for the rest of the run — no further handshake attempts,
+        # whether the one attempt succeeded or failed (spec §4.6).
+        self._rehandshake_used: dict[uuid.UUID, bool] = {}
         self._closed = False
 
     # ------------------------------------------------------------------
@@ -227,9 +233,13 @@ class McpSessionRegistry:
 
     async def rehandshake(self, server_id: uuid.UUID) -> ClientSession | None:
         """Tear down the stale session for *server_id* and open exactly one
-        fresh one. Returns the new session, or ``None`` when there was
-        nothing registered, the run is closing, or the fresh handshake
-        failed (callers then degrade — spec §4.6; **no retry loop**).
+        fresh one. Each server gets **one** re-handshake per run (spec §4.6):
+        the budget is spent by the first invocation for that server — whether
+        it succeeds or fails — so a second stale-session event degrades the
+        server for the rest of the run (**no retry loop**). Returns the new
+        session, or ``None`` when the budget is spent, there was nothing
+        registered, the run is closing, or the fresh handshake failed
+        (callers then degrade — spec §4.6).
         Genuine connect/TLS/auth failures never reach this path: it is only
         invoked for detected stale-session errors, and a server that failed
         to connect never produced a session to go stale."""
@@ -247,12 +257,13 @@ class McpSessionRegistry:
                 server_id,
             )
             return None
-        if self._rehandshake_failed.get(server_id):
-            # The single re-handshake already failed: this server stays
-            # degraded (spec §4.6 retry-then-degrade, no retry loop).
+        if self._rehandshake_used.get(server_id):
+            # The run's single re-handshake for this server was already spent
+            # (success or failure): it stays degraded (spec §4.6
+            # retry-then-degrade, no retry loop).
             logger.warning(
-                "MCP re-handshake for server %s skipped — the earlier "
-                "re-handshake failed; the server stays degraded",
+                "MCP re-handshake for server %s skipped — the run's single "
+                "re-handshake is already spent; the server stays degraded",
                 server_id,
             )
             return None
@@ -262,13 +273,7 @@ class McpSessionRegistry:
         if stale_event is not None:
             stale_event.set()
         if stale_task is not None:
-            _done, pending = await asyncio.wait(
-                {stale_task}, timeout=_CLOSE_GRACE_SECONDS
-            )
-            for task in pending:
-                task.cancel()
-            if pending:
-                await asyncio.gather(*pending, return_exceptions=True)
+            await _terminate_task_lifetimes([stale_task])
 
         self._errors.pop(server_id, None)
         self._sessions.pop(server_id, None)
@@ -279,17 +284,17 @@ class McpSessionRegistry:
         )
         await self._ready_events[server_id].wait()
 
+        # The budget is spent by the attempt itself — a successful fresh
+        # session serves the run until its next staleness degrades it.
+        self._rehandshake_used[server_id] = True
         fresh = self.get_session(server_id)
         if fresh is None:
-            self._rehandshake_failed[server_id] = True
             logger.warning(
                 "MCP re-handshake failed for server %s: %r — its tools "
                 "degrade for the rest of the run",
                 server_id,
                 self._errors.get(server_id),
             )
-        else:
-            self._rehandshake_failed.pop(server_id, None)
         return fresh
 
     # ------------------------------------------------------------------
@@ -307,12 +312,7 @@ class McpSessionRegistry:
 
         tasks = list(self._tasks.values())
         if tasks:
-            done, pending = await asyncio.wait(tasks, timeout=_CLOSE_GRACE_SECONDS)
-            for task in pending:
-                task.cancel()
-            results = await asyncio.gather(
-                *(list(done) + list(pending)), return_exceptions=True
-            )
+            results = await _terminate_task_lifetimes(tasks)
             # Transport-exit errors after a clean handshake are noise; a
             # terminated server should just drop the session (DELETE above).
             for result in results:

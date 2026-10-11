@@ -26,19 +26,12 @@ from canvas_server.models.api import (
     ToolTestRequest,
     ToolTestResponse,
 )
-from canvas_server.repos.mcp_repo import McpServerRepo
+from canvas_server.routes import get_mcp_server_row_or_404
 from canvas_server.tool_factory import execute_tool_code, inspect_tool_code
 
 logger = logging.getLogger("canvas_server.routes.tools")
 
 tools_router = APIRouter(prefix="/api/tools", tags=["tools"])
-
-
-async def _get_mcp_server_row_or_404(session: AsyncSession, server_id):
-    row = await McpServerRepo(session).get(server_id)
-    if row is None:
-        raise HTTPException(status_code=404, detail="MCP server not found.")
-    return row
 
 
 @tools_router.post("/inspect", response_model=ToolInspectResponse)
@@ -79,7 +72,7 @@ async def _inspect_mcp_tool(
         raise HTTPException(
             status_code=400, detail="mcp_server_id is required for kind=mcp."
         )
-    row = await _get_mcp_server_row_or_404(session, body.mcp_server_id)
+    row = await get_mcp_server_row_or_404(session, body.mcp_server_id)
     catalog = await fetch_mcp_catalog(
         row.url,
         credential_header=row.credential_header,
@@ -170,7 +163,7 @@ async def _test_mcp_tool(
         raise HTTPException(
             status_code=400, detail="mcp_server_id is required for kind=mcp."
         )
-    row = await _get_mcp_server_row_or_404(session, body.mcp_server_id)
+    row = await get_mcp_server_row_or_404(session, body.mcp_server_id)
 
     # Test-time credential overrides follow the provider convention (#131):
     # omitted (None) → stored value; "" → test without a credential even if

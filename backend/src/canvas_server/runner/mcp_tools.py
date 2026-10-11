@@ -123,8 +123,9 @@ def format_mcp_result(
     * ``isError`` results **never raise**: the server's error text is the
       observation (dspy 3.4.0 raises ``RuntimeError`` on ``isError`` — that
       quirk is deliberately not on this path);
-    * the observation is capped at 50k chars with a truncation note —
-      the only truncation (spec §5.2);
+    * the FINAL delivered observation (framing + content, spec §5.2) is
+      capped at 50k chars with a truncation note — the only truncation, so
+      the agent never sees more than 50k chars of tool output;
     * the observation is wrapped in untrusted-data delimiters with an
       explicit framing header (spec §5.2, ticket #140) when *tool_name* is
       given the header names the tool the data came from;
@@ -156,23 +157,17 @@ def format_mcp_result(
         note = "[" + ", ".join(segments) + "]"
         observation = f"{observation}\n{note}" if observation else note
 
-    if len(observation) > MCP_RESULT_MAX_CHARS:
-        observation = observation[:MCP_RESULT_MAX_CHARS] + "\n" + _TRUNCATION_NOTE
+    # Spec §4.5: the cap applies to the FINAL delivered observation (frame +
+    # content, §5.2) — not the inner text — so the wrap can no longer push
+    # the agent-visible text past 50k and the cap stays the only truncation.
+    framing_overhead = len(frame_untrusted_mcp_output("", tool_name=tool_name))
+    max_content = max(MCP_RESULT_MAX_CHARS - framing_overhead, 0)
+    truncation_suffix = len("\n" + _TRUNCATION_NOTE)
+    if len(observation) > max_content:
+        budget = max(max_content - truncation_suffix, 0)
+        observation = observation[:budget] + "\n" + _TRUNCATION_NOTE
 
     return frame_untrusted_mcp_output(observation, tool_name=tool_name), raw_blocks
-
-
-def _make_failed_stub(
-    name: str,
-    error: Exception,
-    node_id: uuid.UUID,
-) -> DspyTool:
-    """A DSPy-ready stub that raises *error* at call time → observation.
-
-    Same posture as ``ToolRegistry``'s failed-compile stub: the run continues
-    and the agent can reason about (and report) the failure (#118/#132).
-    """
-    return make_unavailable_stub(name, error, node_id)
 
 
 def make_unavailable_stub(
@@ -182,8 +177,9 @@ def make_unavailable_stub(
 ) -> DspyTool:
     """A DSPy-ready stub for an MCP tool that cannot be served by the run.
 
-    Raises *error* at call time → StreamingReAct converts it to the standard
-    execution-error observation; the run continues degraded (#132, spec
+    Same posture as ``ToolRegistry``'s failed-compile stub: raises *error*
+    at call time → StreamingReAct converts it to the standard
+    execution-error observation; the run continues degraded (#118/#132, spec
     §4.6).
     """
 
@@ -238,7 +234,7 @@ def build_mcp_tool(
             server_tool.name,
             e,
         )
-        return _make_failed_stub(display_name, e, node_id)
+        return make_unavailable_stub(display_name, e, node_id)
 
     args = dict(descriptor.args or {})
     arg_types = dict(descriptor.arg_types or {})

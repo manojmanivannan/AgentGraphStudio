@@ -215,6 +215,37 @@ class TestStaleSessionRehandshake:
         assert obs.initialize_count == 2  # exactly one re-handshake
         await reg.close()
 
+    async def test_second_staleness_after_successful_rehandshake_degrades(
+        self, make_ref_mcp_server
+    ):
+        # Spec §4.6: the re-handshake budget is per-RUN, not per-staleness —
+        # stale → re-handshake OK → stale AGAIN → no second handshake; the
+        # server degrades permanently (#139 review finding).
+        obs = make_ref_mcp_server(tools=("add",), stale_calls="again")
+        server = _config(obs)
+        reg = McpSessionRegistry(servers=(server,))
+
+        await reg.open([server.id])
+        session = reg.get_session(server.id)
+        assert session is not None
+
+        with pytest.raises(Exception, match="Session terminated"):
+            await _call_add(session)
+
+        fresh = await reg.rehandshake(server.id)
+        assert fresh is not None and fresh is not session
+        result = await _call_add(fresh, a=2, b=3)
+        assert result.content[0].text == "5"
+
+        # A second staleness on the fresh session spends nothing: the single
+        # re-handshake was already used, so this one degrades.
+        with pytest.raises(Exception, match="Session terminated"):
+            await _call_add(fresh)
+        assert await reg.rehandshake(server.id) is None
+        assert obs.initialize_count == 2  # still exactly one re-handshake
+
+        await reg.close()
+
     async def test_rehandshake_of_unknown_server_returns_none(self):
         reg = McpSessionRegistry(servers=())
         assert await reg.rehandshake(uuid.uuid4()) is None

@@ -697,7 +697,10 @@ class _StaleSessionMiddleware:
     call is stale mid-run, and the post-re-handshake retry succeeds.
     ``mode='always'`` drops every ``tools/call``: the retry after the
     single re-handshake also fails, exercising retry-then-degrade with no
-    retry loop.
+    retry loop. ``mode='again'`` drops the 1st and 3rd ``tools/call``: the
+    session goes stale once, the re-handshaked session serves one call,
+    then goes stale AGAIN — the per-run single-re-handshake budget must be
+    spent (no second handshake, #139 spec §4.6).
     """
 
     def __init__(self, app, mode: str = "once"):
@@ -705,6 +708,7 @@ class _StaleSessionMiddleware:
         self.mode = mode
         self.reject_used = False
         self.rejected_calls = 0
+        self.total_tools_calls = 0
 
     async def __call__(self, scope, receive, send):
         if scope["type"] != "http" or scope.get("method", "").upper() != "POST":
@@ -730,9 +734,15 @@ class _StaleSessionMiddleware:
         except Exception:  # noqa: BLE001 — non-JSON bodies are forwarded
             pass
 
-        must_reject = is_tools_call and (
-            self.mode == "always" or not self.reject_used
-        )
+        must_reject = False
+        if is_tools_call:
+            self.total_tools_calls += 1
+            if self.mode == "always":
+                must_reject = True
+            elif self.mode == "again":
+                must_reject = self.total_tools_calls in (1, 3)
+            elif not self.reject_used:
+                must_reject = True
         if must_reject:
             self.reject_used = True
             self.rejected_calls += 1

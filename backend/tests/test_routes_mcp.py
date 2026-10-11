@@ -10,6 +10,21 @@ ORIGIN = {"Origin": "http://test"}
 SECRET = "Bearer sk-live-abcdefghij123456"
 
 
+def test_missing_server_404_helper_is_shared_by_both_route_modules():
+    """routes/mcp.py and routes/tools.py must use one row-or-404 helper
+    (no duplicated per-module copies — review finding)."""
+    from canvas_server.routes import get_mcp_server_row_or_404
+    from canvas_server.routes import mcp as mcp_routes
+    from canvas_server.routes import tools as tool_routes
+
+    assert getattr(mcp_routes, "get_mcp_server_row_or_404", None) is (
+        get_mcp_server_row_or_404
+    )
+    assert getattr(tool_routes, "get_mcp_server_row_or_404", None) is (
+        get_mcp_server_row_or_404
+    )
+
+
 @pytest.fixture(autouse=True)
 def _clean_cache():
     reset_mcp_servers_cache()
