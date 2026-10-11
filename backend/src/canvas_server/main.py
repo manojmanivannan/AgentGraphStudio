@@ -14,10 +14,12 @@ from starlette.middleware.base import RequestResponseEndpoint
 import canvas_server
 from canvas_server.background_run_worker import shutdown_background_run_worker
 from canvas_server.config import settings
+from canvas_server.mcp_config import refresh_mcp_servers
 from canvas_server.provider_config import get_provider_config, refresh_provider_config
 from canvas_server.routes.auth import auth_router
 from canvas_server.routes.canvas import canvas_router
 from canvas_server.routes.execute import execute_router
+from canvas_server.routes.mcp import mcp_router
 from canvas_server.routes.settings import settings_router
 from canvas_server.routes.tools import tools_router
 
@@ -50,6 +52,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         factory = get_session_factory()
         async with factory() as session:
             await refresh_provider_config(session)
+            # Warm the MCP registry cache for runner/probe reads (#129).
+            await refresh_mcp_servers(session)
     except Exception as exc:
         logger.warning("Could not load provider settings from database: %s", exc)
 
@@ -166,6 +170,7 @@ async def global_exception_handler(request: Request, exc: Exception) -> JSONResp
 app.include_router(auth_router)
 app.include_router(canvas_router)
 app.include_router(execute_router)
+app.include_router(mcp_router)
 app.include_router(settings_router)
 app.include_router(tools_router)
 

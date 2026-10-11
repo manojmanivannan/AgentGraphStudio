@@ -6,10 +6,11 @@ import {
 } from "@/components/settings/registry";
 
 describe("settings section registry", () => {
-  it("defines exactly the account, providers and appearance sections", () => {
+  it("defines exactly the account, providers, mcp-servers and appearance sections", () => {
     expect(SETTINGS_SECTIONS.map((s) => s.id)).toEqual([
       "account",
       "providers",
+      "mcp-servers",
       "appearance",
     ]);
   });

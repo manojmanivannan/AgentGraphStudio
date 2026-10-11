@@ -11,6 +11,8 @@ import type {
   ToolInspectResponse,
   ToolTestResponse,
   AgentDocument,
+  McpServer,
+  McpServerForm,
   ProviderSettings,
   ProviderSettingsForm,
   ProviderTestResponse,
@@ -242,6 +244,79 @@ export async function testProviderSettings(
     throw new Error(await readErrorDetail(res, "Failed to test provider settings"));
   }
   return (await res.json()) as ProviderTestResponse;
+}
+
+// --- MCP server registry ---
+
+export async function listMcpServers(): Promise<McpServer[]> {
+  const res = await apiFetch(`${API_BASE}/mcp/servers`);
+  if (!res.ok) {
+    throw new Error(await readErrorDetail(res, "Failed to load MCP servers"));
+  }
+  return ((await res.json()) as { servers: McpServer[] }).servers;
+}
+
+/** Create a server. `credential_value` of null starts with no credential. */
+export async function createMcpServer(
+  form: McpServerForm,
+  credentialValue: string | null
+): Promise<McpServer> {
+  const res = await apiFetch(`${API_BASE}/mcp/servers`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      name: form.name,
+      url: form.url,
+      credential_header: form.credential_header ?? "Authorization",
+      credential_value: credentialValue,
+    }),
+  });
+  if (!res.ok) {
+    const error = new Error(
+      await readErrorDetail(res, "Failed to save MCP server")
+    ) as Error & { status?: number };
+    error.status = res.status;
+    throw error;
+  }
+  return (await res.json()) as McpServer;
+}
+
+/**
+ * Update a server. `credentialValue` of null keeps the stored credential,
+ * `""` clears it (§3.1) — the API never returns the credential itself.
+ */
+export async function updateMcpServer(
+  id: string,
+  form: McpServerForm,
+  credentialValue: string | null
+): Promise<McpServer> {
+  const res = await apiFetch(`${API_BASE}/mcp/servers/${id}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      name: form.name,
+      url: form.url,
+      credential_header: form.credential_header ?? "Authorization",
+      credential_value: credentialValue,
+    }),
+  });
+  if (!res.ok) {
+    const error = new Error(
+      await readErrorDetail(res, "Failed to save MCP server")
+    ) as Error & { status?: number };
+    error.status = res.status;
+    throw error;
+  }
+  return (await res.json()) as McpServer;
+}
+
+export async function deleteMcpServer(id: string): Promise<void> {
+  const res = await apiFetch(`${API_BASE}/mcp/servers/${id}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) {
+    throw new Error(await readErrorDetail(res, "Failed to delete MCP server"));
+  }
 }
 
 export async function createCanvas(

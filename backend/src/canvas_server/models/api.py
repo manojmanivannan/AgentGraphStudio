@@ -395,3 +395,37 @@ class ProviderCheckResult(BaseModel):
 class ProviderTestResponse(BaseModel):
     ok: bool
     checks: list[ProviderCheckResult]
+
+
+# --- MCP server registry ---
+
+
+class McpServerBase(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+    # Endpoint URL; validated http(s):// on every write path (spec §5.1).
+    url: str = Field(min_length=1, max_length=2083)
+    credential_header: str | None = Field(default="Authorization", max_length=64)
+
+
+class McpServerCreate(McpServerBase):
+    # Omitted/None starts with no credential stored.
+    credential_value: str | None = None
+
+
+class McpServerUpdate(McpServerBase):
+    # None keeps the stored credential; "" clears it (§3.1).
+    credential_value: str | None = None
+
+
+class McpServerResponse(McpServerBase):
+    """The credential itself is never returned — only ``credential_set`` and a
+    masked preview. ``url_warning`` surfaces the plain-http caveat (§5.1)."""
+
+    id: uuid.UUID
+    credential_set: bool
+    credential_preview: str | None = None
+    url_warning: str | None = None
+
+
+class McpServerListResponse(BaseModel):
+    servers: list[McpServerResponse]

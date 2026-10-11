@@ -30,6 +30,27 @@ export interface ProviderSettings extends ProviderSettingsForm {
   source: "env" | "database";
 }
 
+// --- MCP server registry ---
+
+export interface McpServer {
+  id: string;
+  name: string;
+  url: string;
+  credential_header: string | null;
+  /** The credential itself is never returned by the API. */
+  credential_set: boolean;
+  /** Masked preview: bullets plus at most the last 4 characters. */
+  credential_preview: string | null;
+  /** Non-null when the endpoint uses plain "http://" (§5.1). */
+  url_warning: string | null;
+}
+
+export interface McpServerForm {
+  name: string;
+  url: string;
+  credential_header: string | null;
+}
+
 export interface ProviderCheckResult {
   name: string;
   ok: boolean;
