@@ -539,7 +539,9 @@ class AgentFactory:
             StreamingReAct: The constructed router agent.
         """
         tools = list(
-            self._tool_registry.get_tools_for_agent(agent_node.id, self._edges)
+            self._tool_registry.get_tools_for_agent(
+                agent_node.id, self._edges, include_mcp=False
+            )
         )
         memory_provider = self._memory_manager.build_provider(agent_node)
         if memory_provider:

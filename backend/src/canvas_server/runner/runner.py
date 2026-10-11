@@ -309,6 +309,7 @@ class CanvasRunner:
         await self._tool_registry.compile_all(
             self.canvas.tool_nodes,
             runtime_session_id=runtime_session_id,
+            mcp_registry=self.mcp_session_registry,
         )
         self.run_state.tool_registry = self._tool_registry
         # Sync tool state up to the runner for backward-compat access
