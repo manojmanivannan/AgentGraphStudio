@@ -415,17 +415,71 @@ export interface Conversation {
   messages: Message[];
 }
 
+/** One server-provided tool descriptor in an MCP inspect response
+ * (#135) — exactly as the server serves it. */
+export interface McpInspectTool {
+  name: string;
+  description: string | null;
+  input_schema: Record<string, unknown>;
+}
+
+/** Kind-discriminated inspect response (#135, spec §6.4). The code branch
+ * keeps `function_name`/`arguments`; the MCP branch carries the live
+ * server-provided schema and connection facts. Never carries credentials. */
 export interface ToolInspectResponse {
-  function_name: string;
+  kind?: "code" | "mcp";
+  ok?: boolean;
+  // Code branch:
+  function_name?: string | null;
   arguments: Array<{
     name: string;
     type_hint: string;
     default_value: string | null;
   }>;
+  // MCP branch (named tool vs full catalog):
+  server_id?: string | null;
+  tool?: McpInspectTool | null;
+  tools?: McpInspectTool[];
+  server_name?: string | null;
+  server_version?: string | null;
+  latency_ms?: number;
+  detail?: string;
+  classification?: string | null;
+  protocol_revision?: string | null;
 }
 
+/** One output block of an MCP tool result (#135). Non-text blocks carry a
+ * human placeholder; the binary payload never reaches the panel. */
+export interface McpToolCallBlock {
+  type: string;
+  text: string | null;
+  mime_type: string | null;
+  resource_uri: string | null;
+  placeholder: string | null;
+}
+
+/** Kind-discriminated test response (#135, spec §6.4). For the MCP call
+ * stage, `success` is `ok && !is_error` — an in-band isError result is an
+ * error, not a success output; the server's blocks are preserved so the
+ * panel can show the explanation. */
 export interface ToolTestResponse {
+  kind?: "code" | "mcp";
+  // Code branch (`output`/`execution_time_ms` are code-branch fields; the
+  // backend omits nothing but they are irrelevant for the MCP stages).
   success: boolean;
-  output: string;
-  execution_time_ms: number;
+  output?: string;
+  execution_time_ms?: number;
+  // MCP branch:
+  stage?: "probe" | "call" | null;
+  ok?: boolean | null;
+  server_name?: string | null;
+  server_version?: string | null;
+  tools?: string[];
+  tool_count?: number;
+  latency_ms?: number;
+  detail?: string;
+  classification?: string | null;
+  protocol_revision?: string | null;
+  is_error?: boolean | null;
+  blocks?: McpToolCallBlock[];
 }
