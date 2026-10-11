@@ -1,11 +1,21 @@
 import asyncio
 import contextlib
 import os
+import socket
+import threading
+import time
 import uuid
 
+import httpx
 import pytest
 import pytest_asyncio
+import uvicorn
 from httpx import ASGITransport, AsyncClient
+from mcp.server.fastmcp import FastMCP
+from starlette.applications import Starlette
+from starlette.requests import Request
+from starlette.responses import JSONResponse, Response
+from starlette.routing import Route
 
 TEST_DB_URL = os.environ.get(
     "TEST_DATABASE_URL",
@@ -428,4 +438,137 @@ async def autouse_sandbox():
     yield manager
     with contextlib.suppress(Exception):
         await manager.shutdown()
+
+
+# --- MCP Streamable HTTP reference servers (ticket #131, reused by #134/#136) ---
+#
+# Real MCP servers for probe/route tests, built from the official ``mcp`` 1.x
+# SDK primitives: ``mcp.server.fastmcp.FastMCP`` ships as part of the ``mcp``
+# package (the standalone ``fastmcp`` project is NOT a backend dependency and
+# is not used). Each fixture serves its app in-process from a background
+# uvicorn thread on a free port, so these stay Docker-free.
+
+
+def _mcp_free_port() -> int:
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        return sock.getsockname()[1]
+
+
+def _wait_http_ready(url: str, timeout: float = 10.0) -> None:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            httpx.get(url, timeout=1.0)
+            return
+        except httpx.HTTPError:
+            time.sleep(0.05)
+    raise RuntimeError(f"Reference MCP server never came up at {url}")
+
+
+def _serve_starlette(app, port: int):
+    server = uvicorn.Server(
+        uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning")
+    )
+    thread = threading.Thread(target=server.run, daemon=True)
+    thread.start()
+    return server, thread
+
+
+@pytest.fixture
+def ref_mcp_server():
+    """A real Streamable HTTP MCP server exposing one ``add`` tool."""
+    mcp = FastMCP("ags-probe-ref")
+
+    def add(a: int, b: int) -> int:
+        """Add two integers."""
+        return a + b
+
+    mcp.add_tool(add)
+    port = _mcp_free_port()
+    server, thread = _serve_starlette(mcp.streamable_http_app(), port)
+
+    url = f"http://127.0.0.1:{port}/mcp"
+    _wait_http_ready(url)
+    yield url
+    server.should_exit = True
+    thread.join(timeout=5.0)
+
+
+@pytest.fixture
+def modern_revision_mcp_server():
+    """A stateless-only server that answers ``initialize`` with the modern
+    2026-07-28 protocol revision — the shape the SDK client cannot speak."""
+
+    async def endpoint(request: Request) -> Response:
+        body = await request.json()
+        if "id" not in body:  # notifications/initialized → empty ACK
+            return Response(status_code=202)
+        return JSONResponse(
+            {
+                "jsonrpc": "2.0",
+                "id": body["id"],
+                "result": {
+                    "protocolVersion": "2026-07-28",
+                    "capabilities": {},
+                    "serverInfo": {"name": "ags-modern-rev", "version": "9.9.9"},
+                },
+            }
+        )
+
+    app = Starlette(routes=[Route("/mcp", endpoint, methods=["POST", "GET"])])
+    port = _mcp_free_port()
+    server, thread = _serve_starlette(app, port)
+
+    url = f"http://127.0.0.1:{port}/mcp"
+    _wait_http_ready(url)
+    yield url
+    server.should_exit = True
+    thread.join(timeout=5.0)
+
+
+class _RequireAuthMiddleware:
+    """Pure-ASGI middleware demanding ``Authorization: Bearer good-token``."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        headers = {k: v for k, v in scope.get("headers", [])}
+        if headers.get(b"authorization") != b"Bearer good-token":
+            await send(
+                {
+                    "type": "http.response.start",
+                    "status": 401,
+                    "headers": [(b"content-type", b"application/json")],
+                }
+            )
+            await send(
+                {
+                    "type": "http.response.body",
+                    "body": b'{"error": "401 Unauthorized"}',
+                }
+            )
+            return
+        await self.app(scope, receive, send)
+
+
+@pytest.fixture
+def auth_ref_mcp_server():
+    """A real reference MCP server that rejects unauthenticated requests."""
+    mcp = FastMCP("ags-probe-auth-ref")
+    mcp.add_tool(lambda a: a, name="echo")
+    port = _mcp_free_port()
+    server, thread = _serve_starlette(
+        _RequireAuthMiddleware(mcp.streamable_http_app()), port
+    )
+
+    url = f"http://127.0.0.1:{port}/mcp"
+    _wait_http_ready(url)
+    yield url
+    server.should_exit = True
+    thread.join(timeout=5.0)
 
