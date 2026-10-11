@@ -134,6 +134,9 @@ make up
 
 # Or start including Ollama via the GPU profile
 make up-gpu
+
+# Or start including the optional local MCP test server (mcp profile)
+make up-mcp
 ```
 
 Once running, access the interfaces at:
@@ -147,12 +150,23 @@ Once running, access the interfaces at:
 | :--- | :--- |
 | `make up` | Run all stack services (Postgres, backend, frontend, mlflow) without Ollama. |
 | `make up-gpu` | Run all stack services including local Ollama GPU container. |
+| `make up-mcp` | Run all stack services including the optional local MCP weather test server (opt-in `mcp` compose profile). |
 | `make down` | Stop container services while preserving volume data. |
 | `make down-v` | Stop container services and purge PostgreSQL/MLflow volumes. |
 | `make clean-sandbox` | Clean up leftover temporary python sandbox environments (safely targets only containers prefixed with `sandbox-`). |
 
 > [!NOTE]
 > The setup defaults to an Ollama server running on the host machine (`http://192.168.1.120:11434`). Configure your local network or keys inside the repository root `.env`.
+
+### Optional: Local MCP Test Server
+
+A small bundled [FastMCP](https://github.com/jlowin/fastmcp) "Weather Server" lets you try external MCP servers without any external dependency. It is **fully optional** — the default `make up` stack never builds or runs it.
+
+```bash
+make up-mcp   # equivalent to: docker compose --profile mcp up --build -d
+```
+
+Once running it serves Streamable HTTP at `http://mcp-weather:8000/mcp` (in-network only; the port is deliberately unpublished) with Bearer auth. The token defaults to the dev value `my-secret-token` and can be overridden with `MCP_BEARER_TOKEN` in `.env`. To use it, register the server in the app under **Settings → MCP Servers** (url `http://mcp-weather:8000/mcp`, header `Authorization`, value `Bearer my-secret-token`), then grant its `get_current_weather` tool on any tool node. `make down` stops it even when it was started with the profile.
 
 ---
 

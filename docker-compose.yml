@@ -245,11 +245,13 @@ services:
 #             count: 1
 #             capabilities: [gpu]
 
-  # Local MCP test server ("Weather Server") for mcp-client-support dev —
-  # reachable in-network at http://mcp-weather:8000/mcp with a Bearer token,
-  # so the containerized backend never depends on host.docker.internal or
-  # firewall plumbing. Opt-in like ollama: `docker compose --profile mcp up -d`.
-  # Unpublished by default so it never fights a host-side dev server on 8000.
+  # Optional local MCP test server ("Weather Server") for MCP tool-node dev —
+  # reachable in-network at http://mcp-weather:8000/mcp with a Bearer token
+  # (MCP_BEARER_TOKEN in .env.example), so the containerized backend never
+  # depends on host.docker.internal or firewall plumbing. Fully opt-in via its
+  # compose profile — start with `make up-mcp` (or `docker compose --profile
+  # mcp up -d`); the plain `make up` stack never builds or runs it. Unpublished
+  # port so it never fights a host-side dev server on 8000.
   mcp-weather:
     build:
       context: ./mcp-weather
