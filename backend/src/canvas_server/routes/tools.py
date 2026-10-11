@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from canvas_server.database import get_session
 from canvas_server.exceptions import ToolCompilationError
-from canvas_server.mcp_probe import McpToolOutputBlock
+from canvas_server.mcp_probe import call_mcp_tool, fetch_mcp_catalog, probe_mcp_server
 from canvas_server.models.api import (
     McpInspectTool,
     McpToolCallBlock,
@@ -26,7 +26,6 @@ from canvas_server.models.api import (
     ToolTestRequest,
     ToolTestResponse,
 )
-from canvas_server.mcp_probe import call_mcp_tool, fetch_mcp_catalog, probe_mcp_server
 from canvas_server.repos.mcp_repo import McpServerRepo
 from canvas_server.tool_factory import execute_tool_code, inspect_tool_code
 
