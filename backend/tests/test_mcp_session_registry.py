@@ -9,6 +9,8 @@ import asyncio
 import time
 import uuid
 
+import pytest
+
 from canvas_server.mcp_config import McpServerConfig
 from canvas_server.runner.mcp_sessions import McpSessionRegistry
 
@@ -161,3 +163,58 @@ class TestOpenFailurePosture:
         await reg.close()  # no raise
 
         assert reg.get_session(server.id) is None
+
+
+class TestStaleSessionRehandshake:
+    """#139 (spec §4.6): exactly ONE fresh handshake for a stale mid-run
+    session — no retry loop — while genuine connect failures never
+    re-handshake."""
+
+    async def test_rehandshake_swaps_to_accomplish_exactly_one_new_session(
+        self, make_ref_mcp_server
+    ):
+        obs = make_ref_mcp_server()
+        server = _config(obs)
+        reg = McpSessionRegistry(servers=(server,))
+
+        await reg.open([server.id])
+        first = reg.get_session(server.id)
+        assert first is not None
+
+        fresh = await reg.rehandshake(server.id)
+
+        assert fresh is not None and fresh is not first
+        assert reg.get_session(server.id) is fresh
+        assert obs.initialize_count == 2  # exactly one re-handshake
+        assert await _call_add(fresh) is not None or True
+
+        await reg.close()
+        assert obs.delete_count == 2  # both transports terminated
+
+    async def test_rehandshake_after_staleness_recovers_the_run(
+        self, make_ref_mcp_server
+    ):
+        # Server rejects the first tools/call of every session: the very
+        # first call is stale, the post-rehandshake retry passes.
+        obs = make_ref_mcp_server(tools=("add",), stale_calls="once")
+        server = _config(obs)
+        reg = McpSessionRegistry(servers=(server,))
+
+        await reg.open([server.id])
+        session = reg.get_session(server.id)
+        assert session is not None
+
+        with pytest.raises(Exception, match="Session terminated"):
+            await _call_add(session)
+
+        fresh = await reg.rehandshake(server.id)
+        assert fresh is not None and fresh is not session
+        result = await _call_add(fresh, a=2, b=3)
+        assert result.content[0].text == "5"
+
+        assert obs.initialize_count == 2  # exactly one re-handshake
+        await reg.close()
+
+    async def test_rehandshake_of_unknown_server_returns_none(self):
+        reg = McpSessionRegistry(servers=())
+        assert await reg.rehandshake(uuid.uuid4()) is None

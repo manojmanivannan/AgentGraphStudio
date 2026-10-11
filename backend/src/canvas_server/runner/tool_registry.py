@@ -11,6 +11,7 @@ import mcp.types as mcp_types
 
 from canvas_server.mcp_probe import _summarize
 from canvas_server.runner.mcp_sessions import McpSessionRegistry
+from canvas_server.runner.mcp_sessions import is_stale_session_error as _is_stale_session_error
 from canvas_server.runner.mcp_tools import build_mcp_tool, sanitize_tool_name
 from canvas_server.tool_factory import compile_tool_from_code
 
@@ -170,11 +171,35 @@ class ToolRegistry:
                     server_tool.name: server_tool
                     for server_tool in await mcp_registry.list_tools(server_id)
                 }
-            except Exception as e:  # noqa: BLE001 — session died before tools/list
-                logger.warning(
-                    "tools/list failed for MCP server %s: %s", server_id, e
-                )
-                error = error or e
+            except Exception as e:  # noqa: BLE001 — handled below
+                if _is_stale_session_error(e):
+                    # #139: a stale session at grant time gets its one
+                    # re-handshake + one ``tools/list`` retry, then normal
+                    # resolution continues.
+                    rehandshake = getattr(mcp_registry, "rehandshake", None)
+                    fresh = (
+                        await rehandshake(server_id) if callable(rehandshake) else None
+                    )
+                    if fresh is not None:
+                        session = fresh
+                        try:
+                            listing = {
+                                server_tool.name: server_tool
+                                for server_tool in await mcp_registry.list_tools(
+                                    server_id
+                                )
+                            }
+                        except Exception as retry_error:  # noqa: BLE001
+                            logger.warning(
+                                "tools/list failed for MCP server %s after its "
+                                "one re-handshake: %s", server_id, retry_error
+                            )
+                            error = error or retry_error
+                if error is None and listing is None:
+                    logger.warning(
+                        "tools/list failed for MCP server %s: %s", server_id, e
+                    )
+                    error = error or e
 
         server_label = self._server_label(mcp_registry, server_id)
         self._node_labels[tool_node.id] = f"server '{server_label}'"
@@ -215,6 +240,8 @@ class ToolRegistry:
                 server_tool,
                 node_id=tool_node.id,
                 requires_approval=grant["requires_approval"],
+                session_registry=mcp_registry,
+                server_id=server_id,
             )
 
             _attach_tool_metadata(

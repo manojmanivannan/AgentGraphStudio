@@ -438,6 +438,39 @@ class TestSetupFlagsSurfaceThroughWarningEvents:
 
         await runner.release_mcp_sessions()
 
+    async def test_stale_session_mid_run_rehandshakes_once_and_survives(
+        self, make_ref_mcp_server, test_session, _compile_stub
+    ):
+        """Spec §4.6 acceptance: a stale ``Mcp-Session-Id`` mid-run gets
+        exactly one re-handshake and the run continues to a correct answer."""
+        obs = make_ref_mcp_server(tools=("add",), stale_calls="once")
+        server = await _register_server(test_session, obs.url)
+        worker = FakeAgentNode(name="Worker")
+        tool = FakeToolNode(
+            name="math", mcp_server_id=server.id, mcp_tools=[{"name": "add"}]
+        )
+        canvas = FakeCanvas(
+            agent_nodes=[worker], tool_nodes=[tool], edges=[_tool_access(worker, tool)]
+        )
+
+        runner = CanvasRunner(canvas)
+        await runner.setup()
+        agent = runner.agents[worker.id]
+
+        result = await drive_agent(
+            agent,
+            [
+                make_prediction("add", args={"a": 2, "b": 3}, thought="compute"),
+                make_prediction("finish", thought="done"),
+                {"process_result": "The sum is 5."},
+            ],
+        )
+
+        assert result.trajectory["observation_0"] == "5"
+        assert obs.initialize_count == 2  # one handshake + exactly one re-handshake
+
+        await runner.release_mcp_sessions()
+
     async def test_colliding_grants_excluded_and_flagged_per_agent(
         self, make_ref_mcp_server, test_session, _compile_stub
     ):

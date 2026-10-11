@@ -14,6 +14,7 @@ from unittest.mock import MagicMock, patch
 
 import mcp.types as mcp_types
 import pytest
+from mcp.shared.exceptions import McpError
 
 from canvas_server.runner.tool_registry import ToolRegistry
 
@@ -22,7 +23,7 @@ class FakeMcpRegistry:
     """The #137/#139 registry surface ToolRegistry consumes."""
 
     def __init__(self, tools=None, session=None, error=None, sessions_by_id=None,
-                 name=None, tools_by_id=None, names_by_id=None):
+                 name=None, tools_by_id=None, names_by_id=None, list_errors=None):
         self.tools = tools or []
         self.session = session
         self.error = error
@@ -30,6 +31,8 @@ class FakeMcpRegistry:
         self.name = name
         self.tools_by_id = tools_by_id or {}
         self.names_by_id = names_by_id or {}
+        self.list_errors = list(list_errors or [])
+        self.rehandshakes = 0
 
     def get_session(self, server_id):
         if self.sessions_by_id:
@@ -43,7 +46,14 @@ class FakeMcpRegistry:
         return self.names_by_id.get(server_id, self.name)
 
     async def list_tools(self, server_id):
+        if self.list_errors:
+            raise self.list_errors.pop(0)
         return self.tools_by_id.get(server_id, self.tools)
+
+    async def rehandshake(self, server_id):
+        self.rehandshakes += 1
+        self.list_errors.clear()
+        return self.get_session(server_id)
 
 
 class FakeToolNode:
@@ -429,6 +439,64 @@ class TestPerAgentCollisions:
         )
         assert {t.name for t in tools} == {"search", "echo"}
         assert [f for f in registry.drain_flags() if f.get("kind") == "collision"] == []
+
+
+class TestListToolsStalenessRehandshake:
+    """#139 (spec §4.6): a ``tools/list`` that dies with a stale session —
+    mid-run — earns exactly ONE re-handshake and one retry, then the grants
+    resolve normally; non-stale ``tools/list`` failures degrade instead."""
+
+    def _stale_error(self):
+        from mcp.types import ErrorData
+
+        return McpError(ErrorData(code=32600, message="Session terminated"))
+
+    async def test_stale_tools_list_rehandshakes_once_then_resolves(self):
+        server = uuid.uuid4()
+        node = FakeToolNode(
+            name="math",
+            mcp_server_id=server,
+            mcp_tools=[{"name": "add"}, {"name": "echo"}],
+        )
+        mcp_registry = FakeMcpRegistry(
+            sessions_by_id={server: object()},
+            tools_by_id={server: [server_tool("add"), server_tool("echo")]},
+            names_by_id={server: "srv-a"},
+            list_errors=[self._stale_error()],
+        )
+        registry = ToolRegistry()
+        await _compile(registry, [node], mcp_registry)
+
+        worker = FakeAgentNode(name="Worker")
+        names = {
+            t.name
+            for t in registry.get_tools_for_agent(worker.id, [_edge(worker, node)])
+        }
+        assert names == {"add", "echo"}
+        assert mcp_registry.rehandshakes == 1
+        assert registry.drain_flags() == []  # no degradation flagged
+
+    async def test_non_stale_tools_list_failure_degrades_without_rehandshake(self):
+        server = uuid.uuid4()
+        node = FakeToolNode(
+            name="math", mcp_server_id=server, mcp_tools=[{"name": "add"}]
+        )
+        mcp_registry = FakeMcpRegistry(
+            sessions_by_id={server: object()},
+            tools_by_id={server: [server_tool("add")]},
+            names_by_id={server: "srv-a"},
+            list_errors=[ConnectionError("server gone")],
+        )
+        registry = ToolRegistry()
+        await _compile(registry, [node], mcp_registry)
+
+        worker = FakeAgentNode(name="Worker")
+        assert registry.get_tools_for_agent(worker.id, [_edge(worker, node)]) == []
+        assert mcp_registry.rehandshakes == 0
+        degraded = [
+            f for f in registry.drain_flags() if f.get("kind") == "degraded_server"
+        ]
+        assert len(degraded) == 1
 
 
 class TestDegradedServers:

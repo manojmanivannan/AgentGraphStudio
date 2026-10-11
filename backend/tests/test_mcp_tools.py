@@ -275,3 +275,106 @@ class TestPerCallTimeout:
         observation = await tool.acall(a=1, b=2)
         assert observation == "3"
         assert session.calls == [("add", {"a": 1, "b": 2})]
+
+
+class TestStaleSessionRehandshake:
+    """Spec §4.6: exactly one re-handshake on a mid-run stale session, then
+    the call retries; non-stale failures never trigger a re-handshake."""
+
+    def _fake_configs(self, obs):
+        from canvas_server.mcp_config import McpServerConfig
+        from canvas_server.runner.mcp_sessions import McpSessionRegistry
+
+        cfg = McpServerConfig(
+            id=uuid.uuid4(),
+            name="stale-ref",
+            url=obs.url,
+            credential_header=None,
+            credential_value=None,
+        )
+        return McpSessionRegistry(servers=(cfg,)), cfg
+
+    async def test_stale_session_rehandshakes_once_then_the_call_succeeds(
+        self, make_ref_mcp_server
+    ):
+
+        obs = make_ref_mcp_server(tools=("add",), stale_calls="once")
+        reg, cfg = self._fake_configs(obs)
+        await reg.open([cfg.id])
+        listing = {t.name: t for t in await reg.list_tools(cfg.id)}
+        tool = build_mcp_tool(
+            reg.get_session(cfg.id),
+            listing["add"],
+            node_id=uuid.uuid4(),
+            requires_approval=False,
+            session_registry=reg,
+            server_id=cfg.id,
+        )
+
+        observation = await tool.acall(a=2, b=3)
+
+        assert observation == "5"
+        assert obs.initialize_count == 2  # exactly one re-handshake
+        await reg.close()
+
+    async def test_always_stale_retries_once_then_raises(self, make_ref_mcp_server):
+        from mcp.shared.exceptions import McpError
+
+        obs = make_ref_mcp_server(tools=("add",), stale_calls="always")
+        reg, cfg = self._fake_configs(obs)
+        await reg.open([cfg.id])
+        listing = {t.name: t for t in await reg.list_tools(cfg.id)}
+        tool = build_mcp_tool(
+            reg.get_session(cfg.id),
+            listing["add"],
+            node_id=uuid.uuid4(),
+            requires_approval=False,
+            session_registry=reg,
+            server_id=cfg.id,
+        )
+
+        with pytest.raises(McpError, match="Session terminated"):
+            await tool.acall(a=2, b=3)
+
+        assert obs.initialize_count == 2  # one re-handshake, no retry loop
+        await reg.close()
+
+    async def test_non_stale_failure_never_triggers_a_rehandshake(self):
+        class CountingRegistry:
+            def __init__(self):
+                self.rehandshakes = 0
+
+            async def rehandshake(self, server_id):
+                self.rehandshakes += 1
+                return None
+
+        class FailingSession:
+            async def call_tool(self, name, arguments=None):
+                raise ConnectionError("connection reset by peer")
+
+        registry = CountingRegistry()
+        tool = build_mcp_tool(
+            FailingSession(),
+            make_server_tool(),
+            node_id=uuid.uuid4(),
+            requires_approval=False,
+            session_registry=registry,
+            server_id=uuid.uuid4(),
+        )
+        with pytest.raises(ConnectionError):
+            await tool.acall(a=1, b=2)
+        assert registry.rehandshakes == 0
+
+    async def test_is_stale_session_error_walks_exception_groups(self):
+        from canvas_server.runner.mcp_sessions import is_stale_session_error
+
+        wrapped = ExceptionGroup(
+            "unhandled errors in a TaskGroup",
+            [RuntimeError("Session terminated")],
+        )
+        assert is_stale_session_error(wrapped)
+        assert is_stale_session_error(RuntimeError("Session not found"))
+        assert not is_stale_session_error(ConnectionError("server gone"))
+        assert not is_stale_session_error(
+            mcp_types.ErrorData(code=-32602, message="Invalid params")
+        )

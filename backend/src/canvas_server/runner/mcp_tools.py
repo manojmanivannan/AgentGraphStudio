@@ -30,6 +30,7 @@ from dspy.adapters.types.tool import Tool as DspyTool
 from dspy.utils.mcp import convert_mcp_tool
 
 from canvas_server.config import settings
+from canvas_server.runner.mcp_sessions import is_stale_session_error
 
 logger = logging.getLogger("canvas_server.runner.mcp_tools")
 
@@ -171,6 +172,8 @@ def build_mcp_tool(
     *,
     node_id: uuid.UUID,
     requires_approval: bool,
+    session_registry: Any | None = None,
+    server_id: uuid.UUID | None = None,
 ) -> DspyTool:
     """Build the per-run DSPy tool for one granted server tool.
 
@@ -180,6 +183,12 @@ def build_mcp_tool(
     the adapter cannot process falls back to the failed-tool stub that raises
     at call time. The public tool name is sanitized; the session is always
     called with the server's original tool name.
+
+    When *session_registry*/*server_id* are provided (#139, spec §4.6), a
+    mid-run stale session (404 / "Session terminated") triggers exactly ONE
+    re-handshake via the registry and a single retry; any other failure
+    (transport, auth, tool error, timeout) never retries — it propagates to
+    StreamingReAct's execution-error observation seam.
 
     The callable carries ``requires_approval`` / ``node_id`` (HITL seam,
     event enrichment) and ``last_raw_content_blocks`` (JSON-safe content
@@ -224,9 +233,33 @@ def build_mcp_tool(
 
     async def mcp_tool_call(*_positional, **kwargs):
         """Invoke the run's MCP session; frame the result per spec §4.5."""
-        result = await invoke_with_timeout(
-            settings.mcp_tool_call_timeout_seconds, kwargs
-        )
+        try:
+            result = await invoke_with_timeout(
+                settings.mcp_tool_call_timeout_seconds, kwargs
+            )
+        except BaseException as call_error:  # noqa: BLE001 — re-raised below
+            # Spec §4.6 retry-then-degrade: ONLY a dead server-side session
+            # earns one re-handshake + one retry; everything else propagates
+            # to the observation seam untouched.
+            if (
+                session_registry is None
+                or server_id is None
+                or not is_stale_session_error(call_error)
+            ):
+                raise
+            logger.warning(
+                "MCP tool %r hit a stale session (server %s) — re-handshaking "
+                "once and retrying",
+                original_name,
+                server_id,
+            )
+            fresh = await session_registry.rehandshake(server_id)
+            if fresh is None:
+                raise call_error
+            current["session"] = fresh
+            result = await invoke_with_timeout(
+                settings.mcp_tool_call_timeout_seconds, kwargs
+            )
         observation, raw_blocks = format_mcp_result(result)
         mcp_tool_call.last_raw_content_blocks = raw_blocks
         return observation
