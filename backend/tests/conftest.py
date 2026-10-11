@@ -1,10 +1,13 @@
 import asyncio
 import contextlib
+import json
 import os
 import socket
 import threading
 import time
 import uuid
+from dataclasses import dataclass, field
+from typing import Any
 
 import httpx
 import pytest
@@ -574,4 +577,118 @@ def auth_ref_mcp_server():
     yield url
     server.should_exit = True
     thread.join(timeout=5.0)
+
+
+# --- Instrumented reference servers (#137) ---------------------------------
+#
+# Handshake/session-observation servers: a body-buffering pure-ASGI wrapper
+# counts `initialize` handshakes, POSTs and session-terminating DELETEs, so
+# session-reuse / close assertions are made against the *server side* rather
+# than registry internals.
+
+
+@dataclass
+class McpServerObservation:
+    """Server-side view of one instrumented reference MCP server."""
+
+    url: str
+    initialize_count: int = 0
+    post_count: int = 0
+    delete_count: int = 0
+    # (start, end) monotonic wall-clock spans of each observed initialize
+    # request — used to verify handshakes overlap (concurrent session opens).
+    initialize_spans: list[tuple[float, float]] = field(default_factory=list)
+
+
+class _CountingMcpMiddleware:
+    """Pure-ASGI wrapper: forwards verbatim, counts methods, buffers POST
+    bodies to spot JSON-RPC ``initialize`` requests and (optionally) delays
+    them to manufacture a slow server."""
+
+    def __init__(self, app, observation: McpServerObservation, handshake_delay: float):
+        self.app = app
+        self.observation = observation
+        self.handshake_delay = handshake_delay
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        method = scope.get("method", "").upper()
+        if method == "POST":
+            self.observation.post_count += 1
+        elif method == "DELETE":
+            self.observation.delete_count += 1
+
+        body = bytearray()
+        started = False
+
+        async def buffered_receive():
+            nonlocal started
+            message = await receive()
+            if message["type"] == "http.request":
+                body.extend(message.get("body", b""))
+                if not message.get("more_body", False) and not started:
+                    started = True
+                    await self._observe_body(bytes(body))
+            return message
+
+        await self.app(scope, buffered_receive, send)
+
+    async def _observe_body(self, raw: bytes) -> None:
+        try:
+            payload = json.loads(raw)
+        except Exception:  # noqa: BLE001 — non-JSON bodies are just not handshakes
+            return
+        if isinstance(payload, dict) and payload.get("method") == "initialize":
+            start = time.monotonic()
+            if self.handshake_delay:
+                await asyncio.sleep(self.handshake_delay)
+            self.observation.initialize_count += 1
+            self.observation.initialize_spans.append((start, time.monotonic()))
+
+
+@pytest.fixture
+def make_ref_mcp_server():
+    """Factory for instrumented reference MCP servers (#137).
+
+    ``make_ref_mcp_server(tools=("add",), delay=0.0)`` serves a fresh
+    FastMCP app on a free port (behind the counting middleware) and returns
+    its :class:`McpServerObservation` (useful fields: ``url``,
+    ``initialize_count``, ``initialize_spans``, ``post_count``,
+    ``delete_count``). All created servers shut down at teardown.
+    """
+
+    created: list[tuple[Any, threading.Thread, McpServerObservation]] = []
+
+    def _make(tools: tuple[str, ...] = ("add",), delay: float = 0.0) -> McpServerObservation:
+        mcp = FastMCP("ags-run-ref")
+
+        def add(a: int, b: int) -> int:
+            """Add two integers."""
+            return a + b
+
+        for tool in tools:
+            if tool == "add":
+                mcp.add_tool(add)
+            else:
+                mcp.add_tool(lambda tool=tool: tool, name=tool)
+
+        observation = McpServerObservation(url="")
+        port = _mcp_free_port()
+        server, thread = _serve_starlette(
+            _CountingMcpMiddleware(mcp.streamable_http_app(), observation, delay),
+            port,
+        )
+        observation.url = f"http://127.0.0.1:{port}/mcp"
+        _wait_http_ready(observation.url)
+        created.append((server, thread, observation))
+        return observation
+
+    yield _make
+
+    for server, thread, _obs in created:
+        server.should_exit = True
+        thread.join(timeout=5.0)
 

@@ -40,6 +40,7 @@ from canvas_server.runner.execution import (
     WorkerExecution,
 )
 from canvas_server.runner.handoff import HandoffToolBuilder
+from canvas_server.runner.mcp_sessions import McpSessionRegistry
 from canvas_server.runner.memory import MemoryManager
 from canvas_server.runner.run_state import CanvasRunState, ClientResponseCallback
 from canvas_server.runner.tool_registry import ToolRegistry
@@ -112,6 +113,11 @@ class CanvasRunner:
 
         self._handoff_tool_builder = HandoffToolBuilder(self.run_state)
         self.run_state.handoff_tool_builder = self._handoff_tool_builder
+
+        # Per-run MCP session registry (#137). Empty until setup() finds the
+        # graph referencing registered MCP servers via workers' tool grants;
+        # closed at run end by ConversationRunCoordinator.
+        self.mcp_session_registry: McpSessionRegistry | None = None
 
     # -- backward-compat properties so existing tests don't break ----------
 
@@ -279,6 +285,21 @@ class CanvasRunner:
         # Install tool dependencies in the sandbox before compiling tools
         await self._install_dependencies(self.canvas.tool_nodes)
 
+        # Per-run MCP session lifecycle (spec §3.2/§4.3, #137): open one
+        # Streamable HTTP session per registered server referenced by a
+        # worker's tool grant — concurrently (§3.2 scale rule) — before tool
+        # compile, so MCP-backed tool nodes can bind to a live session.
+        # Routers never get MCP sessions (arch decision 8); a graph that
+        # references no registered servers performs zero MCP connects.
+        self.mcp_session_registry = McpSessionRegistry()
+        self.run_state.mcp_session_registry = self.mcp_session_registry
+        mcp_server_ids = self._collect_worker_mcp_server_ids()
+        if mcp_server_ids:
+            logger.info(
+                "Opening MCP sessions for %d referenced server(s)", len(mcp_server_ids)
+            )
+            await self.mcp_session_registry.open(mcp_server_ids)
+
         self._tool_registry = ToolRegistry()
         runtime_session_id = (
             str(self._conversation.conversation_id)
@@ -376,6 +397,44 @@ class CanvasRunner:
             except Exception as e:
                 logger.error("Failed to install tool dependencies: %s", e)
                 raise
+
+    def _collect_worker_mcp_server_ids(self) -> list[uuid.UUID]:
+        """Registered MCP server ids referenced by *workers'* tool grants.
+
+        Spec §4.3: session-open keys off workers' tool grants only — routers
+        never get MCP sessions (arch decision 8: routers never get network
+        surfaces). A tool node with an ``mcp_server_id`` but no worker
+        ``tool_access`` edge is dormant (spec §3.3: enabling is per-tool on
+        Tool Nodes).
+        """
+        mcp_tool_nodes = {
+            node.id: node
+            for node in self.canvas.tool_nodes
+            if getattr(node, "mcp_server_id", None) is not None
+        }
+        worker_ids = {
+            node.id
+            for node in self.canvas.agent_nodes
+            if getattr(node, "agent_type", "worker") == "worker"
+        }
+
+        server_ids: dict[uuid.UUID, None] = {}
+        for edge in self.canvas.edges:
+            if (
+                edge.edge_type == "tool_access"
+                and edge.source_node_id in worker_ids
+                and edge.target_node_id in mcp_tool_nodes
+            ):
+                server_ids[mcp_tool_nodes[edge.target_node_id].mcp_server_id] = None
+        return list(server_ids)
+
+    async def release_mcp_sessions(self) -> None:
+        """Close this run's MCP sessions — run-end hook called from
+        ``ConversationRunCoordinator.run``'s ``finally`` (next to
+        ``sandbox.release_session``), so sessions close even when the run
+        errors (#137)."""
+        if self.mcp_session_registry is not None:
+            await self.mcp_session_registry.close()
 
     # ------------------------------------------------------------------
     # Event wiring
