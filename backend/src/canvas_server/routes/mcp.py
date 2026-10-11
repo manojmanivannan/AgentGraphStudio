@@ -1,11 +1,12 @@
-"""MCP server registry routes (Settings → MCP Servers, ticket #129).
+"""MCP server registry routes (Settings → MCP Servers, tickets #129/#131).
 
 CRUD over the workspace-global ``mcp_servers`` table. The credential value is
-never returned (§3.1); URL writes follow the http(s)-only policy (§5.1). The
-process-local registry cache is refreshed after every write so the runner/probe
-read fresh state without re-querying the database (provider-settings
-convention). The connection probe (``POST /api/mcp/servers/test``) is ticket
-#131, not this file.
+never returned (#129 responses, §3.1); URL writes follow the http(s)-only
+policy (§5.1). The process-local registry cache is refreshed after every write
+so the runner/probe read fresh state without re-querying the database
+(provider-settings convention). The connection probe
+(``POST /api/mcp/servers/test``, #131) reads stored registrations from the
+same cache and never echoes the credential (§5.4).
 """
 
 from __future__ import annotations
@@ -17,12 +18,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from canvas_server.auth import get_current_user, verify_origin
 from canvas_server.database import get_session
-from canvas_server.mcp_config import refresh_mcp_servers
+from canvas_server.mcp_config import get_mcp_servers, refresh_mcp_servers
+from canvas_server.mcp_probe import probe_mcp_server
 from canvas_server.mcp_url_policy import validate_mcp_server_url
 from canvas_server.models.api import (
     McpServerCreate,
     McpServerListResponse,
     McpServerResponse,
+    McpServerTestRequest,
+    McpServerTestResponse,
     McpServerUpdate,
 )
 from canvas_server.models.auth import User
@@ -138,3 +142,43 @@ async def delete_mcp_server(
     await McpServerRepo(session).delete(row)
     await session.commit()
     await refresh_mcp_servers(session)
+
+
+@mcp_router.post("/test", response_model=McpServerTestResponse)
+async def test_mcp_server(
+    body: McpServerTestRequest,
+    _user: User = Depends(get_current_user),
+    _origin: None = Depends(verify_origin),
+) -> McpServerTestResponse:
+    """Connection probe for the Settings Test button (#131).
+
+    Mirrors the provider Test-button convention: the request body carries the
+    unsaved-form values; omitted fields fall back to the stored registration
+    (read from the process-local cache, no DB session). The response never
+    contains the credential — only connection facts (§5.4).
+    """
+    stored = None
+    if body.server_id is not None:
+        stored = next(
+            (s for s in get_mcp_servers() if s.id == body.server_id), None
+        )
+        if stored is None:
+            raise HTTPException(status_code=404, detail="MCP server not found.")
+
+    url = body.url or (stored.url if stored else None)
+    if not url:
+        raise HTTPException(status_code=400, detail="url or server_id is required.")
+    if body.url:
+        _validated_url_or_400(body.url)
+
+    # None → stored value; "" → explicitly test without a credential
+    # (mirrors the PUT null-keeps / ""-clears rule, §3.1).
+    header = stored.credential_header if stored else None
+    value = stored.credential_value if stored else None
+    if body.credential_header is not None:
+        header = body.credential_header or None
+    if body.credential_value is not None:
+        value = body.credential_value or None
+
+    probe = await probe_mcp_server(url, credential_header=header, credential_value=value)
+    return McpServerTestResponse(**vars(probe))
