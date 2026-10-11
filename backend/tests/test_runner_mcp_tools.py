@@ -482,6 +482,45 @@ class TestSetupFlagsSurfaceThroughWarningEvents:
 
         await runner.release_mcp_sessions()
 
+    async def test_second_staleness_gets_no_second_rehandshake_and_degrades(
+        self, make_ref_mcp_server, test_session, _compile_stub
+    ):
+        """Spec §4.6: the single re-handshake is a per-RUN budget — after it
+        is spent, a second staleness degrades the server for the rest of the
+        run (no second handshake, the error surfaces as a tool observation)."""
+        obs = make_ref_mcp_server(tools=("add",), stale_calls="again")
+        server = await _register_server(test_session, obs.url)
+        worker = FakeAgentNode(name="Worker")
+        tool = FakeToolNode(
+            name="math", mcp_server_id=server.id, mcp_tools=[{"name": "add"}]
+        )
+        canvas = FakeCanvas(
+            agent_nodes=[worker], tool_nodes=[tool], edges=[_tool_access(worker, tool)]
+        )
+
+        runner = CanvasRunner(canvas)
+        await runner.setup()
+        agent = runner.agents[worker.id]
+
+        result = await drive_agent(
+            agent,
+            [
+                make_prediction("add", args={"a": 2, "b": 3}, thought="compute"),
+                make_prediction("add", args={"a": 4, "b": 6}, thought="again"),
+                make_prediction("finish", thought="done"),
+                {"process_result": "The second attempt failed."},
+            ],
+        )
+
+        assert "5" in result.trajectory["observation_0"]  # first call recovered
+        assert result.trajectory["observation_1"].startswith(
+            "Execution error in add:"
+        )
+        assert "Session terminated" in result.trajectory["observation_1"]
+        assert obs.initialize_count == 2  # still exactly one re-handshake
+
+        await runner.release_mcp_sessions()
+
     async def test_colliding_grants_excluded_and_flagged_per_agent(
         self, make_ref_mcp_server, test_session, _compile_stub
     ):

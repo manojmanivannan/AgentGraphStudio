@@ -92,9 +92,10 @@ class McpSessionRegistry:
         self._close_events: dict[uuid.UUID, asyncio.Event] = {}
         self._ready_events: dict[uuid.UUID, asyncio.Event] = {}
         self._errors: dict[uuid.UUID, BaseException] = {}
-        # Servers whose one re-handshake attempt also failed (#139): degraded
-        # for the rest of the run — no further handshake attempts.
-        self._rehandshake_failed: dict[uuid.UUID, bool] = {}
+        # Servers whose single per-run re-handshake budget is spent (#139):
+        # degraded for the rest of the run — no further handshake attempts,
+        # whether the one attempt succeeded or failed (spec §4.6).
+        self._rehandshake_used: dict[uuid.UUID, bool] = {}
         self._closed = False
 
     # ------------------------------------------------------------------
@@ -227,9 +228,13 @@ class McpSessionRegistry:
 
     async def rehandshake(self, server_id: uuid.UUID) -> ClientSession | None:
         """Tear down the stale session for *server_id* and open exactly one
-        fresh one. Returns the new session, or ``None`` when there was
-        nothing registered, the run is closing, or the fresh handshake
-        failed (callers then degrade — spec §4.6; **no retry loop**).
+        fresh one. Each server gets **one** re-handshake per run (spec §4.6):
+        the budget is spent by the first invocation for that server — whether
+        it succeeds or fails — so a second stale-session event degrades the
+        server for the rest of the run (**no retry loop**). Returns the new
+        session, or ``None`` when the budget is spent, there was nothing
+        registered, the run is closing, or the fresh handshake failed
+        (callers then degrade — spec §4.6).
         Genuine connect/TLS/auth failures never reach this path: it is only
         invoked for detected stale-session errors, and a server that failed
         to connect never produced a session to go stale."""
@@ -247,12 +252,13 @@ class McpSessionRegistry:
                 server_id,
             )
             return None
-        if self._rehandshake_failed.get(server_id):
-            # The single re-handshake already failed: this server stays
-            # degraded (spec §4.6 retry-then-degrade, no retry loop).
+        if self._rehandshake_used.get(server_id):
+            # The run's single re-handshake for this server was already spent
+            # (success or failure): it stays degraded (spec §4.6
+            # retry-then-degrade, no retry loop).
             logger.warning(
-                "MCP re-handshake for server %s skipped — the earlier "
-                "re-handshake failed; the server stays degraded",
+                "MCP re-handshake for server %s skipped — the run's single "
+                "re-handshake is already spent; the server stays degraded",
                 server_id,
             )
             return None
@@ -279,17 +285,17 @@ class McpSessionRegistry:
         )
         await self._ready_events[server_id].wait()
 
+        # The budget is spent by the attempt itself — a successful fresh
+        # session serves the run until its next staleness degrades it.
+        self._rehandshake_used[server_id] = True
         fresh = self.get_session(server_id)
         if fresh is None:
-            self._rehandshake_failed[server_id] = True
             logger.warning(
                 "MCP re-handshake failed for server %s: %r — its tools "
                 "degrade for the rest of the run",
                 server_id,
                 self._errors.get(server_id),
             )
-        else:
-            self._rehandshake_failed.pop(server_id, None)
         return fresh
 
     # ------------------------------------------------------------------
