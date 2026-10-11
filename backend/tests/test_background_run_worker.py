@@ -7,6 +7,8 @@ import pytest
 
 from canvas_server.background_run_worker import BackgroundRunWorker
 from canvas_server.database import get_session_factory
+from canvas_server.mcp_config import get_mcp_servers, reset_mcp_servers_cache
+from canvas_server.models.mcp import McpServer
 from canvas_server.repos.conversation_repo import ConversationRepo
 from canvas_server.repos.durable_run_repo import DurableRunRepo
 from tests.test_mcp_redaction import ServerCache, make_server
@@ -131,6 +133,56 @@ class TestSendEventRedaction:
         assert "[REDACTED]" in failed_run.final_error
         assert secret_fragment not in events[-1].payload["message"]
         assert endpoint not in events[-1].payload["message"]
+
+
+class TestMcpRegistryRefreshOnClaim:
+    """The durable-run worker is a separate process: its process-local
+    ``mcp_config`` cache starts empty and no API write route ever runs in it.
+    Claiming a run must refresh the MCP registry (mirroring
+    ``refresh_provider_config``) or every MCP-backed tool node degrades with
+    "server … is not registered" even though the row exists."""
+
+    async def test_process_once_refreshes_mcp_servers_cache(
+        self, blank_canvas, test_session, monkeypatch
+    ):
+        reset_mcp_servers_cache()
+        test_session.add(McpServer(name="weather", url="http://mcp-weather:8000/mcp"))
+        await test_session.commit()
+        assert get_mcp_servers() == ()  # separate worker process starts cold
+
+        conversation_repo = ConversationRepo(test_session)
+        conversation = await conversation_repo.create(blank_canvas.id, "MCP Cache Chat")
+        run_repo = DurableRunRepo(test_session)
+        await run_repo.create(conversation.id, prompt="weather run")
+
+        class FakeCoordinator:
+            def __init__(self, *, session, conversation_repo, canvas_repo):
+                pass
+
+            async def run(
+                self,
+                *,
+                conversation_id,
+                user_prompt,
+                send_event,
+                target_agent_id=None,
+                get_client_response=None,
+                run_id=None,
+            ):
+                pass
+
+        monkeypatch.setattr(
+            "canvas_server.background_run_worker.ConversationRunCoordinator",
+            FakeCoordinator,
+        )
+
+        try:
+            worker = BackgroundRunWorker(session_factory=get_session_factory())
+            assert await worker.process_once() is True
+            # The claim re-read the registry before the run executed.
+            assert [s.name for s in get_mcp_servers()] == ["weather"]
+        finally:
+            reset_mcp_servers_cache()
 
 
 @pytest.mark.asyncio

@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from canvas_server.conversation_run_coordinator import ConversationRunCoordinator
 from canvas_server.database import get_session_factory
 from canvas_server.exceptions import RunAbortedError
+from canvas_server.mcp_config import refresh_mcp_servers
 from canvas_server.mcp_redaction import redact_mcp_payload, redact_mcp_text
 from canvas_server.provider_config import refresh_provider_config
 from canvas_server.repos.canvas_repo import CanvasRepo
@@ -158,8 +159,13 @@ class BackgroundRunWorker:
             prompt = run.prompt
             target_agent_id = run.target_agent_id
             conversation_id = run.conversation_id
-            # The API process owns the settings UI, so re-read the config here.
+            # The API process owns the settings UI, so re-read the configs here —
+            # the provider settings AND the mcp_servers registry: this process's
+            # mcp_config cache starts empty and no write route runs in it, so a
+            # cold cache would degrade every MCP-backed tool node with
+            # "server … is not registered".
             await refresh_provider_config(session)
+            await refresh_mcp_servers(session)
             await session.commit()
 
         await self._execute_run(
