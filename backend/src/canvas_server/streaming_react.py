@@ -159,8 +159,30 @@ class StreamingReAct(dspy.ReAct):
                     {"type": "tool_start", "tool": pred.next_tool_name, "input": tool_input}
                 )
 
-                # Check if this tool requires human approval before executing
-                tool_obj = self.tools[pred.next_tool_name]
+                # Look the tool up guarded: the LLM may select a tool name that
+                # is unknown or was renamed (e.g. MCP servers with exotic
+                # names). Convert that to a standard execution-error
+                # observation instead of raising out of the loop. The guarded
+                # reference also serves the invocation below, so no unguarded
+                # ``self.tools[name]`` lookup remains.
+                tool_obj = self.tools.get(pred.next_tool_name)
+                if tool_obj is None:
+                    observation = (
+                        f"Execution error in {pred.next_tool_name}: "
+                        f"Unknown tool {pred.next_tool_name!r} "
+                        "(it is not registered; pick one of the available tools)"
+                    )
+                    logger.warning("ReAct loop selected unknown tool %r", pred.next_tool_name)
+                    trajectory[f"observation_{idx}"] = observation
+                    await self._emit(
+                        {
+                            "type": "tool_result",
+                            "tool": pred.next_tool_name,
+                            "input": tool_input,
+                            "output": str(observation),
+                        }
+                    )
+                    continue
                 original_fn = getattr(tool_obj, "func", getattr(tool_obj, "fn", tool_obj))
                 requires_approval = getattr(original_fn, "requires_approval", False)
                 tool_node_id = getattr(original_fn, "node_id", None)
@@ -199,7 +221,7 @@ class StreamingReAct(dspy.ReAct):
 
                 try:
                     # Execute the actual tool function
-                    observation = await self.tools[pred.next_tool_name].acall(
+                    observation = await tool_obj.acall(
                         **pred.next_tool_args
                     )
                 except RunAbortedError:
