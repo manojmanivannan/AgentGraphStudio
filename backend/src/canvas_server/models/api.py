@@ -114,6 +114,9 @@ class ToolNodeInput(BaseModel):
     # ``mcp_tools`` is the enabled-tools selection for the server grant.
     mcp_server_id: uuid.UUID | None = None
     mcp_tools: list[McpToolGrant] = Field(default_factory=list)
+    # Enablement history for the editor's NEW-badge diff (#134): the union of
+    # tool names the picker has already shown the user — not a catalog cache.
+    mcp_seen_tools: list[str] = Field(default_factory=list)
 
 
 class ToolNodeResponse(ToolNodeInput):
@@ -480,6 +483,35 @@ class McpServerTestResponse(BaseModel):
     server_version: str | None = None
     tools: list[str] = Field(default_factory=list)
     tool_count: int = 0
+    latency_ms: int = 0
+    detail: str
+    classification: str | None = None
+    protocol_revision: str | None = None
+
+
+# --- Live tool catalog (the editor's checklist, #134, spec §6.3) ---
+
+
+class McpCatalogTool(BaseModel):
+    """One server-provided tool descriptor — exactly as the server serves it
+    (name, description, input schema). No snapshot is stored anywhere; the
+    editor renders its checklist and expandable schema rows from this."""
+
+    name: str
+    description: str | None = None
+    input_schema: dict = Field(default_factory=dict)
+
+
+class McpServerCatalogResponse(BaseModel):
+    """Live-catalog read over the short-lived probe connection. An
+    unreachable server is a structured ``ok=False`` response (honest error,
+    never stale data) — not an HTTP error. Never contains the credential."""
+
+    ok: bool
+    server_id: uuid.UUID
+    tools: list[McpCatalogTool] = Field(default_factory=list)
+    server_name: str | None = None
+    server_version: str | None = None
     latency_ms: int = 0
     detail: str
     classification: str | None = None

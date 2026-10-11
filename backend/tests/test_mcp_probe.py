@@ -165,3 +165,71 @@ def test_classify_plain_exception_collapses_to_generic():
     assert classified.category == "connection_failure"
     assert classified.protocol_revision is None
     assert classified.detail == "connection refused"
+
+
+# --- Live-tool-catalog fetch (#134, spec §6.3) ---
+#
+# The catalog is the probe's full-descriptor sibling: instead of tool *names*
+# it returns each tool's description and the server-provided input schema, so
+# the editor's checklist can render inspection data from the same short-lived
+# probe connection. Same seam, same never-raises contract.
+
+
+async def test_catalog_ok_against_reference_server(ref_mcp_server):
+    from canvas_server.mcp_probe import fetch_mcp_catalog
+
+    result = await fetch_mcp_catalog(ref_mcp_server)
+
+    assert result.ok is True
+    assert result.server_name == "ags-probe-ref"
+    assert result.latency_ms >= 0
+    assert result.detail == "OK"
+    assert result.classification is None
+    assert len(result.tools) == 1
+
+    tool = result.tools[0]
+    assert tool.name == "add"
+    assert "two integers" in (tool.description or "")
+    # The server-provided schema reaches the editor untouched — the ``a``
+    # property comes straight from the SDK's annotation-derived schema.
+    assert tool.input_schema.get("properties", {}).get("a", {}).get("type") == "integer"
+
+
+async def test_catalog_failure_is_ok_false_with_detail():
+    import socket
+
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        dead_port = sock.getsockname()[1]
+
+    from canvas_server.mcp_probe import fetch_mcp_catalog
+
+    result = await fetch_mcp_catalog(f"http://127.0.0.1:{dead_port}/mcp")
+
+    assert result.ok is False
+    assert result.tools == []
+    assert result.detail
+    assert result.classification == "connection_failure"
+
+
+async def test_catalog_without_credential_fails_and_never_carries_it(
+    auth_ref_mcp_server,
+):
+    from canvas_server.mcp_probe import fetch_mcp_catalog
+
+    failed = await fetch_mcp_catalog(auth_ref_mcp_server)
+    assert failed.ok is False
+    assert "401" in failed.detail or "Unauthorized" in failed.detail.lower()
+
+    ok = await fetch_mcp_catalog(
+        auth_ref_mcp_server,
+        credential_header="Authorization",
+        credential_value="Bearer good-token",
+    )
+    assert ok.ok is True
+    assert ok.tools[0].name == "echo"
+
+    import dataclasses
+
+    dumped = str(dataclasses.asdict(ok))
+    assert "good-token" not in dumped

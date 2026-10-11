@@ -124,6 +124,54 @@ export interface ToolNodeData {
   /** Enabled-tools selection for the server grant (camelCase mirrors the
    * other node-data fields). */
   mcpTools?: McpToolGrantData[];
+  /** Enablement history (#134): the union of tool names this node's picker
+   * has already shown the user — the NEW-badge diff baseline. Names only,
+   * never a catalog snapshot (decision #126: no cache anywhere). */
+  mcpSeenTools?: string[];
+}
+
+// --- MCP live tool catalog (#134, spec §6.3) ---
+
+/** One server-provided descriptor, exactly as the server serves it. */
+export interface McpCatalogTool {
+  name: string;
+  description: string | null;
+  input_schema: Record<string, unknown>;
+}
+
+/** Response of POST /api/mcp/servers/{id}/tools — a live read over the
+ * probe path. Unreachable server ⇒ structured `ok: false` (honest error,
+ * never stale data); never carries the credential. */
+export interface McpServerCatalog {
+  ok: boolean;
+  server_id: string;
+  tools: McpCatalogTool[];
+  server_name: string | null;
+  server_version: string | null;
+  latency_ms: number;
+  detail: string;
+  classification: string | null;
+  protocol_revision: string | null;
+}
+
+/** Body for POST /api/mcp/servers/test (Settings Test button, #131). */
+export interface McpServerTestRequest {
+  server_id?: string;
+  url?: string;
+  credential_header?: string | null;
+  credential_value?: string | null;
+}
+
+export interface McpServerTestResponse {
+  ok: boolean;
+  server_name: string | null;
+  server_version: string | null;
+  tools: string[];
+  tool_count: number;
+  latency_ms: number;
+  detail: string;
+  classification: string | null;
+  protocol_revision: string | null;
 }
 
 export type AttachmentFileType =
@@ -244,6 +292,7 @@ export interface CanvasSavePayload {
       requires_approval: boolean;
       mcp_server_id: string | null;
       mcp_tools: McpToolGrant[];
+      mcp_seen_tools: string[];
       position_x: number;
       position_y: number;
     }[];
@@ -302,6 +351,7 @@ export interface CanvasResponse {
       requires_approval: boolean;
       mcp_server_id: string | null;
       mcp_tools: McpToolGrant[];
+      mcp_seen_tools: string[];
       position_x: number;
       position_y: number;
     }>;

@@ -3,8 +3,9 @@ import Editor from "@monaco-editor/react";
 import { useCanvasStore } from "@/store/canvasStore";
 import { useThemeStore } from "@/store/themeStore";
 import { inspectTool, testTool } from "@/lib/api";
-import type { ToolInspectResponse, ToolTestResponse } from "@/types";
+import type { ToolNodeData, ToolInspectResponse, ToolTestResponse } from "@/types";
 import { InfoTooltip } from "./InfoTooltip";
+import { McpToolPicker } from "./McpToolPicker";
 
 type TestState = "idle" | "inspecting" | "ready" | "testing" | "success" | "error";
 
@@ -143,6 +144,27 @@ export function ToolEditor() {
 
   const isTesting = testState === "inspecting" || testState === "testing";
 
+  // MCP-backed variant (#134, spec §6.2): the code/Monaco body is replaced by
+  // the live-catalog picker; the node keeps working as a Tool Node otherwise.
+  const isMcp = !!((selectedNode.data as Partial<ToolNodeData>)?.mcpServerId);
+
+  const nameField = (
+    <div>
+      <label className="block text-[13px] font-semibold text-[var(--color-text-tertiary)] mb-1.5 uppercase tracking-[0.06em]">Name</label>
+      <input
+        type="text"
+        value={localName}
+        onChange={(e) => {
+          setLocalName(e.target.value);
+          updateStore("name", e.target.value);
+        }}
+        data-testid="tool-name-input"
+        className="input-base w-full"
+        placeholder="Tool name"
+      />
+    </div>
+  );
+
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-2 pb-3 border-b border-[var(--color-border-subtle)]">
@@ -154,7 +176,14 @@ export function ToolEditor() {
         <h3 className="text-[13px] font-semibold text-[var(--color-text-primary)]">Tool Properties</h3>
       </div>
 
-      <div className="flex items-center justify-between p-2.5 bg-[var(--color-info-surface)] border border-[var(--color-info)]/15 rounded-lg">
+      {/* Server attach/selection in both variants (Variant A, #134). */}
+      <McpToolPicker nodeId={selectedNodeId!}>
+        {isMcp ? nameField : null}
+      </McpToolPicker>
+
+      {isMcp ? null : (
+        <>
+          <div className="flex items-center justify-between p-2.5 bg-[var(--color-info-surface)] border border-[var(--color-info)]/15 rounded-lg">
         <span className="text-[12px] font-semibold text-[var(--color-info)] uppercase tracking-[0.1em]">
           Inferred Arguments
         </span>
@@ -171,20 +200,7 @@ export function ToolEditor() {
         </div>
       </div>
 
-      <div>
-        <label className="block text-[13px] font-semibold text-[var(--color-text-tertiary)] mb-1.5 uppercase tracking-[0.06em]">Name</label>
-        <input
-          type="text"
-          value={localName}
-          onChange={(e) => {
-            setLocalName(e.target.value);
-            updateStore("name", e.target.value);
-          }}
-          data-testid="tool-name-input"
-          className="input-base w-full"
-          placeholder="Tool name"
-        />
-      </div>
+      {nameField}
 
       <div>
         <label className="block text-[13px] font-semibold text-[var(--color-text-tertiary)] mb-1.5 uppercase tracking-[0.06em]">Python Packages</label>
@@ -426,6 +442,8 @@ export function ToolEditor() {
           </div>
         )}
       </div>
+        </>
+      )}
     </div>
   );
 }

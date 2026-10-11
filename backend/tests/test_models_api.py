@@ -168,6 +168,9 @@ class TestToolNodeMcpGrant:
         tool = ToolNodeInput(id=uuid.uuid4())
         assert tool.mcp_server_id is None
         assert tool.mcp_tools == []
+        # Enablement history (#134): starts empty, never a snapshot of the
+        # catalog — only the names the picker has shown the user.
+        assert tool.mcp_seen_tools == []
 
     def test_mcp_grant_roundtrip(self):
         server_id = uuid.uuid4()
@@ -182,6 +185,18 @@ class TestToolNodeMcpGrant:
         assert tool.mcp_tools[0].requires_approval is True
         dumped = tool.model_dump()["mcp_tools"]
         assert dumped == [{"name": "web_search", "requires_approval": True}]
+
+    def test_mcp_seen_tools_history_roundtrip(self):
+        """``mcp_seen_tools`` is a plain name list (the NEW-badge diff
+        baseline, #134): grows by union on each live catalog fetch, carries
+        no schema or description payloads."""
+        tool = ToolNodeInput(
+            id=uuid.uuid4(),
+            mcp_server_id=uuid.uuid4(),
+            mcp_seen_tools=["web_search", "read_doc"],
+        )
+        assert tool.mcp_seen_tools == ["web_search", "read_doc"]
+        assert tool.model_dump()["mcp_seen_tools"] == ["web_search", "read_doc"]
 
     def test_multiple_grants_keep_each_approval_default(self):
         tool = ToolNodeInput(

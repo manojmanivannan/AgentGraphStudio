@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { server } from "@/test/mocks/server";
@@ -218,5 +218,67 @@ describe("McpServersSection", () => {
     await waitFor(() =>
       expect(screen.queryByTestId(`mcp-server-row-${context7.name}`)).not.toBeInTheDocument()
     );
+  });
+
+  // --- Test connection (left unimplemented by #131; wired in #134 via the
+  // shared probe/catalog path, POST /api/mcp/servers/test) ---
+
+  it("tests a saved server with its stored registration and shows the result inline", async () => {
+    const user = userEvent.setup();
+    let seenBody: unknown = null;
+    server.use(
+      http.post(`${API}/mcp/servers/test`, async ({ request }) => {
+        seenBody = await request.json();
+        return HttpResponse.json({
+          ok: true,
+          server_name: "ags-probe-ref",
+          server_version: "1.0.0",
+          tools: ["add"],
+          tool_count: 1,
+          latency_ms: 42,
+          detail: "OK",
+          classification: null,
+          protocol_revision: "2025-06-18",
+        });
+      })
+    );
+    mockList([context7]);
+    render(<McpServersSection />);
+    const row = await screen.findByTestId(`mcp-server-row-${context7.name}`);
+
+    await user.click(within(row).getByTestId(`mcp-test-button-${context7.name}`));
+
+    expect(seenBody).toEqual({ server_id: context7.id });
+    const result = await screen.findByTestId(`mcp-test-result-${context7.name}`);
+    expect(result).toHaveTextContent(/OK/i);
+    expect(result).toHaveTextContent("42");
+  });
+
+  it("shows a failed probe as an error result, not a stale success", async () => {
+    const user = userEvent.setup();
+    server.use(
+      http.post(`${API}/mcp/servers/test`, () =>
+        HttpResponse.json({
+          ok: false,
+          server_name: null,
+          server_version: null,
+          tools: [],
+          tool_count: 0,
+          latency_ms: 12,
+          detail: "401 Unauthorized — the credential is missing, invalid, or expired.",
+          classification: "connection_failure",
+          protocol_revision: null,
+        })
+      )
+    );
+    mockList([context7]);
+    render(<McpServersSection />);
+    const row = await screen.findByTestId(`mcp-server-row-${context7.name}`);
+
+    await user.click(within(row).getByTestId(`mcp-test-button-${context7.name}`));
+
+    const result = await screen.findByTestId(`mcp-test-result-${context7.name}`);
+    expect(result).toHaveTextContent(/401 Unauthorized/);
+    expect(result).toHaveAttribute("data-ok", "false");
   });
 });
