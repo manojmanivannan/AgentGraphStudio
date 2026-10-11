@@ -9,6 +9,8 @@ Docker-free and exercise the probe module's public seam:
 ``probe_mcp_server`` / ``classify_mcp_failure``.
 """
 
+import json
+
 from mcp import types as mcp_types
 from mcp.shared.exceptions import McpError
 
@@ -233,3 +235,57 @@ async def test_catalog_without_credential_fails_and_never_carries_it(
 
     dumped = str(dataclasses.asdict(ok))
     assert "good-token" not in dumped
+
+
+# --- Metadata snapshot capture (ticket #136, ZIP export §2.3) ---
+
+
+async def test_snapshot_captures_full_metadata_against_reference_server(ref_mcp_server):
+    """The ZIP-export snapshot carries tool names, descriptions, and input
+    schemas — not just the name list the live probe returns."""
+    from canvas_server.mcp_probe import capture_mcp_metadata_snapshot
+
+    snap = await capture_mcp_metadata_snapshot(ref_mcp_server)
+
+    assert snap["captured"] is True
+    assert snap["server_name"] == "ags-probe-ref"
+    assert snap["server_version"]
+    assert snap["protocol_revision"]
+    assert [t["name"] for t in snap["tools"]] == ["add"]
+    add_tool = snap["tools"][0]
+    assert add_tool["description"] == "Add two integers."
+    schema = add_tool["input_schema"]
+    assert "a" in schema["properties"] and "b" in schema["properties"]
+    assert schema["properties"]["a"]["type"] == "integer"
+
+
+async def test_snapshot_never_raises_on_connection_failure():
+    import socket
+
+    from canvas_server.mcp_probe import capture_mcp_metadata_snapshot
+
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        dead_port = sock.getsockname()[1]
+
+    snap = await capture_mcp_metadata_snapshot(f"http://127.0.0.1:{dead_port}/mcp")
+
+    assert snap["captured"] is False
+    assert snap["detail"]  # human-readable failure summary
+    assert snap["tools"] == []
+
+
+async def test_snapshot_passes_credential_to_the_server(auth_ref_mcp_server):
+    """The snapshot uses the stored credential header/value to connect —
+    without ever embedding it in the returned metadata."""
+    from canvas_server.mcp_probe import capture_mcp_metadata_snapshot
+
+    snap = await capture_mcp_metadata_snapshot(
+        auth_ref_mcp_server,
+        credential_header="Authorization",
+        credential_value="Bearer good-token",
+    )
+    assert snap["captured"] is True
+    # No credential material leaks into the snapshot payload.
+    serialized = json.dumps(snap)
+    assert "good-token" not in serialized

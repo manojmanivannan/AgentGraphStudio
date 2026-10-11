@@ -18,6 +18,11 @@ function ToolNodeComponent({ id, data, selected }: NodeProps) {
   const enabledTools = toolData.mcpTools ?? [];
   const serverLabel = toolData.mcpServerName ?? toolData.mcpServerId ?? "";
 
+  // Not-yet-granting import (#136): a grant selection without a server ref —
+  // e.g. a ZIP import whose export had no matching registration in this
+  // workspace — gets a visible unresolved hint instead of the code-tool look.
+  const isMcpUnresolved = !isMcp && enabledTools.length > 0;
+
   const codePreview =
     toolData.code
       ?.split("\n")
@@ -115,7 +120,15 @@ function ToolNodeComponent({ id, data, selected }: NodeProps) {
         </button>
       </div>
       <div className="px-3 py-2.5 flex-1 overflow-hidden">
-        {isMcp ? (
+        {isMcpUnresolved ? (
+          <p
+            data-testid="mcp-unresolved-indicator"
+            className="text-[12px] text-[var(--color-warning)] font-medium"
+            title="MCP grant imported not-yet-granting — confirm a server registration in the editor"
+          >
+            MCP server unresolved
+          </p>
+        ) : isMcp ? (
           <div className="space-y-2">
             <div className="flex items-center gap-2">
               <span
