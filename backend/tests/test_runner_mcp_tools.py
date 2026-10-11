@@ -354,13 +354,10 @@ class TestEndToEndWorkerInvocation:
         )
 
         observation = result.trajectory["observation_0"]
-        # The 50k cap stays the only truncation, inside the framing (§5.2).
-        inner = observation.split("<untrusted_mcp_tool_output>", 1)[1].rsplit(
-            MCP_UNTRUSTED_CLOSE, 1
-        )[0]
-        assert "A" * MCP_RESULT_MAX_CHARS in inner
+        # The 50k cap bounds the FINAL delivered observation — frame +
+        # content (§5.2, §4.5) — so the framing can't push it past 50k.
+        assert len(observation) <= MCP_RESULT_MAX_CHARS
         assert "truncated" in observation
-        assert len(inner) <= MCP_RESULT_MAX_CHARS + 100
         assert observation.endswith(MCP_UNTRUSTED_CLOSE)
 
         await runner.release_mcp_sessions()
