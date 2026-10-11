@@ -709,6 +709,18 @@ def make_ref_mcp_server():
         for tool in tools:
             if tool == "add":
                 mcp.add_tool(add)
+            elif tool == "big_output":
+                def big_output() -> str:
+                    """Return a very large text payload (truncation tests, #138)."""
+                    return "A" * 60_000
+
+                mcp.add_tool(big_output)
+            elif tool == "flaky":
+                def flaky() -> str:
+                    """Always fails — the server must return an isError result."""
+                    raise ValueError("deliberate boom")
+
+                mcp.add_tool(flaky)
             else:
                 mcp.add_tool(lambda tool=tool: tool, name=tool)
 

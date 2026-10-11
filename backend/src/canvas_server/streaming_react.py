@@ -224,24 +224,30 @@ class StreamingReAct(dspy.ReAct):
                     observation = await tool_obj.acall(
                         **pred.next_tool_args
                     )
+                    # Tools may frame their own raw result structure (MCP
+                    # content blocks, ticket #138): persist it on the
+                    # existing tool_result payload — no new event types.
+                    raw_content = getattr(original_fn, "last_raw_content_blocks", None)
                 except RunAbortedError:
                     raise
                 except Exception as err:
                     # Catch tool execution failures (e.g. syntax errors, timeouts) and feed them
                     # back to the LLM as an observation so it can attempt to correct the error.
                     observation = f"Execution error in {pred.next_tool_name}: {err}"
+                    raw_content = None
                     logger.exception("Tool call failed")
 
                 trajectory[f"observation_{idx}"] = observation
 
-                await self._emit(
-                    {
-                        "type": "tool_result",
-                        "tool": pred.next_tool_name,
-                        "input": tool_input,
-                        "output": str(observation),
-                    }
-                )
+                tool_result_event = {
+                    "type": "tool_result",
+                    "tool": pred.next_tool_name,
+                    "input": tool_input,
+                    "output": str(observation),
+                }
+                if raw_content is not None:
+                    tool_result_event["raw_content"] = raw_content
+                await self._emit(tool_result_event)
 
         # Extract the final answer based on the accumulated trajectory
         extract = await self._async_call_with_potential_trajectory_truncation(

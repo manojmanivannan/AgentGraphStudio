@@ -7,6 +7,10 @@ import uuid
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
+import mcp.types as mcp_types
+
+from canvas_server.runner.mcp_sessions import McpSessionRegistry
+from canvas_server.runner.mcp_tools import build_mcp_tool, make_unavailable_stub, sanitize_tool_name
 from canvas_server.tool_factory import compile_tool_from_code
 
 if TYPE_CHECKING:
@@ -31,23 +35,38 @@ class ToolRegistry:
     the reverse mapping from tool name to node ID.
 
     State owned by this service:
-      ``tools`` — ``{node_id: callable}`` for all compiled tools
+      ``tools`` — ``{node_id: callable}`` for all compiled code tools
+      ``_mcp_tools`` — ``{node_id: [dspy.Tool]}`` for MCP-backed nodes (#138):
+        one descriptor per enabled grant, each carrying the raw callables'
+        ``requires_approval``/``node_id`` metadata on its ``.func``
       ``_tool_name_to_id`` — ``{tool_name: node_id}`` used by ``_attach_events``
         to resolve tool names to canonical node IDs (for canvas highlighting).
     """
 
     def __init__(self) -> None:
         self.tools: dict[uuid.UUID, object] = {}
+        self._mcp_tools: dict[uuid.UUID, list[object]] = {}
         self._tool_name_to_id: dict[str, uuid.UUID] = {}
 
     async def compile_all(
         self,
         tool_nodes: list[ToolNode],
         runtime_session_id: str | None = None,
+        mcp_registry: McpSessionRegistry | None = None,
     ) -> None:
-        """Compile every ``ToolNode`` in *tool_nodes*."""
+        """Compile every ``ToolNode`` in *tool_nodes*.
+
+        MCP-backed nodes (``mcp_server_id`` is set, #132) are served from the
+        run's ``McpSessionRegistry`` (#137) instead of the code compiler; a
+        ``None`` *mcp_registry* degrades their grants to call-time error
+        stubs so the run never fails outright (spec §4.6).
+        """
         logger.debug("Building tools from %d tool nodes", len(tool_nodes))
         for tool_node in tool_nodes:
+            server_id = getattr(tool_node, "mcp_server_id", None)
+            if server_id is not None:
+                await self._compile_mcp_node(tool_node, server_id, mcp_registry)
+                continue
             try:
                 fn = await compile_tool_from_code(
                     tool_node.name,
@@ -74,20 +93,150 @@ class ToolRegistry:
             )
 
             self.tools[tool_node.id] = fn
-            self._tool_name_to_id[tool_node.name] = tool_node.id
+            self._register_tool_name(tool_node.name, tool_node.id)
             logger.debug(
                 "  compiled tool: id=%s name=%s", tool_node.id, tool_node.name
             )
-        logger.info("Built %d tools", len(self.tools))
+        logger.info(
+            "Built %d code tools and %d MCP-backed tool node(s)",
+            len(self.tools),
+            len(self._mcp_tools),
+        )
+
+    async def _compile_mcp_node(
+        self,
+        tool_node: ToolNode,
+        server_id: uuid.UUID,
+        mcp_registry: McpSessionRegistry | None,
+    ) -> None:
+        """Serve one MCP-backed node's enabled grants (ticket #138).
+
+        Grant semantics (spec §4 / #122): the ``tool_access`` edge grants
+        exactly the node's enabled ``mcp_tools`` selection — new server tools
+        never self-grant, enabled-but-vanished tools are omitted (flagging
+        waits for #139). A dead/absent server session degrades every grant
+        into a call-time error stub (spec §4.6).
+        """
+        grants = self._parse_mcp_grants(tool_node)
+        if not grants:
+            logger.info(
+                "MCP tool node %s (%s) grants no tools — nothing to serve",
+                tool_node.name,
+                tool_node.id,
+            )
+            return
+
+        session = (
+            mcp_registry.get_session(server_id) if mcp_registry is not None else None
+        )
+        error = (
+            mcp_registry.error_for(server_id) if mcp_registry is not None else None
+        )
+        listing: dict[str, mcp_types.Tool] | None = None
+        if session is not None:
+            try:
+                listing = {
+                    server_tool.name: server_tool
+                    for server_tool in await mcp_registry.list_tools(server_id)
+                }
+            except Exception as e:  # noqa: BLE001 — session died before tools/list
+                logger.warning(
+                    "tools/list failed for MCP server %s: %s", server_id, e
+                )
+                error = error or e
+
+        built: list[object] = []
+        for grant in grants:
+            display_name = sanitize_tool_name(grant["name"])
+            if error is not None:
+                descriptor = make_unavailable_stub(
+                    display_name, error, tool_node.id
+                )
+            elif listing is None:
+                descriptor = make_unavailable_stub(
+                    display_name,
+                    RuntimeError(
+                        f"MCP server {server_id} is not connected; "
+                        f"its tools are unavailable for this run."
+                    ),
+                    tool_node.id,
+                )
+            else:
+                server_tool = listing.get(grant["name"])
+                if server_tool is None:
+                    # Enabled-but-vanished: omitted from the grant; the
+                    # staleness flagging event is #139's scope.
+                    logger.info(
+                        "Granted MCP tool %r of server %s is not in the run's "
+                        "tools/list — omitted",
+                        grant["name"],
+                        server_id,
+                    )
+                    continue
+                descriptor = build_mcp_tool(
+                    session,
+                    server_tool,
+                    node_id=tool_node.id,
+                    requires_approval=grant["requires_approval"],
+                )
+
+            _attach_tool_metadata(
+                getattr(descriptor, "func", descriptor),
+                requires_approval=grant["requires_approval"],
+                node_id=tool_node.id,
+            )
+            built.append(descriptor)
+            self._register_tool_name(display_name, tool_node.id)
+
+        if built:
+            self._mcp_tools[tool_node.id] = built
+
+    @staticmethod
+    def _parse_mcp_grants(tool_node: ToolNode) -> list[dict[str, Any]]:
+        """The node's enabled-tools selection as ``{name, requires_approval}``."""
+        grants: list[dict[str, Any]] = []
+        for entry in getattr(tool_node, "mcp_tools", None) or []:
+            if not isinstance(entry, dict):
+                continue
+            name = (entry.get("name") or "").strip()
+            if not name:
+                continue
+            grants.append(
+                {
+                    "name": name,
+                    "requires_approval": bool(entry.get("requires_approval", False)),
+                }
+            )
+        return grants
+
+    def _register_tool_name(self, tool_name: str, node_id: uuid.UUID) -> None:
+        """First-come name → node mapping (collision flagging is #139)."""
+        owner = self._tool_name_to_id.get(tool_name)
+        if owner is not None and owner != node_id:
+            logger.warning(
+                "Tool name %r is already owned by node %s — name mapping for "
+                "node %s is dropped (collision surfacing lands with #139)",
+                tool_name,
+                owner,
+                node_id,
+            )
+            return
+        self._tool_name_to_id[tool_name] = node_id
 
     def get_tools_for_agent(
-        self, agent_id: uuid.UUID, edges: list[Edge]
+        self, agent_id: uuid.UUID, edges: list[Edge], include_mcp: bool = True
     ) -> list[Callable[..., Any]]:
-        """Return the list of compiled tool callables accessible to *agent_id*
-        via ``tool_access`` edges."""
+        """Return the tool callables accessible to *agent_id* via
+        ``tool_access`` edges.
+
+        ``include_mcp=False`` (routers, spec §4.3 / arch decision 8) skips
+        MCP-backed tool nodes entirely while keeping their sandbox tools.
+        """
         agent_tools = []
         for edge in edges:
             if edge.source_node_id == agent_id and edge.edge_type == "tool_access":
+                if include_mcp:
+                    agent_tools.extend(self._mcp_tools.get(edge.target_node_id, []))
                 fn = self.tools.get(edge.target_node_id)
                 if fn:
                     agent_tools.append(fn)
