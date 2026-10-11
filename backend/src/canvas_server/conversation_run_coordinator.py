@@ -6,6 +6,7 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from canvas_server.exceptions import RunAbortedError
+from canvas_server.mcp_redaction import redact_mcp_text
 from canvas_server.repos.canvas_repo import CanvasRepo
 from canvas_server.repos.conversation_repo import ConversationRepo
 from canvas_server.runner import CanvasRunner
@@ -163,7 +164,11 @@ class ConversationRunCoordinator:
         try:
             await runner._conversation.persist_message(
                 role="assistant",
-                content=str(error),
+                # Spec §5.4 (#140): this message is UI text — configured MCP
+                # credential values and endpoint URLs are stripped. (The
+                # final_answer event itself is redacted at the worker's
+                # send_event choke point.)
+                content=redact_mcp_text(str(error)),
                 agent_name=agent_name,
                 node_id=node_id,
                 event_type="final_answer",
