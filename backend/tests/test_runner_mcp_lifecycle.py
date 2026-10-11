@@ -13,8 +13,8 @@ import pytest
 
 from canvas_server import mcp_config
 from canvas_server.conversation_run_coordinator import ConversationRunCoordinator
-from canvas_server.models.mcp import McpServer
 from canvas_server.mcp_config import McpServerConfig
+from canvas_server.models.mcp import McpServer
 from canvas_server.runner.mcp_sessions import McpSessionRegistry
 from canvas_server.runner.runner import CanvasRunner
 

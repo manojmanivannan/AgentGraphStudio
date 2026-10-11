@@ -673,7 +673,7 @@ def make_ref_mcp_server():
             if tool == "add":
                 mcp.add_tool(add)
             else:
-                mcp.add_tool(lambda: tool, name=tool)
+                mcp.add_tool(lambda tool=tool: tool, name=tool)
 
         observation = McpServerObservation(url="")
         port = _mcp_free_port()

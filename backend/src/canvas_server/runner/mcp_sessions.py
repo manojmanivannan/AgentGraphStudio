@@ -134,14 +134,13 @@ class McpSessionRegistry:
         try:
             async with streamablehttp_client(
                 cfg.url, headers=headers, timeout=timeout, sse_read_timeout=timeout
-            ) as (read_stream, write_stream, _get_session_id):
-                async with ClientSession(read_stream, write_stream) as session:
-                    await session.initialize()
-                    self._sessions[server_id] = session
-                    ready.set()
-                    # Held open — every MCP tool call in the run reuses this
-                    # session (spec §3.2: one handshake per run and server).
-                    await close_event.wait()
+            ) as (read_stream, write_stream, _get_session_id), ClientSession(read_stream, write_stream) as session:
+                await session.initialize()
+                self._sessions[server_id] = session
+                ready.set()
+                # Held open — every MCP tool call in the run reuses this
+                # session (spec §3.2: one handshake per run and server).
+                await close_event.wait()
         except BaseException as exc:  # noqa: BLE001 — recorded, never escapes the task
             self._errors[server_id] = exc
         finally:

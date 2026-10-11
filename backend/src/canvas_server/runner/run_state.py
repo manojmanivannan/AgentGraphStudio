@@ -64,7 +64,7 @@ class CanvasRunState:
         # Per-run MCP session registry (#137) — set by ``CanvasRunner.setup``
         # once the graph's worker tool grants are known; ``None`` before that.
         # Agents reach live MCP sessions through it (#138 callables).
-        self.mcp_session_registry: "McpSessionRegistry | None" = None
+        self.mcp_session_registry: McpSessionRegistry | None = None
 
         # Attachments materialized as sandbox file paths so far this run,
         # accumulated across whichever agent (entry point or handoff target)

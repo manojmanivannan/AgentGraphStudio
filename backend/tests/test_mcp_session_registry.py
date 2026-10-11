@@ -9,8 +9,6 @@ import asyncio
 import time
 import uuid
 
-import pytest
-
 from canvas_server.mcp_config import McpServerConfig
 from canvas_server.runner.mcp_sessions import McpSessionRegistry
 
