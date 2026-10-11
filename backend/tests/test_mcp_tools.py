@@ -310,7 +310,9 @@ class TestPerCallTimeout:
         session = RecordingSession(text_result("3"))
         tool = make_descriptor(session)
         observation = await tool.acall(a=1, b=2)
-        assert observation == "3"
+        # Framed untrusted-data output (#140 wraps the fast path too).
+        assert "3" in observation
+        assert observation.endswith(MCP_UNTRUSTED_CLOSE)
         assert session.calls == [("add", {"a": 1, "b": 2})]
 
 
@@ -350,7 +352,7 @@ class TestStaleSessionRehandshake:
 
         observation = await tool.acall(a=2, b=3)
 
-        assert observation == "5"
+        assert "5" in observation  # framed untrusted-data output (#140)
         assert obs.initialize_count == 2  # exactly one re-handshake
         await reg.close()
 

@@ -477,7 +477,7 @@ class TestSetupFlagsSurfaceThroughWarningEvents:
             ],
         )
 
-        assert result.trajectory["observation_0"] == "5"
+        assert "5" in result.trajectory["observation_0"]  # framed (#140)
         assert obs.initialize_count == 2  # one handshake + exactly one re-handshake
 
         await runner.release_mcp_sessions()
