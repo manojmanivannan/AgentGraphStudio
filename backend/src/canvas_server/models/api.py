@@ -453,3 +453,34 @@ class McpServerResponse(McpServerBase):
 
 class McpServerListResponse(BaseModel):
     servers: list[McpServerResponse]
+
+
+# --- MCP connection probe (Settings "Test connection", #131) ---
+
+
+class McpServerTestRequest(BaseModel):
+    """Test-button request mirroring the provider Test-button convention.
+
+    Every field is an unsaved-form override; omitted fields (None) fall back
+    to the stored registration when ``server_id`` is given. ``credential_value
+    = ""`` tests *without* a credential, mirroring the PUT ""-clears rule.
+    """
+
+    server_id: uuid.UUID | None = None
+    url: str | None = Field(default=None, max_length=2083)
+    credential_header: str | None = Field(default=None, max_length=64)
+    credential_value: str | None = None
+
+
+class McpServerTestResponse(BaseModel):
+    """Probe response — never contains the credential (§5.4)."""
+
+    ok: bool
+    server_name: str | None = None
+    server_version: str | None = None
+    tools: list[str] = Field(default_factory=list)
+    tool_count: int = 0
+    latency_ms: int = 0
+    detail: str
+    classification: str | None = None
+    protocol_revision: str | None = None

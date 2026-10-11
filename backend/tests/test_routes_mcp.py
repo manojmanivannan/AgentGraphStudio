@@ -1,4 +1,5 @@
-"""MCP server registry routes: CRUD, redaction, URL policy, cache (#129)."""
+"""MCP server registry routes: CRUD, redaction, URL policy, cache (#129),
+plus the connection probe (``POST /api/mcp/servers/test``, #131)."""
 
 import pytest
 
@@ -336,3 +337,142 @@ class TestCacheInvalidation:
             f"/api/mcp/servers/{created['id']}", headers=ORIGIN
         )
         assert get_mcp_servers() == ()
+
+
+class TestConnectionProbe:
+    """POST /api/mcp/servers/test — the #131 Settings Test-button probe."""
+
+    async def test_requires_auth(self, test_client):
+        res = await test_client.post(
+            "/api/mcp/servers/test", json={"url": "http://x/mcp"}
+        )
+        assert res.status_code == 401
+
+    async def test_requires_same_origin(self, authed_client):
+        res = await authed_client.post(
+            "/api/mcp/servers/test",
+            json={"url": "http://x/mcp"},
+            headers={"Origin": "http://evil.example"},
+        )
+        assert res.status_code == 403
+
+    async def test_unknown_server_id_is_404(self, authed_client):
+        res = await authed_client.post(
+            "/api/mcp/servers/test",
+            json={"server_id": "00000000-0000-0000-0000-000000000000"},
+            headers=ORIGIN,
+        )
+        assert res.status_code == 404
+
+    async def test_url_or_server_id_required(self, authed_client):
+        res = await authed_client.post(
+            "/api/mcp/servers/test", json={}, headers=ORIGIN
+        )
+        assert res.status_code == 400
+
+    async def test_invalid_override_url_rejected(self, authed_client):
+        res = await authed_client.post(
+            "/api/mcp/servers/test",
+            json={"url": "ftp://example.com/mcp"},
+            headers=ORIGIN,
+        )
+        assert res.status_code == 400
+
+    async def test_ok_with_stored_registration(self, authed_client, ref_mcp_server):
+        created = (await _create(authed_client, url=ref_mcp_server)).json()
+        res = await authed_client.post(
+            "/api/mcp/servers/test",
+            json={"server_id": created["id"]},
+            headers=ORIGIN,
+        )
+        assert res.status_code == 200
+        body = res.json()
+        assert body["ok"] is True
+        assert body["server_name"] == "ags-probe-ref"
+        assert body["server_version"]
+        assert body["tools"] == ["add"]
+        assert body["tool_count"] == 1
+        assert body["latency_ms"] >= 0
+        assert body["detail"] == "OK"
+        assert body["classification"] is None
+        assert SECRET not in res.text
+
+    async def test_unsaved_url_override(self, authed_client, ref_mcp_server):
+        """A form URL not yet saved is honored without a server_id."""
+        res = await authed_client.post(
+            "/api/mcp/servers/test",
+            json={"url": ref_mcp_server},
+            headers=ORIGIN,
+        )
+        assert res.status_code == 200
+        assert res.json()["ok"] is True
+
+    async def test_credential_override_honored_for_unsaved_form(
+        self, authed_client, auth_ref_mcp_server
+    ):
+        """Unsaved form: url + fresh credential; nothing stored anywhere."""
+        res = await authed_client.post(
+            "/api/mcp/servers/test",
+            json={
+                "url": auth_ref_mcp_server,
+                "credential_header": "Authorization",
+                "credential_value": "Bearer good-token",
+            },
+            headers=ORIGIN,
+        )
+        assert res.status_code == 200
+        assert res.json()["ok"] is True
+
+    async def test_blank_credential_override_tests_without_stored_credential(
+        self, authed_client, auth_ref_mcp_server
+    ):
+        """``""`` means 'test without a credential', even when one is stored."""
+        created = (
+            await _create(authed_client, url=auth_ref_mcp_server)
+        ).json()
+        await authed_client.put(
+            f"/api/mcp/servers/{created['id']}",
+            json={
+                "name": "Context7",
+                "url": auth_ref_mcp_server,
+                "credential_header": "Authorization",
+                "credential_value": "Bearer good-token",
+            },
+            headers=ORIGIN,
+        )
+        res = await authed_client.post(
+            "/api/mcp/servers/test",
+            json={"server_id": created["id"], "credential_value": ""},
+            headers=ORIGIN,
+        )
+        assert res.status_code == 200
+        body = res.json()
+        assert body["ok"] is False
+        assert "401" in body["detail"]
+
+    async def test_credential_never_present_in_response(
+        self, authed_client, ref_mcp_server
+    ):
+        created = (
+            await _create(authed_client, url=ref_mcp_server, credential_value=SECRET)
+        ).json()
+        res = await authed_client.post(
+            "/api/mcp/servers/test",
+            json={"server_id": created["id"], "credential_value": SECRET},
+            headers=ORIGIN,
+        )
+        assert res.status_code == 200
+        assert res.json()["ok"] is True
+        assert SECRET not in res.text
+
+    async def test_connection_failure_is_ok_false_with_detail(self, authed_client):
+        res = await authed_client.post(
+            "/api/mcp/servers/test",
+            json={"url": "http://127.0.0.1:1/mcp"},
+            headers=ORIGIN,
+        )
+        assert res.status_code == 200
+        body = res.json()
+        assert body["ok"] is False
+        assert body["detail"]
+        assert body["classification"] == "connection_failure"
