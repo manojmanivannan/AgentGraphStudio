@@ -437,3 +437,45 @@ class TestSetupFlagsSurfaceThroughWarningEvents:
         assert "1 of 2 enabled tools unavailable" in warnings[0]["message"]
 
         await runner.release_mcp_sessions()
+
+    async def test_colliding_grants_excluded_and_flagged_per_agent(
+        self, make_ref_mcp_server, test_session, _compile_stub
+    ):
+        """Spec §4.5: two Tool Nodes granting the same tool name — per-agent
+        first-come wins, the later collider is dropped and flagged."""
+        obs = make_ref_mcp_server(tools=("add",))
+        server = await _register_server(test_session, obs.url)
+        worker = FakeAgentNode(name="Worker")
+        node_a = FakeToolNode(
+            name="first", mcp_server_id=server.id, mcp_tools=[{"name": "add"}]
+        )
+        node_b = FakeToolNode(
+            name="second", mcp_server_id=server.id, mcp_tools=[{"name": "add"}]
+        )
+        canvas = FakeCanvas(
+            agent_nodes=[worker],
+            tool_nodes=[node_a, node_b],
+            edges=[
+                _tool_access(worker, node_a),
+                _tool_access(worker, node_b),
+            ],
+        )
+
+        runner = CanvasRunner(canvas)
+        events = []
+
+        async def capture(event):
+            events.append(event)
+
+        await runner.setup(send_event=capture)
+        agent = runner.agents[worker.id]
+
+        # First-come wins inside the ReAct tool dict — no silent later-merge.
+        assert agent.tools["add"].func.node_id == node_a.id
+        warnings = [
+            e for e in events if e.get("type") == "warning" and "dropped" in e.get("message", "")
+        ]
+        assert len(warnings) == 1
+        assert warnings[0]["node_id"] == str(node_b.id)
+
+        await runner.release_mcp_sessions()

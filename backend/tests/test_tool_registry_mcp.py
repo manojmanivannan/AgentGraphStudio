@@ -22,12 +22,14 @@ class FakeMcpRegistry:
     """The #137/#139 registry surface ToolRegistry consumes."""
 
     def __init__(self, tools=None, session=None, error=None, sessions_by_id=None,
-                 name=None):
+                 name=None, tools_by_id=None, names_by_id=None):
         self.tools = tools or []
         self.session = session
         self.error = error
         self.sessions_by_id = sessions_by_id or {}
         self.name = name
+        self.tools_by_id = tools_by_id or {}
+        self.names_by_id = names_by_id or {}
 
     def get_session(self, server_id):
         if self.sessions_by_id:
@@ -38,10 +40,10 @@ class FakeMcpRegistry:
         return self.error
 
     def server_name(self, server_id):
-        return self.name
+        return self.names_by_id.get(server_id, self.name)
 
     async def list_tools(self, server_id):
-        return self.tools
+        return self.tools_by_id.get(server_id, self.tools)
 
 
 class FakeToolNode:
@@ -280,6 +282,153 @@ class TestStalenessFlagging:
 
         assert registry.drain_flags()
         assert registry.drain_flags() == []
+
+
+class TestPerAgentCollisions:
+    """Spec §4.5 (#139): per-agent, first-come wins; later colliders are
+    excluded + flagged; no silent merge, no auto-prefix; the tool-name →
+    node-id attribution map belongs to the first-come owner."""
+
+    def _two_nodes(self):
+        server_a, server_b = uuid.uuid4(), uuid.uuid4()
+        node_a = FakeToolNode(
+            name="nodeA",
+            mcp_server_id=server_a,
+            mcp_tools=[{"name": "search"}],
+        )
+        node_b = FakeToolNode(
+            name="nodeB",
+            mcp_server_id=server_b,
+            mcp_tools=[{"name": "search"}],
+        )
+        mcp_registry = FakeMcpRegistry(
+            sessions_by_id={server_a: object(), server_b: object()},
+            tools_by_id={
+                server_a: [server_tool("search", "from A")],
+                server_b: [server_tool("search", "from B")],
+            },
+            names_by_id={server_a: "srv-a", server_b: "srv-b"},
+        )
+        return node_a, node_b, mcp_registry
+
+    async def test_later_collider_is_excluded_and_flagged(self, _compile_stub):
+        node_a, node_b, mcp_registry = self._two_nodes()
+        registry = ToolRegistry()
+        await _compile(registry, [node_a, node_b], mcp_registry)
+
+        worker = FakeAgentNode(name="Worker")
+        edges = [_edge(worker, node_a), _edge(worker, node_b)]
+        tools = registry.get_tools_for_agent(worker.id, edges)
+
+        # First-come wins.
+        assert len(tools) == 1
+        assert tools[0].name == "search"
+        assert tools[0].func.node_id == node_a.id
+
+        flags = registry.drain_flags()
+        collisions = [f for f in flags if f.get("kind") == "collision"]
+        assert len(collisions) == 1
+        assert collisions[0]["node_id"] == node_b.id
+        message = collisions[0]["message"]
+        assert message.startswith("tool 'search' from server")
+        assert "was dropped — name already taken by a tool from server" in message
+        assert "srv-b" in message and "srv-a" in message
+
+    async def test_attribution_map_stays_with_the_first_come_owner(
+        self, _compile_stub
+    ):
+        node_a, node_b, mcp_registry = self._two_nodes()
+        registry = ToolRegistry()
+        await _compile(registry, [node_a, node_b], mcp_registry)
+
+        assert registry.resolve_tool_node_id("search") == node_a.id
+
+        worker = FakeAgentNode(name="Worker")
+        registry.get_tools_for_agent(worker.id, [_edge(worker, node_b)])
+        assert registry.resolve_tool_node_id("search") == node_a.id
+
+    async def test_owner_arriving_later_still_wins(self, _compile_stub):
+        # Edges are ordered nodeB-first here, but nodeA owns the name by
+        # first-come compile order — the ReAct dict must never see B's tool.
+        node_a, node_b, mcp_registry = self._two_nodes()
+        registry = ToolRegistry()
+        await _compile(registry, [node_a, node_b], mcp_registry)
+
+        worker = FakeAgentNode(name="Worker")
+        tools = registry.get_tools_for_agent(
+            worker.id, [_edge(worker, node_b), _edge(worker, node_a)]
+        )
+        assert len(tools) == 1
+        assert tools[0].func.node_id == node_a.id
+
+    async def test_code_tool_owner_beats_a_later_mcp_grant(self):
+        code_node = FakeToolNode(name="scribbler")  # will compile a "search" tool
+
+        async def search_tool(*_args, **_kwargs):
+            """search result"""
+
+        search_tool.__name__ = "search"  # the agent-visible tool name
+
+        server_a = uuid.uuid4()
+        mcp_node = FakeToolNode(
+            name="nodeA",
+            mcp_server_id=server_a,
+            mcp_tools=[{"name": "search"}],
+        )
+        mcp_registry = FakeMcpRegistry(
+            sessions_by_id={server_a: object()},
+            tools_by_id={server_a: [server_tool("search", "from A")]},
+            names_by_id={server_a: "srv-a"},
+        )
+
+        async def fake_compile(name, code, dependencies=None,
+                               runtime_session_id=None):
+            return search_tool
+
+        with patch(
+            "canvas_server.runner.tool_registry.compile_tool_from_code",
+            new=fake_compile,
+        ):
+            registry = ToolRegistry()
+            await registry.compile_all(
+                [code_node, mcp_node], runtime_session_id=None,
+                mcp_registry=mcp_registry,
+            )
+
+        worker = FakeAgentNode(name="Worker")
+        edges = [
+            SimpleNamespace(edge_type="tool_access", source_node_id=worker.id,
+                target_node_id=mcp_node.id),
+            SimpleNamespace(edge_type="tool_access", source_node_id=worker.id,
+                target_node_id=code_node.id),
+        ]
+        tools = registry.get_tools_for_agent(worker.id, edges)
+        assert len(tools) == 1
+        assert getattr(tools[0], "name", getattr(tools[0], "__name__", "")) == "search"
+        assert getattr(tools[0], "node_id", None) == code_node.id
+
+        collisions = [f for f in registry.drain_flags() if f.get("kind") == "collision"]
+        assert len(collisions) == 1
+        assert collisions[0]["node_id"] == mcp_node.id
+        message = collisions[0]["message"]
+        assert "from server 'srv-a' was dropped" in message
+        assert "code tool node" in message and "scribbler" in message
+
+    async def test_no_collision_when_names_differ(self, _compile_stub):
+        node_a, node_b, mcp_registry = self._two_nodes()
+        # Overwrite B's grant with a distinct name via a fresh node list.
+        server_b = node_b.mcp_server_id
+        node_b.mcp_tools = [{"name": "echo"}]
+        mcp_registry.tools_by_id[server_b] = [server_tool("echo", "from B")]
+        registry = ToolRegistry()
+        await _compile(registry, [node_a, node_b], mcp_registry)
+
+        worker = FakeAgentNode(name="Worker")
+        tools = registry.get_tools_for_agent(
+            worker.id, [_edge(worker, node_a), _edge(worker, node_b)]
+        )
+        assert {t.name for t in tools} == {"search", "echo"}
+        assert [f for f in registry.drain_flags() if f.get("kind") == "collision"] == []
 
 
 class TestDegradedServers:

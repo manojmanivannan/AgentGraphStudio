@@ -51,6 +51,10 @@ class ToolRegistry:
         # Degradation/staleness/collision notes (#139), drained once by the
         # runner and surfaced through the existing "warning" event machinery.
         self._flags: list[dict[str, Any]] = []
+        # node_id → human phrase describing where a node's tools came from
+        # ("server '<name>'" / "code tool node '<name>'") for flag messages.
+        self._node_labels: dict[uuid.UUID, str] = {}
+        self._collision_keys: set[tuple[uuid.UUID, str, uuid.UUID | None]] = set()
 
     def drain_flags(self) -> list[dict[str, Any]]:
         """Unread flag notes (and clear them) — the runner's emit pass."""
@@ -82,6 +86,9 @@ class ToolRegistry:
             if server_id is not None:
                 await self._compile_mcp_node(tool_node, server_id, mcp_registry)
                 continue
+            self._node_labels[tool_node.id] = (
+                f"code tool node '{tool_node.name}'"
+            )
             try:
                 fn = await compile_tool_from_code(
                     tool_node.name,
@@ -109,6 +116,13 @@ class ToolRegistry:
 
             self.tools[tool_node.id] = fn
             self._register_tool_name(tool_node.name, tool_node.id)
+            # The agent-visible name of a code tool is the callable's
+            # ``__name__`` (dspy wraps it as-is) — register it too so
+            # attribution and per-agent collisions key on the names the LLM
+            # actually sees (normally identical to the node name).
+            visible = getattr(fn, "__name__", None)
+            if visible and visible != tool_node.name:
+                self._register_tool_name(visible, tool_node.id)
             logger.debug(
                 "  compiled tool: id=%s name=%s", tool_node.id, tool_node.name
             )
@@ -163,6 +177,7 @@ class ToolRegistry:
                 error = error or e
 
         server_label = self._server_label(mcp_registry, server_id)
+        self._node_labels[tool_node.id] = f"server '{server_label}'"
         if error is not None or listing is None:
             # Spec §4.6 degradation: omit every grant, flag server + reason.
             reason = (
@@ -254,12 +269,12 @@ class ToolRegistry:
         return grants
 
     def _register_tool_name(self, tool_name: str, node_id: uuid.UUID) -> None:
-        """First-come name → node mapping (collision flagging is #139)."""
+        """First-come name → node mapping (attributing runs to first-come)."""
         owner = self._tool_name_to_id.get(tool_name)
         if owner is not None and owner != node_id:
             logger.warning(
                 "Tool name %r is already owned by node %s — name mapping for "
-                "node %s is dropped (collision surfacing lands with #139)",
+                "node %s is dropped (collision flagging: #139)",
                 tool_name,
                 owner,
                 node_id,
@@ -267,24 +282,92 @@ class ToolRegistry:
             return
         self._tool_name_to_id[tool_name] = node_id
 
+    @staticmethod
+    def _tool_identity(tool: Any) -> tuple[str, uuid.UUID | None]:
+        """The agent-visible (sanitized) name and owning node of a tool."""
+        func = getattr(tool, "func", None)
+        if func is None:
+            func = tool
+        name = getattr(tool, "name", None) or getattr(func, "__name__", None)
+        return (str(name) if name else ""), getattr(func, "node_id", None)
+
     def get_tools_for_agent(
         self, agent_id: uuid.UUID, edges: list[Edge], include_mcp: bool = True
     ) -> list[Callable[..., Any]]:
         """Return the tool callables accessible to *agent_id* via
-        ``tool_access`` edges.
+        ``tool_access`` edges, collision-resolved per agent (spec §4.5).
+
+        Per-agent first-come wins, keyed by the registry's first-come
+        name → node attribution: when two tools in one agent's list share a
+        sanitized name, the descriptor whose node owns the name stays and
+        later colliders are excluded + flagged — no silent merge (a ReAct
+        dict over this list can no longer let the later tool win), no
+        auto-prefix. When the owning node is absent from the list, the first
+        list occurrence wins.
 
         ``include_mcp=False`` (routers, spec §4.3 / arch decision 8) skips
         MCP-backed tool nodes entirely while keeping their sandbox tools.
         """
-        agent_tools = []
+        kept: dict[str, tuple[object, uuid.UUID | None, int]] = {}
+        ordered: list[object] = []
         for edge in edges:
-            if edge.source_node_id == agent_id and edge.edge_type == "tool_access":
-                if include_mcp:
-                    agent_tools.extend(self._mcp_tools.get(edge.target_node_id, []))
-                fn = self.tools.get(edge.target_node_id)
-                if fn:
-                    agent_tools.append(fn)
-        return agent_tools
+            if edge.source_node_id != agent_id or edge.edge_type != "tool_access":
+                continue
+            candidates: list[Any] = []
+            if include_mcp:
+                candidates.extend(self._mcp_tools.get(edge.target_node_id, []))
+            fn = self.tools.get(edge.target_node_id)
+            if fn:
+                candidates.append(fn)
+
+            for tool in candidates:
+                name, node_id = self._tool_identity(tool)
+                if not name:
+                    ordered.append(tool)
+                    continue
+                if name not in kept:
+                    kept[name] = (tool, node_id, len(ordered))
+                    ordered.append(tool)
+                    continue
+
+                current_tool, current_node, current_index = kept[name]
+                owner = self._tool_name_to_id.get(name)
+                if owner is not None and node_id == owner and current_node != owner:
+                    # The first-come owner arrives later in the edges — swap.
+                    self._record_collision(
+                        name, dropped_node=current_node, kept_node=node_id,
+                        agent_id=agent_id,
+                    )
+                    kept[name] = (tool, node_id, current_index)
+                    ordered[current_index] = tool
+                    continue
+                self._record_collision(
+                    name, dropped_node=node_id, kept_node=current_node,
+                    agent_id=agent_id,
+                )
+        return ordered
+
+    def _record_collision(
+        self,
+        name: str,
+        dropped_node: uuid.UUID | None,
+        kept_node: uuid.UUID | None,
+        agent_id: uuid.UUID,
+    ) -> None:
+        """Flag an excluded per-agent collider (spec §4.5), once per
+        (agent, name, dropped node) tuple."""
+        key = (agent_id, name, dropped_node)
+        if key in self._collision_keys:
+            return
+        self._collision_keys.add(key)
+        dropped = self._node_labels.get(dropped_node, str(dropped_node))
+        kept = self._node_labels.get(kept_node, str(kept_node))
+        message = (
+            f"tool '{name}' from {dropped} was dropped — name already taken "
+            f"by a tool from {kept}"
+        )
+        node_id = dropped_node if dropped_node is not None else agent_id
+        self._record_flag("collision", node_id, message)
 
     def resolve_tool_node_id(self, tool_name: str) -> uuid.UUID | None:
         """Return the tool-node ID for *tool_name*, or ``None``."""
