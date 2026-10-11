@@ -64,7 +64,17 @@ do receive sandbox Tool Nodes.
   §5.1).
 - Newly enabled MCP tools default to approval-required and **must not run**
   when no approval client is wired — tightened past today's silent skip for
-  in-canvas tools (spec §5.3).
+  in-canvas tools (spec §5.3). Implementation choice (#140): the guarantee is
+  enforced **at call time** in `StreamingReAct.aforward` (MCP-origin tools
+  carrying `requires_approval` with no wired `get_client_response` are blocked
+  with an observation naming the tool) rather than by excluding the tool from
+  the grant — the smaller diff keeps the grant visible to the agent, and the
+  existing event machinery carries the refusal with zero new event types.
+  In-canvas author tools keep their pre-#140 no-callback behavior.
+  MCP observations are additionally framed as untrusted data (§5.2) and a
+  single redaction pass strips configured credential values + endpoint URLs
+  at the event/MLflow boundaries (§5.4); see the MCP section of
+  `docs/ARCHITECTURE.md` for the full security posture.
 - Legacy-only pinning means modern-spec servers (already appearing in the
   wild — deepwiki/context7 speak 2026-shape, though their deployed endpoints
   still answer legacy probes) fail the Test probe with a dedicated

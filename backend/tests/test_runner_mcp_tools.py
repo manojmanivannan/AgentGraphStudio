@@ -20,6 +20,7 @@ import pytest
 
 from canvas_server import mcp_config
 from canvas_server.models.mcp import McpServer
+from canvas_server.runner.mcp_tools import MCP_UNTRUSTED_CLOSE
 from canvas_server.runner.runner import CanvasRunner
 
 
@@ -273,10 +274,14 @@ class TestEndToEndWorkerInvocation:
             ],
         )
 
-        # The remote result is rendered as the observation.
-        assert result.trajectory["observation_0"] == "5"
+        # The remote result is rendered as the observation, wrapped in the
+        # untrusted-data framing (spec §5.2, #140).
+        observation = result.trajectory["observation_0"]
+        assert "5" in observation
+        assert observation.endswith(MCP_UNTRUSTED_CLOSE)
         tool_result = [e for e in events if e["type"] == "tool_result"][0]
-        assert tool_result["output"] == "5"
+        assert "5" in tool_result["output"]
+        assert tool_result["output"].endswith(MCP_UNTRUSTED_CLOSE)
         assert tool_result["raw_content"][0]["text"] == "5"
         assert result.process_result == "The sum is 5."
 
@@ -310,10 +315,11 @@ class TestEndToEndWorkerInvocation:
             ],
         )
 
-        # The call never raises for tool errors; the run continues.
-        assert result.trajectory["observation_0"] == (
-            "Error executing tool flaky: deliberate boom"
-        )
+        # The call never raises for tool errors; the run continues. The
+        # server's error text rides the ordinary framed observation (§5.2).
+        observation = result.trajectory["observation_0"]
+        assert "Error executing tool flaky: deliberate boom" in observation
+        assert observation.endswith(MCP_UNTRUSTED_CLOSE)
 
         await runner.release_mcp_sessions()
 
@@ -348,9 +354,14 @@ class TestEndToEndWorkerInvocation:
         )
 
         observation = result.trajectory["observation_0"]
-        assert observation.startswith("A" * MCP_RESULT_MAX_CHARS)
+        # The 50k cap stays the only truncation, inside the framing (§5.2).
+        inner = observation.split("<untrusted_mcp_tool_output>", 1)[1].rsplit(
+            MCP_UNTRUSTED_CLOSE, 1
+        )[0]
+        assert "A" * MCP_RESULT_MAX_CHARS in inner
         assert "truncated" in observation
-        assert len(observation) <= MCP_RESULT_MAX_CHARS + 100
+        assert len(inner) <= MCP_RESULT_MAX_CHARS + 100
+        assert observation.endswith(MCP_UNTRUSTED_CLOSE)
 
         await runner.release_mcp_sessions()
 

@@ -11,6 +11,7 @@ from mlflow.entities import LiveSpan
 from canvas_server.config import settings
 from canvas_server.events import EventCallback, EventPayload
 from canvas_server.exceptions import RunAbortedError
+from canvas_server.mcp_redaction import redact_mcp_text
 
 logger = logging.getLogger("canvas_server.streaming_react")
 
@@ -188,26 +189,51 @@ class StreamingReAct(dspy.ReAct):
                 tool_node_id = getattr(original_fn, "node_id", None)
 
                 approved = True
-                if requires_approval and get_client_response:
-                    request_id = str(uuid.uuid4())
-                    await self._emit({
-                        "type": "tool_approval_request",
-                        "request_id": request_id,
-                        "tool": pred.next_tool_name,
-                        "args": pred.next_tool_args,
-                        "node_id": str(tool_node_id) if tool_node_id else None,
-                    })
-                    try:
-                        # Block execution and wait for the client to approve or deny via websocket
-                        res = await get_client_response(request_id, "tool_approval_response")
-                        approved = res.get("approved", False)
-                    except RunAbortedError:
-                        raise
-                    except Exception:
+                denial_observation = None
+                if requires_approval:
+                    if get_client_response:
+                        request_id = str(uuid.uuid4())
+                        await self._emit({
+                            "type": "tool_approval_request",
+                            "request_id": request_id,
+                            "tool": pred.next_tool_name,
+                            "args": pred.next_tool_args,
+                            "node_id": str(tool_node_id) if tool_node_id else None,
+                        })
+                        try:
+                            # Block execution and wait for the client to approve or deny via websocket
+                            res = await get_client_response(request_id, "tool_approval_response")
+                            approved = res.get("approved", False)
+                        except RunAbortedError:
+                            raise
+                        except Exception:
+                            approved = False
+                    elif getattr(original_fn, "mcp_origin", False):
+                        # Spec §5.3 (ticket #140): an MCP tool requiring
+                        # approval MUST NOT silently execute when no
+                        # client-response callback is wired (e.g. runs
+                        # without a UI). Block at call time with an
+                        # observation naming the tool — silent execution is
+                        # forbidden for networked remote tools. In-canvas
+                        # author tools keep their pre-#140 no-callback
+                        # posture (approved default) — deliberate choice,
+                        # see docs/adr/0009-mcp-client-tool-integration.md.
                         approved = False
+                        denial_observation = (
+                            f"Execution blocked: tool '{pred.next_tool_name}' "
+                            "requires approval, but this run has no wired "
+                            "approval client. The tool was not executed; "
+                            "pick another tool or ask the user to connect "
+                            "a client that can approve."
+
+                        )
 
                 if not approved:
-                    observation = "Tool execution denied by user."
+                    observation = (
+                        denial_observation
+                        if denial_observation is not None
+                        else "Tool execution denied by user."
+                    )
                     trajectory[f"observation_{idx}"] = observation
                     await self._emit(
                         {
@@ -233,7 +259,12 @@ class StreamingReAct(dspy.ReAct):
                 except Exception as err:
                     # Catch tool execution failures (e.g. syntax errors, timeouts) and feed them
                     # back to the LLM as an observation so it can attempt to correct the error.
-                    observation = f"Execution error in {pred.next_tool_name}: {err}"
+                    # The exception text feeds MLflow autolog trajectories as
+                    # well as the tool_result event, so it passes the MCP
+                    # redaction pass (spec §5.4, ticket #140).
+                    observation = redact_mcp_text(
+                        f"Execution error in {pred.next_tool_name}: {err}"
+                    )
                     raw_content = None
                     logger.exception("Tool call failed")
 

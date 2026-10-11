@@ -13,6 +13,8 @@ import pytest
 
 from canvas_server.runner.mcp_tools import (
     MCP_RESULT_MAX_CHARS,
+    MCP_UNTRUSTED_CLOSE,
+    MCP_UNTRUSTED_OPEN,
     build_mcp_tool,
     format_mcp_result,
     sanitize_tool_name,
@@ -87,7 +89,9 @@ class TestDescriptorBuild:
 
         observation = await tool.acall(a=1, b=2)
 
-        assert observation == "3"
+        # The framing (spec §5.2) wraps the result; the value is inside.
+        assert "3" in observation
+        assert observation.endswith(MCP_UNTRUSTED_CLOSE)
         # The LLM sees the sanitized name, but the server is called with the
         # name from its own catalog.
         assert session.calls == [("add", {"a": 1, "b": 2})]
@@ -163,26 +167,40 @@ def mixed_result():
 
 class TestResultFraming:
     """Spec §4.5: text blocks joined; non-text blocks → placeholder note;
-    50k cap with truncation note; isError never raises."""
+    50k cap with truncation note; isError never raises. §5.2 (#140): the
+    observation is wrapped in untrusted-data delimiters with explicit
+    framing — the cap remains the only truncation."""
 
-    def test_single_text_block_is_a_plain_string(self):
+    def test_single_text_block_is_delimited_untrusted_data(self):
         observation, raw = format_mcp_result(text_result("3"))
-        assert observation == "3"
+        assert observation.startswith("[")
+        assert "untrusted" in observation.lower()
+        assert observation.endswith(MCP_UNTRUSTED_CLOSE)
+        # original content appears between the delimiters
+        assert "3" in observation
         assert raw[0]["type"] == "text" and raw[0]["text"] == "3"
 
-    def test_multiple_text_blocks_are_joined_with_newlines(self):
+    def test_multiple_text_blocks_are_joined_between_delimiters(self):
         observation, _ = format_mcp_result(text_result("t1", "t2", "t3"))
-        assert observation == "t1\nt2\nt3"
+        inner = observation.split(MCP_UNTRUSTED_OPEN, 1)[1]
+        inner = inner.rsplit(MCP_UNTRUSTED_CLOSE, 1)[0]
+        assert "t1\nt2\nt3" in inner
+
+    def test_framing_names_the_tool_when_known(self):
+        observation, _ = format_mcp_result(text_result("5"), tool_name="add")
+        assert "'add'" in observation
+        assert observation.endswith(MCP_UNTRUSTED_CLOSE)
 
     def test_non_text_blocks_become_a_placeholder_note(self):
         observation, _ = format_mcp_result(mixed_result())
-        assert observation == "t1\nt2\nt3\n[1 image block returned, 3 text blocks]"
+        assert "[1 image block returned, 3 text blocks]" in observation
 
     def test_non_text_only_results_are_all_note(self):
         observation, _ = format_mcp_result(
             mcp_types.CallToolResult(content=[image_block()])
         )
-        assert observation == "[1 image block returned]"
+        assert "[1 image block returned]" in observation
+        assert MCP_UNTRUSTED_OPEN in observation
 
     def test_multiple_non_text_counts_summarized_per_type(self):
         observation, _ = format_mcp_result(
@@ -190,28 +208,47 @@ class TestResultFraming:
                 content=[image_block(), image_block(), audio_block()]
             )
         )
-        assert observation == "[2 image blocks returned, 1 audio block returned]"
+        assert "[2 image blocks returned, 1 audio block returned]" in observation
 
-    def test_empty_result_observes_placeholder(self):
+    def test_empty_result_is_still_framed(self):
         observation, raw = format_mcp_result(mcp_types.CallToolResult(content=[]))
-        assert observation == "" and raw == []
+        assert MCP_UNTRUSTED_OPEN in observation
+        assert MCP_UNTRUSTED_CLOSE in observation
+        assert raw == []
 
-    async def test_is_error_is_an_ordinary_observation(self):
+    async def test_is_error_is_an_ordinary_framed_observation(self):
         # dspy 3.4.0's convert_mcp_tool raises RuntimeError for isError — the
         # framed observation must never raise, run continues (spec §4.5).
         session = RecordingSession(text_result("ValueError: boom", is_error=True))
         tool = make_descriptor(session)
         observation = await tool.acall(a=1, b=2)
-        assert observation == "ValueError: boom"
+        assert "ValueError: boom" in observation
+        assert MCP_UNTRUSTED_OPEN in observation and observation.endswith(
+            MCP_UNTRUSTED_CLOSE
+        )
 
     async def test_big_output_is_capped_with_truncation_note(self):
         session = RecordingSession(text_result("A" * 60_000))
         tool = make_descriptor(session)
         observation = await tool.acall(a=1, b=2)
 
-        assert observation.startswith("A" * MCP_RESULT_MAX_CHARS)
+        # The cap is the only truncation (spec §5.2) and stays inside the
+        # untrusted-data delimiters.
+        inner = observation.split(MCP_UNTRUSTED_OPEN, 1)[1].rsplit(
+            MCP_UNTRUSTED_CLOSE, 1
+        )[0]
+        assert "A" * MCP_RESULT_MAX_CHARS in inner
         assert "truncated" in observation
-        assert len(observation) <= MCP_RESULT_MAX_CHARS + 100
+        assert len(inner) <= MCP_RESULT_MAX_CHARS + 100
+        assert observation.endswith(MCP_UNTRUSTED_CLOSE)
+
+    async def test_callables_mark_mcp_origin(self):
+        # §5.3: StreamingReAct's call-time approval block keys off this flag —
+        # only tools originating from an external MCP server are hard-blocked
+        # when no approval client is wired; author tools keep legacy behavior.
+        fn = make_descriptor(RecordingSession(text_result("3"))).func
+        assert fn.mcp_origin is True
+        assert fn.requires_approval is False
 
     async def test_raw_content_blocks_are_json_safe_and_ride_the_callable(self):
         session = RecordingSession(mixed_result())
