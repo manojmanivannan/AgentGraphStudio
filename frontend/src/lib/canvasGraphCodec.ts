@@ -160,6 +160,8 @@ export function decodeCanvasResponse(canvas: CanvasResponse): DecodedCanvasGraph
             name: grant.name,
             requiresApproval: grant.requires_approval,
           })),
+          // Import-only reference metadata (#136): null outside import responses.
+          mcpReference: tool.mcp_reference ?? null,
         },
       })),
       ...(canvas.nodes.attachments ?? []).map((attachment) => ({

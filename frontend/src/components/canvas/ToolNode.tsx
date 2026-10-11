@@ -18,6 +18,11 @@ function ToolNodeComponent({ id, data, selected }: NodeProps) {
       .slice(0, 3)
       .join("\n") || "";
 
+  // MCP grant indication (#132/#136): a resolved grant shows the tool count;
+  // a grant without a server ref (e.g. a ZIP import with no matching
+  // registration) is not-yet-granting and gets a visible unresolved hint.
+  const mcpGrantCount = toolData.mcpTools?.length ?? 0;
+
   return (
     <div
       data-testid="tool-node"
@@ -82,6 +87,24 @@ function ToolNodeComponent({ id, data, selected }: NodeProps) {
         </button>
       </div>
       <div className="px-3 py-2.5 flex-1 overflow-hidden">
+        {mcpGrantCount > 0 ? (
+          toolData.mcpServerId ? (
+            <p
+              data-testid="mcp-grant-indicator"
+              className="text-[12px] text-[var(--color-info)] font-medium mb-1.5"
+            >
+              MCP · {mcpGrantCount} granted tool{mcpGrantCount === 1 ? "" : "s"}
+            </p>
+          ) : (
+            <p
+              data-testid="mcp-unresolved-indicator"
+              className="text-[12px] text-[var(--color-warning)] font-medium mb-1.5"
+              title="MCP grant imported not-yet-granting — confirm a server registration in the editor"
+            >
+              MCP server unresolved
+            </p>
+          )
+        ) : null}
         {codePreview ? (
           <pre className="text-[12px] text-[var(--color-text-tertiary)] font-[var(--font-mono)] leading-relaxed overflow-hidden">
             {codePreview}

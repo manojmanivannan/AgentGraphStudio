@@ -188,6 +188,7 @@ describe("canvasGraphCodec", () => {
           requiresApproval: true,
           mcpServerId: null,
           mcpTools: [],
+          mcpReference: null,
         },
       },
     ]);
@@ -316,6 +317,7 @@ describe("canvasGraphCodec", () => {
             requiresApproval: false,
             mcpServerId: "srv-1",
             mcpTools: [{ name: "web_search", requiresApproval: true }],
+            mcpReference: null,
           },
         },
       ]);
@@ -349,6 +351,60 @@ describe("canvasGraphCodec", () => {
       const tool = result.nodes[0] as { data: Record<string, unknown> };
       expect(tool.data.mcpServerId).toBeNull();
       expect(tool.data.mcpTools).toEqual([]);
+      expect(tool.data.mcpReference).toBeNull();
+    });
+
+    it("decodes an exported MCP reference into tool node data (#136)", () => {
+      const reference = {
+        resolved: true,
+        name: "Context7",
+        url: "https://mcp.context7.com/mcp",
+        snapshot: {
+          captured: true,
+          server_name: "ctx-remote",
+          server_version: "1.2.3",
+          protocol_revision: "2025-11-25",
+          detail: "",
+          tools: [
+            {
+              name: "web_search",
+              description: "Search the web.",
+              input_schema: { type: "object", properties: {} },
+            },
+          ],
+        },
+      };
+      const result = decodeCanvasResponse({
+        id: "canvas-1",
+        name: "Imported Canvas",
+        created_at: "2026-10-11T00:00:00Z",
+        updated_at: "2026-10-11T00:00:00Z",
+        nodes: {
+          agents: [],
+          tools: [
+            {
+              id: "tool-1",
+              canvas_id: "canvas-1",
+              name: "Search Tools",
+              code: "",
+              packages: "",
+              args: [],
+              requires_approval: false,
+              mcp_server_id: null,
+              mcp_tools: [{ name: "web_search", requires_approval: false }],
+              mcp_reference: reference as any,
+              position_x: 1,
+              position_y: 2,
+            },
+          ],
+        },
+        edges: [],
+      });
+
+      const tool = result.nodes[0] as unknown as {
+        data: { mcpReference: typeof reference };
+      };
+      expect(tool.data.mcpReference).toEqual(reference);
     });
 
     it("round-trips an MCP grant through encode and decode", () => {

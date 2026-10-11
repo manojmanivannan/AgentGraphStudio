@@ -103,6 +103,35 @@ export interface McpToolGrantData {
   requiresApproval: boolean;
 }
 
+/** One tool inside an exported MCP metadata snapshot (spec §2.3/#136). */
+export interface McpReferenceSnapshotTool {
+  name: string;
+  description: string | null;
+  input_schema: Record<string, unknown>;
+}
+
+/** Metadata snapshot captured live at export time (spec §2.3); `captured` is
+ * false when the live fetch failed — `detail` then carries the failure summary. */
+export interface McpReferenceSnapshot {
+  captured: boolean;
+  server_name: string | null;
+  server_version: string | null;
+  protocol_revision: string | null;
+  detail: string;
+  tools: McpReferenceSnapshotTool[];
+}
+
+/** Server reference carried by ZIP export/import (#136, spec §2.3/§5.1):
+ * resolved registered name + URL, else `resolved: false`. The URL is never
+ * imported — this block reappears on imported nodes as reference metadata
+ * only. */
+export interface McpServerReference {
+  resolved: boolean;
+  name: string | null;
+  url: string | null;
+  snapshot: McpReferenceSnapshot | null;
+}
+
 export interface ToolNodeData {
   id: string;
   name: string;
@@ -115,6 +144,9 @@ export interface ToolNodeData {
   /** Enabled-tools selection for the server grant (camelCase mirrors the
    * other node-data fields). */
   mcpTools?: McpToolGrantData[];
+  /** Import-only reference metadata (#136): null unless the node was just
+   * imported from a manifest carrying an MCP reference. */
+  mcpReference?: McpServerReference | null;
 }
 
 export type AttachmentFileType =
@@ -293,6 +325,8 @@ export interface CanvasResponse {
       requires_approval: boolean;
       mcp_server_id: string | null;
       mcp_tools: McpToolGrant[];
+      /** Import-only reference metadata (#136) — null outside import responses. */
+      mcp_reference?: McpServerReference | null;
       position_x: number;
       position_y: number;
     }>;
@@ -314,6 +348,8 @@ export interface CanvasResponse {
     target_node_id: string;
     edge_type: string;
   }>;
+  /** Import notices (#136): e.g. an MCP grant imported not-yet-granting. */
+  warnings?: string[];
 }
 
 export interface CanvasListItem {
