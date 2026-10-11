@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from typing import Any, Self
+from typing import Any, Literal, Self
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -316,8 +316,20 @@ class SendMessageRequest(BaseModel):
 
 
 class ToolInspectRequest(BaseModel):
-    code: str
+    """Kind-discriminated inspect request (#135, spec §6.4).
+
+    ``kind: "code"`` (the default) inspects Python tool code in the sandbox
+    path; ``kind: "mcp"`` pulls the **server-provided** input schema live over
+    the shared probe path for a registered server — a named tool when
+    ``mcp_tool_name`` is given, the full catalog otherwise.
+    """
+
+    kind: Literal["code", "mcp"] = "code"
+    code: str = ""
     dependencies: list[str] = Field(default_factory=list)
+    # MCP branch:
+    mcp_server_id: uuid.UUID | None = None
+    mcp_tool_name: str | None = None
 
 
 class ToolArgumentInfo(BaseModel):
@@ -326,21 +338,102 @@ class ToolArgumentInfo(BaseModel):
     default_value: str | None = None
 
 
+class McpInspectTool(BaseModel):
+    """One server-provided tool descriptor in an inspect response — exactly as
+    the server serves it (name, description, input schema)."""
+
+    name: str
+    description: str | None = None
+    input_schema: dict = Field(default_factory=dict)
+
+
 class ToolInspectResponse(BaseModel):
-    function_name: str
-    arguments: list[ToolArgumentInfo]
+    """Inspect response for both branches. The code branch keeps its fields
+    (``function_name`` + ``arguments``); the MCP branch carries the live
+    connection facts and never the credential (§5.4)."""
+
+    kind: Literal["code", "mcp"] = "code"
+    ok: bool = True
+    # Code branch:
+    function_name: str | None = None
+    arguments: list[ToolArgumentInfo] = Field(default_factory=list)
+    # MCP branch (named-tool vs full-catalog):
+    server_id: uuid.UUID | None = None
+    tool: McpInspectTool | None = None
+    tools: list[McpInspectTool] = Field(default_factory=list)
+    server_name: str | None = None
+    server_version: str | None = None
+    latency_ms: int = 0
+    detail: str = "OK"
+    classification: str | None = None
+    protocol_revision: str | None = None
 
 
 class ToolTestRequest(BaseModel):
-    code: str
+    """Kind-discriminated test request (#135, spec §6.4).
+
+    ``kind: "code"`` (default) runs the code tool in the sandbox; ``kind:
+    "mcp"`` has two stages — ``probe`` (connection probe over the shared
+    #131 path) and ``call`` (a live remote ``tools/call`` executed from the
+    backend environment, never the sandbox). ``credential_header`` /
+    ``credential_value`` are test-time overrides following the provider
+    convention: omitted → stored value used, ``""`` → test without a
+    credential even if one is stored.
+    """
+
+    kind: Literal["code", "mcp"] = "code"
+    # Code branch:
+    code: str = ""
     args: dict[str, str] = Field(default_factory=dict)
     dependencies: list[str] = Field(default_factory=list)
+    # MCP branch:
+    stage: Literal["probe", "call"] = "probe"
+    mcp_server_id: uuid.UUID | None = None
+    mcp_tool_name: str | None = None
+    mcp_args: dict[str, Any] = Field(default_factory=dict)
+    credential_header: str | None = Field(default=None, max_length=64)
+    credential_value: str | None = None
+
+
+class McpToolCallBlock(BaseModel):
+    """One output block of an MCP tool result. Text blocks carry their text;
+    non-text blocks carry a mime type / resource URI and a human placeholder
+    — the binary payload never enters the response."""
+
+    type: str
+    text: str | None = None
+    mime_type: str | None = None
+    resource_uri: str | None = None
+    placeholder: str | None = None
 
 
 class ToolTestResponse(BaseModel):
+    """Test response for both branches.
+
+    ``success`` is the single front-end boolean: for the MCP call stage it is
+    ``ok and not is_error`` — an in-band ``isError`` result executed but is
+    reported as an error, not a success output (§6.4).
+    """
+
+    kind: Literal["code", "mcp"] = "code"
+    # Code branch:
     success: bool
-    output: str
-    execution_time_ms: float
+    output: str = ""
+    execution_time_ms: float = 0.0
+    # MCP branch (stage "probe" fills the probe fields; stage "call" fills
+    # ``is_error`` + ``blocks``):
+    stage: Literal["probe", "call"] | None = None
+    ok: bool | None = None
+    server_name: str | None = None
+    server_version: str | None = None
+    tools: list[str] = Field(default_factory=list)
+    tool_count: int = 0
+    latency_ms: int = 0
+    detail: str = "OK"
+    classification: str | None = None
+    protocol_revision: str | None = None
+    is_error: bool | None = None
+    blocks: list[McpToolCallBlock] = Field(default_factory=list)
 
 
 # --- Auth request/response models ---

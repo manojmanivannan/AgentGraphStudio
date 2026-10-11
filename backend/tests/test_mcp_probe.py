@@ -233,3 +233,153 @@ async def test_catalog_without_credential_fails_and_never_carries_it(
 
     dumped = str(dataclasses.asdict(ok))
     assert "good-token" not in dumped
+
+
+# --- Live remote tool call (#135, spec §6.4) ---
+#
+# The Test panel's second stage calls ``tools/call`` on the raw ClientSession
+# (NOT the dspy wrapper — that one raises RuntimeError on in-band error
+# results, which would collapse the two cases the panel must distinguish).
+# Same short-lived connection, same never-raises contract.
+
+
+async def test_call_tool_returns_text_blocks(ref_mcp_server):
+    from canvas_server.mcp_probe import call_mcp_tool
+
+    result = await call_mcp_tool(ref_mcp_server, "add", {"a": 2, "b": 3})
+
+    assert result.ok is True
+    assert result.is_error is False
+    assert result.detail == "OK"
+    assert result.latency_ms >= 0
+    assert result.classification is None
+    assert len(result.blocks) == 1
+    block = result.blocks[0]
+    assert block.type == "text"
+    assert block.text == "5"
+    assert block.placeholder is None
+
+
+async def test_call_tool_in_band_is_error_is_reported_as_an_error(
+    error_ref_mcp_server,
+):
+    from canvas_server.mcp_probe import call_mcp_tool
+
+    result = await call_mcp_tool(error_ref_mcp_server, "explode", {})
+
+    # The call itself completed (ok) — but the server answered with an in-band
+    # isError result, which must be reported as an error, not output.
+    assert result.ok is True
+    assert result.is_error is True
+    assert result.blocks, "the server's error explanation blocks are preserved"
+    joined = " ".join(b.text or "" for b in result.blocks)
+    assert "boom" in joined
+
+
+async def test_call_tool_bad_args_come_back_structured(error_ref_mcp_server):
+    from canvas_server.mcp_probe import call_mcp_tool
+
+    result = await call_mcp_tool(
+        error_ref_mcp_server, "add", {"a": "not-an-int", "b": 3}
+    )
+
+    # Never raises: FastMCP's input validation lands as an in-band isError
+    # result whose text explains the problem.
+    assert result.ok is True
+    assert result.is_error is True
+    assert result.blocks
+    assert (result.blocks[0].text or "").strip()
+
+
+async def test_call_tool_non_text_blocks_carry_placeholders(error_ref_mcp_server):
+    from canvas_server.mcp_probe import call_mcp_tool
+
+    result = await call_mcp_tool(error_ref_mcp_server, "produce_image", {})
+
+    assert result.ok is True
+    assert result.is_error is False
+    assert len(result.blocks) == 1
+    block = result.blocks[0]
+    assert block.type == "image"
+    # The binary payload never enters the response; a human note does.
+    assert block.text is None
+    assert block.placeholder
+    assert block.mime_type == "image/png"
+    assert "not-really-a-png" not in block.placeholder
+
+
+async def test_call_tool_connection_failure_is_structured():
+    import socket
+
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        dead_port = sock.getsockname()[1]
+
+    from canvas_server.mcp_probe import call_mcp_tool
+
+    result = await call_mcp_tool(f"http://127.0.0.1:{dead_port}/mcp", "add", {})
+
+    assert result.ok is False
+    assert result.is_error is False
+    assert result.blocks == []
+    assert result.classification == "connection_failure"
+    assert result.detail
+
+
+async def test_call_tool_unknown_tool_comes_back_in_band(ref_mcp_server):
+    from canvas_server.mcp_probe import call_mcp_tool
+
+    result = await call_mcp_tool(ref_mcp_server, "does_not_exist", {})
+
+    # mcp 1.30 servers report unknown tools as an in-band isError result with
+    # the explanation as text — structured, honest, never an exception.
+    assert result.ok is True
+    assert result.is_error is True
+    assert "does_not_exist" in (result.blocks[0].text or "")
+
+
+def test_call_tool_classifies_json_rpc_rejection_as_call_failure(monkeypatch):
+    """A server that rejects ``tools/call`` at the JSON-RPC layer (client-side
+    ``McpError`` rather than an in-band result) is a distinct failure class —
+    pinned here with the exception shape, since the reference servers report
+    everything in-band."""
+    import asyncio
+
+    from mcp.shared.exceptions import McpError
+    from mcp.types import INTERNAL_ERROR, ErrorData
+
+    from canvas_server import mcp_probe
+
+    error = McpError(ErrorData(code=INTERNAL_ERROR, message="Internal error", data=None))
+
+    async def _fake_connect(url, tool_name, arguments, *, headers, timeout):
+        raise error
+
+    monkeypatch.setattr(mcp_probe, "_connect_and_call", _fake_connect)
+
+    result = asyncio.run(
+        mcp_probe.call_mcp_tool("http://example.test/mcp", "add", {})
+    )
+
+    assert result.ok is False
+    assert result.is_error is False
+    assert result.classification == "call_failure"
+    assert "Internal error" in result.detail
+
+
+async def test_call_tool_never_carries_the_credential(auth_ref_mcp_server):
+    from canvas_server.mcp_probe import call_mcp_tool
+
+    result = await call_mcp_tool(
+        auth_ref_mcp_server,
+        "echo",
+        {"a": "x"},
+        credential_header="Authorization",
+        credential_value="Bearer good-token",
+    )
+
+    assert result.ok is True  # credential was honored
+    import dataclasses
+
+    dumped = str(dataclasses.asdict(result))
+    assert "good-token" not in dumped

@@ -31,7 +31,8 @@ from dataclasses import dataclass, field
 
 from mcp import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
-from mcp.types import LATEST_PROTOCOL_VERSION
+from mcp.shared.exceptions import McpError
+from mcp.types import LATEST_PROTOCOL_VERSION, TextContent
 
 from canvas_server.config import settings
 
@@ -46,6 +47,11 @@ SUPPORTED_REVISION_HEAD = LATEST_PROTOCOL_VERSION
 CLASSIFICATION_OK = None
 CLASSIFICATION_UNSUPPORTED_REVISION = "unsupported_protocol_revision"
 CLASSIFICATION_CONNECTION_FAILURE = "connection_failure"
+# The call stage (#135) adds one class: the handshake succeeded but the
+# JSON-RPC ``tools/call`` request itself was rejected (unknown tool, invalid
+# params reported as a JSON-RPC error, …). In-band ``isError`` results are NOT
+# failures at this level — they executed and are surfaced via ``is_error``.
+CLASSIFICATION_CALL_FAILURE = "call_failure"
 
 _UNSUPPORTED_VERSION_RE = re.compile(
     r"Unsupported protocol version from the server: (\S+)"
@@ -306,3 +312,163 @@ async def _connect_and_catalog(
         "server_version": init.serverInfo.version,
         "protocol_revision": init.protocolVersion,
     }
+
+
+# --- Live remote tool call (#135, spec §6.4) --------------------------------
+
+
+@dataclass(frozen=True)
+class McpToolOutputBlock:
+    """One content block of a ``CallToolResult``, block-structured for the
+    Test panel. Text carries its text; non-text blocks carry a mime type /
+    resource URI plus a human ``placeholder`` note — the binary payload never
+    enters the response (same posture as the runtime's observation joining)."""
+
+    type: str
+    text: str | None = None
+    mime_type: str | None = None
+    resource_uri: str | None = None
+    placeholder: str | None = None
+
+
+@dataclass
+class McpToolCallResult:
+    """:func:`call_mcp_tool`'s outcome. ``ok`` means the call **executed and
+    was answered** (connection + JSON-RPC round trip); ``is_error`` is the
+    server's in-band ``CallToolResult.isError`` — reported as such, never
+    folded into a successful output. Never raises."""
+
+    ok: bool
+    is_error: bool = False
+    blocks: list[McpToolOutputBlock] = field(default_factory=list)
+    latency_ms: int = 0
+    detail: str = ""
+    classification: str | None = None
+    protocol_revision: str | None = None
+
+
+def _blocks_from_content(content: list) -> list[McpToolOutputBlock]:
+    """Map SDK content blocks onto Test-panel blocks.
+
+    In-band error results keep their text blocks so the panel can show the
+    server's explanation; non-text content degrades to a placeholder note.
+    """
+    blocks: list[McpToolOutputBlock] = []
+    for item in content:
+        if isinstance(item, TextContent):
+            blocks.append(McpToolOutputBlock(type="text", text=item.text))
+            continue
+        type_name = getattr(item, "type", None) or type(item).__name__
+        mime = getattr(item, "mimeType", None)
+        uri = getattr(item, "uri", None)
+        if uri is None:
+            resource = getattr(item, "resource", None)
+            if resource is not None:
+                mime = getattr(resource, "mimeType", None) or mime
+                uri = getattr(resource, "uri", None)
+        note = getattr(item, "data", None)
+        size_hint = f"{len(item.data)} bytes" if isinstance(note, (str, bytes)) else None
+        placeholder_parts = [f"[{type_name} output — not rendered in this panel"]
+        if mime:
+            placeholder_parts[0] += f", {mime}"
+        if size_hint:
+            placeholder_parts[0] += f", {size_hint}"
+        placeholder_parts[0] += "]"
+        blocks.append(
+            McpToolOutputBlock(
+                type=type_name,
+                mime_type=mime,
+                resource_uri=str(uri) if uri is not None else None,
+                placeholder=placeholder_parts[0],
+            )
+        )
+    return blocks
+
+
+async def _connect_and_call(
+    url: str,
+    tool_name: str,
+    arguments: dict,
+    *,
+    headers: dict[str, str] | None,
+    timeout: float,
+) -> dict:
+    async with _session_cm(url, headers=headers, timeout=timeout) as session:
+        init = await session.initialize()
+        result = await session.call_tool(tool_name, arguments=arguments)
+
+    return {
+        "is_error": bool(result.isError),
+        "blocks": _blocks_from_content(list(result.content)),
+        "protocol_revision": init.protocolVersion,
+    }
+
+
+async def call_mcp_tool(
+    url: str,
+    tool_name: str,
+    arguments: dict,
+    *,
+    credential_header: str | None = None,
+    credential_value: str | None = None,
+    timeout: float | None = None,
+) -> McpToolCallResult:
+    """Call ``tools/call`` from the backend environment over one short-lived
+    Streamable HTTP connection, then close (#135 Test panel stage 2).
+
+    Never raises — every failure shape comes back as a structured result:
+
+    - transport/handshake failure → ``ok=False`` with the classification from
+      :func:`classify_mcp_failure` (connection failure, timeout, revision …);
+    - JSON-RPC-level rejection of the call itself (unknown tool, invalid params
+      reported as an RPC error) → ``ok=False`` with
+      ``classification="call_failure"``;
+    - in-band ``isError`` results → ``ok=True, is_error=True`` with the
+      server's explanation blocks preserved — the exact distinction the
+      panel must render (output vs error result).
+
+    The raw ``ClientSession.call_tool`` is used, deliberately NOT dspy's
+    convert wrapper (which raises ``RuntimeError`` on isError results and
+    would collapse the two cases). The credential never appears in the
+    result (§5.4).
+    """
+    timeout = timeout if timeout is not None else settings.llm_validation_timeout_seconds
+    headers = (
+        {credential_header: credential_value}
+        if credential_header and credential_value
+        else None
+    )
+
+    start = time.perf_counter()
+    try:
+        result = await asyncio.wait_for(
+            _connect_and_call(
+                url, tool_name, arguments, headers=headers, timeout=timeout
+            ),
+            timeout=timeout,
+        )
+    except Exception as exc:  # noqa: BLE001 — the call stage never raises (§6.4)
+        logger.info(
+            "MCP tool call %r/%r failed: %r", url.split("?")[0], tool_name, exc
+        )
+        classification = classify_mcp_failure(exc)
+        category = classification.category
+        detail = classification.detail
+        if isinstance(exc, McpError):
+            # The handshake may have succeeded; the tools/call request itself
+            # was rejected at the JSON-RPC layer.
+            category = CLASSIFICATION_CALL_FAILURE
+            detail = str(exc)[:300] or f"{type(exc).__name__}"
+        return McpToolCallResult(
+            ok=False,
+            detail=detail,
+            classification=category,
+            latency_ms=int((time.perf_counter() - start) * 1000),
+            protocol_revision=classification.protocol_revision,
+        )
+    return McpToolCallResult(
+        ok=True,
+        detail="OK",
+        latency_ms=int((time.perf_counter() - start) * 1000),
+        **result,
+    )
