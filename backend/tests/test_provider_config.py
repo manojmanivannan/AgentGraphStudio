@@ -175,3 +175,52 @@ async def test_upsert_is_singleton(test_session):
     assert row.llm_model == "b"
     # Partial upsert must not clobber untouched fields.
     assert row.mem0_embedder_dimensions == 768
+
+
+def _probe_cfg(llm_api_key: str) -> ProviderConfig:
+    return ProviderConfig(
+        profile="custom",
+        llm_provider_type="ollama",
+        llm_base_url="http://127.0.0.1:1",
+        llm_api_key=llm_api_key,
+        llm_model="ollama_chat/glm-5.3-flash:cloud",
+        mem0_embedder_model="nomic-embed-text",
+        mem0_embedder_dimensions=768,
+    )
+
+
+def test_dspy_client_kwargs_omits_empty_api_key():
+    # dspy>=3.4 registers an api_keys entry whenever the kwarg is present, even
+    # empty, and then refuses with "empty credential under '<provider>'".
+    # Keyless endpoints (local ollama) must omit the kwarg entirely.
+    from canvas_server.provider_config import dspy_client_kwargs
+
+    kwargs = dspy_client_kwargs(_probe_cfg(llm_api_key=""))
+    assert "api_key" not in kwargs
+    assert kwargs["api_base"] == "http://127.0.0.1:1"
+
+
+def test_dspy_client_kwargs_keeps_set_api_key():
+    from canvas_server.provider_config import dspy_client_kwargs
+
+    kwargs = dspy_client_kwargs(_probe_cfg(llm_api_key="sk-test"))
+    assert kwargs["api_key"] == "sk-test"
+
+
+def test_dspy_client_kwargs_passes_extra_kwargs_through():
+    from canvas_server.provider_config import dspy_client_kwargs
+
+    kwargs = dspy_client_kwargs(_probe_cfg(llm_api_key="sk-test"), num_retries=0, timeout=5)
+    assert kwargs["num_retries"] == 0
+    assert kwargs["timeout"] == 5
+
+
+def test_dspy_client_kwargs_pins_litellm_engine():
+    # dspy>=3.4 defaults to engine="auto" and its native lm15 backend, which
+    # POSTs to {base_url}/chat/completions. Ollama base URLs are the server
+    # root (the OpenAI-compatible surface lives at /v1/...), so lm15 404s.
+    # Pinning the litellm compatibility engine keeps the wire behavior the
+    # runtime, probe and mem0 were built against.
+    from canvas_server.provider_config import dspy_client_kwargs
+
+    assert dspy_client_kwargs(_probe_cfg(llm_api_key=""))["engine"] == "litellm"

@@ -27,7 +27,7 @@ from canvas_server.config import settings
 from canvas_server.events import EventCallback
 from canvas_server.exceptions import LLMConfigurationError
 from canvas_server.package_manager import PackageManager
-from canvas_server.provider_config import get_provider_config
+from canvas_server.provider_config import dspy_client_kwargs, get_provider_config
 from canvas_server.runner.agent_factory import AgentFactory
 from canvas_server.runner.config import RunContext
 from canvas_server.runner.conversation import ConversationService
@@ -79,8 +79,7 @@ class CanvasRunner:
         provider = get_provider_config()
         self._lm = dspy.LM(
             provider.dspy_llm_model,
-            api_base=provider.llm_base_url,
-            api_key=provider.llm_api_key,
+            **dspy_client_kwargs(provider),
         )
 
         # ---- services ----

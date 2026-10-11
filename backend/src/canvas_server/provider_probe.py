@@ -14,7 +14,7 @@ from dataclasses import dataclass
 import dspy
 
 from canvas_server.config import settings
-from canvas_server.provider_config import ProviderConfig
+from canvas_server.provider_config import ProviderConfig, dspy_client_kwargs
 
 logger = logging.getLogger("canvas_server.provider_probe")
 
@@ -75,10 +75,11 @@ async def probe_provider(config: ProviderConfig) -> list[ProbeResult]:
         # llm_validation_timeout_seconds (observed: ~100s instead of ~5s).
         lm = dspy.LM(
             config.dspy_llm_model,
-            api_base=config.llm_base_url,
-            api_key=config.llm_api_key,
-            num_retries=0,
-            timeout=settings.llm_validation_timeout_seconds,
+            **dspy_client_kwargs(
+                config,
+                num_retries=0,
+                timeout=settings.llm_validation_timeout_seconds,
+            ),
         )
         await lm.acall(prompt="Test connection. Respond with 'ok'.", max_tokens=5)
 
