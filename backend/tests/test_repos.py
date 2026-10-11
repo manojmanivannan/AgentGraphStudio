@@ -555,3 +555,45 @@ class TestCanvasRepoMcpToolNode:
         node = canvas.tool_nodes[0]
         assert node.mcp_server_id == server.id
         assert node.mcp_tools == grant
+
+    async def test_save_persists_seen_tools_history(self, blank_canvas, test_session):
+        """The enablement-history baseline (#134) survives save -> reload so
+        the NEW badge means "appeared since the user last viewed", not
+        "appeared since the last page load"."""
+        server = await self._create_server(test_session)
+        repo = CanvasRepo(test_session)
+        tid = uuid.uuid4()
+
+        await repo.save_nodes_and_edges(
+            blank_canvas.id,
+            "MCP Canvas",
+            [],
+            [
+                ToolNodeInput(
+                    id=tid,
+                    name="Search Tools",
+                    mcp_server_id=server.id,
+                    mcp_tools=[{"name": "web_search", "requires_approval": True}],
+                    mcp_seen_tools=["web_search", "read_doc"],
+                )
+            ],
+            [],
+        )
+        canvas = await repo.get_or_404(blank_canvas.id)
+        assert canvas.tool_nodes[0].mcp_seen_tools == ["web_search", "read_doc"]
+
+    async def test_code_tool_save_leaves_seen_tools_default(
+        self, blank_canvas, test_session
+    ):
+        repo = CanvasRepo(test_session)
+        tid = uuid.uuid4()
+
+        await repo.save_nodes_and_edges(
+            blank_canvas.id,
+            "Code Canvas",
+            [],
+            [ToolNodeInput(id=tid, name="Calc", code="def add(a, b): return a + b")],
+            [],
+        )
+        canvas = await repo.get_or_404(blank_canvas.id)
+        assert canvas.tool_nodes[0].mcp_seen_tools == []

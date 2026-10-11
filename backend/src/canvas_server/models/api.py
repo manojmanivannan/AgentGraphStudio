@@ -114,6 +114,9 @@ class ToolNodeInput(BaseModel):
     # ``mcp_tools`` is the enabled-tools selection for the server grant.
     mcp_server_id: uuid.UUID | None = None
     mcp_tools: list[McpToolGrant] = Field(default_factory=list)
+    # Enablement history for the editor's NEW-badge diff (#134): the union of
+    # tool names the picker has already shown the user — not a catalog cache.
+    mcp_seen_tools: list[str] = Field(default_factory=list)
 
 
 class ToolNodeResponse(ToolNodeInput):

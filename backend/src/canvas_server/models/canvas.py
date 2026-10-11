@@ -295,6 +295,13 @@ class ToolNode(Base):
     mcp_tools: Mapped[list[dict[str, Any]]] = mapped_column(
         JSON, default=[], server_default=sa.text("'[]'"), nullable=False
     )
+    # Enablement history (#134, spec §6.2 / decision #126 §2): the union of
+    # tool names this node's picker has ever rendered from a live catalog
+    # fetch — never a catalog snapshot (#126 §1), only the NEW-badge diff
+    # baseline so server-side additions stop flashing NEW after first view.
+    mcp_seen_tools: Mapped[list[str]] = mapped_column(
+        JSON, default=[], server_default=sa.text("'[]'"), nullable=False
+    )
 
     canvas: Mapped[Canvas] = relationship("Canvas", back_populates="tool_nodes")
 

@@ -115,6 +115,43 @@ class TestSaveCanvasMcpToolNode:
         assert resp.status_code == 422
         assert "requires_approval" in resp.text
 
+    async def test_save_and_reload_seen_tools_history(self, authed_client):
+        """The enablement-history baseline (#134) round-trips the canvas API
+        so the NEW badge diffs against what the user has already been shown,
+        across saves and reloads."""
+        created = await authed_client.post("/api/canvases", json={"name": "MCP Hist"})
+        cid = created.json()["id"]
+        server_id = await self._register_server(authed_client)
+        tid = str(uuid.uuid4())
+
+        payload = {
+            "name": "MCP Hist",
+            "nodes": {
+                "agents": [],
+                "tools": [
+                    {
+                        "id": tid,
+                        "name": "Search Tools",
+                        "mcp_server_id": server_id,
+                        "mcp_tools": [
+                            {"name": "web_search", "requires_approval": True}
+                        ],
+                        "mcp_seen_tools": ["web_search", "read_doc"],
+                    },
+                ],
+            },
+            "edges": [],
+        }
+        resp = await authed_client.put(f"/api/canvases/{cid}", json=payload)
+        assert resp.status_code == 200, resp.text
+        tool = resp.json()["nodes"]["tools"][0]
+        assert tool["mcp_seen_tools"] == ["web_search", "read_doc"]
+
+        get_resp = await authed_client.get(f"/api/canvases/{cid}")
+        assert get_resp.status_code == 200
+        tool = get_resp.json()["nodes"]["tools"][0]
+        assert tool["mcp_seen_tools"] == ["web_search", "read_doc"]
+
 
 class TestCreateCanvas:
     async def test_create_default(self, authed_client):

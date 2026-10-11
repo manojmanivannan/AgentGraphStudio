@@ -106,6 +106,7 @@ def _canvas_to_response(canvas: Canvas) -> CanvasResponse:
                     requires_approval=n.requires_approval,
                     mcp_server_id=n.mcp_server_id,
                     mcp_tools=n.mcp_tools,
+                    mcp_seen_tools=n.mcp_seen_tools,
                     position_x=n.position_x,
                     position_y=n.position_y,
                 )
