@@ -164,13 +164,17 @@ class ToolRegistry:
         error = (
             mcp_registry.error_for(server_id) if mcp_registry is not None else None
         )
+        async def _list_tools_by_name() -> dict[str, mcp_types.Tool]:
+            """One ``tools/list`` collected into a name → Tool map."""
+            return {
+                server_tool.name: server_tool
+                for server_tool in await mcp_registry.list_tools(server_id)
+            }
+
         listing: dict[str, mcp_types.Tool] | None = None
         if session is not None:
             try:
-                listing = {
-                    server_tool.name: server_tool
-                    for server_tool in await mcp_registry.list_tools(server_id)
-                }
+                listing = await _list_tools_by_name()
             except Exception as e:  # noqa: BLE001 — handled below
                 if _is_stale_session_error(e):
                     # #139: a stale session at grant time gets its one
@@ -180,12 +184,7 @@ class ToolRegistry:
                     if fresh is not None:
                         session = fresh
                         try:
-                            listing = {
-                                server_tool.name: server_tool
-                                for server_tool in await mcp_registry.list_tools(
-                                    server_id
-                                )
-                            }
+                            listing = await _list_tools_by_name()
                         except Exception as retry_error:  # noqa: BLE001
                             logger.warning(
                                 "tools/list failed for MCP server %s after its "
