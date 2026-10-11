@@ -34,6 +34,7 @@ from mcp.client.streamable_http import streamablehttp_client
 
 from canvas_server import mcp_config
 from canvas_server.config import settings
+from canvas_server.mcp_probe import iter_exception_leaves
 
 logger = logging.getLogger("canvas_server.runner.mcp_sessions")
 
@@ -50,28 +51,32 @@ _STALE_SESSION_MARKERS = ("session terminated", "session not found")
 def is_stale_session_error(exc: BaseException) -> bool:
     """True when *exc*'s tree reports a dead server-side session.
 
-    Walks exception groups / causes — transport errors usually arrive
-    wrapped in an anyio ``ExceptionGroup`` whose ``str`` hides the leaf.
-    Deliberately narrow: tool errors, auth failures and plain transport
-    drops must NOT trigger the one-shot re-handshake.
+    Walks the shared exception-leaf walker (:func:
+    ``canvas_server.mcp_probe.iter_exception_leaves``) — transport errors
+    usually arrive wrapped in an anyio ``ExceptionGroup`` whose ``str`` hides
+    the leaf. Deliberately narrow: tool errors, auth failures and plain
+    transport drops must NOT trigger the one-shot re-handshake.
     """
-    stack: list[BaseException] = [exc]
-    seen: set[int] = set()
-    while stack:
-        current = stack.pop()
-        if id(current) in seen:
-            continue
-        seen.add(id(current))
-        if not isinstance(current, BaseException):
-            continue  # pydantic payloads etc. — no message/cause graph
-        text = str(current).lower()
-        if any(marker in text for marker in _STALE_SESSION_MARKERS):
-            return True
-        stack.extend(getattr(current, "exceptions", ()) or ())
-        for linked in (current.__cause__, current.__context__):
-            if isinstance(linked, BaseException):
-                stack.append(linked)
-    return False
+    return any(
+        marker in str(leaf).lower()
+        for leaf in iter_exception_leaves(exc)
+        for marker in _STALE_SESSION_MARKERS
+    )
+
+
+async def _terminate_task_lifetimes(
+    tasks: Iterable[asyncio.Task], grace: float = _CLOSE_GRACE_SECONDS
+) -> list[BaseException]:
+    """Grace out *tasks*, cancel stragglers, and return their exit results
+    (exceptions included — callers decide whether close-time transport noise
+    matters). Shared by :meth:`McpSessionRegistry.rehandshake` and
+    :meth:`McpSessionRegistry.close`."""
+    done, pending = await asyncio.wait(tasks, timeout=grace)
+    for task in pending:
+        task.cancel()
+    return await asyncio.gather(
+        *(list(done) + list(pending)), return_exceptions=True
+    )
 
 
 class McpSessionRegistry:
@@ -268,13 +273,7 @@ class McpSessionRegistry:
         if stale_event is not None:
             stale_event.set()
         if stale_task is not None:
-            _done, pending = await asyncio.wait(
-                {stale_task}, timeout=_CLOSE_GRACE_SECONDS
-            )
-            for task in pending:
-                task.cancel()
-            if pending:
-                await asyncio.gather(*pending, return_exceptions=True)
+            await _terminate_task_lifetimes([stale_task])
 
         self._errors.pop(server_id, None)
         self._sessions.pop(server_id, None)
@@ -313,12 +312,7 @@ class McpSessionRegistry:
 
         tasks = list(self._tasks.values())
         if tasks:
-            done, pending = await asyncio.wait(tasks, timeout=_CLOSE_GRACE_SECONDS)
-            for task in pending:
-                task.cancel()
-            results = await asyncio.gather(
-                *(list(done) + list(pending)), return_exceptions=True
-            )
+            results = await _terminate_task_lifetimes(tasks)
             # Transport-exit errors after a clean handshake are noise; a
             # terminated server should just drop the session (DELETE above).
             for result in results:

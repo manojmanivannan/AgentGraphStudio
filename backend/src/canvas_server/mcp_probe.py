@@ -105,13 +105,35 @@ class McpCatalogResult:
     protocol_revision: str | None = None
 
 
-def _iter_exception_tree(exc: BaseException) -> Iterator[BaseException]:
-    """Flatten ExceptionGroups (anyio task-group wrapping is the norm here)."""
-    if isinstance(exc, BaseExceptionGroup):
-        for sub in exc.exceptions:
-            yield from _iter_exception_tree(sub)
-    else:
-        yield exc
+def iter_exception_leaves(exc: BaseException) -> Iterator[BaseException]:
+    """Yield every non-group exception reachable from *exc*, without repeats.
+
+    Flattens ExceptionGroups (anyio task-group wrapping is the norm for MCP
+    transports) and follows ``__cause__`` / ``__context__`` links; cycle-safe
+    so self-referencing chains cannot loop forever. Group nodes are skipped in
+    favor of their informative leaves. Shared by the failure
+    summary/classification here and the stale-session detector in
+    :mod:`canvas_server.runner.mcp_sessions`.
+    """
+    stack: list[BaseException] = [exc]
+    seen: set[int] = set()
+    while stack:
+        current = stack.pop(0)
+        if id(current) in seen or not isinstance(current, BaseException):
+            continue  # cycle, or a non-exception payload (no cause graph)
+        seen.add(id(current))
+        links = [
+            linked
+            for linked in (current.__cause__, current.__context__)
+            if isinstance(linked, BaseException)
+        ]
+        if isinstance(current, BaseExceptionGroup):
+            # Members first (they carry the informative leaves), then the
+            # group node's own cause/context — both ahead of older work.
+            stack[:0] = [*current.exceptions, *links]
+            continue
+        yield current
+        stack.extend(links)
 
 
 def _summarize(exc: BaseException) -> str:
@@ -121,7 +143,7 @@ def _summarize(exc: BaseException) -> str:
     "unhandled errors in a TaskGroup (N sub-exceptions)", which hides the
     informative part.
     """
-    for leaf in _iter_exception_tree(exc):
+    for leaf in iter_exception_leaves(exc):
         exc = leaf
         break
     text = str(exc) or type(exc).__name__
@@ -149,7 +171,7 @@ def classify_mcp_failure(exc: BaseException) -> McpFailureClassification:
     modern servers, POST-only/no-session-echo shapes, plain connection
     failures — collapses to the generic connection-failure class.
     """
-    for sub in _iter_exception_tree(exc):
+    for sub in iter_exception_leaves(exc):
         match = _UNSUPPORTED_VERSION_RE.search(str(sub))
         if match:
             revision = match.group(1)

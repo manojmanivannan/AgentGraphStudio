@@ -169,6 +169,74 @@ def test_classify_plain_exception_collapses_to_generic():
     assert classified.detail == "connection refused"
 
 
+# --- Shared exception-tree walk (dedup'd between the probe and the run-registry) ---
+
+
+def test_iter_exception_leaves_flattens_groups_depth_first():
+    from canvas_server.mcp_probe import iter_exception_leaves
+
+    inner = ValueError("boom")
+    tail = KeyError("k")
+    exc = ExceptionGroup("a", [ExceptionGroup("b", [inner, tail])])
+
+    assert list(iter_exception_leaves(exc)) == [inner, tail]
+
+
+def test_iter_exception_leaves_follows_cause_and_context():
+    from canvas_server.mcp_probe import iter_exception_leaves
+
+    leaf = OSError("wrapped failure")
+    cause = ValueError("the reason")
+    outer = RuntimeError("surface")
+    outer.__cause__ = cause
+    holder = ExceptionGroup("g", [outer])
+    holder.__context__ = leaf
+
+    leaves = list(iter_exception_leaves(holder))
+
+    # Exception instances compare by identity, so order/presence is checked
+    # via the very same objects.
+    assert [id(x) for x in leaves] == [id(outer), id(leaf), id(cause)]
+
+    # Without a group, the plain cause chain is walked too.
+    assert list(iter_exception_leaves(outer)) == [outer, cause]
+
+
+def test_iter_exception_leaves_is_cycle_safe():
+    from canvas_server.mcp_probe import iter_exception_leaves
+
+    a = ValueError("a")
+    b = RuntimeError("b")
+    a.__context__ = b
+    b.__context__ = a  # cycle
+
+    assert list(iter_exception_leaves(a)) == [a, b]
+
+
+def test_is_stale_session_error_sees_markers_nested_in_cause_chains():
+    # The shared walker must reach markers wrapped in __cause__ links that
+    # the probe's old group-only flattening skipped.
+    from canvas_server.runner.mcp_sessions import is_stale_session_error
+
+    root = McpError(error=mcp_types.ErrorData(code=-32000, message="Session terminated"))
+    wrapped = RuntimeError("transport died")
+    wrapped.__cause__ = root
+
+    assert is_stale_session_error(wrapped) is True
+    assert is_stale_session_error(ExceptionGroup("g", [wrapped])) is True
+    assert is_stale_session_error(RuntimeError("unrelated")) is False
+
+
+def test_stale_marker_inside_group_is_found():
+    from canvas_server.runner.mcp_sessions import is_stale_session_error
+
+    exc = ExceptionGroup(
+        "anyio", [ConnectionResetError("reset"), RuntimeError("Session terminated")]
+    )
+
+    assert is_stale_session_error(exc) is True
+
+
 # --- Live-tool-catalog fetch (#134, spec §6.3) ---
 #
 # The catalog is the probe's full-descriptor sibling: instead of tool *names*
