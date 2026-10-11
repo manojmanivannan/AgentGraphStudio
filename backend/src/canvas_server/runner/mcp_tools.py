@@ -19,6 +19,7 @@ sidesteps DSPy 3.4.0's RuntimeError-on-isError quirk).
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 import uuid
@@ -27,6 +28,8 @@ from typing import Any
 import mcp.types as mcp_types
 from dspy.adapters.types.tool import Tool as DspyTool
 from dspy.utils.mcp import convert_mcp_tool
+
+from canvas_server.config import settings
 
 logger = logging.getLogger("canvas_server.runner.mcp_tools")
 
@@ -199,10 +202,31 @@ def build_mcp_tool(
     arg_desc = dict(descriptor.arg_desc or {})
     original_name = server_tool.name
     description = server_tool.description or f"MCP tool {display_name}."
+    # Cell (not a plain closure var): the session can be swapped for a fresh
+    # one after a mid-run re-handshake (#139's stale-session retry).
+    current = {"session": session}
+
+    async def invoke_with_timeout(timeout: float, arguments: dict):
+        """One bounded ``call_tool`` attempt against the current session.
+
+        Spec §4.4: the timeout is re-read per call (tests override it via the
+        settings seam). A hang surfaces as ``TimeoutError("timed out after
+        <n>s")`` → StreamingReAct's standard execution-error observation; the
+        session itself stays usable (the hung request is cancelled).
+        """
+        try:
+            return await asyncio.wait_for(
+                current["session"].call_tool(original_name, arguments=arguments),
+                timeout=timeout,
+            )
+        except asyncio.TimeoutError as exc:
+            raise TimeoutError(f"timed out after {timeout:g}s") from exc
 
     async def mcp_tool_call(*_positional, **kwargs):
         """Invoke the run's MCP session; frame the result per spec §4.5."""
-        result = await session.call_tool(original_name, arguments=kwargs)
+        result = await invoke_with_timeout(
+            settings.mcp_tool_call_timeout_seconds, kwargs
+        )
         observation, raw_blocks = format_mcp_result(result)
         mcp_tool_call.last_raw_content_blocks = raw_blocks
         return observation

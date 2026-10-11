@@ -242,3 +242,36 @@ class TestResultFraming:
         tool = make_descriptor(BrokenSession())
         with pytest.raises(ConnectionError):
             await tool.acall(a=1, b=2)
+
+
+class TestPerCallTimeout:
+    """Spec §4.4: the configured per-call timeout wraps the MCP call; a
+    timeout surfaces as the standard ``timed out after <n>s`` execution error
+    observation and never fails the run."""
+
+    async def test_slow_call_raises_timeout_with_the_configured_seconds(
+        self, monkeypatch
+    ):
+        import asyncio
+
+        from canvas_server.config import settings
+
+        class SlowSession:
+            async def call_tool(self, name, arguments=None):
+                await asyncio.sleep(5.0)
+                return text_result("3")
+
+        monkeypatch.setattr(settings, "mcp_tool_call_timeout_seconds", 0.2)
+        tool = make_descriptor(SlowSession())
+        with pytest.raises(TimeoutError, match="timed out after 0.2s"):
+            await tool.acall(a=1, b=2)
+
+    async def test_fast_call_is_unaffected_by_the_timeout(self, monkeypatch):
+        from canvas_server.config import settings
+
+        monkeypatch.setattr(settings, "mcp_tool_call_timeout_seconds", 0.2)
+        session = RecordingSession(text_result("3"))
+        tool = make_descriptor(session)
+        observation = await tool.acall(a=1, b=2)
+        assert observation == "3"
+        assert session.calls == [("add", {"a": 1, "b": 2})]

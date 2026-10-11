@@ -721,6 +721,13 @@ def make_ref_mcp_server():
                     raise ValueError("deliberate boom")
 
                 mcp.add_tool(flaky)
+            elif tool == "slow":
+                async def slow() -> str:
+                    """Sleep long enough for any per-call timeout to fire first."""
+                    await asyncio.sleep(5.0)
+                    return "finally"
+
+                mcp.add_tool(slow)
             else:
                 mcp.add_tool(lambda tool=tool: tool, name=tool)
 

@@ -306,3 +306,47 @@ class TestEndToEndWorkerInvocation:
         assert len(observation) <= MCP_RESULT_MAX_CHARS + 100
 
         await runner.release_mcp_sessions()
+
+    async def test_slow_tool_times_out_into_observation_and_run_continues(
+        self, make_ref_mcp_server, test_session, _compile_stub, monkeypatch
+    ):
+        """Spec §4.4: the per-call timeout converts a hung remote call into the
+        standard execution-error observation; the loop keeps going."""
+        from canvas_server.config import settings
+
+        obs = make_ref_mcp_server(tools=("slow",))
+        server = await _register_server(test_session, obs.url)
+        worker = FakeAgentNode(name="Worker")
+        tool = FakeToolNode(
+            name="slow-node",
+            mcp_server_id=server.id,
+            mcp_tools=[{"name": "slow", "requires_approval": False}],
+        )
+        canvas = FakeCanvas(
+            agent_nodes=[worker], tool_nodes=[tool], edges=[_tool_access(worker, tool)]
+        )
+
+        monkeypatch.setattr(settings, "mcp_tool_call_timeout_seconds", 0.3)
+        runner = CanvasRunner(canvas)
+        await runner.setup()
+        agent = runner.agents[worker.id]
+
+        events = []
+        agent.on_event(events.append)
+        result = await drive_agent(
+            agent,
+            [
+                make_prediction("slow", args={}, thought="patience"),
+                make_prediction("finish", thought="done"),
+                {"process_result": "The tool timed out."},
+            ],
+        )
+
+        assert result.trajectory["observation_0"] == (
+            "Execution error in slow: timed out after 0.3s"
+        )
+        tool_result = [e for e in events if e["type"] == "tool_result"][0]
+        assert tool_result["output"].startswith("Execution error in slow: timed out")
+        assert result.process_result == "The tool timed out."
+
+        await runner.release_mcp_sessions()
