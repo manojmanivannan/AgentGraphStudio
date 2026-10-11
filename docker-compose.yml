@@ -245,6 +245,33 @@ services:
 #             count: 1
 #             capabilities: [gpu]
 
+  # Local MCP test server ("Weather Server") for mcp-client-support dev —
+  # reachable in-network at http://mcp-weather:8000/mcp with a Bearer token,
+  # so the containerized backend never depends on host.docker.internal or
+  # firewall plumbing. Opt-in like ollama: `docker compose --profile mcp up -d`.
+  # Unpublished by default so it never fights a host-side dev server on 8000.
+  mcp-weather:
+    build:
+      context: ./mcp-weather
+    profiles:
+      - mcp
+    environment:
+      MCP_BEARER_TOKEN: ${MCP_BEARER_TOKEN:-my-secret-token}
+    networks:
+      - agent_network
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 256m
+    healthcheck:
+      # Socket-level check: the bearer middleware 401s unauthenticated GETs,
+      # so an HTTP-status probe would false-fail. TCP-open proves it's serving.
+      test: ["CMD", "python", "-c", "import socket; s = socket.create_connection(('localhost', 8000), 4); s.close()"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
 networks:
   agent_network:
     driver: bridge
