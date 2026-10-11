@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from canvas_server.auth import get_current_user, verify_origin
 from canvas_server.database import get_session
 from canvas_server.mcp_config import get_mcp_servers, refresh_mcp_servers
+from canvas_server.mcp_probe import fetch_mcp_catalog, probe_mcp_server
 from canvas_server.mcp_url_policy import validate_mcp_server_url
 from canvas_server.models.api import (
     McpCatalogTool,
@@ -30,7 +31,6 @@ from canvas_server.models.api import (
     McpServerTestResponse,
     McpServerUpdate,
 )
-from canvas_server.mcp_probe import fetch_mcp_catalog, probe_mcp_server
 from canvas_server.models.auth import User
 from canvas_server.repos.mcp_repo import McpServerRepo
 
