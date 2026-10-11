@@ -23,6 +23,7 @@ dependencies = [
     # Used directly (not via passlib, which is unmaintained and breaks
     # against bcrypt>=5); security.py truncates to bcrypt's 72-byte limit.
     "bcrypt>=4",
+    "mcp>=1.30,<2",
 ]
 
 [dependency-groups]

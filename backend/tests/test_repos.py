@@ -163,6 +163,42 @@ class TestCanvasRepoSaveNodesAndEdges:
         assert canvas.agent_nodes[0].id == new_id
         assert canvas.agent_nodes[0].name == "NewAgent"
 
+    async def test_save_persists_tool_args(self, blank_canvas, test_session):
+        """Author-tool argument metadata survives save -> load -> save.
+
+        save_nodes_and_edges re-inserts tool rows on every save (auto-save
+        included); dropping ``args`` there silently wiped stored argument
+        metadata each time the canvas was persisted (#128).
+        """
+        repo = CanvasRepo(test_session)
+        tid = uuid.uuid4()
+        tool_args = [
+            {"name": "query", "type": "string", "description": "Search query"},
+            {"name": "limit", "type": "number", "description": "Max results"},
+        ]
+
+        # Save -> load
+        await repo.save_nodes_and_edges(
+            blank_canvas.id,
+            "Args",
+            [],
+            [ToolNodeInput(id=tid, name="Searcher", code="def f(): pass", args=tool_args)],
+            [],
+        )
+        canvas = await repo.get_or_404(blank_canvas.id)
+        assert canvas.tool_nodes[0].args == tool_args
+
+        # Load -> save again: auto-save must not reset them to empty
+        await repo.save_nodes_and_edges(
+            blank_canvas.id,
+            "Args",
+            [],
+            [ToolNodeInput(id=tid, name="Searcher", code="def f(): pass", args=tool_args)],
+            [],
+        )
+        canvas = await repo.get_or_404(blank_canvas.id)
+        assert canvas.tool_nodes[0].args == tool_args
+
     async def test_save_missing_canvas(self, test_session):
         repo = CanvasRepo(test_session)
         with pytest.raises(CanvasNotFoundError):

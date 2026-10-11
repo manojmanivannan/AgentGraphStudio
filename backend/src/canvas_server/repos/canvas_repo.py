@@ -320,6 +320,7 @@ class CanvasRepo:
                     if t.dependencies
                     else (t.packages.split(",") if t.packages else [])
                 ),
+                args=t.args,
                 requires_approval=t.requires_approval,
                 position_x=t.position_x,
                 position_y=t.position_y,
