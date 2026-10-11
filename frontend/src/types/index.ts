@@ -97,10 +97,14 @@ export interface McpToolGrant {
 }
 
 /** Same grant entry in ReactFlow node-data shape (camelCase, mirrors
- * `ToolNodeData` conventions). */
+ * `ToolNodeData` conventions). `vanished` (#133) is a **transient, node-data-only**
+ * flag: a tool that was enabled but is no longer offered by the server renders
+ * struck-through. It is deliberately absent from the `McpToolGrant` wire shape —
+ * the canvas codec does not persist it. */
 export interface McpToolGrantData {
   name: string;
   requiresApproval: boolean;
+  vanished?: boolean;
 }
 
 /** One tool inside an exported MCP metadata snapshot (spec §2.3/#136). */
@@ -141,6 +145,11 @@ export interface ToolNodeData {
   /** Non-null ⇒ MCP-backed node: the node grants a subset of one registered
    * server's tools and `code`/`args` stay empty (#132). */
   mcpServerId?: string | null;
+  /** Display label for the granted server (#133). Transient like `vanished`:
+   * not part of the persisted wire shape — the canvas carries only
+   * `mcp_server_id`, and the node falls back to showing that id. #134 wires the
+   * resolved name from the MCP registry. */
+  mcpServerName?: string | null;
   /** Enabled-tools selection for the server grant (camelCase mirrors the
    * other node-data fields). */
   mcpTools?: McpToolGrantData[];
