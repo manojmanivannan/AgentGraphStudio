@@ -6,6 +6,7 @@ import { inspectTool, testTool } from "@/lib/api";
 import type { ToolNodeData, ToolInspectResponse, ToolTestResponse } from "@/types";
 import { InfoTooltip } from "./InfoTooltip";
 import { McpToolPicker } from "./McpToolPicker";
+import { McpToolTestPanel } from "./McpToolTestPanel";
 
 type TestState = "idle" | "inspecting" | "ready" | "testing" | "success" | "error";
 
@@ -146,7 +147,11 @@ export function ToolEditor() {
 
   // MCP-backed variant (#134, spec §6.2): the code/Monaco body is replaced by
   // the live-catalog picker; the node keeps working as a Tool Node otherwise.
-  const isMcp = !!((selectedNode.data as Partial<ToolNodeData>)?.mcpServerId);
+  const mcpData = (selectedNode.data as Partial<ToolNodeData>) ?? {};
+  const mcpServerId = mcpData.mcpServerId ?? null;
+  const mcpServerName = mcpData.mcpServerName ?? null;
+  const mcpTools = mcpData.mcpTools ?? [];
+  const isMcp = !!mcpServerId;
 
   const nameField = (
     <div>
@@ -180,6 +185,26 @@ export function ToolEditor() {
       <McpToolPicker nodeId={selectedNodeId!}>
         {isMcp ? nameField : null}
       </McpToolPicker>
+
+      {isMcp ? (
+        <div className="pt-3 border-t border-[var(--color-border-subtle)]">
+          <div className="flex items-center gap-2 mb-2">
+            <svg className="w-3.5 h-3.5 text-[var(--color-info)]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M9 12l2 2 4-4" />
+              <circle cx="12" cy="12" r="10" />
+            </svg>
+            <h4 className="text-[13px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-[0.06em]">
+              Test Tool
+            </h4>
+          </div>
+          {/* Two-stage MCP Test panel (#135, spec §6.4). */}
+          <McpToolTestPanel
+            serverId={mcpServerId}
+            serverName={mcpServerName}
+            tools={mcpTools}
+          />
+        </div>
+      ) : null}
 
       {isMcp ? null : (
         <>
@@ -411,7 +436,7 @@ export function ToolEditor() {
                     {testResult.success ? "Output" : "Error"}
                   </span>
                   <span className="text-[12px] text-[var(--color-text-tertiary)]">
-                    {testResult.execution_time_ms.toFixed(1)}ms
+                    {(testResult.execution_time_ms ?? 0).toFixed(1)}ms
                   </span>
                 </div>
                 {testResult.output}
