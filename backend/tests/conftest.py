@@ -686,20 +686,102 @@ class _CountingMcpMiddleware:
             self.observation.initialize_spans.append((start, time.monotonic()))
 
 
+class _StaleSessionMiddleware:
+    """Simulates server-side session invalidation for #139 (spec §4.6).
+
+    ``tools/call`` POSTs are answered with a bare HTTP 404 — the MCP SDK
+    turns that into a ``"Session terminated"`` error for the pending call
+    (the client is expected to re-handshake and retry).
+
+    ``mode='once'`` drops exactly ONE ``tools/call`` overall: the first
+    call is stale mid-run, and the post-re-handshake retry succeeds.
+    ``mode='always'`` drops every ``tools/call``: the retry after the
+    single re-handshake also fails, exercising retry-then-degrade with no
+    retry loop.
+    """
+
+    def __init__(self, app, mode: str = "once"):
+        self.app = app
+        self.mode = mode
+        self.reject_used = False
+        self.rejected_calls = 0
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http" or scope.get("method", "").upper() != "POST":
+            await self.app(scope, receive, send)
+            return
+
+        body = bytearray()
+        while True:
+            message = await receive()
+            if message["type"] == "http.request":
+                body.extend(message.get("body", b""))
+                if not message.get("more_body", False):
+                    break
+            elif message["type"] == "http.disconnect":
+                return
+
+        is_tools_call = False
+        try:
+            payload = json.loads(bytes(body))
+            is_tools_call = (
+                isinstance(payload, dict) and payload.get("method") == "tools/call"
+            )
+        except Exception:  # noqa: BLE001 — non-JSON bodies are forwarded
+            pass
+
+        must_reject = is_tools_call and (
+            self.mode == "always" or not self.reject_used
+        )
+        if must_reject:
+            self.reject_used = True
+            self.rejected_calls += 1
+            await send(
+                {
+                    "type": "http.response.start",
+                    "status": 404,
+                    "headers": [(b"content-length", b"0")],
+                }
+            )
+            await send({"type": "http.response.body", "body": b""})
+            return
+
+        sent = False
+
+        async def replay_receive():
+            # First read: the re-sealed buffered body. Later reads delegate
+            # to the *real* receive — returning an immediate
+            # ``http.disconnect`` would make Starlette treat the client as
+            # gone (is_disconnected → the response body is dropped).
+            nonlocal sent
+            if not sent:
+                sent = True
+                return {"type": "http.request", "body": bytes(body), "more_body": False}
+            return await receive()
+
+        await self.app(scope, replay_receive, send)
+
+
 @pytest.fixture
 def make_ref_mcp_server():
     """Factory for instrumented reference MCP servers (#137).
 
-    ``make_ref_mcp_server(tools=("add",), delay=0.0)`` serves a fresh
-    FastMCP app on a free port (behind the counting middleware) and returns
-    its :class:`McpServerObservation` (useful fields: ``url``,
-    ``initialize_count``, ``initialize_spans``, ``post_count``,
-    ``delete_count``). All created servers shut down at teardown.
+    ``make_ref_mcp_server(tools=("add",), delay=0.0, stale_calls=None)``
+    serves a fresh FastMCP app on a free port (behind the counting
+    middleware) and returns its :class:`McpServerObservation` (useful
+    fields: ``url``, ``initialize_count``, ``initialize_spans``,
+    ``post_count``, ``delete_count``). ``stale_calls='once'|'always'``
+    simulates a server invalidating its session mid-run (#139). All created
+    servers shut down at teardown.
     """
 
     created: list[tuple[Any, threading.Thread, McpServerObservation]] = []
 
-    def _make(tools: tuple[str, ...] = ("add",), delay: float = 0.0) -> McpServerObservation:
+    def _make(
+        tools: tuple[str, ...] = ("add",),
+        delay: float = 0.0,
+        stale_calls: str | None = None,
+    ) -> McpServerObservation:
         mcp = FastMCP("ags-run-ref")
 
         def add(a: int, b: int) -> int:
@@ -721,13 +803,23 @@ def make_ref_mcp_server():
                     raise ValueError("deliberate boom")
 
                 mcp.add_tool(flaky)
+            elif tool == "slow":
+                async def slow() -> str:
+                    """Sleep long enough for any per-call timeout to fire first."""
+                    await asyncio.sleep(5.0)
+                    return "finally"
+
+                mcp.add_tool(slow)
             else:
                 mcp.add_tool(lambda tool=tool: tool, name=tool)
 
         observation = McpServerObservation(url="")
         port = _mcp_free_port()
+        app = mcp.streamable_http_app()
+        if stale_calls is not None:
+            app = _StaleSessionMiddleware(app, stale_calls)
         server, thread = _serve_starlette(
-            _CountingMcpMiddleware(mcp.streamable_http_app(), observation, delay),
+            _CountingMcpMiddleware(app, observation, delay),
             port,
         )
         observation.url = f"http://127.0.0.1:{port}/mcp"

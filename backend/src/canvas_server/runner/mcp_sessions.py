@@ -41,6 +41,38 @@ logger = logging.getLogger("canvas_server.runner.mcp_sessions")
 # after the close event is set; stragglers are cancelled.
 _CLOSE_GRACE_SECONDS = 5.0
 
+# Server-side session invalidation markers (spec §4.6 retry-then-degrade).
+# The official SDK turns a 404 on a POSTed JSON-RPC request into
+# McpError("Session terminated"); other implementations say "not found".
+_STALE_SESSION_MARKERS = ("session terminated", "session not found")
+
+
+def is_stale_session_error(exc: BaseException) -> bool:
+    """True when *exc*'s tree reports a dead server-side session.
+
+    Walks exception groups / causes — transport errors usually arrive
+    wrapped in an anyio ``ExceptionGroup`` whose ``str`` hides the leaf.
+    Deliberately narrow: tool errors, auth failures and plain transport
+    drops must NOT trigger the one-shot re-handshake.
+    """
+    stack: list[BaseException] = [exc]
+    seen: set[int] = set()
+    while stack:
+        current = stack.pop()
+        if id(current) in seen:
+            continue
+        seen.add(id(current))
+        if not isinstance(current, BaseException):
+            continue  # pydantic payloads etc. — no message/cause graph
+        text = str(current).lower()
+        if any(marker in text for marker in _STALE_SESSION_MARKERS):
+            return True
+        stack.extend(getattr(current, "exceptions", ()) or ())
+        for linked in (current.__cause__, current.__context__):
+            if isinstance(linked, BaseException):
+                stack.append(linked)
+    return False
+
 
 class McpSessionRegistry:
     """Holds the open MCP ``ClientSession`` for each referenced server for a
@@ -60,6 +92,9 @@ class McpSessionRegistry:
         self._close_events: dict[uuid.UUID, asyncio.Event] = {}
         self._ready_events: dict[uuid.UUID, asyncio.Event] = {}
         self._errors: dict[uuid.UUID, BaseException] = {}
+        # Servers whose one re-handshake attempt also failed (#139): degraded
+        # for the rest of the run — no further handshake attempts.
+        self._rehandshake_failed: dict[uuid.UUID, bool] = {}
         self._closed = False
 
     # ------------------------------------------------------------------
@@ -166,6 +201,12 @@ class McpSessionRegistry:
         """Ids of servers with a live (initialized) session."""
         return set(self._sessions)
 
+    def server_name(self, server_id: uuid.UUID) -> str | None:
+        """The registered display name for *server_id*, or ``None`` when the
+        id is unknown (flag messages fall back to the id itself)."""
+        cfg = self._configs.get(server_id)
+        return cfg.name if cfg is not None else None
+
     def error_for(self, server_id: uuid.UUID) -> BaseException | None:
         """The connect-time exception for a failed server, or ``None``."""
         return self._errors.get(server_id)
@@ -179,6 +220,77 @@ class McpSessionRegistry:
             )
         result = await session.list_tools()
         return result.tools
+
+    # ------------------------------------------------------------------
+    # One-shot re-handshake on a stale mid-run session (#139, spec §4.6)
+    # ------------------------------------------------------------------
+
+    async def rehandshake(self, server_id: uuid.UUID) -> ClientSession | None:
+        """Tear down the stale session for *server_id* and open exactly one
+        fresh one. Returns the new session, or ``None`` when there was
+        nothing registered, the run is closing, or the fresh handshake
+        failed (callers then degrade — spec §4.6; **no retry loop**).
+        Genuine connect/TLS/auth failures never reach this path: it is only
+        invoked for detected stale-session errors, and a server that failed
+        to connect never produced a session to go stale."""
+        if self._closed:
+            logger.warning(
+                "MCP re-handshake for server %s skipped — the run is closing",
+                server_id,
+            )
+            return None
+        cfg = self._configs.get(server_id)
+        if cfg is None:
+            logger.warning(
+                "MCP re-handshake for server %s skipped — never registered "
+                "with this run's registry",
+                server_id,
+            )
+            return None
+        if self._rehandshake_failed.get(server_id):
+            # The single re-handshake already failed: this server stays
+            # degraded (spec §4.6 retry-then-degrade, no retry loop).
+            logger.warning(
+                "MCP re-handshake for server %s skipped — the earlier "
+                "re-handshake failed; the server stays degraded",
+                server_id,
+            )
+            return None
+
+        stale_event = self._close_events.get(server_id)
+        stale_task = self._tasks.get(server_id)
+        if stale_event is not None:
+            stale_event.set()
+        if stale_task is not None:
+            _done, pending = await asyncio.wait(
+                {stale_task}, timeout=_CLOSE_GRACE_SECONDS
+            )
+            for task in pending:
+                task.cancel()
+            if pending:
+                await asyncio.gather(*pending, return_exceptions=True)
+
+        self._errors.pop(server_id, None)
+        self._sessions.pop(server_id, None)
+        self._close_events[server_id] = asyncio.Event()
+        self._ready_events[server_id] = asyncio.Event()
+        self._tasks[server_id] = asyncio.create_task(
+            self._session_lifetime(server_id, cfg), name=f"mcp-session-{server_id}"
+        )
+        await self._ready_events[server_id].wait()
+
+        fresh = self.get_session(server_id)
+        if fresh is None:
+            self._rehandshake_failed[server_id] = True
+            logger.warning(
+                "MCP re-handshake failed for server %s: %r — its tools "
+                "degrade for the rest of the run",
+                server_id,
+                self._errors.get(server_id),
+            )
+        else:
+            self._rehandshake_failed.pop(server_id, None)
+        return fresh
 
     # ------------------------------------------------------------------
     # Close (run end — ConversationRunCoordinator's finally)

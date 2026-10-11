@@ -168,7 +168,7 @@ class TestSetupServesMcpGrants:
 
         await runner.release_mcp_sessions()
 
-    async def test_dangling_server_id_yields_call_time_error_stubs(
+    async def test_dangling_server_id_degrades_to_omitted_tools(
         self, make_ref_mcp_server, _compile_stub
     ):
         make_ref_mcp_server()  # exists, but its id is not registered anywhere
@@ -186,9 +186,56 @@ class TestSetupServesMcpGrants:
         await runner.setup()
 
         agent = runner.agents[worker.id]
-        descriptor = agent.tools["add"]
-        with pytest.raises(RuntimeError, match="not connected"):
-            await descriptor.acall()
+        assert "add" not in agent.tools
+
+        await runner.release_mcp_sessions()
+
+    async def test_dead_server_degrades_the_run_with_failure_event(
+        self, test_session, _compile_stub
+    ):
+        """Spec §4.6 acceptance: an unreachable server never fails the run —
+        even when an agent's entire toolset came from it. The failure is
+        surfaced as a warning event naming the server and reason."""
+        dead = await _register_server(
+            test_session, "http://127.0.0.1:9/mcp", name="dead-server"
+        )
+        worker = FakeAgentNode(name="Worker")
+        tool = FakeToolNode(
+            name="math",
+            mcp_server_id=dead.id,
+            mcp_tools=[{"name": "add", "requires_approval": False}],
+        )
+        canvas = FakeCanvas(
+            agent_nodes=[worker], tool_nodes=[tool], edges=[_tool_access(worker, tool)]
+        )
+
+        runner = CanvasRunner(canvas)
+        events = []
+
+        async def capture(event):
+            events.append(event)
+
+        await runner.setup(send_event=capture)
+
+        # Tools are omitted; the failure is flagged, naming server + reason.
+        agent = runner.agents[worker.id]
+        assert agent.tools.get("add") is None
+        warnings = [e for e in events if e.get("type") == "warning"]
+        assert len(warnings) == 1
+        assert "dead-server" in warnings[0]["message"]
+        assert warnings[0]["node_id"] == str(tool.id)
+        # The reason names the underlying failure, not just "TaskGroup".
+        assert "connection" in warnings[0]["message"].lower()
+
+        # The agent (whose only toolset came from the dead server) still runs.
+        result = await drive_agent(
+            agent,
+            [
+                make_prediction("finish", thought="nothing to call"),
+                {"process_result": "The MCP server is down."},
+            ],
+        )
+        assert result.process_result == "The MCP server is down."
 
         await runner.release_mcp_sessions()
 
@@ -315,5 +362,164 @@ class TestEndToEndWorkerInvocation:
         assert "truncated" in observation
         assert len(inner) <= MCP_RESULT_MAX_CHARS + 100
         assert observation.endswith(MCP_UNTRUSTED_CLOSE)
+
+        await runner.release_mcp_sessions()
+
+    async def test_slow_tool_times_out_into_observation_and_run_continues(
+        self, make_ref_mcp_server, test_session, _compile_stub, monkeypatch
+    ):
+        """Spec §4.4: the per-call timeout converts a hung remote call into the
+        standard execution-error observation; the loop keeps going."""
+        from canvas_server.config import settings
+
+        obs = make_ref_mcp_server(tools=("slow",))
+        server = await _register_server(test_session, obs.url)
+        worker = FakeAgentNode(name="Worker")
+        tool = FakeToolNode(
+            name="slow-node",
+            mcp_server_id=server.id,
+            mcp_tools=[{"name": "slow", "requires_approval": False}],
+        )
+        canvas = FakeCanvas(
+            agent_nodes=[worker], tool_nodes=[tool], edges=[_tool_access(worker, tool)]
+        )
+
+        monkeypatch.setattr(settings, "mcp_tool_call_timeout_seconds", 0.3)
+        runner = CanvasRunner(canvas)
+        await runner.setup()
+        agent = runner.agents[worker.id]
+
+        events = []
+        agent.on_event(events.append)
+        result = await drive_agent(
+            agent,
+            [
+                make_prediction("slow", args={}, thought="patience"),
+                make_prediction("finish", thought="done"),
+                {"process_result": "The tool timed out."},
+            ],
+        )
+
+        assert result.trajectory["observation_0"] == (
+            "Execution error in slow: timed out after 0.3s"
+        )
+        tool_result = [e for e in events if e["type"] == "tool_result"][0]
+        assert tool_result["output"].startswith("Execution error in slow: timed out")
+        assert result.process_result == "The tool timed out."
+
+        await runner.release_mcp_sessions()
+
+
+class TestSetupFlagsSurfaceThroughWarningEvents:
+    """Spec §4.5: staleness flagging rides the existing event machinery —
+    a "warning" event naming the N-of-M count, on the Tool Node's node_id."""
+
+    async def test_vanished_tools_flag_a_warning_event_on_the_node(
+        self, make_ref_mcp_server, test_session, _compile_stub
+    ):
+        obs = make_ref_mcp_server(tools=("add",))
+        server = await _register_server(test_session, obs.url)
+        worker = FakeAgentNode(name="Worker")
+        tool = FakeToolNode(
+            name="math",
+            mcp_server_id=server.id,
+            mcp_tools=[{"name": "add"}, {"name": "vanished"}],
+        )
+        canvas = FakeCanvas(
+            agent_nodes=[worker], tool_nodes=[tool], edges=[_tool_access(worker, tool)]
+        )
+
+        runner = CanvasRunner(canvas)
+        events = []
+
+        async def capture(event):
+            events.append(event)
+
+        await runner.setup(send_event=capture)
+        agent = runner.agents[worker.id]
+
+        # The vanished tool is never granted; the live one still is.
+        assert "add" in agent.tools
+        assert "vanished" not in agent.tools
+
+        warnings = [e for e in events if e.get("type") == "warning"]
+        assert len(warnings) == 1
+        assert warnings[0]["node_id"] == str(tool.id)
+        assert "1 of 2 enabled tools unavailable" in warnings[0]["message"]
+
+        await runner.release_mcp_sessions()
+
+    async def test_stale_session_mid_run_rehandshakes_once_and_survives(
+        self, make_ref_mcp_server, test_session, _compile_stub
+    ):
+        """Spec §4.6 acceptance: a stale ``Mcp-Session-Id`` mid-run gets
+        exactly one re-handshake and the run continues to a correct answer."""
+        obs = make_ref_mcp_server(tools=("add",), stale_calls="once")
+        server = await _register_server(test_session, obs.url)
+        worker = FakeAgentNode(name="Worker")
+        tool = FakeToolNode(
+            name="math", mcp_server_id=server.id, mcp_tools=[{"name": "add"}]
+        )
+        canvas = FakeCanvas(
+            agent_nodes=[worker], tool_nodes=[tool], edges=[_tool_access(worker, tool)]
+        )
+
+        runner = CanvasRunner(canvas)
+        await runner.setup()
+        agent = runner.agents[worker.id]
+
+        result = await drive_agent(
+            agent,
+            [
+                make_prediction("add", args={"a": 2, "b": 3}, thought="compute"),
+                make_prediction("finish", thought="done"),
+                {"process_result": "The sum is 5."},
+            ],
+        )
+
+        assert "5" in result.trajectory["observation_0"]  # framed (#140)
+        assert obs.initialize_count == 2  # one handshake + exactly one re-handshake
+
+        await runner.release_mcp_sessions()
+
+    async def test_colliding_grants_excluded_and_flagged_per_agent(
+        self, make_ref_mcp_server, test_session, _compile_stub
+    ):
+        """Spec §4.5: two Tool Nodes granting the same tool name — per-agent
+        first-come wins, the later collider is dropped and flagged."""
+        obs = make_ref_mcp_server(tools=("add",))
+        server = await _register_server(test_session, obs.url)
+        worker = FakeAgentNode(name="Worker")
+        node_a = FakeToolNode(
+            name="first", mcp_server_id=server.id, mcp_tools=[{"name": "add"}]
+        )
+        node_b = FakeToolNode(
+            name="second", mcp_server_id=server.id, mcp_tools=[{"name": "add"}]
+        )
+        canvas = FakeCanvas(
+            agent_nodes=[worker],
+            tool_nodes=[node_a, node_b],
+            edges=[
+                _tool_access(worker, node_a),
+                _tool_access(worker, node_b),
+            ],
+        )
+
+        runner = CanvasRunner(canvas)
+        events = []
+
+        async def capture(event):
+            events.append(event)
+
+        await runner.setup(send_event=capture)
+        agent = runner.agents[worker.id]
+
+        # First-come wins inside the ReAct tool dict — no silent later-merge.
+        assert agent.tools["add"].func.node_id == node_a.id
+        warnings = [
+            e for e in events if e.get("type") == "warning" and "dropped" in e.get("message", "")
+        ]
+        assert len(warnings) == 1
+        assert warnings[0]["node_id"] == str(node_b.id)
 
         await runner.release_mcp_sessions()
