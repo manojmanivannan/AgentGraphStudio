@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from canvas_server.conversation_run_coordinator import ConversationRunCoordinator
 from canvas_server.database import get_session_factory
 from canvas_server.exceptions import RunAbortedError
+from canvas_server.mcp_redaction import redact_mcp_payload, redact_mcp_text
 from canvas_server.provider_config import refresh_provider_config
 from canvas_server.repos.canvas_repo import CanvasRepo
 from canvas_server.repos.conversation_repo import ConversationRepo
@@ -225,6 +226,12 @@ class BackgroundRunWorker:
             )
 
             async def send_event(event: dict[str, Any]) -> None:
+                # Spec §5.4 (#140): one redaction pass at the event-emission
+                # choke point — configured MCP credential values and endpoint
+                # URLs are stripped from everything bound for the durable
+                # event log (DB replay, WS) and the broker (UI).
+                event = redact_mcp_payload(event)
+
                 db_lock = getattr(session, "db_lock", None)
                 if db_lock is None:
                     db_lock = asyncio.Lock()
@@ -284,9 +291,10 @@ class BackgroundRunWorker:
                 await run_repo.mark_completed(run_id)
                 await session.commit()
             except RunAbortedError as exc:
+                abort_message = redact_mcp_text(str(exc))
                 aborted_payload: dict[str, Any] = {
                     "type": "run_aborted",
-                    "message": str(exc),
+                    "message": abort_message,
                     "run_id": str(run_id),
                 }
                 durable_event = await run_repo.append_event(
@@ -294,14 +302,17 @@ class BackgroundRunWorker:
                     event_type="run_aborted",
                     payload=aborted_payload,
                 )
-                await run_repo.mark_aborted(run_id, reason=str(exc))
+                await run_repo.mark_aborted(run_id, reason=abort_message)
                 await session.commit()
                 aborted_payload["sequence"] = durable_event.sequence
                 await self._broker.publish(run_id, aborted_payload)
             except Exception as exc:
+                # Spec §5.4 (#140): run-level error text (durable event +
+                # failure reason) is built directly here — redact it now.
+                error_message = redact_mcp_text(str(exc))
                 error_payload: dict[str, Any] = {
                     "type": "error",
-                    "message": str(exc),
+                    "message": error_message,
                     "run_id": str(run_id),
                 }
                 durable_event = await run_repo.append_event(
@@ -309,7 +320,7 @@ class BackgroundRunWorker:
                     event_type="error",
                     payload=error_payload,
                 )
-                await run_repo.mark_failed(run_id, str(exc))
+                await run_repo.mark_failed(run_id, error_message)
                 await session.commit()
                 error_payload["sequence"] = durable_event.sequence
                 await self._broker.publish(run_id, error_payload)
