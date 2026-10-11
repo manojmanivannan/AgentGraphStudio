@@ -1,10 +1,11 @@
-"""ToolRegistry grant semantics for MCP-backed Tool Nodes (ticket #138).
+"""ToolRegistry grant semantics for MCP-backed Tool Nodes (tickets #138/#139).
 
 Seam: ``ToolRegistry.compile_all(..., mcp_registry)`` + ``get_tools_for_agent``.
 The Agent→Tool ``tool_access`` edge grants **exactly** the node's enabled
 ``mcp_tools`` selection — never all server tools; enabled-but-vanished tools
-are omitted; connect-time failures and dangling server ids degrade to
-call-time error stubs; routers are excluded while keeping sandbox tools.
+are omitted and flagged; connect-time failures and dangling server ids
+degrade gracefully (tools omitted, server + reason flagged, the run continues
+— spec §4.6); routers are excluded while keeping sandbox tools.
 """
 
 import uuid
@@ -18,13 +19,15 @@ from canvas_server.runner.tool_registry import ToolRegistry
 
 
 class FakeMcpRegistry:
-    """The #137 registry surface ToolRegistry consumes."""
+    """The #137/#139 registry surface ToolRegistry consumes."""
 
-    def __init__(self, tools=None, session=None, error=None, sessions_by_id=None):
+    def __init__(self, tools=None, session=None, error=None, sessions_by_id=None,
+                 name=None):
         self.tools = tools or []
         self.session = session
         self.error = error
         self.sessions_by_id = sessions_by_id or {}
+        self.name = name
 
     def get_session(self, server_id):
         if self.sessions_by_id:
@@ -33,6 +36,9 @@ class FakeMcpRegistry:
 
     def error_for(self, server_id):
         return self.error
+
+    def server_name(self, server_id):
+        return self.name
 
     async def list_tools(self, server_id):
         return self.tools
@@ -277,7 +283,11 @@ class TestStalenessFlagging:
 
 
 class TestDegradedServers:
-    async def test_connect_failure_makes_error_stubs_that_raise_at_call_time(
+    """Spec §4.6 (#139): a genuine connect failure never retries — the run
+    continues degraded with that server's tools omitted and the failure
+    flagged via the existing event machinery, naming server and reason."""
+
+    async def test_connect_failure_omits_tools_and_flags_server_and_reason(
         self, _compile_stub
     ):
         failure = RuntimeError("connection refused")
@@ -286,21 +296,22 @@ class TestDegradedServers:
             mcp_server_id=uuid.uuid4(),
             mcp_tools=[{"name": "add"}, {"name": "echo"}],
         )
-        mcp_registry = FakeMcpRegistry(error=failure, session=None)
+        mcp_registry = FakeMcpRegistry(error=failure, session=None, name="ref")
         registry = ToolRegistry()
         await _compile(registry, [node], mcp_registry)
 
         worker = FakeAgentNode(name="Worker")
-        tools = registry.get_tools_for_agent(worker.id, [_edge(worker, node)])
-        assert {t.name for t in tools} == {"add", "echo"}
+        assert registry.get_tools_for_agent(worker.id, [_edge(worker, node)]) == []
+        assert registry.resolve_tool_node_id("add") is None
 
-        for tool in tools:
-            with pytest.raises(RuntimeError, match="connection refused"):
-                await tool.acall()
+        flags = registry.drain_flags()
+        degraded = [f for f in flags if f.get("kind") == "degraded_server"]
+        assert len(degraded) == 1
+        assert degraded[0]["node_id"] == node.id
+        assert "ref" in degraded[0]["message"]
+        assert "connection refused" in degraded[0]["message"]
 
-    async def test_dangling_server_id_makes_call_time_error_stubs(
-        self, _compile_stub
-    ):
+    async def test_dangling_server_id_omits_tools_and_flags(self, _compile_stub):
         # Server never opened (unregistered id) — session None, error None.
         node = FakeToolNode(
             name="math", mcp_server_id=uuid.uuid4(), mcp_tools=[{"name": "add"}]
@@ -309,12 +320,13 @@ class TestDegradedServers:
         await _compile(registry, [node], FakeMcpRegistry())
 
         worker = FakeAgentNode(name="Worker")
-        (tool,) = registry.get_tools_for_agent(worker.id, [_edge(worker, node)])
-        assert tool.name == "add"
-        with pytest.raises(RuntimeError, match="not connected"):
-            await tool.acall()
+        assert registry.get_tools_for_agent(worker.id, [_edge(worker, node)]) == []
+        flags = registry.drain_flags()
+        degraded = [f for f in flags if f.get("kind") == "degraded_server"]
+        assert len(degraded) == 1
+        assert degraded[0]["node_id"] == node.id
 
-    async def test_registry_without_mcp_registry_grants_error_stubs(
+    async def test_registry_without_mcp_registry_omits_tools_and_flags(
         self, _compile_stub
     ):
         node = FakeToolNode(
@@ -324,9 +336,11 @@ class TestDegradedServers:
         await registry.compile_all([node], runtime_session_id=None, mcp_registry=None)
 
         worker = FakeAgentNode(name="Worker")
-        (tool,) = registry.get_tools_for_agent(worker.id, [_edge(worker, node)])
-        with pytest.raises(RuntimeError, match="not connected"):
-            await tool.acall()
+        assert registry.get_tools_for_agent(worker.id, [_edge(worker, node)]) == []
+        degraded = [
+            f for f in registry.drain_flags() if f.get("kind") == "degraded_server"
+        ]
+        assert len(degraded) == 1
 
 
 class TestRouterExclusion:

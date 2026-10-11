@@ -219,7 +219,7 @@ def build_mcp_tool(
                 current["session"].call_tool(original_name, arguments=arguments),
                 timeout=timeout,
             )
-        except asyncio.TimeoutError as exc:
+        except TimeoutError as exc:
             raise TimeoutError(f"timed out after {timeout:g}s") from exc
 
     async def mcp_tool_call(*_positional, **kwargs):

@@ -9,8 +9,9 @@ from typing import TYPE_CHECKING, Any
 
 import mcp.types as mcp_types
 
+from canvas_server.mcp_probe import _summarize
 from canvas_server.runner.mcp_sessions import McpSessionRegistry
-from canvas_server.runner.mcp_tools import build_mcp_tool, make_unavailable_stub, sanitize_tool_name
+from canvas_server.runner.mcp_tools import build_mcp_tool, sanitize_tool_name
 from canvas_server.tool_factory import compile_tool_from_code
 
 if TYPE_CHECKING:
@@ -123,13 +124,15 @@ class ToolRegistry:
         server_id: uuid.UUID,
         mcp_registry: McpSessionRegistry | None,
     ) -> None:
-        """Serve one MCP-backed node's enabled grants (ticket #138).
+        """Serve one MCP-backed node's enabled grants (tickets #138/#139).
 
         Grant semantics (spec §4 / #122): the ``tool_access`` edge grants
         exactly the node's enabled ``mcp_tools`` selection — new server tools
-        never self-grant, enabled-but-vanished tools are omitted (flagging
-        waits for #139). A dead/absent server session degrades every grant
-        into a call-time error stub (spec §4.6).
+        never self-grant, enabled-but-vanished tools are omitted and flagged
+        ("N of M enabled tools unavailable"). A dead/unreachable server
+        degrades the run: its grants are omitted entirely and the failure is
+        flagged naming the server and reason — no retry, no stub, no run
+        failure (spec §4.6).
         """
         grants = self._parse_mcp_grants(tool_node)
         if not grants:
@@ -159,42 +162,45 @@ class ToolRegistry:
                 )
                 error = error or e
 
+        server_label = self._server_label(mcp_registry, server_id)
+        if error is not None or listing is None:
+            # Spec §4.6 degradation: omit every grant, flag server + reason.
+            reason = (
+                _summarize(error)
+                if error is not None
+                else f"no open session for server {server_label}"
+            )
+            self._record_flag(
+                "degraded_server",
+                tool_node.id,
+                f"MCP server '{server_label}' is unreachable: {reason}. "
+                f"{len(grants)} enabled tool(s) of tool node '{tool_node.name}' "
+                "are unavailable for this run; the run continues without them.",
+            )
+            return
+
         built: list[object] = []
         vanished: list[str] = []
         for grant in grants:
             display_name = sanitize_tool_name(grant["name"])
-            if error is not None:
-                descriptor = make_unavailable_stub(
-                    display_name, error, tool_node.id
+            server_tool = listing.get(grant["name"])
+            if server_tool is None:
+                # Enabled-but-vanished: omitted from the grant and
+                # flagged "N of M enabled tools unavailable" (spec §4.5).
+                logger.info(
+                    "Granted MCP tool %r of server %s is not in the run's "
+                    "tools/list — omitted",
+                    grant["name"],
+                    server_id,
                 )
-            elif listing is None:
-                descriptor = make_unavailable_stub(
-                    display_name,
-                    RuntimeError(
-                        f"MCP server {server_id} is not connected; "
-                        f"its tools are unavailable for this run."
-                    ),
-                    tool_node.id,
-                )
-            else:
-                server_tool = listing.get(grant["name"])
-                if server_tool is None:
-                    # Enabled-but-vanished: omitted from the grant and
-                    # flagged "N of M enabled tools unavailable" (spec §4.5).
-                    logger.info(
-                        "Granted MCP tool %r of server %s is not in the run's "
-                        "tools/list — omitted",
-                        grant["name"],
-                        server_id,
-                    )
-                    vanished.append(grant["name"])
-                    continue
-                descriptor = build_mcp_tool(
-                    session,
-                    server_tool,
-                    node_id=tool_node.id,
-                    requires_approval=grant["requires_approval"],
-                )
+                vanished.append(grant["name"])
+                continue
+            descriptor = build_mcp_tool(
+                session,
+                server_tool,
+                node_id=tool_node.id,
+                requires_approval=grant["requires_approval"],
+            )
 
             _attach_tool_metadata(
                 getattr(descriptor, "func", descriptor),
@@ -215,6 +221,19 @@ class ToolRegistry:
                 f"{len(vanished)} of {len(grants)} enabled tools unavailable "
                 "— omitted from this run.",
             )
+
+    @staticmethod
+    def _server_label(
+        mcp_registry: McpSessionRegistry | None, server_id: uuid.UUID
+    ) -> str:
+        """Human-readable server name for flag messages (id fallback)."""
+        if mcp_registry is not None:
+            resolver = getattr(mcp_registry, "server_name", None)
+            if callable(resolver):
+                resolved = resolver(server_id)
+                if resolved:
+                    return str(resolved)
+        return str(server_id)
 
     @staticmethod
     def _parse_mcp_grants(tool_node: ToolNode) -> list[dict[str, Any]]:

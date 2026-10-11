@@ -167,7 +167,7 @@ class TestSetupServesMcpGrants:
 
         await runner.release_mcp_sessions()
 
-    async def test_dangling_server_id_yields_call_time_error_stubs(
+    async def test_dangling_server_id_degrades_to_omitted_tools(
         self, make_ref_mcp_server, _compile_stub
     ):
         make_ref_mcp_server()  # exists, but its id is not registered anywhere
@@ -185,9 +185,56 @@ class TestSetupServesMcpGrants:
         await runner.setup()
 
         agent = runner.agents[worker.id]
-        descriptor = agent.tools["add"]
-        with pytest.raises(RuntimeError, match="not connected"):
-            await descriptor.acall()
+        assert "add" not in agent.tools
+
+        await runner.release_mcp_sessions()
+
+    async def test_dead_server_degrades_the_run_with_failure_event(
+        self, test_session, _compile_stub
+    ):
+        """Spec §4.6 acceptance: an unreachable server never fails the run —
+        even when an agent's entire toolset came from it. The failure is
+        surfaced as a warning event naming the server and reason."""
+        dead = await _register_server(
+            test_session, "http://127.0.0.1:9/mcp", name="dead-server"
+        )
+        worker = FakeAgentNode(name="Worker")
+        tool = FakeToolNode(
+            name="math",
+            mcp_server_id=dead.id,
+            mcp_tools=[{"name": "add", "requires_approval": False}],
+        )
+        canvas = FakeCanvas(
+            agent_nodes=[worker], tool_nodes=[tool], edges=[_tool_access(worker, tool)]
+        )
+
+        runner = CanvasRunner(canvas)
+        events = []
+
+        async def capture(event):
+            events.append(event)
+
+        await runner.setup(send_event=capture)
+
+        # Tools are omitted; the failure is flagged, naming server + reason.
+        agent = runner.agents[worker.id]
+        assert agent.tools.get("add") is None
+        warnings = [e for e in events if e.get("type") == "warning"]
+        assert len(warnings) == 1
+        assert "dead-server" in warnings[0]["message"]
+        assert warnings[0]["node_id"] == str(tool.id)
+        # The reason names the underlying failure, not just "TaskGroup".
+        assert "connection" in warnings[0]["message"].lower()
+
+        # The agent (whose only toolset came from the dead server) still runs.
+        result = await drive_agent(
+            agent,
+            [
+                make_prediction("finish", thought="nothing to call"),
+                {"process_result": "The MCP server is down."},
+            ],
+        )
+        assert result.process_result == "The MCP server is down."
 
         await runner.release_mcp_sessions()
 

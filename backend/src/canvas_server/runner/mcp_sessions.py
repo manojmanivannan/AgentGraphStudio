@@ -166,6 +166,12 @@ class McpSessionRegistry:
         """Ids of servers with a live (initialized) session."""
         return set(self._sessions)
 
+    def server_name(self, server_id: uuid.UUID) -> str | None:
+        """The registered display name for *server_id*, or ``None`` when the
+        id is unknown (flag messages fall back to the id itself)."""
+        cfg = self._configs.get(server_id)
+        return cfg.name if cfg is not None else None
+
     def error_for(self, server_id: uuid.UUID) -> BaseException | None:
         """The connect-time exception for a failed server, or ``None``."""
         return self._errors.get(server_id)
