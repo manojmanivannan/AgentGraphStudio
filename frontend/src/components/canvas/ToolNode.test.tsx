@@ -148,27 +148,27 @@ describe("ToolNode MCP variant", () => {
       ...data,
     });
 
-  it("renders in the agent-purple family, distinct from the code-tool info family", () => {
+  it("renders in the same info-blue family as the code tool", () => {
     const { container } = render(<ToolNode {...makeMcpProps()} />);
     expect(container.querySelector("[data-testid='tool-node-header']")).toHaveClass(
-      /var\(--color-agent-surface\)/
+      /var\(--color-info-surface\)/
     );
     expect(container.querySelector("[data-testid='tool-node-header']")).not.toHaveClass(
-      /var\(--color-info-surface\)/
+      /var\(--color-agent-surface\)/
     );
   });
 
-  it("keeps the purple family when selected", () => {
+  it("uses the info family when selected", () => {
     const { container } = render(
       <ReactFlowProvider>
         <ToolNode {...makeMcpProps()} selected={true as any} />
       </ReactFlowProvider>
     );
     expect(container.querySelector("[data-testid='tool-node']")).toHaveClass(
-      /var\(--color-agent-glow\)/
+      /var\(--color-info-glow\)/
     );
     expect(container.querySelector("[data-testid='tool-node']")).not.toHaveClass(
-      /var\(--color-info-glow\)/
+      /var\(--color-agent-glow\)/
     );
   });
 

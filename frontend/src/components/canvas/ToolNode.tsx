@@ -12,8 +12,8 @@ function ToolNodeComponent({ id, data, selected }: NodeProps) {
   const selectNode = useCanvasStore((s) => s.selectNode);
   const isActive = activeNodeId === toolData.id;
 
-  // MCP-backed nodes (#133): distinct agent-purple family, driven purely by
-  // node data. Code tools keep the classic info-family rendering unchanged.
+  // MCP-backed nodes (#133): share the code tool's info-blue family, driven
+  // purely by node data — only the icon and badge text differ.
   const isMcp = !!toolData.mcpServerId;
   const enabledTools = toolData.mcpTools ?? [];
   const serverLabel = toolData.mcpServerName ?? toolData.mcpServerId ?? "";
@@ -38,11 +38,9 @@ function ToolNodeComponent({ id, data, selected }: NodeProps) {
         shadow-[0_4px_24px_-4px_rgba(0,0,0,0.5)]
         transition-all duration-200
         ${selected
-          ? isMcp
-            ? "border-[var(--color-agent)] shadow-[0_0_0_1px_var(--color-agent),0_4px_24px_-4px_var(--color-agent-glow)]"
-            : "border-[var(--color-info)] shadow-[0_0_0_1px_var(--color-info),0_4px_24px_-4px_var(--color-info-glow)]"
+          ? "border-[var(--color-info)] shadow-[0_0_0_1px_var(--color-info),0_4px_24px_-4px_var(--color-info-glow)]"
           : isMcp
-          ? "border-[var(--color-agent)]/30"
+          ? "border-[var(--color-info)]/30"
           : "border-[var(--color-border-default)]"
         }
         ${isActive ? "border-[var(--color-danger)] glow-active-pulse" : ""}
@@ -52,12 +50,8 @@ function ToolNodeComponent({ id, data, selected }: NodeProps) {
         isVisible={selected}
         minWidth={180}
         minHeight={90}
-        handleClassName={
-          isMcp
-            ? "!w-2 !h-2 !bg-[var(--color-surface)] !border-[var(--color-agent)] !rounded-sm"
-            : "!w-2 !h-2 !bg-[var(--color-surface)] !border-[var(--color-info)] !rounded-sm"
-        }
-        lineClassName={isMcp ? "!border-[var(--color-agent)]/50" : "!border-[var(--color-info)]/50"}
+        handleClassName="!w-2 !h-2 !bg-[var(--color-surface)] !border-[var(--color-info)] !rounded-sm"
+        lineClassName="!border-[var(--color-info)]/50"
       />
       <Handle
         id={HANDLE_IDS.toolTarget}
@@ -67,19 +61,11 @@ function ToolNodeComponent({ id, data, selected }: NodeProps) {
       />
       <div
         data-testid="tool-node-header"
-        className={`flex items-center gap-2 px-3 py-2.5 rounded-t-xl border-b ${
-          isMcp
-            ? "bg-[var(--color-agent-surface)] border-[var(--color-agent)]/10"
-            : "bg-[var(--color-info-surface)] border-[var(--color-info)]/10"
-        }`}
+        className="flex items-center gap-2 px-3 py-2.5 rounded-t-xl border-b bg-[var(--color-info-surface)] border-[var(--color-info)]/10"
       >
-        <div
-          className={`flex items-center justify-center w-5 h-5 rounded-md ${
-            isMcp ? "bg-[var(--color-agent-subtle)]" : "bg-[var(--color-info-subtle)]"
-          }`}
-        >
+        <div className="flex items-center justify-center w-5 h-5 rounded-md bg-[var(--color-info-subtle)]">
           {isMcp ? (
-            <Server data-testid="mcp-server-icon" className="w-3 h-3 text-[var(--color-agent)]" />
+            <Server data-testid="mcp-server-icon" className="w-3 h-3 text-[var(--color-info)]" />
           ) : (
             <Wrench className="w-3 h-3 text-[var(--color-info)]" />
           )}
@@ -88,9 +74,7 @@ function ToolNodeComponent({ id, data, selected }: NodeProps) {
           {toolData.name}
         </span>
         <span
-          className={`text-[12px] px-1.5 py-0.5 rounded-md font-semibold tracking-wide uppercase ${
-            isMcp ? "bg-[var(--color-agent-subtle)] text-[var(--color-agent)]" : "bg-[var(--color-info-subtle)] text-[var(--color-info)]"
-          }`}
+          className="text-[12px] px-1.5 py-0.5 rounded-md font-semibold tracking-wide uppercase bg-[var(--color-info-subtle)] text-[var(--color-info)]"
         >
           {isMcp ? "MCP" : "Tool"}
         </span>
@@ -142,7 +126,7 @@ function ToolNodeComponent({ id, data, selected }: NodeProps) {
                 data-testid="mcp-tools-badge"
                 className={`text-[11px] px-1.5 py-0.5 rounded-md font-semibold whitespace-nowrap ${
                   enabledTools.length > 0
-                    ? "bg-[var(--color-agent-subtle)] text-[var(--color-agent)]"
+                    ? "bg-[var(--color-info-subtle)] text-[var(--color-info)]"
                     : "bg-[var(--color-elevated)] text-[var(--color-text-tertiary)]"
                 }`}
               >
@@ -163,7 +147,7 @@ function ToolNodeComponent({ id, data, selected }: NodeProps) {
                     className={`px-1.5 py-0.5 rounded-md text-[11px] font-[var(--font-mono)] border ${
                       tool.vanished
                         ? "line-through opacity-60 border-[var(--color-border-default)] text-[var(--color-text-tertiary)] bg-[var(--color-elevated)]"
-                        : "border-[var(--color-agent)]/20 text-[var(--color-text-primary)] bg-[var(--color-agent-surface)]"
+                        : "border-[var(--color-info)]/20 text-[var(--color-text-primary)] bg-[var(--color-info-surface)]"
                     }`}
                   >
                     {tool.name}
