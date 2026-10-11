@@ -1,10 +1,11 @@
 import uuid
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from canvas_server.conversation_run_coordinator import ConversationRunCoordinator
+from tests.test_mcp_redaction import ServerCache, make_server
 
 
 class FakeConversationRepo:
@@ -152,3 +153,66 @@ async def test_coordinator_persists_runner_errors_and_emits_final_answer_event()
         }
     )
     assert session.commit.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_coordinator_persisted_error_message_is_redacted():
+    # §5.4 (#140): the final-answer message persisted on a failed run is UI
+    # text; configured MCP credential values + endpoint URLs are stripped.
+    conversation_id = uuid.uuid4()
+    canvas_id = uuid.uuid4()
+    master_agent_id = uuid.uuid4()
+    failure = ConnectionError(
+        "ConnectError: auth failed for https://mcp.corp.internal/sse"
+        " with key sk-corp-secret-123"
+    )
+
+    conversation = SimpleNamespace(
+        id=conversation_id,
+        canvas_id=canvas_id,
+        name="Existing Conversation",
+        messages=[object()],
+    )
+    canvas = SimpleNamespace(
+        id=canvas_id,
+        agent_nodes=[SimpleNamespace(id=master_agent_id, name="Master")],
+    )
+    session = FakeSession()
+    conv_repo = FakeConversationRepo(conversation)
+    canvas_repo = FakeCanvasRepo(canvas)
+
+    persist_message = AsyncMock()
+    runner = SimpleNamespace(
+        generate_conversation_title=AsyncMock(),
+        run=AsyncMock(side_effect=failure),
+        _conversation=SimpleNamespace(persist_message=persist_message),
+    )
+    runner_factory = AsyncMock(return_value=runner)
+    send_event = AsyncMock()
+
+    coordinator = ConversationRunCoordinator(
+        session=session,
+        conversation_repo=conv_repo,
+        canvas_repo=canvas_repo,
+        runner_factory=runner_factory,
+    )
+
+    with patch(
+        "canvas_server.mcp_redaction.get_mcp_servers",
+        ServerCache(
+            make_server(
+                url="https://mcp.corp.internal/sse",
+                credential_value="sk-corp-secret-123",
+            )
+        ),
+    ):
+        await coordinator.run(
+            conversation_id=conversation_id,
+            user_prompt="boom",
+            send_event=send_event,
+        )
+
+    content = persist_message.call_args.kwargs["content"]
+    assert "[REDACTED]" in content
+    assert "https://mcp.corp.internal/sse" not in content
+    assert "sk-corp-secret-123" not in content

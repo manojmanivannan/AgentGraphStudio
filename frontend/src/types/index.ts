@@ -30,6 +30,27 @@ export interface ProviderSettings extends ProviderSettingsForm {
   source: "env" | "database";
 }
 
+// --- MCP server registry ---
+
+export interface McpServer {
+  id: string;
+  name: string;
+  url: string;
+  credential_header: string | null;
+  /** The credential itself is never returned by the API. */
+  credential_set: boolean;
+  /** Masked preview: bullets plus at most the last 4 characters. */
+  credential_preview: string | null;
+  /** Non-null when the endpoint uses plain "http://" (§5.1). */
+  url_warning: string | null;
+}
+
+export interface McpServerForm {
+  name: string;
+  url: string;
+  credential_header: string | null;
+}
+
 export interface ProviderCheckResult {
   name: string;
   ok: boolean;
@@ -67,12 +88,122 @@ export interface AgentDocument {
   created_at: string;
 }
 
+/** One enabled tool of an MCP-backed Tool Node's grant (spec §2.1/#132):
+ * per-tool approval granularity (#119 Q9). Wire shape (snake_case, matches
+ * the backend payloads and responses). */
+export interface McpToolGrant {
+  name: string;
+  requires_approval: boolean;
+}
+
+/** Same grant entry in ReactFlow node-data shape (camelCase, mirrors
+ * `ToolNodeData` conventions). `vanished` (#133) is a **transient, node-data-only**
+ * flag: a tool that was enabled but is no longer offered by the server renders
+ * struck-through. It is deliberately absent from the `McpToolGrant` wire shape —
+ * the canvas codec does not persist it. */
+export interface McpToolGrantData {
+  name: string;
+  requiresApproval: boolean;
+  vanished?: boolean;
+}
+
+/** One tool inside an exported MCP metadata snapshot (spec §2.3/#136). */
+export interface McpReferenceSnapshotTool {
+  name: string;
+  description: string | null;
+  input_schema: Record<string, unknown>;
+}
+
+/** Metadata snapshot captured live at export time (spec §2.3); `captured` is
+ * false when the live fetch failed — `detail` then carries the failure summary. */
+export interface McpReferenceSnapshot {
+  captured: boolean;
+  server_name: string | null;
+  server_version: string | null;
+  protocol_revision: string | null;
+  detail: string;
+  tools: McpReferenceSnapshotTool[];
+}
+
+/** Server reference carried by ZIP export/import (#136, spec §2.3/§5.1):
+ * resolved registered name + URL, else `resolved: false`. The URL is never
+ * imported — this block reappears on imported nodes as reference metadata
+ * only. */
+export interface McpServerReference {
+  resolved: boolean;
+  name: string | null;
+  url: string | null;
+  snapshot: McpReferenceSnapshot | null;
+}
+
 export interface ToolNodeData {
   id: string;
   name: string;
   code: string;
   packages?: string;
   requiresApproval?: boolean;
+  /** Non-null ⇒ MCP-backed node: the node grants a subset of one registered
+   * server's tools and `code`/`args` stay empty (#132). */
+  mcpServerId?: string | null;
+  /** Display label for the granted server (#133). Transient like `vanished`:
+   * not part of the persisted wire shape — the canvas carries only
+   * `mcp_server_id`, and the node falls back to showing that id. #134 wires the
+   * resolved name from the MCP registry. */
+  mcpServerName?: string | null;
+  /** Enabled-tools selection for the server grant (camelCase mirrors the
+   * other node-data fields). */
+  mcpTools?: McpToolGrantData[];
+  /** Enablement history (#134): the union of tool names this node's picker
+   * has already shown the user — the NEW-badge diff baseline. Names only,
+   * never a catalog snapshot (decision #126: no cache anywhere). */
+  mcpSeenTools?: string[];
+  /** Import-only reference metadata (#136): null unless the node was just
+   * imported from a manifest carrying an MCP reference. */
+  mcpReference?: McpServerReference | null;
+}
+
+// --- MCP live tool catalog (#134, spec §6.3) ---
+
+/** One server-provided descriptor, exactly as the server serves it. */
+export interface McpCatalogTool {
+  name: string;
+  description: string | null;
+  input_schema: Record<string, unknown>;
+}
+
+/** Response of POST /api/mcp/servers/{id}/tools — a live read over the
+ * probe path. Unreachable server ⇒ structured `ok: false` (honest error,
+ * never stale data); never carries the credential. */
+export interface McpServerCatalog {
+  ok: boolean;
+  server_id: string;
+  tools: McpCatalogTool[];
+  server_name: string | null;
+  server_version: string | null;
+  latency_ms: number;
+  detail: string;
+  classification: string | null;
+  protocol_revision: string | null;
+}
+
+/** Body for POST /api/mcp/servers/test (Settings Test button, #131). */
+export interface McpServerTestRequest {
+  server_id?: string;
+  url?: string;
+  credential_header?: string | null;
+  credential_value?: string | null;
+}
+
+export interface McpServerTestResponse {
+  ok: boolean;
+  server_name: string | null;
+  server_version: string | null;
+  tools: string[];
+  tool_count: number;
+  latency_ms: number;
+  detail: string;
+  classification: string | null;
+  protocol_revision: string | null;
 }
 
 export type AttachmentFileType =
@@ -191,6 +322,9 @@ export interface CanvasSavePayload {
       packages?: string;
       args: ToolArgument[];
       requires_approval: boolean;
+      mcp_server_id: string | null;
+      mcp_tools: McpToolGrant[];
+      mcp_seen_tools: string[];
       position_x: number;
       position_y: number;
     }[];
@@ -247,6 +381,11 @@ export interface CanvasResponse {
       packages?: string;
       args: ToolArgument[];
       requires_approval: boolean;
+      mcp_server_id: string | null;
+      mcp_tools: McpToolGrant[];
+      mcp_seen_tools: string[];
+      /** Import-only reference metadata (#136) — null outside import responses. */
+      mcp_reference?: McpServerReference | null;
       position_x: number;
       position_y: number;
     }>;
@@ -268,6 +407,8 @@ export interface CanvasResponse {
     target_node_id: string;
     edge_type: string;
   }>;
+  /** Import notices (#136): e.g. an MCP grant imported not-yet-granting. */
+  warnings?: string[];
 }
 
 export interface CanvasListItem {
@@ -310,17 +451,71 @@ export interface Conversation {
   messages: Message[];
 }
 
+/** One server-provided tool descriptor in an MCP inspect response
+ * (#135) — exactly as the server serves it. */
+export interface McpInspectTool {
+  name: string;
+  description: string | null;
+  input_schema: Record<string, unknown>;
+}
+
+/** Kind-discriminated inspect response (#135, spec §6.4). The code branch
+ * keeps `function_name`/`arguments`; the MCP branch carries the live
+ * server-provided schema and connection facts. Never carries credentials. */
 export interface ToolInspectResponse {
-  function_name: string;
+  kind?: "code" | "mcp";
+  ok?: boolean;
+  // Code branch:
+  function_name?: string | null;
   arguments: Array<{
     name: string;
     type_hint: string;
     default_value: string | null;
   }>;
+  // MCP branch (named tool vs full catalog):
+  server_id?: string | null;
+  tool?: McpInspectTool | null;
+  tools?: McpInspectTool[];
+  server_name?: string | null;
+  server_version?: string | null;
+  latency_ms?: number;
+  detail?: string;
+  classification?: string | null;
+  protocol_revision?: string | null;
 }
 
+/** One output block of an MCP tool result (#135). Non-text blocks carry a
+ * human placeholder; the binary payload never reaches the panel. */
+export interface McpToolCallBlock {
+  type: string;
+  text: string | null;
+  mime_type: string | null;
+  resource_uri: string | null;
+  placeholder: string | null;
+}
+
+/** Kind-discriminated test response (#135, spec §6.4). For the MCP call
+ * stage, `success` is `ok && !is_error` — an in-band isError result is an
+ * error, not a success output; the server's blocks are preserved so the
+ * panel can show the explanation. */
 export interface ToolTestResponse {
+  kind?: "code" | "mcp";
+  // Code branch (`output`/`execution_time_ms` are code-branch fields; the
+  // backend omits nothing but they are irrelevant for the MCP stages).
   success: boolean;
-  output: string;
-  execution_time_ms: number;
+  output?: string;
+  execution_time_ms?: number;
+  // MCP branch:
+  stage?: "probe" | "call" | null;
+  ok?: boolean | null;
+  server_name?: string | null;
+  server_version?: string | null;
+  tools?: string[];
+  tool_count?: number;
+  latency_ms?: number;
+  detail?: string;
+  classification?: string | null;
+  protocol_revision?: string | null;
+  is_error?: boolean | null;
+  blocks?: McpToolCallBlock[];
 }

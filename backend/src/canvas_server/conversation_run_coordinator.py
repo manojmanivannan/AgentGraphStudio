@@ -6,6 +6,7 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from canvas_server.exceptions import RunAbortedError
+from canvas_server.mcp_redaction import redact_mcp_text
 from canvas_server.repos.canvas_repo import CanvasRepo
 from canvas_server.repos.conversation_repo import ConversationRepo
 from canvas_server.runner import CanvasRunner
@@ -101,6 +102,19 @@ class ConversationRunCoordinator:
                     "Per-turn sandbox release skipped for %s",
                     conversation_id,
                 )
+            # Per-turn MCP session teardown hook (#137): close the run's MCP
+            # client sessions next to the sandbox release so they cannot leak
+            # across turns, including when the run errored. Mirrors the
+            # sandbox guard — cleanup never blocks the turn.
+            release_mcp_sessions = getattr(runner, "release_mcp_sessions", None)
+            if release_mcp_sessions is not None:
+                try:
+                    await release_mcp_sessions()
+                except Exception:  # noqa: BLE001 - never let cleanup block the turn
+                    logger.debug(
+                        "Per-turn MCP session release skipped for %s",
+                        conversation_id,
+                    )
             await self.session.commit()
 
     async def _build_runner(self, *, canvas, conversation_repo, conversation_id):
@@ -150,7 +164,11 @@ class ConversationRunCoordinator:
         try:
             await runner._conversation.persist_message(
                 role="assistant",
-                content=str(error),
+                # Spec §5.4 (#140): this message is UI text — configured MCP
+                # credential values and endpoint URLs are stripped. (The
+                # final_answer event itself is redacted at the worker's
+                # send_event choke point.)
+                content=redact_mcp_text(str(error)),
                 agent_name=agent_name,
                 node_id=node_id,
                 event_type="final_answer",

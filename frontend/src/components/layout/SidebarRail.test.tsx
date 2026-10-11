@@ -3,6 +3,7 @@ import { render, screen, fireEvent, waitFor, act } from "@testing-library/react"
 import userEvent from "@testing-library/user-event";
 import { SidebarRail } from "./SidebarRail";
 import { useCanvasStore } from "@/store/canvasStore";
+import { useToastStore } from "@/store/toastStore";
 import { UnsavedChangesDialogHost } from "@/components/ui/UnsavedChangesDialogHost";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 
@@ -17,6 +18,7 @@ vi.mock("@/lib/api", () => ({
 describe("SidebarRail", () => {
   beforeEach(() => {
     useCanvasStore.getState().reset();
+    useToastStore.setState({ toasts: [] });
   });
 
   const renderSidebar = () => {
@@ -191,7 +193,7 @@ describe("SidebarRail", () => {
   it("triggers file input click on import button click", async () => {
     const user = userEvent.setup();
     useCanvasStore.getState().setCanvas("canvas-1", "Test Canvas");
-    
+
     renderSidebar();
 
     const importBtn = screen.getByTestId("import-button");
@@ -201,6 +203,62 @@ describe("SidebarRail", () => {
     await user.click(importBtn);
 
     expect(clickSpy).toHaveBeenCalled();
+  });
+
+  it("surfaces import warnings as a toast (#136)", async () => {
+    const { importCanvasZip } = await import("@/lib/api");
+    const { useToastStore } = await import("@/store/toastStore");
+    vi.mocked(importCanvasZip).mockResolvedValue({
+      id: "canvas-2",
+      name: "Imported Canvas",
+      created_at: "2026-10-11T00:00:00Z",
+      updated_at: "2026-10-11T00:00:00Z",
+      nodes: { agents: [], tools: [], attachments: [] },
+      edges: [],
+      warnings: [
+        'MCP grant on tool "Search Tools" imported not-yet-granting: '
+        + 'no registered MCP server matched "Ghost Server".',
+      ],
+    } as any);
+    useCanvasStore.getState().setCanvas("canvas-1", "Test Canvas");
+    renderSidebar();
+
+    const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+    fireEvent.change(fileInput, {
+      target: { files: [new File(["x"], "canvas.zip")] },
+    });
+
+    await waitFor(() => {
+      const messages = useToastStore.getState().toasts.map((t) => t.message);
+      expect(messages.some((m) => m.includes("not-yet-granting"))).toBe(true);
+    });
+  });
+
+  it("shows no toast for an import without warnings (#136)", async () => {
+    const { importCanvasZip } = await import("@/lib/api");
+    const { useToastStore } = await import("@/store/toastStore");
+    vi.mocked(importCanvasZip).mockResolvedValue({
+      id: "canvas-2",
+      name: "Imported Canvas",
+      created_at: "2026-10-11T00:00:00Z",
+      updated_at: "2026-10-11T00:00:00Z",
+      nodes: { agents: [], tools: [], attachments: [] },
+      edges: [],
+      warnings: [],
+    } as any);
+    useCanvasStore.getState().setCanvas("canvas-1", "Test Canvas");
+    renderSidebar();
+
+    const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+    fireEvent.change(fileInput, {
+      target: { files: [new File(["x"], "canvas.zip")] },
+    });
+
+    // decodeCanvasResponse ran (no crash) and no warning toast fired.
+    await waitFor(() => {
+      expect(useCanvasStore.getState().canvasId).toBe("canvas-2");
+    });
+    expect(useToastStore.getState().toasts).toEqual([]);
   });
 
   it("navigates to chat when chat button is clicked", async () => {

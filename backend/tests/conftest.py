@@ -1,11 +1,25 @@
 import asyncio
 import contextlib
+import json
 import os
+import socket
+import threading
+import time
 import uuid
+from dataclasses import dataclass, field
+from typing import Any
 
+import httpx
 import pytest
 import pytest_asyncio
+import uvicorn
 from httpx import ASGITransport, AsyncClient
+from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp.utilities.types import Image
+from starlette.applications import Starlette
+from starlette.requests import Request
+from starlette.responses import JSONResponse, Response
+from starlette.routing import Route
 
 TEST_DB_URL = os.environ.get(
     "TEST_DATABASE_URL",
@@ -48,6 +62,9 @@ def mock_embedder(monkeypatch):
 
 @pytest_asyncio.fixture
 async def fresh_db():
+    # Register every model table (FK targets included) before create_all.
+    import canvas_server.models.canvas  # noqa: F401  (registers all canvas-side tables)
+    import canvas_server.models.mcp  # noqa: F401  (mcp_servers — tool_nodes.mcp_server_id FK target)
     from canvas_server.database import Base, async_reset_session_factory, get_engine
 
     _reset_engine_and_factory()
@@ -428,4 +445,391 @@ async def autouse_sandbox():
     yield manager
     with contextlib.suppress(Exception):
         await manager.shutdown()
+
+
+# --- MCP Streamable HTTP reference servers (ticket #131, reused by #134/#136) ---
+#
+# Real MCP servers for probe/route tests, built from the official ``mcp`` 1.x
+# SDK primitives: ``mcp.server.fastmcp.FastMCP`` ships as part of the ``mcp``
+# package (the standalone ``fastmcp`` project is NOT a backend dependency and
+# is not used). Each fixture serves its app in-process from a background
+# uvicorn thread on a free port, so these stay Docker-free.
+
+
+def _mcp_free_port() -> int:
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        return sock.getsockname()[1]
+
+
+def _wait_http_ready(url: str, timeout: float = 10.0) -> None:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            httpx.get(url, timeout=1.0)
+            return
+        except httpx.HTTPError:
+            time.sleep(0.05)
+    raise RuntimeError(f"Reference MCP server never came up at {url}")
+
+
+def _serve_starlette(app, port: int):
+    server = uvicorn.Server(
+        uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning")
+    )
+    thread = threading.Thread(target=server.run, daemon=True)
+    thread.start()
+    return server, thread
+
+
+@pytest.fixture
+def ref_mcp_server():
+    """A real Streamable HTTP MCP server exposing one ``add`` tool."""
+    mcp = FastMCP("ags-probe-ref")
+
+    def add(a: int, b: int) -> int:
+        """Add two integers."""
+        return a + b
+
+    mcp.add_tool(add)
+    port = _mcp_free_port()
+    server, thread = _serve_starlette(mcp.streamable_http_app(), port)
+
+    url = f"http://127.0.0.1:{port}/mcp"
+    _wait_http_ready(url)
+    yield url
+    server.should_exit = True
+    thread.join(timeout=5.0)
+
+
+@pytest.fixture
+def modern_revision_mcp_server():
+    """A stateless-only server that answers ``initialize`` with the modern
+    2026-07-28 protocol revision — the shape the SDK client cannot speak."""
+
+    async def endpoint(request: Request) -> Response:
+        body = await request.json()
+        if "id" not in body:  # notifications/initialized → empty ACK
+            return Response(status_code=202)
+        return JSONResponse(
+            {
+                "jsonrpc": "2.0",
+                "id": body["id"],
+                "result": {
+                    "protocolVersion": "2026-07-28",
+                    "capabilities": {},
+                    "serverInfo": {"name": "ags-modern-rev", "version": "9.9.9"},
+                },
+            }
+        )
+
+    app = Starlette(routes=[Route("/mcp", endpoint, methods=["POST", "GET"])])
+    port = _mcp_free_port()
+    server, thread = _serve_starlette(app, port)
+
+    url = f"http://127.0.0.1:{port}/mcp"
+    _wait_http_ready(url)
+    yield url
+    server.should_exit = True
+    thread.join(timeout=5.0)
+
+
+class _RequireAuthMiddleware:
+    """Pure-ASGI middleware demanding ``Authorization: Bearer good-token``."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        headers = {k: v for k, v in scope.get("headers", [])}
+        if headers.get(b"authorization") != b"Bearer good-token":
+            await send(
+                {
+                    "type": "http.response.start",
+                    "status": 401,
+                    "headers": [(b"content-type", b"application/json")],
+                }
+            )
+            await send(
+                {
+                    "type": "http.response.body",
+                    "body": b'{"error": "401 Unauthorized"}',
+                }
+            )
+            return
+        await self.app(scope, receive, send)
+
+
+@pytest.fixture
+def auth_ref_mcp_server():
+    """A real reference MCP server that rejects unauthenticated requests."""
+    mcp = FastMCP("ags-probe-auth-ref")
+    mcp.add_tool(lambda a: a, name="echo")
+    port = _mcp_free_port()
+    server, thread = _serve_starlette(
+        _RequireAuthMiddleware(mcp.streamable_http_app()), port
+    )
+
+    url = f"http://127.0.0.1:{port}/mcp"
+    _wait_http_ready(url)
+    yield url
+    server.should_exit = True
+    thread.join(timeout=5.0)
+
+
+@pytest.fixture
+def error_ref_mcp_server():
+    """A real reference MCP server with an in-band-error tool (#135).
+
+    ``explode`` raises inside its body — FastMCP converts the exception into a
+    ``CallToolResult(isError=True)`` whose only content is the exception text,
+    which is exactly the in-band error shape the Test panel must distinguish
+    from success output. Also serves the plain ``add`` tool for happy paths.
+    """
+    mcp = FastMCP("ags-probe-error-ref")
+
+    def add(a: int, b: int) -> int:
+        """Add two integers."""
+        return a + b
+
+    def explode():
+        """Always fails with an in-band error."""
+        raise ValueError("boom — in-band failure")
+
+    def produce_image() -> Image:
+        """Returns an image block."""
+        return Image(data=b"not-really-a-png", format="png")
+
+    mcp.add_tool(add)
+    mcp.add_tool(explode)
+    mcp.add_tool(produce_image)
+    port = _mcp_free_port()
+    server, thread = _serve_starlette(mcp.streamable_http_app(), port)
+
+    url = f"http://127.0.0.1:{port}/mcp"
+    _wait_http_ready(url)
+    yield url
+    server.should_exit = True
+    thread.join(timeout=5.0)
+
+
+# --- Instrumented reference servers (#137) ---------------------------------
+#
+# Handshake/session-observation servers: a body-buffering pure-ASGI wrapper
+# counts `initialize` handshakes, POSTs and session-terminating DELETEs, so
+# session-reuse / close assertions are made against the *server side* rather
+# than registry internals.
+
+
+@dataclass
+class McpServerObservation:
+    """Server-side view of one instrumented reference MCP server."""
+
+    url: str
+    initialize_count: int = 0
+    post_count: int = 0
+    delete_count: int = 0
+    # (start, end) monotonic wall-clock spans of each observed initialize
+    # request — used to verify handshakes overlap (concurrent session opens).
+    initialize_spans: list[tuple[float, float]] = field(default_factory=list)
+
+
+class _CountingMcpMiddleware:
+    """Pure-ASGI wrapper: forwards verbatim, counts methods, buffers POST
+    bodies to spot JSON-RPC ``initialize`` requests and (optionally) delays
+    them to manufacture a slow server."""
+
+    def __init__(self, app, observation: McpServerObservation, handshake_delay: float):
+        self.app = app
+        self.observation = observation
+        self.handshake_delay = handshake_delay
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        method = scope.get("method", "").upper()
+        if method == "POST":
+            self.observation.post_count += 1
+        elif method == "DELETE":
+            self.observation.delete_count += 1
+
+        body = bytearray()
+        started = False
+
+        async def buffered_receive():
+            nonlocal started
+            message = await receive()
+            if message["type"] == "http.request":
+                body.extend(message.get("body", b""))
+                if not message.get("more_body", False) and not started:
+                    started = True
+                    await self._observe_body(bytes(body))
+            return message
+
+        await self.app(scope, buffered_receive, send)
+
+    async def _observe_body(self, raw: bytes) -> None:
+        try:
+            payload = json.loads(raw)
+        except Exception:  # noqa: BLE001 — non-JSON bodies are just not handshakes
+            return
+        if isinstance(payload, dict) and payload.get("method") == "initialize":
+            start = time.monotonic()
+            if self.handshake_delay:
+                await asyncio.sleep(self.handshake_delay)
+            self.observation.initialize_count += 1
+            self.observation.initialize_spans.append((start, time.monotonic()))
+
+
+class _StaleSessionMiddleware:
+    """Simulates server-side session invalidation for #139 (spec §4.6).
+
+    ``tools/call`` POSTs are answered with a bare HTTP 404 — the MCP SDK
+    turns that into a ``"Session terminated"`` error for the pending call
+    (the client is expected to re-handshake and retry).
+
+    ``mode='once'`` drops exactly ONE ``tools/call`` overall: the first
+    call is stale mid-run, and the post-re-handshake retry succeeds.
+    ``mode='always'`` drops every ``tools/call``: the retry after the
+    single re-handshake also fails, exercising retry-then-degrade with no
+    retry loop.
+    """
+
+    def __init__(self, app, mode: str = "once"):
+        self.app = app
+        self.mode = mode
+        self.reject_used = False
+        self.rejected_calls = 0
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http" or scope.get("method", "").upper() != "POST":
+            await self.app(scope, receive, send)
+            return
+
+        body = bytearray()
+        while True:
+            message = await receive()
+            if message["type"] == "http.request":
+                body.extend(message.get("body", b""))
+                if not message.get("more_body", False):
+                    break
+            elif message["type"] == "http.disconnect":
+                return
+
+        is_tools_call = False
+        try:
+            payload = json.loads(bytes(body))
+            is_tools_call = (
+                isinstance(payload, dict) and payload.get("method") == "tools/call"
+            )
+        except Exception:  # noqa: BLE001 — non-JSON bodies are forwarded
+            pass
+
+        must_reject = is_tools_call and (
+            self.mode == "always" or not self.reject_used
+        )
+        if must_reject:
+            self.reject_used = True
+            self.rejected_calls += 1
+            await send(
+                {
+                    "type": "http.response.start",
+                    "status": 404,
+                    "headers": [(b"content-length", b"0")],
+                }
+            )
+            await send({"type": "http.response.body", "body": b""})
+            return
+
+        sent = False
+
+        async def replay_receive():
+            # First read: the re-sealed buffered body. Later reads delegate
+            # to the *real* receive — returning an immediate
+            # ``http.disconnect`` would make Starlette treat the client as
+            # gone (is_disconnected → the response body is dropped).
+            nonlocal sent
+            if not sent:
+                sent = True
+                return {"type": "http.request", "body": bytes(body), "more_body": False}
+            return await receive()
+
+        await self.app(scope, replay_receive, send)
+
+
+@pytest.fixture
+def make_ref_mcp_server():
+    """Factory for instrumented reference MCP servers (#137).
+
+    ``make_ref_mcp_server(tools=("add",), delay=0.0, stale_calls=None)``
+    serves a fresh FastMCP app on a free port (behind the counting
+    middleware) and returns its :class:`McpServerObservation` (useful
+    fields: ``url``, ``initialize_count``, ``initialize_spans``,
+    ``post_count``, ``delete_count``). ``stale_calls='once'|'always'``
+    simulates a server invalidating its session mid-run (#139). All created
+    servers shut down at teardown.
+    """
+
+    created: list[tuple[Any, threading.Thread, McpServerObservation]] = []
+
+    def _make(
+        tools: tuple[str, ...] = ("add",),
+        delay: float = 0.0,
+        stale_calls: str | None = None,
+    ) -> McpServerObservation:
+        mcp = FastMCP("ags-run-ref")
+
+        def add(a: int, b: int) -> int:
+            """Add two integers."""
+            return a + b
+
+        for tool in tools:
+            if tool == "add":
+                mcp.add_tool(add)
+            elif tool == "big_output":
+                def big_output() -> str:
+                    """Return a very large text payload (truncation tests, #138)."""
+                    return "A" * 60_000
+
+                mcp.add_tool(big_output)
+            elif tool == "flaky":
+                def flaky() -> str:
+                    """Always fails — the server must return an isError result."""
+                    raise ValueError("deliberate boom")
+
+                mcp.add_tool(flaky)
+            elif tool == "slow":
+                async def slow() -> str:
+                    """Sleep long enough for any per-call timeout to fire first."""
+                    await asyncio.sleep(5.0)
+                    return "finally"
+
+                mcp.add_tool(slow)
+            else:
+                mcp.add_tool(lambda tool=tool: tool, name=tool)
+
+        observation = McpServerObservation(url="")
+        port = _mcp_free_port()
+        app = mcp.streamable_http_app()
+        if stale_calls is not None:
+            app = _StaleSessionMiddleware(app, stale_calls)
+        server, thread = _serve_starlette(
+            _CountingMcpMiddleware(app, observation, delay),
+            port,
+        )
+        observation.url = f"http://127.0.0.1:{port}/mcp"
+        _wait_http_ready(observation.url)
+        created.append((server, thread, observation))
+        return observation
+
+    yield _make
+
+    for server, thread, _obs in created:
+        server.should_exit = True
+        thread.join(timeout=5.0)
 

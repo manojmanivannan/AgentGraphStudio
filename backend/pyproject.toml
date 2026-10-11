@@ -23,6 +23,7 @@ dependencies = [
     # Used directly (not via passlib, which is unmaintained and breaks
     # against bcrypt>=5); security.py truncates to bcrypt's 72-byte limit.
     "bcrypt>=4",
+    "mcp>=1.30,<2",
 ]
 
 [dependency-groups]
@@ -89,6 +90,8 @@ known-first-party = ["canvas_server"]
 "src/canvas_server/routes/auth.py" = ["B008"]
 "src/canvas_server/routes/settings.py" = ["B008"]
 "src/canvas_server/routes/execute.py" = ["B008", "SIM105"]
+"src/canvas_server/routes/mcp.py" = ["B008"]
+"src/canvas_server/routes/tools.py" = ["B008"]
 "tests/*" = ["E501"]
 
 [build-system]

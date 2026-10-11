@@ -82,6 +82,15 @@ export function encodeCanvasGraph({ canvasName, nodes, edges }: CanvasGraph): Ca
             packages: data.packages ?? "",
             args: data.args ?? [],
             requires_approval: data.requiresApproval ?? false,
+            // MCP grant (#132): a code tool encodes to "no server, no grant".
+            mcp_server_id: data.mcpServerId ?? null,
+            mcp_tools: (data.mcpTools ?? []).map((grant) => ({
+              name: grant.name,
+              requires_approval: grant.requiresApproval,
+            })),
+            // Enablement history for the NEW-badge diff (#134): names only —
+            // never a catalog snapshot (no cache anywhere, decision #126).
+            mcp_seen_tools: data.mcpSeenTools ?? [],
             position_x: node.position.x,
             position_y: node.position.y,
           };
@@ -149,6 +158,14 @@ export function decodeCanvasResponse(canvas: CanvasResponse): DecodedCanvasGraph
           packages: tool.packages ?? "",
           args: tool.args,
           requiresApproval: tool.requires_approval,
+          mcpServerId: tool.mcp_server_id ?? null,
+          mcpTools: (tool.mcp_tools ?? []).map((grant) => ({
+            name: grant.name,
+            requiresApproval: grant.requires_approval,
+          })),
+          mcpSeenTools: tool.mcp_seen_tools ?? [],
+          // Import-only reference metadata (#136): null outside import responses.
+          mcpReference: tool.mcp_reference ?? null,
         },
       })),
       ...(canvas.nodes.attachments ?? []).map((attachment) => ({

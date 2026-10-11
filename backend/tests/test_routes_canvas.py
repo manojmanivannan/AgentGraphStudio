@@ -3,6 +3,155 @@ import json
 import uuid
 import zipfile
 
+ORIGIN = {"Origin": "http://test"}
+
+
+class TestSaveCanvasMcpToolNode:
+    """MCP-backed Tool Node persistence through the canvas API (#132): the
+    grant (server reference + enabled-tools selection) round-trips save /
+    reload; malformed grants are rejected at the API boundary."""
+
+    async def _register_server(self, authed_client, name="Context7") -> str:
+        res = await authed_client.post(
+            "/api/mcp/servers",
+            json={"name": name, "url": "https://mcp.context7.com/mcp"},
+            headers=ORIGIN,
+        )
+        assert res.status_code == 201, res.text
+        return res.json()["id"]
+
+    async def test_save_and_reload_mcp_grant(self, authed_client):
+        created = await authed_client.post("/api/canvases", json={"name": "MCP"})
+        cid = created.json()["id"]
+        server_id = await self._register_server(authed_client)
+        tid = str(uuid.uuid4())
+
+        payload = {
+            "name": "MCP",
+            "nodes": {
+                "agents": [],
+                "tools": [
+                    {
+                        "id": tid,
+                        "name": "Search Tools",
+                        "mcp_server_id": server_id,
+                        "mcp_tools": [
+                            {"name": "web_search", "requires_approval": True},
+                            {"name": "read_doc", "requires_approval": False},
+                        ],
+                    },
+                ],
+            },
+            "edges": [],
+        }
+
+        resp = await authed_client.put(f"/api/canvases/{cid}", json=payload)
+        assert resp.status_code == 200, resp.text
+        tool = resp.json()["nodes"]["tools"][0]
+        assert tool["mcp_server_id"] == server_id
+        assert tool["mcp_tools"] == [
+            {"name": "web_search", "requires_approval": True},
+            {"name": "read_doc", "requires_approval": False},
+        ]
+
+        get_resp = await authed_client.get(f"/api/canvases/{cid}")
+        assert get_resp.status_code == 200
+        tool = get_resp.json()["nodes"]["tools"][0]
+        assert tool["mcp_server_id"] == server_id
+        assert tool["mcp_tools"][0]["name"] == "web_search"
+        assert tool["mcp_tools"][0]["requires_approval"] is True
+
+    async def test_save_code_tool_has_no_mcp_fields(self, authed_client):
+        """Regression: author (code) tools save unchanged — MCP columns stay
+        empty (null server ref, empty grant list)."""
+        created = await authed_client.post("/api/canvases", json={"name": "Code"})
+        cid = created.json()["id"]
+        tid = str(uuid.uuid4())
+
+        payload = {
+            "name": "Code",
+            "nodes": {
+                "agents": [],
+                "tools": [
+                    {"id": tid, "name": "Calc", "code": "def add(a, b): return a + b",
+                     "requires_approval": True},
+                ],
+            },
+            "edges": [],
+        }
+        resp = await authed_client.put(f"/api/canvases/{cid}", json=payload)
+        assert resp.status_code == 200
+        tool = resp.json()["nodes"]["tools"][0]
+        assert tool["mcp_server_id"] is None
+        assert tool["mcp_tools"] == []
+        assert tool["code"] == "def add(a, b): return a + b"
+
+        get_resp = await authed_client.get(f"/api/canvases/{cid}")
+        tool = get_resp.json()["nodes"]["tools"][0]
+        assert tool["mcp_server_id"] is None
+        assert tool["mcp_tools"] == []
+
+    async def test_save_malformed_grant_entry_is_422(self, authed_client):
+        """Each grant entry must carry name + requires_approval (#132)."""
+        created = await authed_client.post("/api/canvases", json={"name": "Bad"})
+        cid = created.json()["id"]
+
+        payload = {
+            "name": "Bad",
+            "nodes": {
+                "agents": [],
+                "tools": [
+                    {
+                        "id": str(uuid.uuid4()),
+                        "name": "Bad Grant",
+                        "mcp_server_id": str(uuid.uuid4()),
+                        "mcp_tools": [{"name": "web_search"}],
+                    },
+                ],
+            },
+            "edges": [],
+        }
+        resp = await authed_client.put(f"/api/canvases/{cid}", json=payload)
+        assert resp.status_code == 422
+        assert "requires_approval" in resp.text
+
+    async def test_save_and_reload_seen_tools_history(self, authed_client):
+        """The enablement-history baseline (#134) round-trips the canvas API
+        so the NEW badge diffs against what the user has already been shown,
+        across saves and reloads."""
+        created = await authed_client.post("/api/canvases", json={"name": "MCP Hist"})
+        cid = created.json()["id"]
+        server_id = await self._register_server(authed_client)
+        tid = str(uuid.uuid4())
+
+        payload = {
+            "name": "MCP Hist",
+            "nodes": {
+                "agents": [],
+                "tools": [
+                    {
+                        "id": tid,
+                        "name": "Search Tools",
+                        "mcp_server_id": server_id,
+                        "mcp_tools": [
+                            {"name": "web_search", "requires_approval": True}
+                        ],
+                        "mcp_seen_tools": ["web_search", "read_doc"],
+                    },
+                ],
+            },
+            "edges": [],
+        }
+        resp = await authed_client.put(f"/api/canvases/{cid}", json=payload)
+        assert resp.status_code == 200, resp.text
+        tool = resp.json()["nodes"]["tools"][0]
+        assert tool["mcp_seen_tools"] == ["web_search", "read_doc"]
+
+        get_resp = await authed_client.get(f"/api/canvases/{cid}")
+        assert get_resp.status_code == 200
+        tool = get_resp.json()["nodes"]["tools"][0]
+        assert tool["mcp_seen_tools"] == ["web_search", "read_doc"]
+
 
 class TestCreateCanvas:
     async def test_create_default(self, authed_client):
@@ -798,3 +947,478 @@ class TestPerUserIsolation:
             )
         ).status_code == 401
         assert (await test_client.delete(f"/api/canvases/{uuid.uuid4()}")).status_code == 401
+
+
+# --- MCP references + metadata snapshots in ZIP export/import (#136, §2.3) ---
+
+SECRET_TOKEN = "secret-zip-token-42"
+
+FROZEN_SNAPSHOT = {
+    "captured": True,
+    "server_name": "ctx-remote",
+    "server_version": "1.2.3",
+    "protocol_revision": "2025-11-25",
+    "tools": [
+        {
+            "name": "web_search",
+            "description": "Search the web.",
+            "input_schema": {
+                "type": "object",
+                "properties": {"query": {"type": "string"}},
+                "required": ["query"],
+            },
+        }
+    ],
+}
+
+# How the snapshot block manifests in the manifest / import response: the
+# ``McpServerSnapshot`` model normalizes the capture output (``detail`` is the
+# failure-detail field, empty on success).
+MANIFESTED_SNAPSHOT = FROZEN_SNAPSHOT | {"detail": ""}
+
+
+async def _register_server(
+    authed_client, name="Context7", url="https://mcp.context7.com/mcp"
+) -> str:
+    res = await authed_client.post(
+        "/api/mcp/servers",
+        json={"name": name, "url": url, "credential_value": SECRET_TOKEN},
+        headers=ORIGIN,
+    )
+    assert res.status_code == 201, res.text
+    return res.json()["id"]
+
+
+async def _create_mcp_canvas(
+    authed_client,
+    server_id: str | None,
+    *,
+    name: str = "McpZip",
+    tools_name: str = "Search Tools",
+    grants: list[dict] | None = None,
+) -> str:
+    """Create a canvas with one MCP-backed Tool Node; returns the canvas id."""
+    created = await authed_client.post("/api/canvases", json={"name": name})
+    assert created.status_code == 200, created.text
+    cid = created.json()["id"]
+    save_payload = {
+        "name": name,
+        "nodes": {
+            "agents": [],
+            "tools": [
+                {
+                    "id": str(uuid.uuid4()),
+                    "name": tools_name,
+                    "mcp_server_id": server_id,
+                    "mcp_tools": grants
+                    if grants is not None
+                    else [{"name": "web_search", "requires_approval": True}],
+                }
+            ],
+        },
+        "edges": [],
+    }
+    res = await authed_client.put(f"/api/canvases/{cid}", json=save_payload)
+    assert res.status_code == 200, res.text
+    return cid
+
+
+def _read_manifest(export_resp) -> dict:
+    archive = zipfile.ZipFile(io.BytesIO(export_resp.content))
+    assert "manifest.json" in archive.namelist()
+    return json.loads(archive.read("manifest.json").decode("utf-8"))
+
+
+def _rezip(manifest: dict) -> bytes:
+    """Re-serialize a (possibly edited) manifest into a fresh importable zip."""
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("manifest.json", json.dumps(manifest))
+    return buf.getvalue()
+
+
+def _patch_snapshot(monkeypatch, snapshot: dict | None = None) -> list[dict]:
+    """Replace the export snapshot capture seam; records probe calls."""
+    import canvas_server.routes.canvas as canvas_routes
+
+    capture_calls: list[dict] = []
+
+    async def fake_capture(
+        url, *, credential_header=None, credential_value=None, timeout=None
+    ):
+        capture_calls.append(
+            {
+                "url": url,
+                "credential_header": credential_header,
+                "credential_value": credential_value,
+            }
+        )
+        if snapshot is not None:
+            return dict(snapshot)
+        return {"captured": False, "detail": "boom", "tools": []}
+
+    monkeypatch.setattr(canvas_routes, "capture_mcp_metadata_snapshot", fake_capture)
+    return capture_calls
+
+
+class TestZipExportMcpReference:
+    """Export embeds the server reference + metadata snapshot per MCP node;
+    zero credential material ever enters the archive."""
+
+    async def test_export_embeds_reference_and_snapshot(
+        self, authed_client, fresh_db, monkeypatch
+    ):
+        server_id = await _register_server(authed_client)
+        cid = await _create_mcp_canvas(authed_client, server_id)
+        capture_calls = _patch_snapshot(monkeypatch, FROZEN_SNAPSHOT)
+
+        export_resp = await authed_client.get(f"/api/canvases/{cid}/export-zip")
+        assert export_resp.status_code == 200
+        manifest = _read_manifest(export_resp)
+
+        tool = manifest["nodes"]["tools"][0]
+        # No workspace-local id in the archive — the reference is name/url.
+        assert tool["mcp_server_id"] is None
+        assert tool["mcp_tools"] == [{"name": "web_search", "requires_approval": True}]
+        ref = tool["mcp_reference"]
+        assert ref["resolved"] is True
+        assert ref["name"] == "Context7"
+        assert ref["url"] == "https://mcp.context7.com/mcp"
+        assert ref["snapshot"] == MANIFESTED_SNAPSHOT
+
+        # The snapshot was captured live at export time, using the stored
+        # registry credential (which itself never reaches the archive).
+        assert len(capture_calls) == 1
+        assert capture_calls[0]["url"] == "https://mcp.context7.com/mcp"
+        assert capture_calls[0]["credential_value"] == SECRET_TOKEN
+
+    async def test_export_archive_contains_zero_credential_material(
+        self, authed_client, fresh_db, monkeypatch
+    ):
+        server_id = await _register_server(authed_client)
+        cid = await _create_mcp_canvas(authed_client, server_id)
+        _patch_snapshot(monkeypatch, FROZEN_SNAPSHOT)
+
+        export_resp = await authed_client.get(f"/api/canvases/{cid}/export-zip")
+        assert export_resp.status_code == 200
+        assert SECRET_TOKEN.encode() not in export_resp.content
+        assert SECRET_TOKEN not in json.dumps(_read_manifest(export_resp))
+
+    async def test_code_tool_export_carries_no_mcp_reference(
+        self, authed_client, fresh_db, monkeypatch
+    ):
+        """Author (code) tools export exactly as before — no reference block,
+        no probing."""
+        capture_calls = _patch_snapshot(monkeypatch, FROZEN_SNAPSHOT)
+        created = await authed_client.post("/api/canvases", json={"name": "Code"})
+        cid = created.json()["id"]
+        save_payload = {
+            "name": "Code",
+            "nodes": {
+                "agents": [],
+                "tools": [
+                    {
+                        "id": str(uuid.uuid4()),
+                        "name": "Calc",
+                        "code": "def add(a, b):\n    return a + b",
+                    }
+                ],
+            },
+            "edges": [],
+        }
+        resp = await authed_client.put(f"/api/canvases/{cid}", json=save_payload)
+        assert resp.status_code == 200
+
+        export_resp = await authed_client.get(f"/api/canvases/{cid}/export-zip")
+        assert export_resp.status_code == 200
+        manifest = _read_manifest(export_resp)
+        tool = manifest["nodes"]["tools"][0]
+        assert tool["mcp_server_id"] is None
+        assert tool["mcp_tools"] == []
+        assert "mcp_reference" not in tool
+        assert capture_calls == []
+
+    async def test_export_when_server_deleted_records_unresolvable(
+        self, authed_client, fresh_db, test_session, monkeypatch
+    ):
+        """A dangling grant (server row gone out-of-band) exports successfully
+        with the reference recorded as unresolvable."""
+        server_id = await _register_server(authed_client)
+        cid = await _create_mcp_canvas(authed_client, server_id)
+
+        # Out-of-band deletion (the API delete route would 409).
+        from sqlalchemy import delete
+
+        from canvas_server.models.mcp import McpServer
+
+        await test_session.execute(delete(McpServer))
+        await test_session.commit()
+
+        capture_calls = _patch_snapshot(monkeypatch, FROZEN_SNAPSHOT)
+        export_resp = await authed_client.get(f"/api/canvases/{cid}/export-zip")
+        assert export_resp.status_code == 200
+        tool = _read_manifest(export_resp)["nodes"]["tools"][0]
+        ref = tool["mcp_reference"]
+        assert ref["resolved"] is False
+        assert ref["name"] is None
+        assert ref["url"] is None
+        assert ref["snapshot"]["captured"] is False
+        assert capture_calls == []  # nothing resolvable to probe
+
+    async def test_export_when_live_snapshot_fails_still_exports(
+        self, authed_client, fresh_db, monkeypatch
+    ):
+        """A failing probe degrades to snapshot.unavailable — export never fails."""
+        server_id = await _register_server(authed_client)
+        cid = await _create_mcp_canvas(authed_client, server_id)
+        _patch_snapshot(monkeypatch, None)
+
+        export_resp = await authed_client.get(f"/api/canvases/{cid}/export-zip")
+        assert export_resp.status_code == 200
+        ref = _read_manifest(export_resp)["nodes"]["tools"][0]["mcp_reference"]
+        assert ref["resolved"] is True
+        assert ref["name"] == "Context7"
+        snapshot = ref["snapshot"]
+        assert snapshot["captured"] is False
+        assert snapshot["tools"] == []
+        assert snapshot["detail"]
+
+    async def test_export_snapshots_each_server_once(
+        self, authed_client, fresh_db, monkeypatch
+    ):
+        """Two nodes on the same server probe once — snapshots are per server."""
+        server_id = await _register_server(authed_client)
+        created = await authed_client.post("/api/canvases", json={"name": "Two"})
+        cid = created.json()["id"]
+        save_payload = {
+            "name": "Two",
+            "nodes": {
+                "agents": [],
+                "tools": [
+                    {
+                        "id": str(uuid.uuid4()),
+                        "name": "Node A",
+                        "mcp_server_id": server_id,
+                        "mcp_tools": [{"name": "web_search", "requires_approval": False}],
+                    },
+                    {
+                        "id": str(uuid.uuid4()),
+                        "name": "Node B",
+                        "mcp_server_id": server_id,
+                        "mcp_tools": [{"name": "read_doc", "requires_approval": False}],
+                    },
+                ],
+            },
+            "edges": [],
+        }
+        resp = await authed_client.put(f"/api/canvases/{cid}", json=save_payload)
+        assert resp.status_code == 200
+
+        capture_calls = _patch_snapshot(monkeypatch, FROZEN_SNAPSHOT)
+        export_resp = await authed_client.get(f"/api/canvases/{cid}/export-zip")
+        assert export_resp.status_code == 200
+        assert len(capture_calls) == 1
+        manifest = _read_manifest(export_resp)
+        assert [t["mcp_reference"]["snapshot"] for t in manifest["nodes"]["tools"]] == [
+            MANIFESTED_SNAPSHOT,
+            MANIFESTED_SNAPSHOT,
+        ]
+
+    async def test_export_zip_uses_the_real_probe_path(self, authed_client, fresh_db, ref_mcp_server):
+        """Integration: the reference snapshot comes from the shared MCP probe
+        path against a real Streamable HTTP server (conftest reference server)."""
+        server_id = await _register_server(
+            authed_client, name="Ref", url=ref_mcp_server
+        )
+        cid = await _create_mcp_canvas(
+            authed_client,
+            server_id,
+            name="RefCanvas",
+            grants=[{"name": "add", "requires_approval": False}],
+        )
+
+        export_resp = await authed_client.get(f"/api/canvases/{cid}/export-zip")
+        assert export_resp.status_code == 200
+        ref = _read_manifest(export_resp)["nodes"]["tools"][0]["mcp_reference"]
+        assert ref["resolved"] is True
+        assert ref["url"] == ref_mcp_server
+        snap = ref["snapshot"]
+        assert snap["captured"] is True
+        assert snap["server_name"] == "ags-probe-ref"
+        assert [t["name"] for t in snap["tools"]] == ["add"]
+        assert snap["tools"][0]["input_schema"]["properties"]["a"]["type"] == "integer"
+
+
+class TestZipImportMcpGrant:
+    """Import re-points MCP nodes by name (then URL); no match imports
+    not-yet-granting with a warning; a server URL is never imported."""
+
+    async def test_import_repoints_to_matching_registration_by_name(
+        self, authed_client, fresh_db, monkeypatch
+    ):
+        server_id = await _register_server(authed_client)
+        cid = await _create_mcp_canvas(authed_client, server_id)
+        _patch_snapshot(monkeypatch, FROZEN_SNAPSHOT)
+        export_resp = await authed_client.get(f"/api/canvases/{cid}/export-zip")
+        manifest = _read_manifest(export_resp)
+
+        import_resp = await authed_client.post(
+            "/api/canvases/import-zip",
+            files={"file": ("canvas.zip", _rezip(manifest), "application/zip")},
+        )
+        assert import_resp.status_code == 200, import_resp.text
+        imported = import_resp.json()
+        tool = imported["nodes"]["tools"][0]
+        assert tool["mcp_server_id"] == server_id
+        assert tool["mcp_tools"] == [{"name": "web_search", "requires_approval": True}]
+        # The exported MCP metadata reappears as reference metadata.
+        assert tool["mcp_reference"] == manifest["nodes"]["tools"][0]["mcp_reference"]
+        assert imported["warnings"] == []
+
+    async def test_import_without_a_matching_registration_is_not_yet_granting(
+        self, authed_client, fresh_db, monkeypatch
+    ):
+        server_id = await _register_server(authed_client)
+        cid = await _create_mcp_canvas(authed_client, server_id)
+        _patch_snapshot(monkeypatch, FROZEN_SNAPSHOT)
+        export_resp = await authed_client.get(f"/api/canvases/{cid}/export-zip")
+        manifest = _read_manifest(export_resp)
+        manifest["nodes"]["tools"][0]["mcp_reference"]["name"] = "Ghost Server"
+        manifest["nodes"]["tools"][0]["mcp_reference"]["url"] = "https://ghost.invalid/mcp"
+
+        import_resp = await authed_client.post(
+            "/api/canvases/import-zip",
+            files={"file": ("canvas.zip", _rezip(manifest), "application/zip")},
+        )
+        assert import_resp.status_code == 200, import_resp.text
+        imported = import_resp.json()
+        tool = imported["nodes"]["tools"][0]
+        assert tool["mcp_server_id"] is None  # not-yet-granting
+        assert tool["mcp_tools"] == [{"name": "web_search", "requires_approval": True}]
+        assert tool["mcp_reference"]["name"] == "Ghost Server"
+        warnings = imported["warnings"]
+        assert len(warnings) == 1
+        assert "Search Tools" in warnings[0]
+        assert "not-yet-granting" in warnings[0]
+
+    async def test_import_matches_by_url_when_the_name_is_unknown(
+        self, authed_client, fresh_db, monkeypatch
+    ):
+        server_id = await _register_server(authed_client)
+        cid = await _create_mcp_canvas(authed_client, server_id)
+        _patch_snapshot(monkeypatch, FROZEN_SNAPSHOT)
+        export_resp = await authed_client.get(f"/api/canvases/{cid}/export-zip")
+        manifest = _read_manifest(export_resp)
+        manifest["nodes"]["tools"][0]["mcp_reference"]["name"] = "Renamed Away"
+
+        import_resp = await authed_client.post(
+            "/api/canvases/import-zip",
+            files={"file": ("canvas.zip", _rezip(manifest), "application/zip")},
+        )
+        assert import_resp.status_code == 200
+        assert import_resp.json()["nodes"]["tools"][0]["mcp_server_id"] == server_id
+
+    async def test_import_name_match_takes_precedence_over_url(
+        self, authed_client, fresh_db, monkeypatch
+    ):
+        server_a = await _register_server(
+            authed_client, name="Alpha", url="https://alpha.example/mcp"
+        )
+        await _register_server(authed_client, name="Beta", url="https://beta.example/mcp")
+        cid = await _create_mcp_canvas(authed_client, server_a)
+        _patch_snapshot(monkeypatch, FROZEN_SNAPSHOT)
+        export_resp = await authed_client.get(f"/api/canvases/{cid}/export-zip")
+        manifest = _read_manifest(export_resp)
+        # Name still points at Alpha, but the recorded URL drifted to Beta:
+        # the name match wins.
+        manifest["nodes"]["tools"][0]["mcp_reference"]["url"] = "https://beta.example/mcp"
+
+        import_resp = await authed_client.post(
+            "/api/canvases/import-zip",
+            files={"file": ("canvas.zip", _rezip(manifest), "application/zip")},
+        )
+        assert import_resp.status_code == 200
+        assert import_resp.json()["nodes"]["tools"][0]["mcp_server_id"] == server_a
+
+    async def test_import_never_grants_from_a_raw_server_id(
+        self, authed_client, fresh_db, monkeypatch
+    ):
+        """No URL/id smuggling (#5.1): a manifest carrying a workspace's real
+        server id (without a reference) imports not-yet-granting."""
+        server_id = await _register_server(authed_client)
+        created = await authed_client.post("/api/canvases/import", json={
+            "name": "Smuggle",
+            "nodes": {
+                "agents": [],
+                "tools": [
+                    {
+                        "id": str(uuid.uuid4()),
+                        "name": "Smuggled",
+                        "mcp_server_id": server_id,
+                        "mcp_tools": [{"name": "web_search", "requires_approval": False}],
+                    }
+                ],
+            },
+            "edges": [],
+        })
+        assert created.status_code == 200, created.text
+        imported = created.json()
+        tool = imported["nodes"]["tools"][0]
+        assert tool["mcp_server_id"] is None
+        assert tool["mcp_tools"] == [{"name": "web_search", "requires_approval": False}]
+        assert len(imported["warnings"]) == 1
+        assert "not-yet-granting" in imported["warnings"][0]
+
+    async def test_json_import_also_repoints_by_name(
+        self, authed_client, fresh_db, monkeypatch
+    ):
+        """The non-ZIP /import path shares the same re-pointing semantics."""
+        server_id = await _register_server(authed_client)
+        _patch_snapshot(monkeypatch, FROZEN_SNAPSHOT)
+        payload = {
+            "name": "JsonImport",
+            "nodes": {
+                "agents": [],
+                "tools": [
+                    {
+                        "id": str(uuid.uuid4()),
+                        "name": "RePointed",
+                        "mcp_server_id": None,
+                        "mcp_tools": [{"name": "web_search", "requires_approval": True}],
+                        "mcp_reference": {
+                            "resolved": True,
+                            "name": "Context7",
+                            "url": "https://mcp.context7.com/mcp",
+                            "snapshot": FROZEN_SNAPSHOT,
+                        },
+                    }
+                ],
+            },
+            "edges": [],
+        }
+        res = await authed_client.post("/api/canvases/import", json=payload)
+        assert res.status_code == 200, res.text
+        tool = res.json()["nodes"]["tools"][0]
+        assert tool["mcp_server_id"] == server_id
+        assert tool["mcp_reference"]["snapshot"]["captured"] is True
+        assert res.json()["warnings"] == []
+
+    async def test_imported_grant_survives_a_save_and_reload(
+        self, authed_client, fresh_db, monkeypatch
+    ):
+        """A re-pointed import behaves like a first-class grant afterwards."""
+        server_id = await _register_server(authed_client)
+        cid = await _create_mcp_canvas(authed_client, server_id)
+        _patch_snapshot(monkeypatch, FROZEN_SNAPSHOT)
+        export_resp = await authed_client.get(f"/api/canvases/{cid}/export-zip")
+        manifest = _read_manifest(export_resp)
+
+        import_resp = await authed_client.post(
+            "/api/canvases/import-zip",
+            files={"file": ("canvas.zip", _rezip(manifest), "application/zip")},
+        )
+        imported = import_resp.json()
+        get_resp = await authed_client.get(f"/api/canvases/{imported['id']}")
+        tool = get_resp.json()["nodes"]["tools"][0]
+        assert tool["mcp_server_id"] == server_id
+        assert tool["mcp_tools"] == [{"name": "web_search", "requires_approval": True}]

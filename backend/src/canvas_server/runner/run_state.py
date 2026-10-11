@@ -15,6 +15,7 @@ if TYPE_CHECKING:
     from canvas_server.runner.conversation import ConversationService
     from canvas_server.runner.handoff import HandoffToolBuilder
     from canvas_server.runner.input_attachment_delivery import DeliveredAttachment
+    from canvas_server.runner.mcp_sessions import McpSessionRegistry
     from canvas_server.runner.tool_registry import ToolRegistry
     from canvas_server.streaming_react import StreamingReAct
 
@@ -59,6 +60,11 @@ class CanvasRunState:
 
         # Injected dependencies resolved at setup time
         self.handoff_tool_builder: HandoffToolBuilder | None = None
+
+        # Per-run MCP session registry (#137) — set by ``CanvasRunner.setup``
+        # once the graph's worker tool grants are known; ``None`` before that.
+        # Agents reach live MCP sessions through it (#138 callables).
+        self.mcp_session_registry: McpSessionRegistry | None = None
 
         # Attachments materialized as sandbox file paths so far this run,
         # accumulated across whichever agent (entry point or handoff target)
