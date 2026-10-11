@@ -15,6 +15,7 @@ import pytest_asyncio
 import uvicorn
 from httpx import ASGITransport, AsyncClient
 from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp.utilities.types import Image
 from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
@@ -571,6 +572,42 @@ def auth_ref_mcp_server():
     server, thread = _serve_starlette(
         _RequireAuthMiddleware(mcp.streamable_http_app()), port
     )
+
+    url = f"http://127.0.0.1:{port}/mcp"
+    _wait_http_ready(url)
+    yield url
+    server.should_exit = True
+    thread.join(timeout=5.0)
+
+
+@pytest.fixture
+def error_ref_mcp_server():
+    """A real reference MCP server with an in-band-error tool (#135).
+
+    ``explode`` raises inside its body — FastMCP converts the exception into a
+    ``CallToolResult(isError=True)`` whose only content is the exception text,
+    which is exactly the in-band error shape the Test panel must distinguish
+    from success output. Also serves the plain ``add`` tool for happy paths.
+    """
+    mcp = FastMCP("ags-probe-error-ref")
+
+    def add(a: int, b: int) -> int:
+        """Add two integers."""
+        return a + b
+
+    def explode():
+        """Always fails with an in-band error."""
+        raise ValueError("boom — in-band failure")
+
+    def produce_image() -> Image:
+        """Returns an image block."""
+        return Image(data=b"not-really-a-png", format="png")
+
+    mcp.add_tool(add)
+    mcp.add_tool(explode)
+    mcp.add_tool(produce_image)
+    port = _mcp_free_port()
+    server, thread = _serve_starlette(mcp.streamable_http_app(), port)
 
     url = f"http://127.0.0.1:{port}/mcp"
     _wait_http_ready(url)

@@ -164,6 +164,8 @@ export function decodeCanvasResponse(canvas: CanvasResponse): DecodedCanvasGraph
             requiresApproval: grant.requires_approval,
           })),
           mcpSeenTools: tool.mcp_seen_tools ?? [],
+          // Import-only reference metadata (#136): null outside import responses.
+          mcpReference: tool.mcp_reference ?? null,
         },
       })),
       ...(canvas.nodes.attachments ?? []).map((attachment) => ({

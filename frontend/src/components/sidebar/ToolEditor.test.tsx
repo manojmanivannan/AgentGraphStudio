@@ -38,6 +38,9 @@ vi.mock("@/lib/api", () => ({
     classification: null,
     protocol_revision: null,
   }),
+  probeMcpTool: vi.fn(),
+  callMcpTool: vi.fn(),
+  inspectMcpTool: vi.fn(),
 }));
 
 import { inspectTool, testTool } from "@/lib/api";
@@ -320,6 +323,20 @@ describe("ToolEditor", () => {
     expect(screen.queryByTestId("tool-packages-input")).not.toBeInTheDocument();
     expect(screen.queryByTestId("tool-test-button")).not.toBeInTheDocument();
     expect(screen.queryByTestId("tool-requires-approval")).not.toBeInTheDocument();
+  });
+
+  it("shows the MCP Test panel (two-stage) instead of the code Test panel", () => {
+    useCanvasStore.getState().setNodes([mcpNode]);
+    useCanvasStore.getState().selectNode("tool-1");
+    render(<ToolEditor />);
+
+    // #135: stage 1 is the connection probe; the code-tool inspect/test
+    // button does not apply to MCP-backed nodes.
+    expect(screen.getByTestId("mcp-test-connection-button")).toBeInTheDocument();
+    expect(screen.getByTestId("mcp-test-credential")).toBeInTheDocument();
+    expect(screen.getByTestId("mcp-test-tool-select")).toBeInTheDocument();
+    expect(screen.queryByTestId("tool-test-button")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("tool-code-editor")).not.toBeInTheDocument();
   });
 
   it("keeps editing the name on an MCP-backed node", async () => {
