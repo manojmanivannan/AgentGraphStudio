@@ -9,7 +9,7 @@ from canvas_server.runner.agent_factory import AgentFactory
 
 
 class FakeToolRegistry:
-    def get_tools_for_agent(self, agent_id, edges):
+    def get_tools_for_agent(self, agent_id, edges, include_mcp=True):
         return []
 
 

@@ -16,6 +16,8 @@ from canvas_server.database import Base
 # Import all ORM modules so their tables register on Base.metadata for autogenerate.
 import canvas_server.models.auth  # noqa: F401
 import canvas_server.models.canvas  # noqa: F401
+import canvas_server.models.provider  # noqa: F401
+import canvas_server.models.mcp  # noqa: F401
 
 config = context.config
 if config.config_file_name is not None:

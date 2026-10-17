@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -82,6 +82,30 @@ class ProviderConfig:
         if self.llm_model.startswith("openrouter/"):
             return self.llm_model
         return f"{self.llm_provider_type}/{self.llm_model}"
+
+
+def dspy_client_kwargs(config: ProviderConfig, **extra: Any) -> dict[str, Any]:
+    """Client kwargs for dspy.LM construction.
+
+    dspy>=3.4 registers an api_keys entry for the model's provider whenever an
+    ``api_key`` kwarg is present — even when it is empty — and then refuses the
+    request with "empty credential under '<provider>'; no environment fallback".
+    Keyless endpoints (e.g. local ollama) must omit the kwarg entirely so the
+    router falls back to its default credential resolution.
+    """
+    kwargs: dict[str, Any] = {
+        "api_base": config.llm_base_url,
+        # dspy>=3.4 defaults to engine="auto" and its native lm15 backend, which
+        # POSTs to {base_url}/chat/completions. Ollama base URLs are the server
+        # root (the OpenAI-compatible surface lives at /v1/...), so lm15 404s
+        # there. Pin the litellm compatibility engine, which matches the wire
+        # behavior the runtime, probe and mem0 were built against.
+        "engine": "litellm",
+    }
+    if config.llm_api_key:
+        kwargs["api_key"] = config.llm_api_key
+    kwargs.update(extra)
+    return kwargs
 
 
 def provider_config_from_env() -> ProviderConfig:

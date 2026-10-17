@@ -2,7 +2,7 @@ import logging
 import uuid
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
-from typing import Any
+from typing import Any, cast
 
 import dspy
 import mlflow
@@ -11,6 +11,7 @@ from mlflow.entities import LiveSpan
 from canvas_server.config import settings
 from canvas_server.events import EventCallback, EventPayload
 from canvas_server.exceptions import RunAbortedError
+from canvas_server.mcp_redaction import redact_mcp_text
 
 logger = logging.getLogger("canvas_server.streaming_react")
 
@@ -159,33 +160,83 @@ class StreamingReAct(dspy.ReAct):
                     {"type": "tool_start", "tool": pred.next_tool_name, "input": tool_input}
                 )
 
-                # Check if this tool requires human approval before executing
-                tool_obj = self.tools[pred.next_tool_name]
+                # Look the tool up guarded: the LLM may select a tool name that
+                # is unknown or was renamed (e.g. MCP servers with exotic
+                # names). Convert that to a standard execution-error
+                # observation instead of raising out of the loop. The guarded
+                # reference also serves the invocation below, so no unguarded
+                # ``self.tools[name]`` lookup remains.
+                # dspy rebinds ReAct.tools to a name → Tool dict at runtime,
+                # but its ``tools: list[Callable]`` annotation makes pyright
+                # infer the attribute as a list — cast before the dict lookup.
+                tool_obj = cast(dict[str, Any], self.tools).get(pred.next_tool_name)
+                if tool_obj is None:
+                    observation = (
+                        f"Execution error in {pred.next_tool_name}: "
+                        f"Unknown tool {pred.next_tool_name!r} "
+                        "(it is not registered; pick one of the available tools)"
+                    )
+                    logger.warning("ReAct loop selected unknown tool %r", pred.next_tool_name)
+                    trajectory[f"observation_{idx}"] = observation
+                    await self._emit(
+                        {
+                            "type": "tool_result",
+                            "tool": pred.next_tool_name,
+                            "input": tool_input,
+                            "output": str(observation),
+                        }
+                    )
+                    continue
                 original_fn = getattr(tool_obj, "func", getattr(tool_obj, "fn", tool_obj))
                 requires_approval = getattr(original_fn, "requires_approval", False)
                 tool_node_id = getattr(original_fn, "node_id", None)
 
                 approved = True
-                if requires_approval and get_client_response:
-                    request_id = str(uuid.uuid4())
-                    await self._emit({
-                        "type": "tool_approval_request",
-                        "request_id": request_id,
-                        "tool": pred.next_tool_name,
-                        "args": pred.next_tool_args,
-                        "node_id": str(tool_node_id) if tool_node_id else None,
-                    })
-                    try:
-                        # Block execution and wait for the client to approve or deny via websocket
-                        res = await get_client_response(request_id, "tool_approval_response")
-                        approved = res.get("approved", False)
-                    except RunAbortedError:
-                        raise
-                    except Exception:
+                denial_observation = None
+                if requires_approval:
+                    if get_client_response:
+                        request_id = str(uuid.uuid4())
+                        await self._emit({
+                            "type": "tool_approval_request",
+                            "request_id": request_id,
+                            "tool": pred.next_tool_name,
+                            "args": pred.next_tool_args,
+                            "node_id": str(tool_node_id) if tool_node_id else None,
+                        })
+                        try:
+                            # Block execution and wait for the client to approve or deny via websocket
+                            res = await get_client_response(request_id, "tool_approval_response")
+                            approved = res.get("approved", False)
+                        except RunAbortedError:
+                            raise
+                        except Exception:
+                            approved = False
+                    elif getattr(original_fn, "mcp_origin", False):
+                        # Spec §5.3 (ticket #140): an MCP tool requiring
+                        # approval MUST NOT silently execute when no
+                        # client-response callback is wired (e.g. runs
+                        # without a UI). Block at call time with an
+                        # observation naming the tool — silent execution is
+                        # forbidden for networked remote tools. In-canvas
+                        # author tools keep their pre-#140 no-callback
+                        # posture (approved default) — deliberate choice,
+                        # see docs/adr/0009-mcp-client-tool-integration.md.
                         approved = False
+                        denial_observation = (
+                            f"Execution blocked: tool '{pred.next_tool_name}' "
+                            "requires approval, but this run has no wired "
+                            "approval client. The tool was not executed; "
+                            "pick another tool or ask the user to connect "
+                            "a client that can approve."
+
+                        )
 
                 if not approved:
-                    observation = "Tool execution denied by user."
+                    observation = (
+                        denial_observation
+                        if denial_observation is not None
+                        else "Tool execution denied by user."
+                    )
                     trajectory[f"observation_{idx}"] = observation
                     await self._emit(
                         {
@@ -199,27 +250,38 @@ class StreamingReAct(dspy.ReAct):
 
                 try:
                     # Execute the actual tool function
-                    observation = await self.tools[pred.next_tool_name].acall(
+                    observation = await tool_obj.acall(
                         **pred.next_tool_args
                     )
+                    # Tools may frame their own raw result structure (MCP
+                    # content blocks, ticket #138): persist it on the
+                    # existing tool_result payload — no new event types.
+                    raw_content = getattr(original_fn, "last_raw_content_blocks", None)
                 except RunAbortedError:
                     raise
                 except Exception as err:
                     # Catch tool execution failures (e.g. syntax errors, timeouts) and feed them
                     # back to the LLM as an observation so it can attempt to correct the error.
-                    observation = f"Execution error in {pred.next_tool_name}: {err}"
+                    # The exception text feeds MLflow autolog trajectories as
+                    # well as the tool_result event, so it passes the MCP
+                    # redaction pass (spec §5.4, ticket #140).
+                    observation = redact_mcp_text(
+                        f"Execution error in {pred.next_tool_name}: {err}"
+                    )
+                    raw_content = None
                     logger.exception("Tool call failed")
 
                 trajectory[f"observation_{idx}"] = observation
 
-                await self._emit(
-                    {
-                        "type": "tool_result",
-                        "tool": pred.next_tool_name,
-                        "input": tool_input,
-                        "output": str(observation),
-                    }
-                )
+                tool_result_event = {
+                    "type": "tool_result",
+                    "tool": pred.next_tool_name,
+                    "input": tool_input,
+                    "output": str(observation),
+                }
+                if raw_content is not None:
+                    tool_result_event["raw_content"] = raw_content
+                await self._emit(tool_result_event)
 
         # Extract the final answer based on the accumulated trajectory
         extract = await self._async_call_with_potential_trajectory_truncation(

@@ -1,6 +1,7 @@
 import logging
 import uuid
 from datetime import UTC, datetime
+from typing import Any, cast
 
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -94,9 +95,17 @@ class CanvasRepo:
             )
             self.session.add(node)
 
+        # Import-only MCP reference metadata (#136): keyed by *new* id so it
+        # can be re-attached to the reloaded nodes below. It is NOT persisted —
+        # spec §2.3 keeps snapshots out of the node — it only survives this
+        # call so the import response can surface it as reference metadata.
+        tool_references: dict[uuid.UUID, object] = {}
+
         for t in tools:
             new_id = uuid.uuid4()
             id_map[t.id] = new_id
+            if t.mcp_reference is not None:
+                tool_references[new_id] = t.mcp_reference
             node = ToolNode(
                 id=new_id,
                 canvas_id=canvas_id,
@@ -109,6 +118,9 @@ class CanvasRepo:
                 ),
                 args=t.args,
                 requires_approval=t.requires_approval,
+                mcp_server_id=t.mcp_server_id,
+                mcp_tools=[grant.model_dump() for grant in t.mcp_tools],
+                mcp_seen_tools=t.mcp_seen_tools,
                 position_x=t.position_x,
                 position_y=t.position_y,
             )
@@ -175,7 +187,16 @@ class CanvasRepo:
         result = await self.session.execute(
             self._eager_query().where(Canvas.id == canvas_id)
         )
-        return result.scalar_one()
+        canvas = result.scalar_one()
+        if tool_references:
+            for node in canvas.tool_nodes:
+                ref = tool_references.get(node.id)
+                if ref is not None:
+                    # Transient stamp on the ORM row (see ToolNode.mcp_reference):
+                    # the attr is ClassVar-declared for the declarative mapper,
+                    # so the instance-level write needs the explicit cast.
+                    cast(Any, node).mcp_reference = ref
+        return canvas
 
     async def get(self, canvas_id: uuid.UUID) -> Canvas | None:
         result = await self.session.execute(
@@ -320,7 +341,11 @@ class CanvasRepo:
                     if t.dependencies
                     else (t.packages.split(",") if t.packages else [])
                 ),
+                args=t.args,
                 requires_approval=t.requires_approval,
+                mcp_server_id=t.mcp_server_id,
+                mcp_tools=[grant.model_dump() for grant in t.mcp_tools],
+                mcp_seen_tools=t.mcp_seen_tools,
                 position_x=t.position_x,
                 position_y=t.position_y,
             )

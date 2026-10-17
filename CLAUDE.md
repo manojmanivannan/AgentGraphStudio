@@ -35,12 +35,21 @@ and edges on a ReactFlow canvas, then run workflows against a FastAPI + DSPy bac
 | Canvas CRUD | `backend/src/canvas_server/repos/canvas_repo.py` | CanvasRepo class |
 | Conversation CRUD | `backend/src/canvas_server/repos/conversation_repo.py` | ConversationRepo class |
 | REST routes | `backend/src/canvas_server/routes/canvas.py` | `/api/canvases/**` (canvas CRUD + RAG documents CRUD) |
-| Tool test routes | `backend/src/canvas_server/routes/tools.py` | `/api/tools/inspect` + `/api/tools/test` |
+| Tool test routes | `backend/src/canvas_server/routes/tools.py` | `/api/tools/inspect` + `/api/tools/test` (`kind: "mcp"` rides the shared probe path) |
 | Settings routes | `backend/src/canvas_server/routes/settings.py` | `/api/settings/provider` GET/PUT + `/test` |
 | WebSocket route | `backend/src/canvas_server/routes/execute.py` | `/ws/conversations/{id}/run` |
 | **Execution engine** | `backend/src/canvas_server/runner/` | Package containing `runner.py` (CanvasRunner orchestrator), `execution.py` (individual worker execution), `agent_factory.py` (agent builder), and `rag_helper.py` (RAG chunking and search helper) |
 | Custom DSPy agent | `backend/src/canvas_server/streaming_react.py` | **StreamingReAct** — emits events per iteration |
 | Tool compiler | `backend/src/canvas_server/tool_factory.py` | Sandbox-based compilation + inspect + test execution |
+| MCP registry routes | `backend/src/canvas_server/routes/mcp.py` | `/api/mcp/servers/**` CRUD + connection probe |
+| MCP ORM models | `backend/src/canvas_server/models/mcp.py` | McpServer row (workspace-global external-server registry) |
+| MCP CRUD | `backend/src/canvas_server/repos/mcp_repo.py` | McpServerRepo class |
+| MCP config cache | `backend/src/canvas_server/mcp_config.py` | Process-local cache of the `mcp_servers` registry |
+| MCP connection probe | `backend/src/canvas_server/mcp_probe.py` | Short-lived Streamable HTTP client: probe/catalog/call + failure classification |
+| MCP URL policy | `backend/src/canvas_server/mcp_url_policy.py` | http(s)-only endpoint validation for server registrations |
+| MCP redaction | `backend/src/canvas_server/mcp_redaction.py` | Strips configured credentials/endpoint URLs from events, UI, MLflow |
+| **MCP session registry** | `backend/src/canvas_server/runner/mcp_sessions.py` | Per-run `ClientSession` registry — concurrent opens, one re-handshake on staleness |
+| **MCP tools** | `backend/src/canvas_server/runner/mcp_tools.py` | MCP tool node → DSPy descriptors: untrusted framing, 50k cap, HITL flags |
 | **Sandbox** | `backend/src/canvas_server/sandbox.py` | Singleton Docker-based sandbox manager (via llm-sandbox) |
 | Memory config | `backend/src/canvas_server/memory_config.py` | mem0 config builder |
 | Memory provider | `backend/src/canvas_server/memory_provider.py` | mem0 wrapper as DSPy tool functions |
@@ -54,10 +63,10 @@ and edges on a ReactFlow canvas, then run workflows against a FastAPI + DSPy bac
 | Manual save hook | `frontend/src/hooks/useCanvasPersistence.ts` | `saveCanvasNow()` (Save button/Ctrl+S) → PUT to backend; unsaved-changes warning |
 | ReactFlow canvas | `frontend/src/components/canvas/CanvasView.tsx` | Nodes, edges, connections, fitView |
 | Agent node | `frontend/src/components/canvas/AgentNode.tsx` | Visual node with role/instructions preview |
-| Tool node | `frontend/src/components/canvas/ToolNode.tsx` | Visual node with code preview |
+| Tool node | `frontend/src/components/canvas/ToolNode.tsx` | Visual node with code preview (MCP variant previews the server + tool selection) |
 | Custom edge | `frontend/src/components/canvas/CustomEdge.tsx` | Bezier path, hover delete, handoff style |
 | Agent editor | `frontend/src/components/sidebar/AgentEditor.tsx` | Type, name, role, memory toggle |
-| Tool editor | `frontend/src/components/sidebar/ToolEditor.tsx` | Monaco Python editor + Test Tool panel |
+| Tool editor | `frontend/src/components/sidebar/ToolEditor.tsx` | Monaco Python editor + Test Tool panel (MCP variant: `McpToolPicker.tsx` tool selection + `McpToolTestPanel.tsx` live test) |
 | Chat overlay | `frontend/src/components/chat/ChatOverlay.tsx` | Conversations, WebSocket, streaming UI |
 | Observability | `frontend/src/components/observability/ObservabilityView.tsx` | MLflow iframe |
 | Settings dialog | `frontend/src/components/settings/SettingsDialog.tsx` | Unified tabbed Settings modal (Account / Providers / Appearance), openable from any surface |

@@ -19,6 +19,7 @@ import {
 import { useCanvasStore } from "@/store/canvasStore";
 import { resetCanvasHistory } from "@/store/canvasHistoryStore";
 import { useThemeStore } from "@/store/themeStore";
+import { toast } from "@/store/toastStore";
 import { useSettingsModalStore } from "@/store/settingsModalStore";
 import { guardUnsavedNavigation } from "@/lib/unsavedChangesGuard";
 import {
@@ -184,6 +185,11 @@ export function SidebarRail() {
       // undoable, nor should it flag the canvas as having unsaved changes.
       resetCanvasHistory();
       useCanvasStore.getState().setIsDirty(false);
+
+      // Import notices (#136): e.g. MCP grants imported not-yet-granting.
+      for (const warning of imported.warnings ?? []) {
+        toast.info(warning);
+      }
     } catch (err) {
       console.error("Failed to import canvas:", err);
     }

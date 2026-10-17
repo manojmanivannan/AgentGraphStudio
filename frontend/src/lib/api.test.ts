@@ -30,6 +30,11 @@ import {
   logout,
   getMe,
   onUnauthorized,
+  fetchMcpServerCatalog,
+  inspectMcpTool,
+  probeMcpTool,
+  callMcpTool,
+  testMcpServer,
 } from "./api";
 
 const API = "http://localhost:8000/api";
@@ -668,6 +673,274 @@ describe("api", () => {
         await expect(listCanvases()).rejects.toThrow();
         expect(listener).not.toHaveBeenCalled();
       });
+    });
+  });
+
+  describe("fetchMcpServerCatalog (#134)", () => {
+    it("POSTs to the catalog endpoint and returns the live catalog", async () => {
+      const catalog = {
+        ok: true,
+        server_id: "srv-1",
+        tools: [
+          {
+            name: "add",
+            description: "Add two integers.",
+            input_schema: { type: "object", properties: { a: { type: "integer" } } },
+          },
+        ],
+        server_name: "ags-probe-ref",
+        server_version: "1.0",
+        latency_ms: 4,
+        detail: "OK",
+        classification: null,
+        protocol_revision: "2025-06-18",
+      };
+      let seenUrl = "";
+      let seenMethod = "";
+      server.use(
+        http.post(`${API}/mcp/servers/srv-1/tools`, ({ request }) => {
+          seenUrl = request.url;
+          seenMethod = request.method;
+          return HttpResponse.json(catalog);
+        })
+      );
+      const result = await fetchMcpServerCatalog("srv-1");
+      expect(seenMethod).toBe("POST");
+      expect(seenUrl.endsWith("/api/mcp/servers/srv-1/tools")).toBe(true);
+      expect(result.ok).toBe(true);
+      expect(result.tools[0].name).toBe("add");
+      expect(result.tools[0].input_schema.properties.a.type).toBe("integer");
+    });
+
+    it("resolves the structured unreachable-server error instead of throwing", async () => {
+      server.use(
+        http.post(`${API}/mcp/servers/srv-dead/tools`, () =>
+          HttpResponse.json({
+            ok: false,
+            server_id: "srv-dead",
+            tools: [],
+            server_name: null,
+            server_version: null,
+            latency_ms: 2,
+            detail: "Connection refused.",
+            classification: "connection_failure",
+            protocol_revision: null,
+          })
+        )
+      );
+      const result = await fetchMcpServerCatalog("srv-dead");
+      expect(result.ok).toBe(false);
+      expect(result.detail).toContain("refused");
+    });
+  });
+
+  describe("testMcpServer (#131 Settings Test button)", () => {
+    it("POSTs the test endpoint with the server id and returns the probe result", async () => {
+      let seenBody: unknown = null;
+      server.use(
+        http.post(`${API}/mcp/servers/test`, async ({ request }) => {
+          seenBody = await request.json();
+          return HttpResponse.json({
+            ok: true,
+            server_name: "ags-probe-ref",
+            server_version: "1.0",
+            tools: ["add"],
+            tool_count: 1,
+            latency_ms: 3,
+            detail: "OK",
+            classification: null,
+            protocol_revision: "2025-06-18",
+          });
+        })
+      );
+      const result = await testMcpServer({ server_id: "srv-9" });
+      expect(seenBody).toEqual({ server_id: "srv-9" });
+      expect(result.ok).toBe(true);
+      expect(result.tool_count).toBe(1);
+    });
+  });
+
+  describe("inspectMcpTool (#135)", () => {
+    it("POSTs the kind=mcp inspect request for a named tool and returns the server-provided schema", async () => {
+      let seenBody: unknown = null;
+      server.use(
+        http.post(`${API}/tools/inspect`, async ({ request }) => {
+          seenBody = await request.json();
+          return HttpResponse.json({
+            kind: "mcp",
+            ok: true,
+            server_id: "srv-1",
+            tool: {
+              name: "add",
+              description: "Add two integers.",
+              input_schema: {
+                type: "object",
+                properties: { a: { type: "integer" } },
+                required: ["a"],
+              },
+            },
+            tools: [],
+            server_name: "ags-probe-ref",
+            latency_ms: 4,
+            detail: "OK",
+            classification: null,
+          });
+        })
+      );
+      const res = await inspectMcpTool("srv-1", "add");
+      expect(seenBody).toEqual({
+        kind: "mcp",
+        mcp_server_id: "srv-1",
+        mcp_tool_name: "add",
+      });
+      expect(res.kind).toBe("mcp");
+      expect(res.ok).toBe(true);
+      expect(res.tool?.input_schema.properties.a.type).toBe("integer");
+    });
+
+    it("requests the full catalog when no tool name is given", async () => {
+      let seenBody: unknown = null;
+      server.use(
+        http.post(`${API}/tools/inspect`, async ({ request }) => {
+          seenBody = await request.json();
+          return HttpResponse.json({
+            kind: "mcp",
+            ok: true,
+            tools: [{ name: "add", input_schema: {} }],
+          });
+        })
+      );
+      await inspectMcpTool("srv-1");
+      expect(seenBody).toEqual({
+        kind: "mcp",
+        mcp_server_id: "srv-1",
+        mcp_tool_name: null,
+      });
+    });
+
+    it("resolves the structured unreachable-server error instead of throwing", async () => {
+      server.use(
+        http.post(`${API}/tools/inspect`, () =>
+          HttpResponse.json({
+            kind: "mcp",
+            ok: false,
+            classification: "connection_failure",
+            detail: "Connection refused.",
+            tools: [],
+            tool: null,
+          })
+        )
+      );
+      const res = await inspectMcpTool("srv-dead", "add");
+      expect(res.ok).toBe(false);
+      expect(res.classification).toBe("connection_failure");
+    });
+  });
+
+  describe("probeMcpTool (#135 stage 1)", () => {
+    it("POSTs the kind=mcp probe stage and returns the probe result", async () => {
+      let seenBody: unknown = null;
+      server.use(
+        http.post(`${API}/tools/test`, async ({ request }) => {
+          seenBody = await request.json();
+          return HttpResponse.json({
+            kind: "mcp",
+            stage: "probe",
+            ok: true,
+            success: true,
+            server_name: "ags-probe-ref",
+            tools: ["add"],
+            tool_count: 1,
+            latency_ms: 3,
+            detail: "OK",
+            classification: null,
+          });
+        })
+      );
+      const res = await probeMcpTool("srv-1");
+      expect(seenBody).toEqual({ kind: "mcp", stage: "probe", mcp_server_id: "srv-1" });
+      expect(res.ok).toBe(true);
+      expect(res.server_name).toBe("ags-probe-ref");
+      expect(res.latency_ms).toBe(3);
+    });
+
+    it("sends the credential override when the user types one", async () => {
+      let seenBody: unknown = null;
+      server.use(
+        http.post(`${API}/tools/test`, async ({ request }) => {
+          seenBody = await request.json();
+          return HttpResponse.json({ kind: "mcp", stage: "probe", ok: true, success: true });
+        })
+      );
+      await probeMcpTool("srv-1", "Bearer override-token");
+      expect(seenBody).toMatchObject({ credential_value: "Bearer override-token" });
+    });
+
+    it("resolves the structured probe failure instead of throwing", async () => {
+      server.use(
+        http.post(`${API}/tools/test`, () =>
+          HttpResponse.json({
+            kind: "mcp",
+            stage: "probe",
+            ok: false,
+            success: false,
+            detail: "401 Unauthorized",
+            classification: "connection_failure",
+          })
+        )
+      );
+      const res = await probeMcpTool("srv-1");
+      expect(res.ok).toBe(false);
+      expect(res.detail).toContain("401");
+    });
+  });
+
+  describe("callMcpTool (#135 stage 2)", () => {
+    it("POSTs the kind=mcp call stage with schema-driven args", async () => {
+      let seenBody: unknown = null;
+      server.use(
+        http.post(`${API}/tools/test`, async ({ request }) => {
+          seenBody = await request.json();
+          return HttpResponse.json({
+            kind: "mcp",
+            stage: "call",
+            ok: true,
+            is_error: false,
+            success: true,
+            blocks: [{ type: "text", text: "5" }],
+            detail: "OK",
+          });
+        })
+      );
+      const res = await callMcpTool("srv-1", "add", { a: 2, b: 3 });
+      expect(seenBody).toEqual({
+        kind: "mcp",
+        stage: "call",
+        mcp_server_id: "srv-1",
+        mcp_tool_name: "add",
+        mcp_args: { a: 2, b: 3 },
+      });
+      expect(res.is_error).toBe(false);
+      expect(res.blocks?.[0].text).toBe("5");
+    });
+
+    it("reports in-band isError results as errors, not successes", async () => {
+      server.use(
+        http.post(`${API}/tools/test`, () =>
+          HttpResponse.json({
+            kind: "mcp",
+            stage: "call",
+            ok: true,
+            is_error: true,
+            success: false,
+            blocks: [{ type: "text", text: "boom" }],
+            detail: "OK",
+          })
+        )
+      );
+      const res = await callMcpTool("srv-1", "explode", {});
+      expect(res.is_error).toBe(true);
+      expect(res.success).toBe(false);
     });
   });
 });

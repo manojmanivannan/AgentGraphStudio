@@ -3,8 +3,10 @@ import Editor from "@monaco-editor/react";
 import { useCanvasStore } from "@/store/canvasStore";
 import { useThemeStore } from "@/store/themeStore";
 import { inspectTool, testTool } from "@/lib/api";
-import type { ToolInspectResponse, ToolTestResponse } from "@/types";
+import type { ToolNodeData, ToolInspectResponse, ToolTestResponse } from "@/types";
 import { InfoTooltip } from "./InfoTooltip";
+import { McpToolPicker } from "./McpToolPicker";
+import { McpToolTestPanel } from "./McpToolTestPanel";
 
 type TestState = "idle" | "inspecting" | "ready" | "testing" | "success" | "error";
 
@@ -143,6 +145,31 @@ export function ToolEditor() {
 
   const isTesting = testState === "inspecting" || testState === "testing";
 
+  // MCP-backed variant (#134, spec §6.2): the code/Monaco body is replaced by
+  // the live-catalog picker; the node keeps working as a Tool Node otherwise.
+  const mcpData = (selectedNode.data as Partial<ToolNodeData>) ?? {};
+  const mcpServerId = mcpData.mcpServerId ?? null;
+  const mcpServerName = mcpData.mcpServerName ?? null;
+  const mcpTools = mcpData.mcpTools ?? [];
+  const isMcp = !!mcpServerId;
+
+  const nameField = (
+    <div>
+      <label className="block text-[13px] font-semibold text-[var(--color-text-tertiary)] mb-1.5 uppercase tracking-[0.06em]">Name</label>
+      <input
+        type="text"
+        value={localName}
+        onChange={(e) => {
+          setLocalName(e.target.value);
+          updateStore("name", e.target.value);
+        }}
+        data-testid="tool-name-input"
+        className="input-base w-full"
+        placeholder="Tool name"
+      />
+    </div>
+  );
+
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-2 pb-3 border-b border-[var(--color-border-subtle)]">
@@ -154,7 +181,34 @@ export function ToolEditor() {
         <h3 className="text-[13px] font-semibold text-[var(--color-text-primary)]">Tool Properties</h3>
       </div>
 
-      <div className="flex items-center justify-between p-2.5 bg-[var(--color-info-surface)] border border-[var(--color-info)]/15 rounded-lg">
+      {/* Server attach/selection in both variants (Variant A, #134). */}
+      <McpToolPicker nodeId={selectedNodeId!}>
+        {isMcp ? nameField : null}
+      </McpToolPicker>
+
+      {isMcp ? (
+        <div className="pt-3 border-t border-[var(--color-border-subtle)]">
+          <div className="flex items-center gap-2 mb-2">
+            <svg className="w-3.5 h-3.5 text-[var(--color-info)]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M9 12l2 2 4-4" />
+              <circle cx="12" cy="12" r="10" />
+            </svg>
+            <h4 className="text-[13px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-[0.06em]">
+              Test Tool
+            </h4>
+          </div>
+          {/* Two-stage MCP Test panel (#135, spec §6.4). */}
+          <McpToolTestPanel
+            serverId={mcpServerId}
+            serverName={mcpServerName}
+            tools={mcpTools}
+          />
+        </div>
+      ) : null}
+
+      {isMcp ? null : (
+        <>
+          <div className="flex items-center justify-between p-2.5 bg-[var(--color-info-surface)] border border-[var(--color-info)]/15 rounded-lg">
         <span className="text-[12px] font-semibold text-[var(--color-info)] uppercase tracking-[0.1em]">
           Inferred Arguments
         </span>
@@ -171,20 +225,7 @@ export function ToolEditor() {
         </div>
       </div>
 
-      <div>
-        <label className="block text-[13px] font-semibold text-[var(--color-text-tertiary)] mb-1.5 uppercase tracking-[0.06em]">Name</label>
-        <input
-          type="text"
-          value={localName}
-          onChange={(e) => {
-            setLocalName(e.target.value);
-            updateStore("name", e.target.value);
-          }}
-          data-testid="tool-name-input"
-          className="input-base w-full"
-          placeholder="Tool name"
-        />
-      </div>
+      {nameField}
 
       <div>
         <label className="block text-[13px] font-semibold text-[var(--color-text-tertiary)] mb-1.5 uppercase tracking-[0.06em]">Python Packages</label>
@@ -395,7 +436,7 @@ export function ToolEditor() {
                     {testResult.success ? "Output" : "Error"}
                   </span>
                   <span className="text-[12px] text-[var(--color-text-tertiary)]">
-                    {testResult.execution_time_ms.toFixed(1)}ms
+                    {(testResult.execution_time_ms ?? 0).toFixed(1)}ms
                   </span>
                 </div>
                 {testResult.output}
@@ -426,6 +467,8 @@ export function ToolEditor() {
           </div>
         )}
       </div>
+        </>
+      )}
     </div>
   );
 }

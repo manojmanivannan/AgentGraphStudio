@@ -19,6 +19,8 @@ from canvas_server.exceptions import (
     CanvasNotFoundError,
     ConversationNotFoundError,
 )
+from canvas_server.mcp_config import refresh_mcp_servers
+from canvas_server.mcp_probe import capture_mcp_metadata_snapshot
 from canvas_server.models.api import (
     AgentDocumentInput,
     AgentDocumentResponse,
@@ -32,6 +34,9 @@ from canvas_server.models.api import (
     ConversationResponse,
     CreateCanvasRequest,
     CreateConversationRequest,
+    McpServerReference,
+    McpServerSnapshot,
+    ToolNodeInput,
 )
 from canvas_server.models.auth import User
 from canvas_server.models.canvas import AgentDocument, Canvas, Conversation
@@ -55,12 +60,62 @@ async def _owned_canvas_or_404(
     return canvas
 
 
-def _canvas_to_response(canvas: Canvas) -> CanvasResponse:
+async def _build_mcp_reference_blocks(
+    canvas: Canvas, session: AsyncSession
+) -> dict[uuid.UUID, McpServerReference]:
+    """Resolve each MCP-backed Tool Node against the workspace registry and
+    capture its metadata snapshot via the shared probe path (ticket #136,
+    spec §2.3). Returns ``{tool_node_id: reference}`` — only MCP-backed nodes
+    get an entry; a node whose server no longer resolves is recorded as
+    ``resolved=False`` (no URL to probe, no snapshot)."""
+    mcp_nodes = [
+        (n, n.mcp_server_id)
+        for n in canvas.tool_nodes
+        if n.mcp_server_id is not None
+    ]
+    if not mcp_nodes:
+        return {}
+
+    registry = await refresh_mcp_servers(session)
+    by_id = {server.id: server for server in registry}
+    blocks: dict[uuid.UUID, McpServerReference] = {}
+    snapshots: dict[uuid.UUID, McpServerSnapshot] = {}  # one probe per server
+
+    for node, server_id in mcp_nodes:
+        server = by_id.get(server_id)
+        if server is None:
+            blocks[node.id] = McpServerReference(
+                resolved=False,
+                name=None,
+                url=None,
+                snapshot=McpServerSnapshot(
+                    captured=False,
+                    detail="MCP server registration not found in this workspace.",
+                ),
+            )
+            continue
+        snapshot = snapshots.get(server.id)
+        if snapshot is None:
+            captured = await capture_mcp_metadata_snapshot(
+                server.url,
+                credential_header=server.credential_header,
+                credential_value=server.credential_value,
+            )
+            snapshot = McpServerSnapshot.model_validate(captured)
+            snapshots[server.id] = snapshot
+        blocks[node.id] = McpServerReference(
+            resolved=True, name=server.name, url=server.url, snapshot=snapshot
+        )
+    return blocks
+
+
+def _canvas_to_response(canvas: Canvas, *, warnings: list[str] | None = None) -> CanvasResponse:
     from canvas_server.models.api import (
         AgentNodeResponse,
         AttachmentNodeResponse,
         CanvasNodesResponse,
         EdgeResponse,
+        McpToolGrant,
         ToolNodeResponse,
     )
 
@@ -104,6 +159,12 @@ def _canvas_to_response(canvas: Canvas) -> CanvasResponse:
                     dependencies=n.dependencies,
                     args=n.args,
                     requires_approval=n.requires_approval,
+                    mcp_server_id=n.mcp_server_id,
+                    # ORM row is the JSON ``list[dict]``; grant rows re-verify
+                    # at the API seam (same validation pydantic ran before).
+                    mcp_tools=[McpToolGrant.model_validate(t) for t in n.mcp_tools],
+                    mcp_seen_tools=n.mcp_seen_tools,
+                    mcp_reference=getattr(n, "mcp_reference", None),
                     position_x=n.position_x,
                     position_y=n.position_y,
                 )
@@ -133,6 +194,7 @@ def _canvas_to_response(canvas: Canvas) -> CanvasResponse:
             )
             for e in canvas.edges
         ],
+        warnings=warnings or [],
     )
 
 
@@ -234,7 +296,10 @@ async def delete_canvas(
     logger.info(f"Canvas deleted: id={canvas_id}")
 
 
-def _canvas_to_import_payload(canvas: Canvas) -> dict[str, Any]:
+def _canvas_to_import_payload(
+    canvas: Canvas,
+    mcp_references: dict[uuid.UUID, McpServerReference] | None = None,
+) -> dict[str, Any]:
     documents: list[dict[str, Any]] = []
     for agent in canvas.agent_nodes:
         for doc in agent.documents:
@@ -281,6 +346,15 @@ def _canvas_to_import_payload(canvas: Canvas) -> dict[str, Any]:
                     "packages": ",".join(n.dependencies),
                     "dependencies": n.dependencies,
                     "args": n.args,
+                    # Never exported: workspace-local ids are meaningless (and
+                    # would be a grant-smuggling vector) in another workspace.
+                    "mcp_server_id": None,
+                    "mcp_tools": n.mcp_tools,
+                    **(
+                        {"mcp_reference": mcp_references[n.id].model_dump()}
+                        if mcp_references and n.id in mcp_references
+                        else {}
+                    ),
                     "position_x": n.position_x,
                     "position_y": n.position_y,
                 }
@@ -310,6 +384,50 @@ def _canvas_to_import_payload(canvas: Canvas) -> dict[str, Any]:
         ],
         "documents": documents,
     }
+
+
+async def _repoint_imported_mcp_tools(
+    session: AsyncSession, tools: list[ToolNodeInput]
+) -> list[str]:
+    """Re-point imported MCP grants to existing workspace registrations
+    (ticket #136, spec §2.3 / §5.1).
+
+    Matching is by registered **name first, then URL**. On a match the tool
+    keeps its ``mcp_tools`` selection and re-points at the matched server;
+    without a match the node imports **not-yet-granting** (``mcp_server_id``
+    null, grant kept as reference) and a warning is returned. No server row is
+    ever created and no manifest URL is ever imported — a manifest-supplied
+    ``mcp_server_id`` is always discarded (grant-smuggling guard).
+    """
+    candidates = [
+        t for t in tools if t.mcp_server_id is not None or t.mcp_reference is not None
+    ]
+    if not candidates:
+        return []
+
+    registry = await refresh_mcp_servers(session)
+    warnings: list[str] = []
+    for tool in candidates:
+        ref = tool.mcp_reference
+        matched = None
+        if ref is not None and ref.resolved:
+            if ref.name:
+                matched = next((s for s in registry if s.name == ref.name), None)
+            if matched is None and ref.url:
+                matched = next((s for s in registry if s.url == ref.url), None)
+        if matched is not None:
+            tool.mcp_server_id = matched.id
+            continue
+        tool.mcp_server_id = None
+        if ref is not None and ref.resolved and (ref.name or ref.url):
+            detail = f'no registered MCP server matched "{ref.name or ref.url}"'
+        else:
+            detail = "the export carried no resolvable server reference"
+        warnings.append(
+            f'MCP grant on tool "{tool.name}" imported not-yet-granting: '
+            f"{detail}. Confirm the registration in the editor to grant it."
+        )
+    return warnings
 
 
 def _upload_format(filename: str) -> str:
@@ -347,7 +465,8 @@ async def export_canvas_zip(
     repo = CanvasRepo(session)
     canvas = await _owned_canvas_or_404(repo, canvas_id, current_user)
 
-    payload = _canvas_to_import_payload(canvas)
+    mcp_references = await _build_mcp_reference_blocks(canvas, session)
+    payload = _canvas_to_import_payload(canvas, mcp_references=mcp_references)
     manifest = json.dumps(payload, indent=2, default=str)
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
@@ -378,6 +497,7 @@ async def import_canvas(
         f"tools={len(body.nodes.tools)}, edges={len(body.edges)}, documents={len(body.documents)}"
     )
     repo = CanvasRepo(session)
+    warnings = await _repoint_imported_mcp_tools(session, body.nodes.tools)
     canvas = await repo.create_full(
         name=body.name,
         agents=body.nodes.agents,
@@ -388,7 +508,7 @@ async def import_canvas(
         owner_id=current_user.id,
     )
     logger.info(f"Canvas imported: id={canvas.id}")
-    return _canvas_to_response(canvas)
+    return _canvas_to_response(canvas, warnings=warnings)
 
 
 @canvas_router.post("/import-zip", response_model=CanvasResponse)
@@ -443,6 +563,7 @@ async def import_canvas_zip(
 
     body.documents = [AgentDocumentInput(**doc) for doc in documents]
     repo = CanvasRepo(session)
+    warnings = await _repoint_imported_mcp_tools(session, body.nodes.tools)
     canvas = await repo.create_full(
         name=body.name,
         agents=body.nodes.agents,
@@ -453,7 +574,7 @@ async def import_canvas_zip(
         owner_id=current_user.id,
     )
     logger.info(f"Canvas imported from ZIP: id={canvas.id}")
-    return _canvas_to_response(canvas)
+    return _canvas_to_response(canvas, warnings=warnings)
 
 
 @canvas_router.post("/{canvas_id}/conversations", response_model=ConversationResponse)

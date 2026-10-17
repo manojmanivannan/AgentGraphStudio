@@ -15,8 +15,20 @@ A visual block on the Canvas representing an AI agent with a name, role, instruc
 _Avoid_: Agent, block, step
 
 **Tool Node**:
-A visual block on the Canvas containing user-written Python code that an Agent Node can invoke.
+A visual block on the Canvas representing a tool an Agent Node can invoke. Either user-written Python code, or a set of MCP Tools drawn from one external server.
 _Avoid_: Function node, code node, script node
+
+**MCP Tool**:
+A tool provided by an external MCP server and invoked over the network at run time. Represented on the Canvas as a Tool Node holding a reference to one MCP server and the user-selected subset of that server's tools to grant ("enabled tools"); the Agent→Tool Edge grants exactly that subset. New tools a server starts exposing never grant themselves — they surface as unselected suggestions in the Tool Node. A selected tool the server no longer offers is excluded from the grant and flagged, never silently dropped or faked.
+_Avoid_: Remote tool, external tool, integration
+
+**MCP Server**:
+A remote MCP server registered once in the workspace and available to every Canvas. Its endpoint and credential live outside any Canvas; Tool Nodes reference it, and edits to the registration propagate to referencing canvases on the next run. It cannot be deleted while any Tool Node still references it.
+_Avoid_: Connection, integration, remote server
+
+**MCP Tool Catalog**:
+The set of tools an MCP server currently offers. Always fetched live from the server — when a picker opens, when a run starts — never cached or persisted anywhere. The pickable reality a Tool Node's enabled tools are selected from and validated against; a diff against it produces both unselected suggestions (new tools) and flagged exclusions (vanished tools).
+_Avoid_: Tool cache, tool registry, snapshot
 
 **Edge**:
 A directed connection between two nodes. An Agent→Tool Edge grants the agent the ability to call that tool. An Agent→Agent Edge is a handoff.
@@ -87,11 +99,11 @@ An isolated Docker container session (managed via the `llm-sandbox` library) tha
 _Avoid_: Deno subprocess, WASM runtime, Pyodide sandbox
 
 **Tool Inspection**:
-Extracting function metadata (name, parameter names, type hints, default values) from user-written Python code. Used by the Test Tool UI to generate argument input fields. Provided by `POST /api/tools/inspect`.
+Extracting a tool's interface (name, parameter names, types, default values) from its definition — by parsing user-written Python code, or from the schema an MCP server provides for its MCP Tools. Used by the Test Tool UI to generate argument input fields. Provided by `POST /api/tools/inspect`.
 _Avoid_: Reflection, introspection, parsing
 
 **Tool Test**:
-Running a tool function in the sandbox with user-provided argument values and returning the result (output or error) to the UI. Provided by `POST /api/tools/test`.
+Running a tool with user-provided argument values and returning the result (output or error) to the UI — user-written Python in the Sandbox, or an MCP Tool by a live call to its server. Provided by `POST /api/tools/test`.
 _Avoid_: Playground, REPL, runner
 
 **Plotting / PlotProvider**:
@@ -115,5 +127,5 @@ A built-in tool registered on worker agents that have Human-in-the-Loop enabled.
 _Avoid_: prompt_user, human_input
 
 **Tool Approval**:
-A capability where custom tool execution is paused until approved or denied by the user in the UI. If approved, the tool runs. If denied, the tool is skipped and a denial message is returned to the agent as the observation.
+A capability where tool execution is paused until approved or denied by the user in the UI. If approved, the tool runs. If denied, the tool is skipped and a denial message is returned to the agent as the observation. Approval is enabled per tool on the node that provides it.
 _Avoid_: function approval, script verification

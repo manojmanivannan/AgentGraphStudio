@@ -11,6 +11,11 @@ import type {
   ToolInspectResponse,
   ToolTestResponse,
   AgentDocument,
+  McpServer,
+  McpServerCatalog,
+  McpServerForm,
+  McpServerTestRequest,
+  McpServerTestResponse,
   ProviderSettings,
   ProviderSettingsForm,
   ProviderTestResponse,
@@ -244,6 +249,112 @@ export async function testProviderSettings(
   return (await res.json()) as ProviderTestResponse;
 }
 
+// --- MCP server registry ---
+
+export async function listMcpServers(): Promise<McpServer[]> {
+  const res = await apiFetch(`${API_BASE}/mcp/servers`);
+  if (!res.ok) {
+    throw new Error(await readErrorDetail(res, "Failed to load MCP servers"));
+  }
+  return ((await res.json()) as { servers: McpServer[] }).servers;
+}
+
+/** Create a server. `credential_value` of null starts with no credential. */
+export async function createMcpServer(
+  form: McpServerForm,
+  credentialValue: string | null
+): Promise<McpServer> {
+  const res = await apiFetch(`${API_BASE}/mcp/servers`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      name: form.name,
+      url: form.url,
+      credential_header: form.credential_header ?? "Authorization",
+      credential_value: credentialValue,
+    }),
+  });
+  if (!res.ok) {
+    const error = new Error(
+      await readErrorDetail(res, "Failed to save MCP server")
+    ) as Error & { status?: number };
+    error.status = res.status;
+    throw error;
+  }
+  return (await res.json()) as McpServer;
+}
+
+/**
+ * Update a server. `credentialValue` of null keeps the stored credential,
+ * `""` clears it (§3.1) — the API never returns the credential itself.
+ */
+export async function updateMcpServer(
+  id: string,
+  form: McpServerForm,
+  credentialValue: string | null
+): Promise<McpServer> {
+  const res = await apiFetch(`${API_BASE}/mcp/servers/${id}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      name: form.name,
+      url: form.url,
+      credential_header: form.credential_header ?? "Authorization",
+      credential_value: credentialValue,
+    }),
+  });
+  if (!res.ok) {
+    const error = new Error(
+      await readErrorDetail(res, "Failed to save MCP server")
+    ) as Error & { status?: number };
+    error.status = res.status;
+    throw error;
+  }
+  return (await res.json()) as McpServer;
+}
+
+export async function deleteMcpServer(id: string): Promise<void> {
+  const res = await apiFetch(`${API_BASE}/mcp/servers/${id}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) {
+    throw new Error(await readErrorDetail(res, "Failed to delete MCP server"));
+  }
+}
+
+/**
+ * Live tool catalog for the Tool Node editor's checklist (#134, §6.3): a
+ * live read through the probe path — no caching or polling client-side.
+ * An unreachable server resolves (not throws) with the structured
+ * `ok: false` error response; only transport-level failures throw.
+ */
+export async function fetchMcpServerCatalog(
+  serverId: string
+): Promise<McpServerCatalog> {
+  const res = await apiFetch(`${API_BASE}/mcp/servers/${serverId}/tools`, {
+    method: "POST",
+  });
+  if (!res.ok) {
+    throw new Error(await readErrorDetail(res, "Failed to load MCP tool catalog"));
+  }
+  return (await res.json()) as McpServerCatalog;
+}
+
+/** Connection probe for the Settings MCP section's Test button (#131). */
+export async function testMcpServer(
+  request: McpServerTestRequest
+): Promise<McpServerTestResponse> {
+  const res = await apiFetch(`${API_BASE}/mcp/servers/test`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(request),
+  });
+  if (!res.ok) {
+    throw new Error(await readErrorDetail(res, "Failed to test MCP server"));
+  }
+  return (await res.json()) as McpServerTestResponse;
+}
+
 export async function createCanvas(
   name = "Untitled Canvas"
 ): Promise<CanvasResponse> {
@@ -446,6 +557,88 @@ export async function testTool(
   if (!res.ok) {
     const error = await res.json().catch(() => ({ detail: "Failed to test tool" }));
     throw new Error(error.detail || "Failed to test tool");
+  }
+  return res.json();
+}
+
+/**
+ * MCP tool inspection (#135, spec §6.4): pulls the server-provided input
+ * schema live through the backend probe path — a named tool when `toolName`
+ * is given, the full catalog otherwise. Structured `ok: false` failures
+ * (unreachable server) resolve; only transport-level failures throw.
+ */
+export async function inspectMcpTool(
+  serverId: string,
+  toolName?: string | null
+): Promise<ToolInspectResponse> {
+  const res = await apiFetch(`${API_BASE}/tools/inspect`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      kind: "mcp",
+      mcp_server_id: serverId,
+      mcp_tool_name: toolName ?? null,
+    }),
+  });
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({ detail: "Failed to inspect MCP tool" }));
+    throw new Error(error.detail || "Failed to inspect MCP tool");
+  }
+  return res.json();
+}
+
+/**
+ * MCP Test panel stage 1 (#135): connection probe over the shared
+ * `/api/tools/test` path (init + tools/list + latency). `credentialValue`
+ * is the optional test-time override; an empty string explicitly tests
+ * without a stored credential. Structured failures resolve, not throw.
+ */
+export async function probeMcpTool(
+  serverId: string,
+  credentialValue?: string
+): Promise<ToolTestResponse> {
+  const body: Record<string, unknown> = {
+    kind: "mcp",
+    stage: "probe",
+    mcp_server_id: serverId,
+  };
+  if (credentialValue !== undefined) body.credential_value = credentialValue;
+  return postMcpToolTest(body);
+}
+
+/**
+ * MCP Test panel stage 2 (#135): live remote `tools/call` with schema-driven
+ * args, executed from the backend environment (never the sandbox). In-band
+ * `isError` results come back flagged (`is_error`/`success`), and connection
+ * failures resolve as structured errors — the call never surfaces as a
+ * thrown exception.
+ */
+export async function callMcpTool(
+  serverId: string,
+  toolName: string,
+  args: Record<string, unknown>,
+  credentialValue?: string
+): Promise<ToolTestResponse> {
+  const body: Record<string, unknown> = {
+    kind: "mcp",
+    stage: "call",
+    mcp_server_id: serverId,
+    mcp_tool_name: toolName,
+    mcp_args: args,
+  };
+  if (credentialValue !== undefined) body.credential_value = credentialValue;
+  return postMcpToolTest(body);
+}
+
+async function postMcpToolTest(body: Record<string, unknown>): Promise<ToolTestResponse> {
+  const res = await apiFetch(`${API_BASE}/tools/test`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({ detail: "Failed to test MCP tool" }));
+    throw new Error(error.detail || "Failed to test MCP tool");
   }
   return res.json();
 }

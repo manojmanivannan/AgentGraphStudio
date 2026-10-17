@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from typing import Any, Self
+from typing import Any, Literal, Self
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -80,6 +80,61 @@ class AgentNodeResponse(AgentNodeBase):
     canvas_id: uuid.UUID
 
 
+class McpToolGrant(BaseModel):
+    """One enabled tool of an MCP-backed Tool Node's grant (spec §2.1).
+
+    The grant unit is ``(server reference, enabled-tools selection)`` (#119);
+    approval granularity is per enabled tool (#119 Q9) — the node-level
+    ``requires_approval`` boolean continues to govern author (code) tools only.
+    """
+
+    name: str
+    requires_approval: bool
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, v: str) -> str:
+        trimmed = v.strip()
+        if not trimmed:
+            raise ValueError("mcp_tools entry: name must not be empty")
+        return trimmed
+
+
+class McpSnapshotTool(BaseModel):
+    """One tool inside an exported metadata snapshot (spec §2.3): name,
+    description, and the raw JSON input schema — never credentials."""
+
+    name: str
+    description: str | None = None
+    input_schema: dict = Field(default_factory=dict)
+
+
+class McpServerSnapshot(BaseModel):
+    """Metadata snapshot captured live at export time via the shared MCP probe
+    path (spec §2.3). ``captured=False`` records the snapshot as unavailable
+    (``detail`` carries the probe's failure summary) instead of failing the
+    export."""
+
+    captured: bool
+    server_name: str | None = None
+    server_version: str | None = None
+    protocol_revision: str | None = None
+    detail: str = ""
+    tools: list[McpSnapshotTool] = Field(default_factory=list)
+
+
+class McpServerReference(BaseModel):
+    """A MCP server reference ZIP export/import (spec §2.3 / §5.1): the
+    resolved registered name + URL, or ``resolved=False`` when the export
+    could not resolve the node's grant against the workspace registry. Import
+    re-points by name (then URL); the URL itself is never imported."""
+
+    resolved: bool
+    name: str | None = None
+    url: str | None = None
+    snapshot: McpServerSnapshot | None = None
+
+
 class ToolNodeInput(BaseModel):
     id: uuid.UUID
     name: str = "Tool"
@@ -90,6 +145,17 @@ class ToolNodeInput(BaseModel):
     requires_approval: bool = False
     position_x: float = 0
     position_y: float = 0
+    # MCP variant (#132): non-null ⇒ MCP-backed node (code/args stay empty);
+    # ``mcp_tools`` is the enabled-tools selection for the server grant.
+    mcp_server_id: uuid.UUID | None = None
+    mcp_tools: list[McpToolGrant] = Field(default_factory=list)
+    # Enablement history for the editor's NEW-badge diff (#134): the union of
+    # tool names the picker has already shown the user — not a catalog cache.
+    mcp_seen_tools: list[str] = Field(default_factory=list)
+    # Import-only reference metadata (#136): the ZIP manifest's server
+    # reference + snapshot, re-points ``mcp_server_id`` on import and reappears
+    # in the import response. Never persisted; canvas saves ignore it.
+    mcp_reference: McpServerReference | None = None
 
 
 class ToolNodeResponse(ToolNodeInput):
@@ -213,6 +279,8 @@ class CanvasResponse(BaseModel):
     updated_at: datetime
     nodes: CanvasNodesResponse
     edges: list[EdgeResponse]
+    # Import notices (#136): e.g. an MCP grant imported not-yet-granting.
+    warnings: list[str] = Field(default_factory=list)
 
     model_config = {"from_attributes": True}
 
@@ -289,8 +357,20 @@ class SendMessageRequest(BaseModel):
 
 
 class ToolInspectRequest(BaseModel):
-    code: str
+    """Kind-discriminated inspect request (#135, spec §6.4).
+
+    ``kind: "code"`` (the default) inspects Python tool code in the sandbox
+    path; ``kind: "mcp"`` pulls the **server-provided** input schema live over
+    the shared probe path for a registered server — a named tool when
+    ``mcp_tool_name`` is given, the full catalog otherwise.
+    """
+
+    kind: Literal["code", "mcp"] = "code"
+    code: str = ""
     dependencies: list[str] = Field(default_factory=list)
+    # MCP branch:
+    mcp_server_id: uuid.UUID | None = None
+    mcp_tool_name: str | None = None
 
 
 class ToolArgumentInfo(BaseModel):
@@ -299,21 +379,102 @@ class ToolArgumentInfo(BaseModel):
     default_value: str | None = None
 
 
+class McpInspectTool(BaseModel):
+    """One server-provided tool descriptor in an inspect response — exactly as
+    the server serves it (name, description, input schema)."""
+
+    name: str
+    description: str | None = None
+    input_schema: dict = Field(default_factory=dict)
+
+
 class ToolInspectResponse(BaseModel):
-    function_name: str
-    arguments: list[ToolArgumentInfo]
+    """Inspect response for both branches. The code branch keeps its fields
+    (``function_name`` + ``arguments``); the MCP branch carries the live
+    connection facts and never the credential (§5.4)."""
+
+    kind: Literal["code", "mcp"] = "code"
+    ok: bool = True
+    # Code branch:
+    function_name: str | None = None
+    arguments: list[ToolArgumentInfo] = Field(default_factory=list)
+    # MCP branch (named-tool vs full-catalog):
+    server_id: uuid.UUID | None = None
+    tool: McpInspectTool | None = None
+    tools: list[McpInspectTool] = Field(default_factory=list)
+    server_name: str | None = None
+    server_version: str | None = None
+    latency_ms: int = 0
+    detail: str = "OK"
+    classification: str | None = None
+    protocol_revision: str | None = None
 
 
 class ToolTestRequest(BaseModel):
-    code: str
+    """Kind-discriminated test request (#135, spec §6.4).
+
+    ``kind: "code"`` (default) runs the code tool in the sandbox; ``kind:
+    "mcp"`` has two stages — ``probe`` (connection probe over the shared
+    #131 path) and ``call`` (a live remote ``tools/call`` executed from the
+    backend environment, never the sandbox). ``credential_header`` /
+    ``credential_value`` are test-time overrides following the provider
+    convention: omitted → stored value used, ``""`` → test without a
+    credential even if one is stored.
+    """
+
+    kind: Literal["code", "mcp"] = "code"
+    # Code branch:
+    code: str = ""
     args: dict[str, str] = Field(default_factory=dict)
     dependencies: list[str] = Field(default_factory=list)
+    # MCP branch:
+    stage: Literal["probe", "call"] = "probe"
+    mcp_server_id: uuid.UUID | None = None
+    mcp_tool_name: str | None = None
+    mcp_args: dict[str, Any] = Field(default_factory=dict)
+    credential_header: str | None = Field(default=None, max_length=64)
+    credential_value: str | None = None
+
+
+class McpToolCallBlock(BaseModel):
+    """One output block of an MCP tool result. Text blocks carry their text;
+    non-text blocks carry a mime type / resource URI and a human placeholder
+    — the binary payload never enters the response."""
+
+    type: str
+    text: str | None = None
+    mime_type: str | None = None
+    resource_uri: str | None = None
+    placeholder: str | None = None
 
 
 class ToolTestResponse(BaseModel):
+    """Test response for both branches.
+
+    ``success`` is the single front-end boolean: for the MCP call stage it is
+    ``ok and not is_error`` — an in-band ``isError`` result executed but is
+    reported as an error, not a success output (§6.4).
+    """
+
+    kind: Literal["code", "mcp"] = "code"
+    # Code branch:
     success: bool
-    output: str
-    execution_time_ms: float
+    output: str = ""
+    execution_time_ms: float = 0.0
+    # MCP branch (stage "probe" fills the probe fields; stage "call" fills
+    # ``is_error`` + ``blocks``):
+    stage: Literal["probe", "call"] | None = None
+    ok: bool | None = None
+    server_name: str | None = None
+    server_version: str | None = None
+    tools: list[str] = Field(default_factory=list)
+    tool_count: int = 0
+    latency_ms: int = 0
+    detail: str = "OK"
+    classification: str | None = None
+    protocol_revision: str | None = None
+    is_error: bool | None = None
+    blocks: list[McpToolCallBlock] = Field(default_factory=list)
 
 
 # --- Auth request/response models ---
@@ -395,3 +556,97 @@ class ProviderCheckResult(BaseModel):
 class ProviderTestResponse(BaseModel):
     ok: bool
     checks: list[ProviderCheckResult]
+
+
+# --- MCP server registry ---
+
+
+class McpServerBase(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+    # Endpoint URL; validated http(s):// on every write path (spec §5.1).
+    url: str = Field(min_length=1, max_length=2083)
+    credential_header: str | None = Field(default="Authorization", max_length=64)
+
+
+class McpServerCreate(McpServerBase):
+    # Omitted/None starts with no credential stored.
+    credential_value: str | None = None
+
+
+class McpServerUpdate(McpServerBase):
+    # None keeps the stored credential; "" clears it (§3.1).
+    credential_value: str | None = None
+
+
+class McpServerResponse(McpServerBase):
+    """The credential itself is never returned — only ``credential_set`` and a
+    masked preview. ``url_warning`` surfaces the plain-http caveat (§5.1)."""
+
+    id: uuid.UUID
+    credential_set: bool
+    credential_preview: str | None = None
+    url_warning: str | None = None
+
+
+class McpServerListResponse(BaseModel):
+    servers: list[McpServerResponse]
+
+
+# --- MCP connection probe (Settings "Test connection", #131) ---
+
+
+class McpServerTestRequest(BaseModel):
+    """Test-button request mirroring the provider Test-button convention.
+
+    Every field is an unsaved-form override; omitted fields (None) fall back
+    to the stored registration when ``server_id`` is given. ``credential_value
+    = ""`` tests *without* a credential, mirroring the PUT ""-clears rule.
+    """
+
+    server_id: uuid.UUID | None = None
+    url: str | None = Field(default=None, max_length=2083)
+    credential_header: str | None = Field(default=None, max_length=64)
+    credential_value: str | None = None
+
+
+class McpServerTestResponse(BaseModel):
+    """Probe response — never contains the credential (§5.4)."""
+
+    ok: bool
+    server_name: str | None = None
+    server_version: str | None = None
+    tools: list[str] = Field(default_factory=list)
+    tool_count: int = 0
+    latency_ms: int = 0
+    detail: str
+    classification: str | None = None
+    protocol_revision: str | None = None
+
+
+# --- Live tool catalog (the editor's checklist, #134, spec §6.3) ---
+
+
+class McpCatalogTool(BaseModel):
+    """One server-provided tool descriptor — exactly as the server serves it
+    (name, description, input schema). No snapshot is stored anywhere; the
+    editor renders its checklist and expandable schema rows from this."""
+
+    name: str
+    description: str | None = None
+    input_schema: dict = Field(default_factory=dict)
+
+
+class McpServerCatalogResponse(BaseModel):
+    """Live-catalog read over the short-lived probe connection. An
+    unreachable server is a structured ``ok=False`` response (honest error,
+    never stale data) — not an HTTP error. Never contains the credential."""
+
+    ok: bool
+    server_id: uuid.UUID
+    tools: list[McpCatalogTool] = Field(default_factory=list)
+    server_name: str | None = None
+    server_version: str | None = None
+    latency_ms: int = 0
+    detail: str
+    classification: str | None = None
+    protocol_revision: str | None = None

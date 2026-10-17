@@ -9,6 +9,10 @@ class Settings(BaseSettings):
     llm_model: str = "ollama_chat/gemma4:31b"
     llm_title_timeout_seconds: float = 8.0
     llm_validation_timeout_seconds: float = 12.0
+    # Per-call wall-clock timeout for one MCP tool invocation (spec §4.4);
+    # a timeout becomes the standard execution-error observation — never a
+    # failed run. Per-server overrides: not in v1.
+    mcp_tool_call_timeout_seconds: float = 60.0
     execution_mode: str = "all"
 
     # Memory (mem0) settings
