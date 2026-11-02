@@ -1,7 +1,9 @@
 # Multi-stage production Dockerfile for AgentGraphStudio Frontend
 
 # Stage 1: Install dependencies
-FROM node:26-alpine AS deps
+# node:26.12.1 is the Node.js security release that backports the Brotli fix
+# for CVE-2026-111497 (process.versions.brotli still reports 1.2.0).
+FROM node:26.12.1-alpine AS deps
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
@@ -26,8 +28,13 @@ RUN npm run build
 # Stage 4: Lightweight production server using Nginx
 FROM nginx:alpine AS runner
 
-# Remove default nginx static assets
-RUN rm -rf /usr/share/nginx/html/*
+# CVE-2026-111497: nginx:alpine (Alpine 3.24) ships brotli/brotli-libs 1.2.0-r1,
+# whose decoder has an out-of-bounds write fixed in 1.2.1. The packages are
+# present even though nginx.conf enables gzip only, so upgrade them to Alpine
+# v3.24's patched build (1.2.1-r0) instead of leaving the vulnerable shared
+# libraries on disk. Combined with the cleanup to keep one layer.
+RUN apk upgrade --no-cache brotli brotli-libs \
+    && rm -rf /usr/share/nginx/html/*
 
 # Copy built frontend assets from builder stage
 COPY --from=builder /app/dist /usr/share/nginx/html

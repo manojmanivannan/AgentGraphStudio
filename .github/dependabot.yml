@@ -43,3 +43,8 @@ updates:
     directory: "/sandbox"
     schedule:
       interval: "weekly"
+
+  - package-ecosystem: "docker"
+    directory: "/mcp-weather"
+    schedule:
+      interval: "weekly"
