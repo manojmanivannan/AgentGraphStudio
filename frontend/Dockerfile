@@ -28,12 +28,13 @@ RUN npm run build
 # Stage 4: Lightweight production server using Nginx
 FROM nginx:alpine AS runner
 
-# CVE-2026-111497: nginx:alpine (Alpine 3.24) ships brotli/brotli-libs 1.2.0-r1,
-# whose decoder has an out-of-bounds write fixed in 1.2.1. The packages are
-# present even though nginx.conf enables gzip only, so upgrade them to Alpine
-# v3.24's patched build (1.2.1-r0) instead of leaving the vulnerable shared
-# libraries on disk. Combined with the cleanup to keep one layer.
-RUN apk upgrade --no-cache brotli brotli-libs \
+# nginx:alpine (Alpine 3.24) ships brotli/brotli-libs 1.2.0-r1, whose decoder
+# has an out-of-bounds write fixed in 1.2.1 (CVE-2026-111497), plus a vulnerable
+# curl/libcurl 8.22.0-r0 (CVE-2026-92392). The brotli libraries are present even
+# though nginx.conf enables gzip only, so upgrade the whole Alpine package set to
+# pick up the patched builds (brotli 1.2.1-r0, curl 8.23.0-r0) instead of leaving
+# vulnerable shared libraries on disk. Combined with the cleanup to keep one layer.
+RUN apk upgrade --no-cache \
     && rm -rf /usr/share/nginx/html/*
 
 # Copy built frontend assets from builder stage

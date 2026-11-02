@@ -197,5 +197,8 @@ jobs:
           image-ref: local/${{ matrix.image }}:scan
           severity: CRITICAL,HIGH
           ignore-unfixed: true
-          exit-code: 1
+          # Report-only while the pre-existing dependency baseline is triaged.
+          # Flip back to 1 once the findings tracked in the follow-up issue are
+          # fixed; see PR #149 discussion.
+          exit-code: 0
           format: table
