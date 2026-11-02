@@ -3,7 +3,7 @@
 # Stage 1: Install dependencies
 # node:26.12.1 is the Node.js security release that backports the Brotli fix
 # for CVE-2026-111497 (process.versions.brotli still reports 1.2.0).
-FROM node:26.12.1-alpine AS deps
+FROM node:26.13.0-alpine AS deps
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
