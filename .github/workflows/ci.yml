@@ -63,7 +63,8 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          node-version: "22"
+          # Exact minimum Node release fixing CVE-2026-111497.
+          node-version: "22.23.4"
           cache: "npm"
           cache-dependency-path: frontend/package-lock.json
 
@@ -101,7 +102,8 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          node-version: "22"
+          # Exact minimum Node release fixing CVE-2026-111497.
+          node-version: "22.23.4"
           cache: "npm"
           cache-dependency-path: frontend/package-lock.json
 
@@ -131,7 +133,8 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          node-version: "22"
+          # Exact minimum Node release fixing CVE-2026-111497.
+          node-version: "22.23.4"
           cache: "npm"
           cache-dependency-path: frontend/package-lock.json
 
@@ -172,3 +175,102 @@ jobs:
         with:
           name: frontend-e2e-test-results
           path: frontend/junit/
+
+  container-scan:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        image: [backend, frontend, mlflow, sandbox, mcp-weather]
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Build ${{ matrix.image }} image
+        run: docker build -t local/${{ matrix.image }}:scan ${{ matrix.image }}
+
+      - name: Scan ${{ matrix.image }} image (Trivy)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: image
+          image-ref: local/${{ matrix.image }}:scan
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          # Report-only while the pre-existing dependency baseline is triaged.
+          # Flip back to 1 once the findings tracked in the follow-up issue are
+          # fixed; see PR #149 discussion.
+          exit-code: 0
+          format: table
+          output: trivy-${{ matrix.image }}.txt
+
+      - name: Upload Trivy report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: trivy-${{ matrix.image }}
+          path: trivy-${{ matrix.image }}.txt
+          if-no-files-found: warn
+
+  container-scan-summary:
+    needs: [container-scan]
+    if: always() && github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: write
+    steps:
+      - name: Download Trivy reports
+        continue-on-error: true
+        uses: actions/download-artifact@v8
+        with:
+          pattern: trivy-*
+          path: trivy-reports
+          merge-multiple: true
+
+      - name: Build summary
+        run: |
+          {
+            echo "<!-- container-scan-summary -->"
+            echo "## Container scan summary"
+            echo ""
+            echo "Trivy scans the five first-party images on every PR. The job is"
+            echo "report-only while the dependency baseline is triaged (#150)."
+            echo ""
+            if compgen -G "trivy-reports/*.txt" > /dev/null; then
+              for report in trivy-reports/*.txt; do
+                image="$(basename "$report" .txt)"
+                image="${image#trivy-}"
+                echo "<details><summary><code>${image}</code></summary>"
+                echo ""
+                echo '```'
+                sed -e 's/\x1b\[[0-9;]*m//g' "$report"
+                echo '```'
+                echo ""
+                echo "</details>"
+              done
+            else
+              echo "_No scan reports were produced (an image build may have failed)._"
+            fi
+          } > summary.md
+          cat summary.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upsert PR comment
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const fs = require('fs');
+            const marker = '<!-- container-scan-summary -->';
+            const body = fs.readFileSync('summary.md', 'utf8');
+            const issue_number = context.payload.pull_request.number;
+            const { owner, repo } = context.repo;
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner, repo, issue_number, per_page: 100,
+            });
+            const existing = comments.find((c) => c.body.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number, body });
+            }

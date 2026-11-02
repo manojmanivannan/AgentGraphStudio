@@ -46,7 +46,12 @@ def test_sandbox_image_uses_a_slim_runtime_base() -> None:
     # pinned major.minor is not what this test is guarding.
     assert re.search(r"FROM python:\d+\.\d+-slim-trixie", dockerfile)
     assert "ghcr.io/vndee/sandbox-python" not in dockerfile
-    assert "pip install --no-cache-dir matplotlib plotly numpy" in dockerfile
+    # Pins are version-tolerant (dependabot bumps them) but every floor package
+    # must stay explicitly pinned for reproducible sandbox builds.
+    assert re.search(
+        r"pip install --no-cache-dir matplotlib==\S+ plotly==\S+ numpy==\S+",
+        dockerfile,
+    )
     # --no-compile must NOT be used here either: it defers all bytecode
     # compilation to the first execution inside every pooled container.
     assert "--no-compile" not in dockerfile

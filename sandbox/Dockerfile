@@ -21,8 +21,16 @@ FROM python:3.14-slim-trixie
 
 # Floor packages baked into the system interpreter. Bytecode is compiled at
 # build time so pooled sessions never pay an import-compile cost inside each
-# container.
-RUN pip install --no-cache-dir matplotlib plotly numpy
+# container. Versions are pinned exactly so rebuilds are reproducible and
+# cannot silently pull a different decoder stack.
+#
+# Pillow is pinned as matplotlib's transitive dependency. NOTE: its manylinux
+# wheel (13.0.0) still bundles libbrotli 1.2.0 (verified via
+# BrotliDecoderVersion() == 0x01002000), so CVE-2026-111497 is NOT remediated
+# in this image. The sandbox is an isolated untrusted-code container (the
+# default pool runs with network_mode="none"), which bounds the exposure until
+# a wheel with brotli >= 1.2.1 is published.
+RUN pip install --no-cache-dir matplotlib==3.11.2 plotly==7.1.0 numpy==2.5.4 pillow==13.0.0
 
 # Bake the venv the pooled sessions execute against. --system-site-packages lets
 # it see the floor packages above, so no per-container install is needed.
