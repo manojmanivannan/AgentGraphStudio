@@ -73,7 +73,7 @@ if (localStorageUnavailable) {
   }
 }
 
-beforeAll(() => server.listen({ onUnhandledRequest: "error" }));
+beforeAll(() => server.listen({ onUnhandledFrame: "error" }));
 
 // Mock scrollIntoView which is not available in jsdom
 Element.prototype.scrollIntoView = () => { };

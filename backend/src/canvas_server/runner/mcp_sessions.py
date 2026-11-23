@@ -29,8 +29,10 @@ import logging
 import uuid
 from collections.abc import Iterable
 
+import httpx2
 from mcp import ClientSession
-from mcp.client.streamable_http import streamablehttp_client
+from mcp.client.streamable_http import streamable_http_client
+from mcp.shared._httpx_utils import create_mcp_http_client
 
 from canvas_server import mcp_config
 from canvas_server.config import settings
@@ -173,9 +175,18 @@ class McpSessionRegistry:
         )
         timeout = settings.llm_validation_timeout_seconds
         try:
-            async with streamablehttp_client(
-                cfg.url, headers=headers, timeout=timeout, sse_read_timeout=timeout
-            ) as (read_stream, write_stream, _get_session_id), ClientSession(read_stream, write_stream) as session:
+            # mcp 2.x: headers/timeouts ride a pre-built httpx2 client (the
+            # transport no longer accepts them); yields (read, write).
+            http_client = create_mcp_http_client(
+                headers=headers, timeout=httpx2.Timeout(timeout, read=timeout)
+            )
+            async with (
+                http_client,
+                streamable_http_client(
+                    cfg.url, http_client=http_client
+                ) as (read_stream, write_stream),
+                ClientSession(read_stream, write_stream) as session,
+            ):
                 await session.initialize()
                 self._sessions[server_id] = session
                 ready.set()

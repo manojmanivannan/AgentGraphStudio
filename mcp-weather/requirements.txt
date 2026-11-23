@@ -1,4 +1,4 @@
-mcp<2 # FastMCP server surface; mcp 2.x renamed it to MCPServer
+mcp>=2 # MCPServer server surface; mcp 1.x exposed this as FastMCP
 httpx
 uvicorn
 starlette

@@ -11,14 +11,18 @@ Docker-free and exercise the probe module's public seam:
 
 import json
 
-from mcp import types as mcp_types
-from mcp.shared.exceptions import McpError
+from mcp.shared.exceptions import MCPError as McpError
 
-from canvas_server.mcp_probe import classify_mcp_failure, probe_mcp_server
+from canvas_server.mcp_probe import (
+    SUPPORTED_REVISION_FLOOR,
+    SUPPORTED_REVISION_HEAD,
+    classify_mcp_failure,
+    probe_mcp_server,
+)
 
-# The modern (2026-07-28) revision the bundled 1.x client deliberately does
-# not speak — Streamable HTTP legacy revisions end at 2025-11-25.
-MODERN_REVISION = "2026-07-28"
+# A revision the bundled client provably does not speak — the legacy-revision
+# floor/head it advertises comes from ``mcp.constants`` via the probe module.
+MODERN_REVISION = "9999-99-99"
 
 
 async def test_probe_ok_against_reference_server(ref_mcp_server):
@@ -69,8 +73,8 @@ async def test_probe_names_revision_of_unsupported_server(modern_revision_mcp_se
     assert result.classification == "unsupported_protocol_revision"
     assert result.protocol_revision == MODERN_REVISION
     assert result.detail == (
-        "Server speaks protocol revision 2026-07-28; this client supports "
-        "Streamable HTTP legacy revisions (2025-03-26 → 2025-11-25)."
+        f"Server speaks protocol revision {MODERN_REVISION}; this client supports "
+        f"Streamable HTTP legacy revisions (2025-03-26 → {SUPPORTED_REVISION_HEAD})."
     )
 
 
@@ -122,13 +126,11 @@ def test_classify_sdk_unsupported_version_runtime_error():
     assert classified.category == "unsupported_protocol_revision"
     assert classified.protocol_revision == MODERN_REVISION
     assert MODERN_REVISION in classified.detail
-    assert "2025-03-26" in classified.detail and "2025-11-25" in classified.detail
+    assert SUPPORTED_REVISION_FLOOR in classified.detail and SUPPORTED_REVISION_HEAD in classified.detail
 
 
 def test_classify_jsonrpc_32022_error_collapses_to_generic():
-    exc = McpError(
-        error=mcp_types.ErrorData(code=-32022, message="Unsupported protocol version")
-    )
+    exc = McpError(code=-32022, message="Unsupported protocol version")
     classified = classify_mcp_failure(exc)
 
     assert classified.category == "connection_failure"
@@ -218,7 +220,7 @@ def test_is_stale_session_error_sees_markers_nested_in_cause_chains():
     # the probe's old group-only flattening skipped.
     from canvas_server.runner.mcp_sessions import is_stale_session_error
 
-    root = McpError(error=mcp_types.ErrorData(code=-32000, message="Session terminated"))
+    root = McpError(code=-32000, message="Session terminated")
     wrapped = RuntimeError("transport died")
     wrapped.__cause__ = root
 
@@ -415,12 +417,12 @@ def test_call_tool_classifies_json_rpc_rejection_as_call_failure(monkeypatch):
     everything in-band."""
     import asyncio
 
-    from mcp.shared.exceptions import McpError
-    from mcp.types import INTERNAL_ERROR, ErrorData
+    from mcp.shared.exceptions import MCPError as McpError
+    from mcp.types import INTERNAL_ERROR
 
     from canvas_server import mcp_probe
 
-    error = McpError(ErrorData(code=INTERNAL_ERROR, message="Internal error", data=None))
+    error = McpError(code=INTERNAL_ERROR, message="Internal error")
 
     async def _fake_connect(url, tool_name, arguments, *, headers, timeout):
         raise error

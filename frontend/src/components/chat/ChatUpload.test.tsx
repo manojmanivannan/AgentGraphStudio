@@ -91,6 +91,11 @@ describe("ChatPage attachment uploads", () => {
     await waitFor(() => {
       expect(screen.getByTestId("chat-input")).toBeInTheDocument();
     });
+    // Wait for the conversation to finish loading (the input is disabled
+    // while `loadingConv` is true).
+    await waitFor(() => {
+      expect(screen.getByTestId("chat-input")).toBeEnabled();
+    });
 
     await user.upload(
       screen.getByTestId("chat-attachment-input"),
@@ -127,6 +132,11 @@ describe("ChatPage attachment uploads", () => {
 
     await waitFor(() => {
       expect(screen.getByTestId("chat-input")).toBeInTheDocument();
+    });
+    // Wait for the conversation to finish loading (the input is disabled
+    // while `loadingConv` is true).
+    await waitFor(() => {
+      expect(screen.getByTestId("chat-input")).toBeEnabled();
     });
 
     await user.upload(
@@ -166,6 +176,11 @@ describe("ChatPage attachment uploads", () => {
 
     await waitFor(() => {
       expect(screen.getByTestId("chat-input")).toBeInTheDocument();
+    });
+    // Wait for the conversation to finish loading (the input is disabled
+    // while `loadingConv` is true).
+    await waitFor(() => {
+      expect(screen.getByTestId("chat-input")).toBeEnabled();
     });
 
     await user.upload(
@@ -274,6 +289,11 @@ describe("ChatPage attachment uploads", () => {
     await waitFor(() => {
       expect(screen.getByTestId("chat-input")).toBeInTheDocument();
     });
+    // Wait for the conversation to finish loading (the input is disabled
+    // while `loadingConv` is true).
+    await waitFor(() => {
+      expect(screen.getByTestId("chat-input")).toBeEnabled();
+    });
 
     await user.upload(
       screen.getByTestId("chat-attachment-input"),
@@ -315,6 +335,11 @@ describe("ChatPage attachment uploads", () => {
 
     await waitFor(() => {
       expect(screen.getByTestId("chat-input")).toBeInTheDocument();
+    });
+    // Wait for the conversation to finish loading (the input is disabled
+    // while `loadingConv` is true).
+    await waitFor(() => {
+      expect(screen.getByTestId("chat-input")).toBeEnabled();
     });
 
     await user.upload(
@@ -374,6 +399,11 @@ describe("ChatPage attachment uploads", () => {
 
     await waitFor(() => {
       expect(screen.getByTestId("chat-input")).toBeInTheDocument();
+    });
+    // Wait for the conversation to finish loading (the input is disabled
+    // while `loadingConv` is true).
+    await waitFor(() => {
+      expect(screen.getByTestId("chat-input")).toBeEnabled();
     });
 
     const attachmentButton = screen.getByLabelText("Add attachments");
