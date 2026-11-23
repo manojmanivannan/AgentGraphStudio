@@ -104,6 +104,15 @@ def _block_label(block: Any) -> str:
 
 
 def _block_summary(block: Any) -> dict[str, Any]:
+    """JSON-safe dump of one content block using the SDK's natural field names.
+
+    mcp SDK 2.x models are snake_case pydantic models whose camelCase wire
+    aliases (``mimeType``, ``_meta``) are only surfaced by
+    ``model_dump(by_alias=True)`` — and no consumer of ``last_raw_content_blocks``
+    (``streaming_react`` tool_result enrichment, frontend) reads camelCase
+    keys. So this deliberately dumps without by_alias, matching the codebase's
+    snake_case ``mime_type`` convention elsewhere (mcp_probe / API schemas).
+    """
     try:
         return block.model_dump(mode="json")
     except Exception:  # noqa: BLE001 — raw structure is best-effort (#140 redacts)

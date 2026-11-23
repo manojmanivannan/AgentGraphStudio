@@ -29,9 +29,11 @@ from collections.abc import Iterator
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass, field
 
+import httpx2
 from mcp import ClientSession
-from mcp.client.streamable_http import streamablehttp_client
-from mcp.shared.exceptions import McpError
+from mcp.client.streamable_http import streamable_http_client
+from mcp.shared._httpx_utils import create_mcp_http_client
+from mcp.shared.exceptions import MCPError as McpError
 from mcp.types import LATEST_PROTOCOL_VERSION, TextContent
 from mcp.types import Tool as McpTool
 
@@ -244,12 +246,43 @@ def _open_session(
 async def _session_cm(
     url: str, *, headers: dict[str, str] | None, timeout: float
 ):
-    async with streamablehttp_client(
-        url, headers=headers, timeout=timeout, sse_read_timeout=timeout
-    ) as (read_stream, write_stream, _get_session_id), ClientSession(
-        read_stream, write_stream
-    ) as session:
-        yield session
+    # mcp 2.x: headers/timeouts ride a pre-built httpx2 client (the transport
+    # no longer accepts them); the transport yields (read, write) directly.
+    # A 2.x transport turns a non-2xx POST into the stand-in JSON-RPC error
+    # "Server returned an error response" — the HTTP status itself never
+    # reaches the app layer (1.x raised on the raw status text, e.g.
+    # "401 Unauthorized", which classification matches on). So a response
+    # hook records non-2xx POST statuses; if that stand-in message surfaces,
+    # we re-raise with the honest status embedded.
+    post_status: list[int] = []
+
+    async def _record_status(response) -> None:  # noqa: ANN001 — httpx hook signature
+        if response.request.method.upper() == "POST" and response.status_code >= 400:
+            post_status.append(response.status_code)
+
+    client = create_mcp_http_client(
+        headers=headers, timeout=httpx2.Timeout(timeout, read=timeout)
+    )
+    client.event_hooks["response"].append(_record_status)
+    try:
+        async with (
+            client,
+            streamable_http_client(
+                url, http_client=client
+            ) as (read_stream, write_stream),
+            ClientSession(read_stream, write_stream) as session,
+        ):
+            yield session
+    except Exception as exc:  # noqa: BLE001 — re-raises; enriches the 2.x stand-in
+        stand_in = any(
+            "Server returned an error response" in str(leaf)
+            for leaf in iter_exception_leaves(exc)
+        )
+        if post_status and stand_in:
+            raise RuntimeError(
+                f"Server returned HTTP error response: status {post_status[-1]}"
+            ) from exc
+        raise
 
 
 async def _connect_and_list(
@@ -261,11 +294,11 @@ async def _connect_and_list(
         listing = await session.list_tools()
 
     return {
-        "server_name": init.serverInfo.name,
-        "server_version": init.serverInfo.version,
+        "server_name": init.server_info.name,
+        "server_version": init.server_info.version,
         "tools": [tool.name for tool in listing.tools],
         "tool_count": len(listing.tools),
-        "protocol_revision": init.protocolVersion,
+        "protocol_revision": init.protocol_version,
     }
 
 
@@ -327,13 +360,13 @@ async def _connect_and_catalog(
             McpToolDescriptor(
                 name=tool.name,
                 description=tool.description,
-                input_schema=dict(tool.inputSchema) if tool.inputSchema else {},
+                input_schema=dict(tool.input_schema) if tool.input_schema else {},
             )
             for tool in listing.tools
         ],
-        "server_name": init.serverInfo.name,
-        "server_version": init.serverInfo.version,
-        "protocol_revision": init.protocolVersion,
+        "server_name": init.server_info.name,
+        "server_version": init.server_info.version,
+        "protocol_revision": init.protocol_version,
     }
 
 
@@ -382,12 +415,12 @@ def _blocks_from_content(content: list) -> list[McpToolOutputBlock]:
             blocks.append(McpToolOutputBlock(type="text", text=item.text))
             continue
         type_name = getattr(item, "type", None) or type(item).__name__
-        mime = getattr(item, "mimeType", None)
+        mime = getattr(item, "mime_type", None) or getattr(item, "mimeType", None)
         uri = getattr(item, "uri", None)
         if uri is None:
             resource = getattr(item, "resource", None)
             if resource is not None:
-                mime = getattr(resource, "mimeType", None) or mime
+                mime = getattr(resource, "mime_type", None) or getattr(resource, "mimeType", None) or mime
                 uri = getattr(resource, "uri", None)
         note = getattr(item, "data", None)
         size_hint = f"{len(item.data)} bytes" if isinstance(note, (str, bytes)) else None
@@ -421,9 +454,9 @@ async def _connect_and_call(
         result = await session.call_tool(tool_name, arguments=arguments)
 
     return {
-        "is_error": bool(result.isError),
+        "is_error": bool(result.is_error),
         "blocks": _blocks_from_content(list(result.content)),
-        "protocol_revision": init.protocolVersion,
+        "protocol_revision": init.protocol_version,
     }
 
 
@@ -548,9 +581,9 @@ async def _connect_and_snapshot(
 
     return {
         "captured": True,
-        "server_name": init.serverInfo.name,
-        "server_version": init.serverInfo.version,
-        "protocol_revision": init.protocolVersion,
+        "server_name": init.server_info.name,
+        "server_version": init.server_info.version,
+        "protocol_revision": init.protocol_version,
         "tools": [
             {
                 "name": tool.name,

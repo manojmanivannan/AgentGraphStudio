@@ -14,8 +14,9 @@ import pytest
 import pytest_asyncio
 import uvicorn
 from httpx import ASGITransport, AsyncClient
-from mcp.server.fastmcp import FastMCP
-from mcp.server.fastmcp.utilities.types import Image
+from mcp.server.mcpserver import MCPServer
+from mcp.server.mcpserver.exceptions import ToolError
+from mcp.server.mcpserver.utilities.types import Image
 from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
@@ -449,8 +450,8 @@ async def autouse_sandbox():
 
 # --- MCP Streamable HTTP reference servers (ticket #131, reused by #134/#136) ---
 #
-# Real MCP servers for probe/route tests, built from the official ``mcp`` 1.x
-# SDK primitives: ``mcp.server.fastmcp.FastMCP`` ships as part of the ``mcp``
+# Real MCP servers for probe/route tests, built from the official ``mcp`` SDK
+# primitives: ``mcp.server.mcpserver.MCPServer`` ships as part of the ``mcp``
 # package (the standalone ``fastmcp`` project is NOT a backend dependency and
 # is not used). Each fixture serves its app in-process from a background
 # uvicorn thread on a free port, so these stay Docker-free.
@@ -485,7 +486,7 @@ def _serve_starlette(app, port: int):
 @pytest.fixture
 def ref_mcp_server():
     """A real Streamable HTTP MCP server exposing one ``add`` tool."""
-    mcp = FastMCP("ags-probe-ref")
+    mcp = MCPServer("ags-probe-ref", version="1.2.3")
 
     def add(a: int, b: int) -> int:
         """Add two integers."""
@@ -504,10 +505,16 @@ def ref_mcp_server():
 
 @pytest.fixture
 def modern_revision_mcp_server():
-    """A stateless-only server that answers ``initialize`` with the modern
-    2026-07-28 protocol revision — the shape the SDK client cannot speak."""
+    """A stateless-only server that answers ``initialize`` with an unknown
+    ``9999-99-99`` protocol revision — one the SDK client cannot speak (the
+    modern revision it does support, 2026-07-28, is exercised by the other
+    probes)."""
 
     async def endpoint(request: Request) -> Response:
+        if request.method == "GET":
+            # The 2.x client opens a GET SSE stream; a server that does not
+            # support one answers 405 per the Streamable HTTP spec.
+            return Response(status_code=405)
         body = await request.json()
         if "id" not in body:  # notifications/initialized → empty ACK
             return Response(status_code=202)
@@ -516,7 +523,7 @@ def modern_revision_mcp_server():
                 "jsonrpc": "2.0",
                 "id": body["id"],
                 "result": {
-                    "protocolVersion": "2026-07-28",
+                    "protocolVersion": "9999-99-99",
                     "capabilities": {},
                     "serverInfo": {"name": "ags-modern-rev", "version": "9.9.9"},
                 },
@@ -566,7 +573,7 @@ class _RequireAuthMiddleware:
 @pytest.fixture
 def auth_ref_mcp_server():
     """A real reference MCP server that rejects unauthenticated requests."""
-    mcp = FastMCP("ags-probe-auth-ref")
+    mcp = MCPServer("ags-probe-auth-ref", version="1.2.3")
     mcp.add_tool(lambda a: a, name="echo")
     port = _mcp_free_port()
     server, thread = _serve_starlette(
@@ -584,12 +591,14 @@ def auth_ref_mcp_server():
 def error_ref_mcp_server():
     """A real reference MCP server with an in-band-error tool (#135).
 
-    ``explode`` raises inside its body — FastMCP converts the exception into a
-    ``CallToolResult(isError=True)`` whose only content is the exception text,
+    ``explode`` raises ``ToolError`` inside its body — the MCPServer transport
+    converts it into a ``CallToolResult(is_error=True)`` whose only content is
+    the exception text (mcp 2.x redacts text from *unexpected* exceptions, so
+    the anticipated-failure channel is the honest analog #135 used with 1.x),
     which is exactly the in-band error shape the Test panel must distinguish
     from success output. Also serves the plain ``add`` tool for happy paths.
     """
-    mcp = FastMCP("ags-probe-error-ref")
+    mcp = MCPServer("ags-probe-error-ref", version="1.2.3")
 
     def add(a: int, b: int) -> int:
         """Add two integers."""
@@ -597,7 +606,7 @@ def error_ref_mcp_server():
 
     def explode():
         """Always fails with an in-band error."""
-        raise ValueError("boom — in-band failure")
+        raise ToolError("boom — in-band failure")
 
     def produce_image() -> Image:
         """Returns an image block."""
@@ -777,7 +786,7 @@ def make_ref_mcp_server():
     """Factory for instrumented reference MCP servers (#137).
 
     ``make_ref_mcp_server(tools=("add",), delay=0.0, stale_calls=None)``
-    serves a fresh FastMCP app on a free port (behind the counting
+    serves a fresh MCPServer app on a free port (behind the counting
     middleware) and returns its :class:`McpServerObservation` (useful
     fields: ``url``, ``initialize_count``, ``initialize_spans``,
     ``post_count``, ``delete_count``). ``stale_calls='once'|'always'``
@@ -792,7 +801,7 @@ def make_ref_mcp_server():
         delay: float = 0.0,
         stale_calls: str | None = None,
     ) -> McpServerObservation:
-        mcp = FastMCP("ags-run-ref")
+        mcp = MCPServer("ags-run-ref", version="1.2.3")
 
         def add(a: int, b: int) -> int:
             """Add two integers."""
@@ -809,8 +818,13 @@ def make_ref_mcp_server():
                 mcp.add_tool(big_output)
             elif tool == "flaky":
                 def flaky() -> str:
-                    """Always fails — the server must return an isError result."""
-                    raise ValueError("deliberate boom")
+                    """Always fails — the server must return an isError result.
+
+                    Raises the anticipated-failure channel (mcp 2.x ``ToolError``):
+                    its message text is exactly what reaches the client as the
+                    in-band isError content. 2.x redacts text from unexpected
+                    exceptions, unlike mcp 1.x's FastMCP."""
+                    raise ToolError("deliberate boom")
 
                 mcp.add_tool(flaky)
             elif tool == "slow":

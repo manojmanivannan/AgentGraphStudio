@@ -10,32 +10,37 @@
 import os
 
 import httpx
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 from mcp.server.transport_security import TransportSecuritySettings
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
 
 AUTH_TOKEN = os.environ.get("MCP_BEARER_TOKEN", "my-secret-token")
 
-# `stateless_http=True` makes every request self-contained — no per-session
-# state to go stale between the app's short-lived probe/run connections.
-mcp = FastMCP(
-    "Weather Server",
-    stateless_http=True,
+# mcp 2.x: `stateless_http` and `transport_security` moved from the server
+# constructor to `streamable_http_app()` and are passed there below.
+mcp = MCPServer("Weather Server")
+
+
+def _streamable_http_app():
+    # `stateless_http=True` makes every request self-contained — no per-session
+    # state to go stale between the app's short-lived probe/run connections.
     # The SDK's default anti-rebind allowlist only accepts localhost-family
     # Host headers; in-stack requests arrive with "Host: mcp-weather:8000"
     # (the compose service name).
-    transport_security=TransportSecuritySettings(
-        enable_dns_rebinding_protection=True,
-        allowed_hosts=[
-            "localhost:*",
-            "127.0.0.1:*",
-            "[::1]:*",
-            "host.docker.internal:*",
-            "mcp-weather:*",
-        ],
-    ),
-)
+    return mcp.streamable_http_app(
+        stateless_http=True,
+        transport_security=TransportSecuritySettings(
+            enable_dns_rebinding_protection=True,
+            allowed_hosts=[
+                "localhost:*",
+                "127.0.0.1:*",
+                "[::1]:*",
+                "host.docker.internal:*",
+                "mcp-weather:*",
+            ],
+        ),
+    )
 
 
 @mcp.tool()
@@ -87,5 +92,5 @@ class BearerAuthMiddleware(BaseHTTPMiddleware):
         return JSONResponse({"error": "Unauthorized"}, status_code=401)
 
 
-app = mcp.streamable_http_app()
+app = _streamable_http_app()
 app.add_middleware(BearerAuthMiddleware)

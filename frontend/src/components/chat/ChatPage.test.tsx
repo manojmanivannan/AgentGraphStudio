@@ -1202,6 +1202,11 @@ describe("ChatPage component", () => {
         await waitFor(() => {
             expect(screen.getByTestId("chat-input")).toBeInTheDocument();
         });
+        // Wait for the conversation to finish loading (the input is disabled
+        // while `loadingConv` is true).
+        await waitFor(() => {
+            expect(screen.getByTestId("chat-input")).toBeEnabled();
+        });
 
         await user.type(screen.getByTestId("chat-input"), "run this workflow");
         await user.click(screen.getByTestId("send-button"));
@@ -1267,6 +1272,11 @@ describe("ChatPage component", () => {
 
         await waitFor(() => {
             expect(screen.getByTestId("chat-input")).toBeInTheDocument();
+        });
+        // Wait for the conversation to finish loading (the input is disabled
+        // while `loadingConv` is true).
+        await waitFor(() => {
+            expect(screen.getByTestId("chat-input")).toBeEnabled();
         });
 
         await user.type(screen.getByTestId("chat-input"), "recover run");
@@ -1504,6 +1514,11 @@ describe("ChatPage component", () => {
         await waitFor(() => {
             expect(screen.getByTestId("chat-input")).toBeInTheDocument();
         });
+        // Wait for the conversation to finish loading (the input is disabled
+        // while `loadingConv` is true).
+        await waitFor(() => {
+            expect(screen.getByTestId("chat-input")).toBeEnabled();
+        });
 
         await user.type(screen.getByTestId("chat-input"), "run then abort");
         await user.click(screen.getByTestId("send-button"));
@@ -1577,6 +1592,11 @@ describe("ChatPage component", () => {
         await waitFor(() => {
             expect(screen.getByTestId("chat-input")).toBeInTheDocument();
         });
+        // Wait for the conversation to finish loading (the input is disabled
+        // while `loadingConv` is true).
+        await waitFor(() => {
+            expect(screen.getByTestId("chat-input")).toBeEnabled();
+        });
 
         await user.type(screen.getByTestId("chat-input"), "start and stop");
         await user.click(screen.getByTestId("send-button"));
@@ -1635,6 +1655,9 @@ describe("ChatPage component", () => {
         renderChatPage("conv-1");
 
         await waitFor(() => expect(screen.getByTestId("chat-input")).toBeInTheDocument());
+        // Wait for the conversation to finish loading (the input is disabled
+        // while `loadingConv` is true).
+        await waitFor(() => expect(screen.getByTestId("chat-input")).toBeEnabled());
 
         await user.type(screen.getByTestId("chat-input"), "need help");
         await user.click(screen.getByTestId("send-button"));
@@ -1698,6 +1721,9 @@ describe("ChatPage component", () => {
         renderChatPage("conv-1");
 
         await waitFor(() => expect(screen.getByTestId("chat-input")).toBeInTheDocument());
+        // Wait for the conversation to finish loading (the input is disabled
+        // while `loadingConv` is true).
+        await waitFor(() => expect(screen.getByTestId("chat-input")).toBeEnabled());
 
         await user.type(screen.getByTestId("chat-input"), "run tool");
         await user.click(screen.getByTestId("send-button"));
@@ -1760,6 +1786,9 @@ describe("ChatPage component", () => {
         renderChatPage("conv-1");
 
         await waitFor(() => expect(screen.getByTestId("chat-input")).toBeInTheDocument());
+        // Wait for the conversation to finish loading (the input is disabled
+        // while `loadingConv` is true).
+        await waitFor(() => expect(screen.getByTestId("chat-input")).toBeEnabled());
 
         await user.type(screen.getByTestId("chat-input"), "start then disconnect");
         await user.click(screen.getByTestId("send-button"));
@@ -1829,6 +1858,11 @@ describe("ChatPage component", () => {
         await waitFor(() => {
             expect(screen.getByTestId("chat-input")).toBeInTheDocument();
         });
+        // Wait for the conversation to finish loading (the input is disabled
+        // while `loadingConv` is true).
+        await waitFor(() => {
+            expect(screen.getByTestId("chat-input")).toBeEnabled();
+        });
 
         // Start execution to open websocket
         await user.type(screen.getByTestId("chat-input"), "start run");
@@ -1897,6 +1931,11 @@ describe("ChatPage component", () => {
 
         await waitFor(() => {
             expect(screen.getByTestId("chat-input")).toBeInTheDocument();
+        });
+        // Wait for the conversation to finish loading (the input is disabled
+        // while `loadingConv` is true).
+        await waitFor(() => {
+            expect(screen.getByTestId("chat-input")).toBeEnabled();
         });
 
         await user.type(screen.getByTestId("chat-input"), "run tool");

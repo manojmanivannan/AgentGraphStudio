@@ -43,7 +43,7 @@ def make_server_tool(name="add", description="Add two integers.", schema=None):
             },
             "required": ["a", "b"],
         }
-    return mcp_types.Tool(name=name, description=description, inputSchema=schema)
+    return mcp_types.Tool(name=name, description=description, input_schema=schema)
 
 
 def text_result(*texts, is_error=False):
@@ -123,7 +123,7 @@ class TestDescriptorBuild:
         # A schema the DSPy adapter cannot process (``input_schema`` missing,
         # bypassing SDK validation via model_construct).
         broken = mcp_types.Tool.model_construct(
-            name="broken", description=None, inputSchema=None
+            name="broken", description=None, input_schema=None
         )
         tool = make_descriptor(RecordingSession(text_result("x")), broken)
 
@@ -134,7 +134,7 @@ class TestDescriptorBuild:
 
     async def test_failed_stub_still_carries_metadata(self):
         broken = mcp_types.Tool.model_construct(
-            name="broken", description=None, inputSchema=None
+            name="broken", description=None, input_schema=None
         )
         node_id = uuid.uuid4()
         tool = build_mcp_tool(
@@ -285,7 +285,11 @@ class TestResultFraming:
         assert isinstance(raw, list) and len(raw) == 4
         assert raw[0]["type"] == "text" and raw[0]["text"] == "t1"
         assert raw[1]["type"] == "image"
-        assert raw[1]["mimeType"] == "image/png"
+        # mcp SDK 2.x content blocks are snake_case pydantic models with no
+        # wire-alias dump on this path (nothing in the codebase consumes
+        # camelCase raw blocks, and the tool-test pipeline's snake_case
+        # "mime_type" matches this convention).
+        assert raw[1]["mime_type"] == "image/png"
 
     async def test_raw_blocks_reset_per_call(self):
         session = RecordingSession(mixed_result())
@@ -383,7 +387,7 @@ class TestStaleSessionRehandshake:
         await reg.close()
 
     async def test_always_stale_retries_once_then_raises(self, make_ref_mcp_server):
-        from mcp.shared.exceptions import McpError
+        from mcp.shared.exceptions import MCPError as McpError
 
         obs = make_ref_mcp_server(tools=("add",), stale_calls="always")
         reg, cfg = self._fake_configs(obs)

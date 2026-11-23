@@ -14,7 +14,7 @@ from unittest.mock import MagicMock, patch
 
 import mcp.types as mcp_types
 import pytest
-from mcp.shared.exceptions import McpError
+from mcp.shared.exceptions import MCPError as McpError
 
 from canvas_server.runner.tool_registry import ToolRegistry
 
@@ -104,7 +104,7 @@ def server_tool(name, description=None):
     return mcp_types.Tool(
         name=name,
         description=description or f"{name} description.",
-        inputSchema={
+        input_schema={
             "type": "object",
             "properties": {"q": {"type": "string"}},
         },
@@ -447,9 +447,7 @@ class TestListToolsStalenessRehandshake:
     resolve normally; non-stale ``tools/list`` failures degrade instead."""
 
     def _stale_error(self):
-        from mcp.types import ErrorData
-
-        return McpError(ErrorData(code=32600, message="Session terminated"))
+        return McpError(code=32600, message="Session terminated")
 
     async def test_stale_tools_list_rehandshakes_once_then_resolves(self):
         server = uuid.uuid4()

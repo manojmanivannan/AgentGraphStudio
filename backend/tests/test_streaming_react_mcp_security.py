@@ -98,7 +98,7 @@ def mcp_tool(session, name="add", requires_approval=True):
         mcp_types.Tool(
             name=name,
             description="Add two integers.",
-            inputSchema={
+            input_schema={
                 "type": "object",
                 "properties": {"a": {"type": "integer"}},
                 "required": ["a"],
